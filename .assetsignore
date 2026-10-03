@@ -1,0 +1,3 @@
+# Only the single-file build is served; everything else stays private.
+*
+!index.html

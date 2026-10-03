@@ -25,7 +25,20 @@
 
 在线演示：https://komorebi-rainy-corner.nxnp5gf8sp.chatgpt.site
 
-该演示目前独立通过 Sites 发布。GitHub 提交尚未配置自动部署。
+该演示目前独立通过 Sites 发布。
+
+## 部署到 Cloudflare Workers
+
+`wrangler.jsonc` 将项目配置为纯静态资源 Worker；`.assetsignore` 保证只公开 `index.html`。
+
+通过 Cloudflare 的 Git 集成自动部署（Workers Builds）：
+
+1. Cloudflare 控制台 → Workers & Pages → Create → Import a repository，选择本仓库。
+2. 项目名填 `rainy-anime-neighborhood`（需与 `wrangler.jsonc` 中的 `name` 一致）。
+3. Build command 留空（`index.html` 已提交在仓库中）；Deploy command 保持 `npx wrangler deploy`。
+4. 保存后，每次推送到 `main` 都会自动部署到 `https://rainy-anime-neighborhood.<子域>.workers.dev`。
+
+也可以本地手动部署：`npx wrangler login && npx wrangler deploy`。
 
 ## 验证状态
 
