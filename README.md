@@ -25,7 +25,14 @@
 
 在线演示：https://komorebi-rainy-corner.nxnp5gf8sp.chatgpt.site
 
-该演示目前独立通过 Sites 发布。GitHub 提交尚未配置自动部署。
+该演示目前独立通过 Sites 发布。
+
+## 部署到 Cloudflare Workers
+
+`wrangler.jsonc` 将项目配置为纯静态资源 Worker；`.assetsignore` 保证只公开 `index.html`。
+
+- 手动：`npx wrangler login && npx wrangler deploy`
+- 自动：在 GitHub 仓库 Settings → Secrets 中添加 `CLOUDFLARE_API_TOKEN`（需 “Edit Cloudflare Workers” 权限）和 `CLOUDFLARE_ACCOUNT_ID`，之后每次推送到 `main` 会由 `.github/workflows/deploy.yml` 重新构建并部署到 `https://rainy-anime-neighborhood.<子域>.workers.dev`。
 
 ## 验证状态
 
