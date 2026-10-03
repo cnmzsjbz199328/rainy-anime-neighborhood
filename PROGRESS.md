@@ -87,5 +87,5 @@ P2 第 1 项：在 scene.js 中读取 `LAYOUT`，把 18 × 18 底座换成 96 ×
 
 ## 本地运行与检查
 
-- 预览：直接用浏览器打开 `index.html`，或运行 `python3 -m http.server 8000` 后访问 http://localhost:8000。README 中的在线演示是另外发布的旧版本，不随本分支更新。
+- 预览：直接用浏览器打开 `index.html`，或运行 `python3 -m http.server 8000` 后访问 http://localhost:8000。main 已配置 Cloudflare Workers Builds，推送到 main 后自动部署（见 README）；工作分支不会自动发布到正式地址。README 中的 Sites 演示是另外发布的旧版本。
 - 布局检查：`node tools/measure_samples.mjs`（需要 Playwright 和 Chromium，生成样板俯视贴图并校验实测尺寸），然后运行 `node tools/layout_check.mjs --png`。
