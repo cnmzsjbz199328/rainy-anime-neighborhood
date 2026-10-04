@@ -1470,7 +1470,7 @@
     "name": "雨宿咖啡店",
     "archetype": "cafe",
     "phase": 1,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "shop",
     "front": "N",
     "frontages": [
@@ -1493,7 +1493,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": -32.5,
-        "z": 21
+        "z": 21,
+        "door": [
+          -32.5,
+          23
+        ]
       }
     ],
     "maxHeight": 9,
@@ -1518,7 +1522,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

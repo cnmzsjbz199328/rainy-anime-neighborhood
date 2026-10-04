@@ -1,5 +1,5 @@
 // Live top-down check: renders the real scene straight down with an orthographic camera in Chromium
-// and overlays the layout.js outlines (curb lines, plots, curb cuts, sample bounds), so the built
+// and overlays the layout.js outlines (curb lines, plots, curb cuts, sample and building bounds), so the built
 // geometry can be compared with the layout data.
 //
 //   node tools/live_topdown.mjs      → docs/layout/live-topdown.png
@@ -41,7 +41,7 @@ for (const v of VIEWS) {
     renderer.setSize(Math.round((x1 - x0) * ppu), Math.round((z1 - z0) * ppu));
     renderer.render(scene, cam);
     const png = renderer.domElement.toDataURL('image/png');
-    scene.fog = fog; rain.forEach(r => { r.visible = true; }); renderer.dispose();
+    scene.fog = fog; rain.forEach(r => { r.visible = true; }); renderer.dispose(); renderer.forceContextLoss();
     return png;
   }, v);
 }
@@ -64,7 +64,7 @@ function overlay(win, ppu) {
   for (const p of L.plots) o += rect(p.rect, `fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity=".75"`) + rect(p.buildable, `fill="none" stroke="#b6f2a0" stroke-width="1" stroke-dasharray="3 3"`);
   for (const k of L.curbCuts) o += rect(k.rect, `fill="none" stroke="${k.kind === 'ramp' ? '#ff6ad5' : '#ff9a3c'}" stroke-width="1.6"`);
   for (const a of L.alleys) o += rect(a.rect, `fill="none" stroke="#e8c27a" stroke-width="1"`);
-  for (const s of L.samples) for (const part of s.parts) o += rect(sampleRect(s, [part.localBounds.min[0], part.localBounds.min[2], part.localBounds.max[0], part.localBounds.max[2]]), `fill="none" stroke="${part.role === 'building' ? '#ff3b30' : '#ff9500'}" stroke-width="1.6" ${part.role === 'building' ? '' : 'stroke-dasharray="3 2"'}`);
+  for (const s of L.structures) for (const part of s.parts) o += rect(sampleRect(s, [part.localBounds.min[0], part.localBounds.min[2], part.localBounds.max[0], part.localBounds.max[2]]), `fill="none" stroke="${part.role === 'building' ? '#ff3b30' : '#ff9500'}" stroke-width="1.6" ${part.role === 'building' ? '' : 'stroke-dasharray="3 2"'}`);
   const furnCol = { lamp: '#ffe066', 'alley-lamp': '#fff3b0', pole: '#9ad0ff', signal: '#5dff9e', 'stop-sign': '#ff5a5a', legacy: '#c38bff' };
   for (const f of L.furniture || []) o += `<circle cx="${X(f.x)}" cy="${Z(f.z)}" r="${Math.max(2.5, ppu * .18)}" fill="${furnCol[f.kind]}" stroke="#000" stroke-width=".8"/>`;
   for (const g of L.grates || []) o += `<rect x="${(+X(g.x) - 2).toFixed(1)}" y="${(+Z(g.z) - 2).toFixed(1)}" width="4" height="4" fill="none" stroke="#00e5ff" stroke-width="1.2"/>`;
@@ -82,6 +82,8 @@ for (const v of VIEWS) {
 }
 html += `<div style="padding:10px 16px 16px;font-size:13px;color:#273647">${legend.map(([c, d, t]) => `<span style="margin-right:18px;white-space:nowrap"><svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke="${c}" stroke-width="3" ${d ? `stroke-dasharray="${d}"` : ''} style="filter:drop-shadow(0 0 1px #000)"/></svg> ${t}</span>`).join('')}</div></body></html>`;
 height += 70;
+// Leave the WebGL scene first: under SwiftShader its render loop can starve the overlay screenshot.
+await page.goto('about:blank');
 await page.setViewportSize({ width, height });
 await page.setContent(html);
 await page.waitForTimeout(300);

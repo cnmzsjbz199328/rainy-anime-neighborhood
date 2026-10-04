@@ -148,7 +148,7 @@
 
 ## B05-P03 · 雨宿咖啡店
 
-[构建任务卡](tasks/B05-P03.md) · 待建地块
+[构建任务卡](tasks/B05-P03.md) · 已实现，实际模型截图见 [screenshots/B05-P03](screenshots/B05-P03/)
 
 ![B05-P03 雨宿咖啡店 八视图](references/B05-P03.jpg)
 

@@ -106,6 +106,46 @@ for(let i=0;i<16;i++){box(-2.3,.38+i*.25,-5.05-i*.17,.7,.08,.32,'#768a97');}line
 // Down pipe and planters.
 group('store');line([[4.34,3.3,-2.4],[4.54,3.3,-2.4],[4.54,.45,-2.4]],'#7b8e97',.038);
 for(let i=0;i<7;i++){group(i<4?'ramenPlants':'apartmentPlants');let x=i<4?5.65+i*.7:-1.7+(i-4)*.53,z=i<4?2.25:-4.52;cyl(x,.48,z,.14,.3,'#aa8980');for(let k=0;k<4;k++){mesh(new THREE.SphereGeometry(.13,7,5),mat('#6f9690'),x+(rnd()-.5)*.17,.72+rnd()*.18,z+(rnd()-.5)*.17,false);}}
+// New buildings: buildings/<plot>.js registers BUILDINGS[plot](kit, record) and draws in its own local frame
+// (front +z, as the samples); the groups are placed below with the layout transforms. The kit shares the
+// samples' ink, toon ramp, paper grain and glass. Modules return an update(t, dt) for local animation.
+// The shared random sequence is restored afterwards, so ground and later details never shift.
+const warmMats={},amber=new THREE.Color('#ffb36b');
+// Interior surfaces seen through glass: same toon paper material plus a soft amber self-light instead of extra lamps.
+function warm(c,k=.3,map=paperTex){const key=c+'|'+k+'|'+map.uuid;return warmMats[key]||(warmMats[key]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map,emissive:new THREE.Color(c).multiply(amber).multiplyScalar(k)}));}
+// One wall slab with rectangular openings, inked only on its real edges. Openings [u0,u1,y0,y1] in wall coordinates:
+// axis 'x' runs along x at depth z=at, axis 'z' runs along z at x=at.
+function wall(axis,at,t,[u0,u1,y0,y1],holes,c,parent=root){const V=THREE.Vector2,s=new THREE.Shape([new V(u0,y0),new V(u1,y0),new V(u1,y1),new V(u0,y1)]);
+  for(const [a,b,p,q] of holes)s.holes.push(new THREE.Path([new V(a,p),new V(a,q),new V(b,q),new V(b,p)]));
+  const g=new THREE.ExtrudeGeometry(s,{depth:t,bevelEnabled:false,curveSegments:1});g.translate(0,0,-t/2);tileUV(g,.5,.5);
+  const m=mesh(g,c,axis==='x'?0:at,0,axis==='x'?at:0,true,parent);if(axis==='z')m.rotation.y=-Math.PI/2;return m;}
+// Un-inked lining (interior finishes, wainscot) as strips around the same openings.
+function panel(axis,at,t,[u0,u1,y0,y1],holes,c,parent=root){const us=[...new Set([u0,u1,...holes.flatMap(h=>[h[0],h[1]]).filter(u=>u>u0&&u<u1)])].sort((a,b)=>a-b);
+  for(let i=0;i+1<us.length;i++){const a=us[i],b=us[i+1],m=(a+b)/2;let ys=[[y0,y1]];
+    for(const h of holes.filter(h=>h[0]<m&&h[1]>m))ys=ys.flatMap(([p,q])=>[[p,Math.min(q,h[2])],[Math.max(p,h[3]),q]]).filter(([p,q])=>q-p>1e-3);
+    for(const [p,q] of ys)axis==='x'?box((a+b)/2,(p+q)/2,at,b-a,q-p,t,c,false,parent):box(at,(p+q)/2,(a+b)/2,t,q-p,b-a,c,false,parent);}}
+// Static detail collapses into one mesh per material (split at walking height, so measured footprints stay
+// exact) and one batch per ink layer: a whole building costs a few dozen draw calls. Objects under a node
+// flagged userData.live (animated drips, steam) are left alone; userData.layer (e.g. 'roof') keeps its own
+// batches, tagged with the layer, so review tools can lift a roof or storey off.
+function bake(g){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert(),buckets=new Map(),done=[],bb=new THREE.Box3();
+  g.traverse(o=>{if(!(o.isMesh||o.isLineSegments))return;for(let p=o;p&&p!==g;p=p.parent)if(p.userData.live)return;
+    let layer='';for(let p=o;p&&p!==g;p=p.parent)if(p.userData.layer){layer=p.userData.layer;break;}
+    const m=o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;bb.setFromObject(o,true);const band=bb.max.y>.3&&bb.min.y<1.8;
+    const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,list:[]});buckets.get(k).list.push(o);done.push(o);});
+  for(const {line,m,layer,list} of buckets.values()){const P=[],N=[],U=[];
+    for(const o of list){let q=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();q.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld));
+      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}q.dispose();}
+    const q=new THREE.BufferGeometry();q.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+    if(!line){q.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));q.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));}
+    const b=line?new THREE.LineSegments(q,m):new THREE.Mesh(q,m);if(layer)b.userData.layer=layer;g.add(b);}
+  for(const o of done)o.removeFromParent();}
+const buildingFx=[];
+{const s0=seed,kit={THREE,ramp,group,mesh,box,cyl,line,label,mat,warm,glow,glass,wall,panel,canvasTex,tileUV,colors,
+    setRoot:r=>{root=r;},rand:k=>()=>((k=(k*1664525+1013904223)>>>0)/4294967296)};
+  for(const b of LAYOUT.buildings){const build=(globalThis.BUILDINGS||{})[b.module];if(!build)continue;const fx=build(kit,b);if(fx&&fx.update)buildingFx.push(fx.update);
+    for(const p of b.parts)if(groups[p.group])bake(groups[p.group]);}
+  seed=s0;root=scene;}
 // Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
 // curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
 const L=LAYOUT,LV=L.LEVELS,BH=L.BASE.half,R=L.INTERSECTION.curbRadius;
@@ -168,7 +208,7 @@ group('plots');
 const groundOf={school:'#7f9a6f',park:'#759d6c',house:'#86997a',apartment:'#86997a',shop:'#8f9583',store:'#8f9583',mixed:'#8f9583',civic:'#899682'};
 const sampleTop=s=>Math.min(...s.parts.filter(p=>p.role==='building').map(p=>p.localBounds.min[1]))*(s.transform.scale??L.SAMPLE_SCALE);
 function worldRect(s,[x0,z0,x1,z1]){const c=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]].map(([x,z])=>L.toWorld(s,x,z)),xs=c.map(p=>p[0]),zs=c.map(p=>p[1]);return[Math.min(...xs),Math.min(...zs),Math.max(...xs),Math.max(...zs)];}
-for(const p of L.plots){const s=L.samples.find(s=>s.plot===p.id);
+for(const p of L.plots){const s=L.structures.find(s=>s.plot===p.id);
   if(!s){const grass=['school','park','house','apartment'].includes(p.type);slab(p.rect,LV.pavement,LV.plot,matT(groundOf[p.type],grass?'grass':'gravel'));flat(p.buildable,LV.plot,p.type==='park'?matT('#8fae7e','grass',true):matT('#aca78f','gravel',true));continue;}
   const top=sampleTop(s);slab(p.rect,LV.pavement,top,'#9a9384');
   // Attachments (bicycles, planters, bins) stand on low concrete aprons instead of floating.
@@ -243,15 +283,16 @@ L.puddles.forEach((p,i)=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mes
 {const s=L.samples.find(s=>s.id==='store'),t=s.transform,g=new THREE.Group();g.position.set(t.x,LV.pavement+.012,t.z);g.rotation.y=t.rotY;root.add(g);
   for(let i=0;i<70;i++)box(-2.5+Math.random()*6.8,0,4.1+Math.random()*1.8,.025+Math.random()*.1,.004,.09+Math.random()*.37,glow(i%3?'#efc494':'#8ee1d2',.05+Math.random()*.12),false,g);
   const ref=label('こもれび MART',.7,.002,5,5,.48,'#2c4354','#93b7ac',80);g.add(ref);ref.rotation.x=-Math.PI/2;ref.material.transparent=true;ref.material.opacity=.2;ref.material.depthWrite=false;}
-// Existing samples move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
-for(const s of L.samples)for(const p of s.parts){const g=groups[p.group],t=s.transform;g.position.set(t.x,0,t.z);g.rotation.y=t.rotY;g.scale.setScalar(t.scale??L.SAMPLE_SCALE);}
+// Existing samples and new buildings move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
+for(const s of L.structures)for(const p of s.parts){const g=groups[p.group],t=s.transform;g.position.set(t.x,0,t.z);g.rotation.y=t.rotY;g.scale.setScalar(t.scale??L.SAMPLE_SCALE);}
 // Original street furniture goes to provisional slots in the facility bands, foot on the band.
 for(const f of L.legacyFurniture){const g=groups[f.group],{x,z,rotY}=f.slot,c=Math.cos(rotY),n=Math.sin(rotY),[ax,az]=f.anchor,y0=new THREE.Box3().setFromObject(g,true).min.y;
   g.rotation.y=rotY;g.position.set(x-(ax*c+az*n),LV.pavement-y0,z-(-ax*n+az*c));}
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
-// Rain falls in a box that follows the view target (clamped to the plinth), never under sample roofs.
-const roofs=L.samples.flatMap(s=>s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
+// Rain falls in a box that follows the view target (clamped to the plinth), never under the roofs and
+// awnings of samples (building-part bounds) and new buildings (their registered shelter rects, see layout.js).
+const roofs=L.structures.flatMap(s=>s.shelter?s.shelter.map(r=>worldRect(s,r)):s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
 const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6),speeds=[];let rb=[0,0,0,0];
 function rainBounds(){const h=rainBox/2;rb=[Math.max(-BH,target.x-h),Math.max(-BH,target.z-h),Math.min(BH,target.x+h),Math.min(BH,target.z+h)];}
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
@@ -265,7 +306,7 @@ root=scene;
 const ZOOM=[9,150],PAN_LIMIT=BH-2,zoomTo=d=>Math.max(ZOOM[0],Math.min(ZOOM[1],d));
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);target.x=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.x-(dx*c+dy*n)*k));target.z=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.z-(-dx*n+dy*c)*k));}
 const pointers=new Map();let last=null,pinch=0;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);dist=zoomTo(dist*pinch/d);pinch=d;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(e.buttons===2)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);last=null;});canvas.addEventListener('wheel',e=>{e.preventDefault();dist=zoomTo(dist*Math.exp(e.deltaY*.001));},{passive:false});
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,dt=Math.min(.04,t-prev);prev=t;camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}for(const d of drops){d.position.y-=dt*.11;if(d.position.y<.6)d.position.y=2.85;}for(const d of drips){d.position.y-=dt*2.2;if(d.position.y<.25)d.position.y=3.02;}let cycle=t%19,open=cycle>10&&cycle<15?Math.min(1,(cycle-10)*1.5,(15-cycle)*1.5):0;doors[0].position.x=1.58-open*.46;doors[1].position.x=2.1+open*.46;sign.material.color.setScalar(1-.07*Math.pow(Math.sin(t*1.7),24));signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');renderer.render(scene,camera);}requestAnimationFrame(frame);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,dt=Math.min(.04,t-prev);prev=t;camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}for(const d of drops){d.position.y-=dt*.11;if(d.position.y<.6)d.position.y=2.85;}for(const d of drips){d.position.y-=dt*2.2;if(d.position.y<.25)d.position.y=3.02;}let cycle=t%19,open=cycle>10&&cycle<15?Math.min(1,(cycle-10)*1.5,(15-cycle)*1.5):0;doors[0].position.x=1.58-open*.46;doors[1].position.x=2.1+open*.46;sign.material.color.setScalar(1-.07*Math.pow(Math.sin(t*1.7),24));signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for the browser checks in tools/ (view control without synthetic input).
 window.__scene={scene,renderer,camera,groups,view:{get:()=>({yaw,pitch,dist,target:target.toArray()}),set(v){if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);},pan}};
 })();

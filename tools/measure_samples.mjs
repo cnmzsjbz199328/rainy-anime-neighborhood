@@ -1,5 +1,5 @@
-// Measures the existing samples in a real browser (WebGL via Chromium) and renders
-// a top-down orthographic sprite of each sample set for the layout check image.
+// Measures the existing samples and the new buildings (layout.js `structures`) in a real browser (WebGL via Chromium) and renders
+// a top-down orthographic sprite of each sample/building set for the layout check image.
 //
 //   node tools/measure_samples.mjs
 //
@@ -26,7 +26,7 @@ await page.goto(pathToFileURL(path.join(root, 'index.html')).href);
 await page.waitForFunction(() => window.__scene && window.__scene.groups);
 await page.waitForTimeout(500);
 
-const sets = Object.fromEntries(LAYOUT.samples.map(s => [s.id, s.parts.map(p => p.group)]));
+const sets = Object.fromEntries(LAYOUT.structures.map(s => [s.id, s.parts.map(p => p.group)]));
 const result = await page.evaluate(({ sets, ppu }) => {
   const { scene, groups } = window.__scene;
   const r2 = v => Math.round(v * 100) / 100;
@@ -77,7 +77,7 @@ fs.writeFileSync(path.join(outDir, 'sample_bounds.json'), JSON.stringify({ group
 
 // Compare with the bounds recorded in layout.js.
 let drift = 0;
-for (const s of LAYOUT.samples) for (const part of s.parts) {
+for (const s of LAYOUT.structures) for (const part of s.parts) {
   const m = result.bounds[part.group];
   if (!m) { console.log(`MISSING group ${part.group}`); drift++; continue; }
   const rec = part.localBounds;

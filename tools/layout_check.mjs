@@ -3,8 +3,8 @@
 //   node tools/layout_check.mjs            logic checks + docs/layout/topdown.svg + report
 //   node tools/layout_check.mjs --png      also rasterise the SVG to docs/layout/topdown.png (Chromium)
 //
-// Sample sprites come from tools/out (run tools/measure_samples.mjs first); without them the
-// samples are drawn as their measured bounding boxes only.
+// Sample/building sprites come from tools/out (run tools/measure_samples.mjs first); without them the
+// samples and buildings are drawn as their measured bounding boxes only.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -116,7 +116,7 @@ check('C3', '地块互不重叠，不压道路/人行道/内巷/通道，街区�
     const residual = area(b.rect) - parts;
     if (residual > 0.01) warn(`${b.id} 有 ${residual.toFixed(2)} 未分配用地`); else info(`${b.id} 完整分配：${L.plots.filter(p => p.block === b.id).length} 块地块${alleyRects.some(a => overlapArea(a.rect, b.rect) > 0) ? ' + 内巷' : ''}`);
   }
-  const occ = L.plots.filter(p => p.status === 'occupied').map(p => `${p.id}←${p.sample}`);
+  const occ = L.plots.filter(p => p.status === 'occupied').map(p => `${p.id}←${p.sample || p.building}`);
   info(`地块 ${L.plots.length} 块：占用 ${occ.length}（${occ.join('，')}），其余 ${L.plots.length - occ.length} 块预留空置`);
 });
 
@@ -183,15 +183,15 @@ check('C6', '连续人行路径可到达每块用地', ({ fail, info }) => {
 });
 
 // ---------- C7 samples ----------
-const sampleBoxes = [];   // world AABBs for drawing and cross checks
-for (const s of L.samples) for (const part of s.parts) {
+const sampleBoxes = [];   // world AABBs of every sample and new building part, for drawing and cross checks
+for (const s of L.structures) for (const part of s.parts) {
   const { min, max, ground } = part.localBounds;
   const worldRect = (x0, z0, x1, z1) => {
     const pts = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => L.toWorld(s, x, z));
     const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
     return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)];
   };
-  sampleBoxes.push({ sample: s.id, group: part.group, role: part.role, rect: worldRect(min[0], min[2], max[0], max[2]),
+  sampleBoxes.push({ sample: s.id, group: part.group, role: part.role, rect: worldRect(min[0], min[2], max[0], max[2]), minY: min[1] * (s.transform.scale ?? L.SAMPLE_SCALE),
     ground: ground ? worldRect(...ground) : null, height: max[1] * (s.transform.scale ?? L.SAMPLE_SCALE) });
 }
 // Walking route from a sample's door to its plot entrance: 0.1 grid BFS inside the plot, around the
@@ -429,6 +429,64 @@ check('C11', '每块预留地块都放得下候选建筑及其附属设施（停
   }
 });
 
+// ---------- C12 new buildings: the real, measured model (not the C11 candidate) ----------
+// Bounds are the ones measured in Chromium by tools/measure_samples.mjs (eaves, awnings, signs, pipes and
+// downpipes included); tools/out/sample_bounds.json, when present, must still match what layout.js records.
+const measured = (() => { try { return JSON.parse(fs.readFileSync(path.join(root, 'tools', 'out', 'sample_bounds.json'), 'utf8')).groups; } catch { return null; } })();
+check('C12', '新建筑实测模型：主体在可建范围、附属在地块内，限高、步行占地、入口路径、遮雨与单文件嵌入一致', ({ fail, warn, info }) => {
+  const html = (() => { try { return fs.readFileSync(path.join(root, 'index.html'), 'utf8'); } catch { return ''; } })();
+  if (!L.buildings.length) info('尚无新建筑');
+  for (const s of L.buildings) {
+    const p = plotById[s.plot], t = s.transform;
+    if (!p) { fail(`${s.id} 指向不存在的地块`); continue; }
+    if (p.building !== s.id || p.status !== 'occupied' || p.sample) fail(`${p.id} 未登记为新建筑 ${s.id} 的占用地块`);
+    if ((t.scale ?? L.SAMPLE_SCALE) !== L.SAMPLE_SCALE) fail(`${s.id} 使用了非统一缩放`);
+    if (Math.abs(Math.sin(2 * t.rotY)) > EPS) fail(`${s.id} 旋转不是 90° 的倍数`);
+    const src = path.join(root, 'buildings', `${s.module}.js`);
+    if (!fs.existsSync(src)) fail(`缺少建模源码 buildings/${s.module}.js`);
+    else if (!html.includes(fs.readFileSync(src, 'utf8').split('\n').find(l => l.includes(`['${s.module}']`)) || '\u0000')) fail(`index.html 未嵌入 buildings/${s.module}.js（运行 python3 build.py）`);
+    const boxes = sampleBoxes.filter(b => b.sample === s.id);
+    if (!boxes.some(b => b.role === 'building')) fail(`${s.id} 没有登记主体（role building）`);
+    for (const b of boxes) {
+      const limit = b.role === 'building' ? p.buildable : p.rect, where = b.role === 'building' ? '可建范围' : '地块';
+      if (!contains(limit, b.rect)) fail(`${s.id}/${b.group} 实测 ${fmt(b.rect)} 越出${where} ${fmt(limit)}`);
+      if (b.ground && !contains(limit, b.ground)) fail(`${s.id}/${b.group} 步行高度占地 ${fmt(b.ground)} 越出${where}`);
+      if (b.height > p.maxHeight) fail(`${s.id}/${b.group} 最高点 ${b.height.toFixed(2)} 超过限高 ${p.maxHeight}`);
+      if (b.minY < L.LEVELS.plot - 0.02) fail(`${s.id}/${b.group} 最低点 ${b.minY.toFixed(2)} 低于地块面 ${L.LEVELS.plot}（穿地）`);
+      const margin = Math.min(b.rect[0] - limit[0], b.rect[1] - limit[1], limit[2] - b.rect[2], limit[3] - b.rect[3]);
+      info(`${s.id}/${b.group}（${{ building: '主体', attachment: '附属', ground: '地坪/光斑' }[b.role] || b.role}）${fmt(b.rect)}，距${where}边界最小 ${margin.toFixed(2)}，高 ${b.minY.toFixed(2)}–${b.height.toFixed(2)}${b.ground ? `，步行占地 ${fmt(b.ground)}` : ''}`);
+      const m = measured && measured[b.group], rec = s.parts.find(q => q.group === b.group).localBounds;
+      if (measured && !m) fail(`${s.id}/${b.group} 没有实测数据（运行 tools/measure_samples.mjs）`);
+      if (m) { const d = Math.max(...[0, 1, 2].flatMap(k => [Math.abs(m.min[k] - rec.min[k]), Math.abs(m.max[k] - rec.max[k])])); if (d > 0.02) fail(`${s.id}/${b.group} 登记包围盒与实测相差 ${d.toFixed(2)}，需重新测量登记`); }
+    }
+    for (const b of boxes) for (const o of sampleBoxes.filter(o => o.sample !== s.id)) if (overlapArea(b.rect, o.rect) > EPS) fail(`${s.id}/${b.group} 与 ${o.sample}/${o.group} 重叠`);
+    const main = boxes.find(b => b.role === 'building');
+    if (main && main.ground) {
+      const cover = area(main.ground) / area(p.rect);
+      if (cover > 0.6 + EPS) fail(`${s.id} 建蔽率 ${(cover * 100).toFixed(0)}% 超过 60%`);
+      info(`${s.id} 主体步行占地 ${+(main.ground[2] - main.ground[0]).toFixed(2)} × ${+(main.ground[3] - main.ground[1]).toFixed(2)}，建蔽率 ${(cover * 100).toFixed(0)}%`);
+    }
+    // Rain shelter: every registered roof/awning rect lies inside the measured building, and the roof covers the walls.
+    const shelters = (s.shelter || []).map(r => { const pts = [[r[0], r[1]], [r[2], r[3]]].map(([x, z]) => L.toWorld(s, x, z)); return [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])]; });
+    if (!shelters.length) fail(`${s.id} 未登记屋顶/雨棚遮雨区（shelter）`);
+    for (const r of shelters) if (main && !contains(main.rect, r, 0.01)) fail(`${s.id} 遮雨区 ${fmt(r)} 越出实测主体 ${fmt(main.rect)}`);
+    const walls = main && main.ground && shelters.find(r => r[0] <= main.ground[0] + 0.45 && r[2] >= main.ground[2] - 0.45 && r[1] <= main.ground[1] + 0.8 && r[3] >= main.ground[3] - 0.45);
+    if (shelters.length && !walls) fail(`${s.id} 没有覆盖墙体的屋顶遮雨区`);
+    info(`${s.id} 遮雨区（降雨排除）${shelters.length} 块：${shelters.map(fmt).join('，')}，共 ${shelters.reduce((a, r) => a + area(r), 0).toFixed(1)} 平方单位`);
+    const e = p.entrances[0], [fx, fz] = s.frontDir, c = Math.cos(t.rotY), n = Math.sin(t.rotY);
+    const wf = [fx * c + fz * n, -fx * n + fz * c], want = L.DIRS[e.facing];
+    if (Math.abs(wf[0] - want[0]) > EPS || Math.abs(wf[1] - want[1]) > EPS) fail(`${s.id} 正面朝向与地块入口 ${e.facing} 不一致`);
+    // The door must land on the frozen entrance: street furniture is placed around entrances (C10).
+    const mid = e.facing === 'N' || e.facing === 'S' ? (p.rect[0] + p.rect[2]) / 2 : (p.rect[1] + p.rect[3]) / 2, at = e.at ?? mid;
+    if (Math.abs((e.facing === 'N' || e.facing === 'S' ? e.x : e.z) - at) > 0.01) fail(`${s.id} 门位 ${e.door.join(', ')} 偏离冻结入口 ${at}，会移动路灯/电杆避让区`);
+    const route = doorRoute(s, p, e);
+    if (!route) fail(`${s.id} 门口到地块入口 (${e.x}, ${e.z}) 没有净宽 ${CLEAR_WIDTH} 的通行路径`);
+    else { routes[s.id] = route; const len = route.slice(1).reduce((q, r, i) => q + Math.hypot(r[0] - route[i][0], r[1] - route[i][1]), 0);
+      info(`${s.id} 门 (${e.door.join(', ')}) → 地块入口 (${e.x}, ${e.z}) 朝 ${e.facing}：净宽 ${CLEAR_WIDTH} 通行路径 ${len.toFixed(1)}`); }
+    info(`${s.id} 地坪 ${s.floor}，${s.floors} 层；源码 buildings/${s.module}.js 已嵌入 index.html`);
+  }
+});
+
 // ---------- report ----------
 const failed = results.filter(r => r.status === 'FAIL').length, warned = results.filter(r => r.status === 'WARN').length;
 let report = `# 布局检查报告\n\n由 \`node tools/layout_check.mjs\` 根据 layout.js 生成，勿手工编辑。\n\n结果：${results.length} 项检查，失败 ${failed}，警告 ${warned}。\n\n`;
@@ -485,7 +543,7 @@ function drawView(tx, tz, k, win, detailed) {
   }
   for (const [, f] of Object.entries(fits)) { o += R(f.building, `fill="#c9b48a" fill-opacity=".35" stroke="#8a6d3b" stroke-width="1" stroke-dasharray="2 2"`); for (const a of f.annexes) o += R(a.rect, `fill="${a.name === '停车位' ? '#9fb7c9' : '#d8c9a8'}" fill-opacity=".45" stroke="#6b7c8a" stroke-width=".7" stroke-dasharray="2 2"`); }
   for (const k of L.curbCuts || []) o += R(k.rect, `fill="${k.kind === 'ramp' ? C.ramp : C.drive}" stroke="${C.ink}" stroke-width=".5"`);
-  if (detailed && sprites) for (const s of L.samples) {
+  if (detailed && sprites) for (const s of L.structures) {
     const sp = sprites[s.id]; if (!sp) continue;
     const png = fs.readFileSync(path.join(root, 'tools', 'out', sp.file)).toString('base64');
     const t = s.transform, kk = t.scale ?? L.SAMPLE_SCALE;
@@ -500,7 +558,7 @@ function drawView(tx, tz, k, win, detailed) {
     if (!pointIn(win, e.x, e.z)) continue;
     const x1 = X(e.x - dx * len), z1 = Z(e.z - dz * len), x2 = X(e.x + dx * 0.5), z2 = Z(e.z + dz * 0.5);
     o += `<line x1="${x1}" y1="${z1}" x2="${x2}" y2="${z2}" stroke="${col}" stroke-width="${detailed ? 3 : 2}" marker-end="url(#arr-${e.kind})"/>`;
-    const route = p.sample && routes[p.sample];
+    const route = routes[p.sample || p.building];
     if (route && detailed) o += `<polyline points="${route.filter((q, i) => i % 3 === 0 || i === route.length - 1).map(q => `${X(q[0]).toFixed(1)},${Z(q[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="2.2" stroke-dasharray="5 3"/><circle cx="${X(e.door[0])}" cy="${Z(e.door[1])}" r="4.5" fill="${col}"/>`;
   }
   // Network overlay: centrelines and nodes
@@ -516,8 +574,8 @@ function drawView(tx, tz, k, win, detailed) {
   const lab = (x, z, s, size, col, extra = '') => T(x, z, s, size, `fill="${col}" text-anchor="middle" ${extra}`);
   for (const p of L.plots) {
     const cx = (p.rect[0] + p.rect[2]) / 2, cz = (p.rect[1] + p.rect[3]) / 2;
-    if (detailed) { const ly = p.sample ? p.rect[3] - 1.6 : p.rect[1] + (p.front === 'N' ? 2.6 : 1.4); o += lab(cx, ly, `${p.id}`, 13, C.ink, 'font-weight="700"') + lab(cx, ly + 1, `${p.uses.join('/')} · ${p.status === 'occupied' ? '已占用' : '预留'}`, 11, C.ink); }
-    else { o += lab(cx, cz - (p.sample ? 2.6 : 0.2), p.id.slice(4), 10, C.ink, 'font-weight="700"') + lab(cx, cz + (p.sample ? -1.4 : 1.1), p.uses[0], 9, '#4d5a63'); }
+    if (detailed) { const ly = p.status === 'occupied' ? p.rect[3] - 1.6 : p.rect[1] + (p.front === 'N' ? 2.6 : 1.4); o += lab(cx, ly, `${p.id}`, 13, C.ink, 'font-weight="700"') + lab(cx, ly + 1, `${p.uses.join('/')} · ${p.status === 'occupied' ? '已占用' : '预留'}`, 11, C.ink); }
+    else { const occ = p.status === 'occupied'; o += lab(cx, cz - (occ ? 2.6 : 0.2), p.id.slice(4), 10, C.ink, 'font-weight="700"') + lab(cx, cz + (occ ? -1.4 : 1.1), p.building ? p.uses[p.uses.length - 1] : p.uses[0], 9, '#4d5a63'); }
   }
   if (!detailed) {
     for (const b of L.blocks) o += T(b.rect[0] + 0.3, b.rect[1] - 0.45, `${b.id} ${b.name}`, 12, `fill="${b.rect[1] <= -H + M ? '#e8ecef' : '#1f4e5a'}" font-weight="800"`);
@@ -543,7 +601,7 @@ for (let v = -H; v <= H; v += 16) svg += `<text x="${gx + (v + H) * S}" y="${gy 
 svg += `<rect x="${gx + (detail[0] + H) * S}" y="${gy + (detail[1] + H) * S}" width="${(detail[2] - detail[0]) * S}" height="${(detail[3] - detail[1]) * S}" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="8 4"/>`;
 // legend + results
 const lx = gx + MAPW + 30; let ly = gy + 6;
-const leg = [[C.cw, '车行道'], [C.band, '路缘/设施带'], [C.sw, '人行道（净宽 2）'], [C.alley, '内巷（共享 3.5）'], [C.walk, '人行通道'], [C.apron, '公交候车区'], [C.ramp, '无台阶过街坡道（1:10）'], [C.drive, '车辆出入口降坡（仅设施带）'], [C.plotRes, '预留空地'], [C.plotOcc, '已有样板地块'], [C.trim, '底座收边'], ['#e3d8c0', '候选建筑占地（C11 试排）'], ['#cdd8e0', '候选停车位/附属设施']];
+const leg = [[C.cw, '车行道'], [C.band, '路缘/设施带'], [C.sw, '人行道（净宽 2）'], [C.alley, '内巷（共享 3.5）'], [C.walk, '人行通道'], [C.apron, '公交候车区'], [C.ramp, '无台阶过街坡道（1:10）'], [C.drive, '车辆出入口降坡（仅设施带）'], [C.plotRes, '预留空地'], [C.plotOcc, '已占用地块（样板/新建筑）'], [C.trim, '底座收边'], ['#e3d8c0', '候选建筑占地（C11 试排）'], ['#cdd8e0', '候选停车位/附属设施']];
 svg += `<text x="${lx}" y="${ly}" font-size="15" font-weight="800" fill="${C.ink}">图例</text>`; ly += 12;
 for (const [c, t] of leg) { svg += `<rect x="${lx}" y="${ly}" width="22" height="13" fill="${c}" stroke="${C.ink}" stroke-width=".6"/><text x="${lx + 30}" y="${ly + 11}" font-size="12" fill="${C.ink}">${t}</text>`; ly += 19; }
 const legL = [['line', C.build, '4 3', '可建范围（扣除退界）'], ['line', C.bld, '', '样板建筑实测包围盒'], ['line', C.att, '3 2', '附属设施实测包围盒'], ['line', '#1d6fa5', '2 2', '行走高度占地（y 0.3–1.8）'], ['line', '#f2d27a', '6 4', '道路中心线（连接图）'], ['line', '#7a5a2a', '6 4', '内巷中心线'], ['arrow', C.ped, '', '人行入口与朝向'], ['arrow', C.veh, '', '车辆出入口'], ['dot', C.node, '', '道路节点 / ○ 边界出口'], ['dot', '#6a4c93', '', '原街道设施临时位置'], ['zebra', '#fff', '', '斑马线（虚线框=候选过街）']];

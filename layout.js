@@ -92,7 +92,7 @@ const PLOT_TYPES = {
 function plot(id, r, type, front, opts = {}) {
   return { id, block: id.slice(0, 3), rect: r, poly: rect(...r), type, front,
     frontages: opts.frontages || [front], uses: opts.uses || [], status: opts.status || 'reserved',
-    sample: opts.sample || null, entrances: opts.entrances || [{ at: opts.entrance, facing: front, kind: 'pedestrian' }],
+    sample: opts.sample || null, building: opts.building || null, entrances: opts.entrances || [{ at: opts.entrance, facing: front, kind: 'pedestrian' }],
     note: opts.note || '' };
 }
 const plots = [
@@ -126,7 +126,7 @@ const plots = [
   // B05: existing samples. Store on the X01 corner, ramen beside it, apartment behind on alley A01.
   plot('B05-P01', [-17, 21, -6, 30.5], 'store', 'N', { frontages: ['N', 'E'], uses: ['便利店'], status: 'occupied', sample: 'store' }),
   plot('B05-P02', [-28, 21, -19, 30.5], 'shop', 'N', { uses: ['拉面店'], status: 'occupied', sample: 'ramen' }),
-  plot('B05-P03', [-37, 21, -28, 30.5], 'shop', 'N', { uses: ['小店铺', '咖啡店'] }),
+  plot('B05-P03', [-37, 21, -28, 30.5], 'shop', 'N', { uses: ['小店铺', '咖啡店'], status: 'occupied', building: 'cafe' }),
   plot('B05-P04', [-46, 21, -37, 30.5], 'shop', 'N', { uses: ['小店铺'] }),
   plot('B05-P05', [-18, 34, -6, 46], 'apartment', 'N', { frontages: ['N', 'E'], uses: ['小公寓'], status: 'occupied', sample: 'apartment' }),
   plot('B05-P06', [-28, 34, -18, 46], 'house', 'N', { uses: ['独栋住宅'] }),
@@ -169,6 +169,26 @@ const samples = [
       { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.9, 0.33, -4.68], max: [-0.47, 1.01, -4.32], ground: [-1.9, -4.68, -0.47, -4.32] } },
     ] },
 ];
+
+// New buildings (P5 on), one per plot, modelled in buildings/<plot>.js. Same placement rule and measured
+// bounds as the samples, kept in their own list so the old samples stay review-only. parts: building =
+// main volume incl. awnings and eaves (must stay in the buildable envelope); attachment = planters,
+// service yard, outdoor units (must stay on the plot); ground = paving and light decals on the plot.
+// shelter = local [x0, z0, x1, z1] of the roof and each awning: the rain never falls under them.
+const buildings = [
+  { id: 'cafe', name: '雨宿り珈琲', plot: 'B05-P03', module: 'B05-P03', transform: { x: -32.5, z: 23, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-2.05, -6.1, 3.55, 0.05], [-1.9, 0, 3.4, 0.97], [-2.5, -3.67, -2, -0.78], [-0.1, -6.45, 1.15, -6.05]],   // roof, street awning, side awning, back-door canopy
+    parts: [
+      { group: 'cafe', role: 'building', localBounds: { min: [-2.62, 0.18, -6.46], max: [3.74, 4.28, 0.97], ground: [-2.11, -6.29, 3.74, 0.24] } },
+      { group: 'cafeFrontE', role: 'attachment', localBounds: { min: [-2.66, 0.18, -0.73], max: [-1.08, 2.16, 0.75], ground: [-2.66, -0.73, -1.08, 0.75] } },
+      { group: 'cafeFrontW', role: 'attachment', localBounds: { min: [0.69, 0.18, 0.1], max: [3.22, 1.25, 1.62], ground: [0.69, 0.1, 3.22, 1.62] } },
+      { group: 'cafeUtility', role: 'attachment', localBounds: { min: [3.5, 0.19, -3.71], max: [3.84, 1.46, -2.76], ground: [3.5, -3.71, 3.84, -2.76] } },
+      { group: 'cafeService', role: 'attachment', localBounds: { min: [-3.39, 0.18, -6.44], max: [-2.11, 1.35, -4.86], ground: [-3.39, -6.44, -2.11, -4.86] } },
+      { group: 'cafeGround', role: 'ground', localBounds: { min: [-3.31, 0.19, -7.5], max: [4.1, 0.23, 2], ground: null } },
+    ] },
+];
+const structures = [...samples, ...buildings];
 
 // Street furniture from the original L-shaped street. Provisional slots in curb/facility bands;
 // P3 finalises signs, lamps and wiring. anchor = local foot of the pole.
@@ -285,13 +305,13 @@ for (const p of plots) {
     return { ...e, x: pt[0], z: pt[1] };
   });
 }
-// Sample entrances take the door position projected onto the front edge.
+// Sample and building entrances take the door position projected onto the front edge.
 const plotById = Object.fromEntries(plots.map(p => [p.id, p]));
 function toWorld(s, x, z) {
   const t = s.transform, k = t.scale ?? SAMPLE_SCALE, c = Math.cos(t.rotY), n = Math.sin(t.rotY);
   return [t.x + k * (x * c + z * n), t.z + k * (-x * n + z * c)];
 }
-for (const s of samples) {
+for (const s of structures) {
   const p = plotById[s.plot], [dx, dz] = toWorld(s, s.door.x, s.door.z), e = p.entrances[0];
   if (e.facing === 'N' || e.facing === 'S') e.x = Math.round(dx * 100) / 100; else e.z = Math.round(dz * 100) / 100;
   e.door = [Math.round(dx * 100) / 100, Math.round(dz * 100) / 100];
@@ -543,7 +563,7 @@ for (const c of channels) for (let s = c.rect[0] + 3; s < c.rect[2] - 2; s += 5 
   puddles.push({ x: s, z: (c.rect[1] + c.rect[3]) / 2 + (prnd() - 0.5) * 0.8, rx: 0.6 + prnd() * 0.9, rz: 0.3 + prnd() * 0.3, on: 'alley' });
 
 const LAYOUT = { BASE, SAMPLE_SCALE, ROAD_TYPES, ALLEY, INTERSECTION, PLOT_TYPES, DIRS, LEVELS, CURB_CUT,
-  roadNodes, roads, alleys, roadSegments, walkways, aprons, blocks, plots, samples,
+  roadNodes, roads, alleys, roadSegments, walkways, aprons, blocks, plots, samples, buildings, structures,
   legacyFurniture, legacyGround, surfaces, crosswalks, islands, curbCuts, CONTROL, MARKING, DRAIN, FURNITURE,
   approaches, markings, gutters, grates, channels, outlets, furniture, poleLines, puddles, corridorRect, toWorld, rect };
 if (typeof module !== 'undefined' && module.exports) module.exports = LAYOUT;
