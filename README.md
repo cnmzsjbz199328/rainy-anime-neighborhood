@@ -60,7 +60,7 @@
 - [统一规格](docs/buildings/BUILDING_SPEC.md)
 - [实施队列](docs/buildings/BUILDING_QUEUE.md)
 - [38 张八视图图库](docs/buildings/GALLERY.md)
-- [下一位 Agent 的实施提示词](docs/buildings/AGENT_START.md)
+- [逐栋实施提示词（通用模板）](docs/buildings/AGENT_START.md)：每轮只需告诉 Agent「读取 docs/buildings/AGENT_START.md 并执行，本轮地块：B05-P04」
 
 下一轮只实现 B05-P04 花店，复用咖啡店的集成方式（buildings/ 模块 + `buildings` 登记 + C12 + building_views）。尺寸、入口和高度以 layout.js 为准，参考图只是外观/结构概念。参考包自检：`node docs/buildings/check_kit.mjs`。
 

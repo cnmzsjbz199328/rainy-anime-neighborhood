@@ -4,7 +4,7 @@
 
 - [统一构建规格](BUILDING_SPEC.md)
 - [逐栋实施队列](BUILDING_QUEUE.md)
-- [下一位 Agent 的完整启动提示词](AGENT_START.md)
+- [逐栋实施提示词（通用模板）](AGENT_START.md)：每轮一句话指定地块即可
 - [最初便利店提示词](ORIGINAL_PROMPT.md)
 - [地块状态清单](catalog.json)
 - [参考图生成提示词](IMAGE_PROMPTS.json)
