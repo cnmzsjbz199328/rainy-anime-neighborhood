@@ -1,11 +1,14 @@
 # 雨夜漫画小城：建筑实施参考包
 
-本目录包含 38 个地块的构建规格与逐栋任务卡。
+38 个地块：35 个待建，3 个现有样板保留审查。图片正在逐栋生成并上传，状态见 catalog.json。
 
 - [统一构建规格](BUILDING_SPEC.md)
 - [逐栋实施队列](BUILDING_QUEUE.md)
-- [下一位 Agent 的启动提示词](AGENT_START.md)
+- [下一位 Agent 的完整启动提示词](AGENT_START.md)
 - [最初便利店提示词](ORIGINAL_PROMPT.md)
-- [地块清单](catalog.json)
+- [地块状态清单](catalog.json)
+- [参考图生成提示词](IMAGE_PROMPTS.json)
+- [任务卡](tasks/README.md)
+- [八视图参考图](references/README.md)
 
-首先只实施 B05-P03 咖啡店，验收后再做花店。图片正在逐栋生成和提交。尺寸与入口以实际 layout.js 为准。
+首先只实现 B05-P03 咖啡店，验收后再做 B05-P04 花店。尺寸与入口以 layout.js 为准，参考图用于外观和空间细节，不是精确工程图。
