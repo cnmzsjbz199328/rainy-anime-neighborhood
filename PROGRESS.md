@@ -11,7 +11,7 @@
 | P3 道路细节与雨夜基础 | 已完成 | 标线、排水、路灯与电杆电线、信号与标志、水洼与倒影、手绘地面纹理 |
 | P4 布局验收与冻结 | 已完成（真机待验证） | 布局 v1 已冻结（docs/layout/LAYOUT_V1.md）；只差 iPad/手机/真实 GPU 的构图与性能实测 |
 
-工作分支：`claude/road-network-layout`（不直接合并到 main）。
+版本控制：直接在 main 上开发，在关键节点（每个阶段完成、每栋新建筑接入）提交一次清晰的 commit。推送 main 会触发 Cloudflare 自动部署，所以只推送检查全部通过的版本。P1–P4 的提交历史已保留在 main 上。
 
 ## P1 本次完成内容
 
@@ -209,7 +209,7 @@
 
 ## 本地运行与检查
 
-- 预览：直接用浏览器打开 `index.html`，或运行 `python3 -m http.server 8000` 后访问 http://localhost:8000。main 已配置 Cloudflare Workers Builds，推送到 main 后自动部署（见 README）；工作分支不会自动发布到正式地址。README 中的 Sites 演示是另外发布的旧版本。
+- 预览：直接用浏览器打开 `index.html`，或运行 `python3 -m http.server 8000` 后访问 http://localhost:8000。main 已配置 Cloudflare Workers Builds，推送到 main 后自动部署（见 README）。README 中的 Sites 演示是另外发布的旧版本。
 - 布局检查：`node tools/measure_samples.mjs`（需要 Playwright 和 Chromium，生成样板俯视贴图并校验实测尺寸），然后运行 `node tools/layout_check.mjs --png`。
 - 实景检查：`node tools/live_topdown.mjs`（实景俯视叠加图），`node tools/views.mjs`（首帧、控制台、交互检查和审查截图）。
 - 冻结的布局坐标与变更规则：`docs/layout/LAYOUT_V1.md`。
