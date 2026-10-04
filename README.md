@@ -13,7 +13,7 @@
 - `index.html`：包含渲染库、布局数据和场景脚本的单文件交付版。
 - `scene.js`：可编辑的场景源码；已有样板按命名分组（store、ramen、apartment 等），便于整体放置。
 - `layout.js`：道路、街区、地块与样板放置的布局数据（坐标约定见文件头）；`buildings` 登记新建筑的放置、实测包围盒与遮雨区。
-- `buildings/<地块>.js`：逐栋新建筑的建模源码（目前 `B05-P03.js` 咖啡店），用 scene.js 提供的同一套墨线、toon、纸纹工具绘制。
+- `buildings/<地块>.js`：逐栋新建筑的建模源码（目前 `B05-P03.js` 咖啡店、`B05-P04.js` 花店），用 scene.js 提供的同一套墨线、toon、纸纹工具绘制。
 - `tools/`：布局与浏览器检查工具。`measure_samples.mjs` 在 Chromium 中实测样板与新建筑尺寸；`layout_check.mjs` 检查布局（C12 检查新建筑实测模型）并生成 `docs/layout/` 下的俯视检查图和报告；`building_views.mjs` 输出新建筑的八视图实景截图与渲染成本；`live_topdown.mjs` 渲染实景俯视并叠加布局线；`views.mjs` 检查首帧、控制台和交互，并输出审查截图。
 - `PROGRESS.md`：分阶段进度、检查结果和待验证项。
 - `docs/layout/LAYOUT_V1.md`：冻结的首版道路与地块坐标，以及新增建筑时的变更规则。
@@ -54,13 +54,13 @@
 
 ## 下一阶段：逐栋建筑构建
 
-建筑设计参考包已就绪：覆盖 38 个地块，含 38 张任务卡与 38 张八视图设计板。B05-P03 咖啡店已实现（[实际模型截图](docs/buildings/screenshots/B05-P03/)），34 个地块待建，3 个已有样板仅审查保留。
+建筑设计参考包已就绪：覆盖 38 个地块，含 38 张任务卡与 38 张八视图设计板。B05-P03 咖啡店（[实际模型截图](docs/buildings/screenshots/B05-P03/)）与 B05-P04 花店（[实际模型截图](docs/buildings/screenshots/B05-P04/)）已实现，33 个地块待建，3 个已有样板仅审查保留。
 
 - [建筑参考包入口](docs/buildings/README.md)
 - [统一规格](docs/buildings/BUILDING_SPEC.md)
 - [实施队列](docs/buildings/BUILDING_QUEUE.md)
 - [38 张八视图图库](docs/buildings/GALLERY.md)
-- [逐栋实施提示词（通用模板）](docs/buildings/AGENT_START.md)：每轮只需告诉 Agent「读取 docs/buildings/AGENT_START.md 并执行，本轮地块：B05-P04」
+- [逐栋实施提示词（通用模板）](docs/buildings/AGENT_START.md)：每轮只需告诉 Agent「读取 docs/buildings/AGENT_START.md 并执行，本轮地块：B03-P01」
 
-下一轮只实现 B05-P04 花店，复用咖啡店的集成方式（buildings/ 模块 + `buildings` 登记 + C12 + building_views）。尺寸、入口和高度以 layout.js 为准，参考图只是外观/结构概念。参考包自检：`node docs/buildings/check_kit.mjs`。
+下一轮只实现 B03-P01 转角面包店，复用咖啡店/花店的集成方式（buildings/ 模块 + `buildings` 登记 + C12 + building_views）。尺寸、入口和高度以 layout.js 为准，参考图只是外观/结构概念。参考包自检：`node docs/buildings/check_kit.mjs`。
 

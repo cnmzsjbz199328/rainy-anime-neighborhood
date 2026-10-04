@@ -154,7 +154,7 @@
 
 ## B05-P04 · 邻里花店
 
-[构建任务卡](tasks/B05-P04.md) · 待建地块
+[构建任务卡](tasks/B05-P04.md) · 已实现，实际模型截图见 [screenshots/B05-P04](screenshots/B05-P04/)
 
 ![B05-P04 邻里花店 八视图](references/B05-P04.jpg)
 

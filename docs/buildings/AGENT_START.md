@@ -135,5 +135,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | 地块 | 名称 | 提交 | 截图 |
 | --- | --- | --- | --- |
 | B05-P03 | 雨宿り珈琲 咖啡店（参考实现） | 8095761 | [screenshots/B05-P03](screenshots/B05-P03/) |
+| B05-P04 | はなや しずく 邻里花店 | 见 PROGRESS.md「P5 B05-P04」 | [screenshots/B05-P04](screenshots/B05-P04/) |
 
 每轮完成后在此表追加一行。
