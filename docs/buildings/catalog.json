@@ -60,8 +60,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "949520e0da4753e4f5a2ac124cf44fe9c77847ab9ca22aec17d5e9e34d2755c2"
   },
   {
     "id": "B02-P01",
@@ -116,8 +121,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "828b51a0a3aa09a54bd1baa51a0881d7e88eda73671d2403d07a98851550e181"
   },
   {
     "id": "B02-P02",
@@ -171,8 +181,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "bdebcd1473232fc9cb5a788f44f4ab2bc7b6c4e2b1e202c51d023a3f8c6edb76"
   },
   {
     "id": "B02-P03",
@@ -226,8 +241,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "06c0ef7564c91e2b51539e7f3a65fa445e8855458f87cd0e4ddd29fc4833c1c1"
   },
   {
     "id": "B02-P04",
@@ -281,8 +301,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "b7d4d94003040455c422d23e54048e942d7dd12ac6a1f410168ec06db33f5232"
   },
   {
     "id": "B02-P05",
@@ -337,8 +362,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "952f066650361a44939dc79292dfdc5c106939a4b5170e65254c338c538a4e05"
   },
   {
     "id": "B02-P06",
@@ -392,8 +422,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "e6af932b49cbca7af8c8369a9549b394ae2f8c0a9dfb7bdab1fb8786998262c8"
   },
   {
     "id": "B02-P07",
@@ -447,8 +482,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "047ead503b65fb502b669bc1337a880d354a7097bacc23dcabe16e6f464dad2d"
   },
   {
     "id": "B02-P08",
@@ -502,8 +542,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "d25ad55e30ba5c2e624efc122f768deda249096e55b34a16e6b58aedb01e128d"
   },
   {
     "id": "B03-P01",
@@ -558,8 +603,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "599914d6ab905ae071a1d00a8ab292ac8e51273aa7ec6c8ee14f0f5401dfa72f"
   },
   {
     "id": "B03-P02",
@@ -613,8 +663,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "4ff7b7b0afa39d996f1805622800405644994b9341f75934abe61135893a3495"
   },
   {
     "id": "B03-P03",
@@ -668,8 +723,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "3fbc16e577b87e1ab935a72aee54b1b5134976f6a32446b5a65ed760b53c778b"
   },
   {
     "id": "B03-P04",
@@ -723,8 +783,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "e0bce4e90fa6e68ac6ad26daf649d5ba1aaa39a7925f662e3cb75005b894a920"
   },
   {
     "id": "B03-P05",
@@ -778,8 +843,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "ffac8c5615ca34080c805b4890f9029f3ef465ff65f192db71ff83be8df0672a"
   },
   {
     "id": "B03-P06",
@@ -834,8 +904,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "9868156886d15fa7ecfabc9ed87d1b110feb73db1f808fdcd4b5f744c5833514"
   },
   {
     "id": "B03-P07",
@@ -889,8 +964,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "094c68ff449e54e881b4fd527e3279f9272496782b683e22ee107448039813c6"
   },
   {
     "id": "B03-P08",
@@ -944,8 +1024,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "2da932da2b08d6198ac0d11287ca2156ce6e8e8b33d7525c42a8a1a258bc250f"
   },
   {
     "id": "B04-P01",
@@ -1000,8 +1085,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "312f896c8c722cc65ff8a106e1dc6380f4658cae71333b83bc46188e3a3591fb"
   },
   {
     "id": "B04-P02",
@@ -1055,8 +1145,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "c19d6fbb9e7b140ba471e9cb8f78fb9bd7af5ee252795c66c6109c5b19a35aba"
   },
   {
     "id": "B04-P03",
@@ -1112,8 +1207,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "77f077a88b8b5e6e6f27b6e58ad8a2d90aa9ec4a3e94071bdc313e360bad1f5e"
   },
   {
     "id": "B04-P04",
@@ -1168,8 +1268,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "08c54b47812e66741adcf1fc97b919a2658f5ce6b397b1649bed7a8038d8b5df"
   },
   {
     "id": "B04-P05",
@@ -1207,7 +1312,7 @@
     "dimensions": "7.5×6 主体；1.5×2.5 自行车区",
     "style": "底层商业玻璃、上层淡灰墙与暖木阳台、低矮屋顶",
     "exterior": "独立住宅入口、店铺入口、阳台、空调与管道、自行车棚、后门",
-    "interior": "底层功能商店；二层起居厨房；三层卧室；独立楼梯、每层楼板、住宅信箱",
+    "interior": "底层文具店：纸笔分类货架、笔筒、练习本架、收银柜、包装台、后仓；二层起居厨房，三层卧室。 住宅有独立楼梯和每层楼板。",
     "structure": "商住入口分开，住宅楼梯贯通；后勤和停车必须留在退界空间内",
     "animation": "底层暖窗、上层部分亮窗、雨滴与檐水",
     "variantEnglish": "",
@@ -1223,8 +1328,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "ad962116d32e8c4675e2395fc834a50ce1667e199aa2d8d39464a9d3e6a128ca"
   },
   {
     "id": "B05-P01",
@@ -1283,8 +1393,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "existing-review-only"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "existing-review-only",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "619a7338505b4df1fe657ab9c6df82d158ae93c41e33c7f6b7c60d6bb6f984ce"
   },
   {
     "id": "B05-P02",
@@ -1342,8 +1457,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "existing-review-only"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "existing-review-only",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "ff4aa2f62ccb805e57128833d3f6426f400c8087864fcc4e4540e3cbb633567e"
   },
   {
     "id": "B05-P03",
@@ -1397,8 +1517,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "890d1036f27e849cbf4a3d58b1110420e5fe1ed070225d5bca73d118a578c457"
   },
   {
     "id": "B05-P04",
@@ -1452,8 +1577,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "a12525719c721112b50eb1d879e41b4a80865b96a53e517e848a7afa1ac4b66b"
   },
   {
     "id": "B05-P05",
@@ -1512,8 +1642,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "existing-review-only"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "existing-review-only",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "eb706864a7e24a713f516b5f1a167c18ffb03f1f80a6e0ff9d10f6782abff1a8"
   },
   {
     "id": "B05-P06",
@@ -1567,8 +1702,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "440cfa11bdc5284a4152ce430df71702eaf8b4546b76bab8b9849dce31f76310"
   },
   {
     "id": "B05-P07",
@@ -1623,8 +1763,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "76954ec25b08af3eff4e9ed60830002d71b0c936346703dd9009634ba882abf6"
   },
   {
     "id": "B05-P08",
@@ -1679,8 +1824,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "4908df73131aaf4675904cf6ad37b165877990b7aacb768c2d8952b5969100e3"
   },
   {
     "id": "B06-P01",
@@ -1719,7 +1869,7 @@
     "dimensions": "7.5×6 主体；1.5×2.5 自行车区",
     "style": "底层商业玻璃、上层淡灰墙与暖木阳台、低矮屋顶",
     "exterior": "独立住宅入口、店铺入口、阳台、空调与管道、自行车棚、后门",
-    "interior": "底层功能商店；二层起居厨房；三层卧室；独立楼梯、每层楼板、住宅信箱",
+    "interior": "底层药店：非处方商品货架、处方服务柜台、后部封闭药品柜、办公桌、药品冷藏柜、小等候椅；二层起居厨房，三层卧室。 住宅有独立楼梯和每层楼板。",
     "structure": "商住入口分开，住宅楼梯贯通；后勤和停车必须留在退界空间内",
     "animation": "底层暖窗、上层部分亮窗、雨滴与檐水",
     "variantEnglish": "",
@@ -1735,8 +1885,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "6742a15ba9f77b8db30421d951443c32427d6701e318baed4cb433498cfaf29f"
   },
   {
     "id": "B06-P02",
@@ -1774,7 +1929,7 @@
     "dimensions": "7.5×6 主体；1.5×2.5 自行车区",
     "style": "底层商业玻璃、上层淡灰墙与暖木阳台、低矮屋顶",
     "exterior": "独立住宅入口、店铺入口、阳台、空调与管道、自行车棚、后门",
-    "interior": "底层功能商店；二层起居厨房；三层卧室；独立楼梯、每层楼板、住宅信箱",
+    "interior": "底层理发店：两张理发椅、镜面工作台、洗头躺椅与水槽、毛巾柜、工具推车、消毒柜、收银与等候座；二层起居厨房，三层卧室。 住宅有独立楼梯和每层楼板。",
     "structure": "商住入口分开，住宅楼梯贯通；后勤和停车必须留在退界空间内",
     "animation": "底层暖窗、上层部分亮窗、雨滴与檐水",
     "variantEnglish": "",
@@ -1790,8 +1945,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "b9c3ba0c5f7eafa3f4eb054d96f6cd29c4cd7e00a56d0c49618046e5da97afcc"
   },
   {
     "id": "B06-P03",
@@ -1829,7 +1989,7 @@
     "dimensions": "7.5×6 主体；1.5×2.5 自行车区",
     "style": "底层商业玻璃、上层淡灰墙与暖木阳台、低矮屋顶",
     "exterior": "独立住宅入口、店铺入口、阳台、空调与管道、自行车棚、后门",
-    "interior": "底层功能商店；二层起居厨房；三层卧室；独立楼梯、每层楼板、住宅信箱",
+    "interior": "底层小文具店：纸笔货架、杂志小架、收银台、包装台与小后仓；二层起居厨房，三层卧室。公交候车区不可占用。 住宅有独立楼梯和每层楼板。",
     "structure": "商住入口分开，住宅楼梯贯通；后勤和停车必须留在退界空间内",
     "animation": "底层暖窗、上层部分亮窗、雨滴与檐水",
     "variantEnglish": "",
@@ -1845,8 +2005,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "aaa32e8903ffbb4b0cf972445e0e8915eeac3e27a219f0edbd2b587ac0079fa2"
   },
   {
     "id": "B06-P04",
@@ -1884,7 +2049,7 @@
     "dimensions": "7.5×6 主体；1.5×2.5 自行车区",
     "style": "底层商业玻璃、上层淡灰墙与暖木阳台、低矮屋顶",
     "exterior": "独立住宅入口、店铺入口、阳台、空调与管道、自行车棚、后门",
-    "interior": "底层功能商店；二层起居厨房；三层卧室；独立楼梯、每层楼板、住宅信箱",
+    "interior": "底层修理铺：自行车维修架、工作台、工具墙、零件抽屉、轮胎架、接待柜和后仓；二层起居厨房，三层卧室。 住宅有独立楼梯和每层楼板。",
     "structure": "商住入口分开，住宅楼梯贯通；后勤和停车必须留在退界空间内",
     "animation": "底层暖窗、上层部分亮窗、雨滴与檐水",
     "variantEnglish": "",
@@ -1900,8 +2065,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "cc5210f0f019cd3b1474e7f7e5e442dd35ae48a0931e4aaf50ced5da46387001"
   },
   {
     "id": "B06-P05",
@@ -1956,8 +2126,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "b61471da34975b357c7bbf84fe25cfe5fbe5027340a298c26c471a7e036e2e61"
   },
   {
     "id": "B06-P06",
@@ -2011,8 +2186,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "5b3438e42f54857452c697c79138da47f1787395eed62c3c58e1f1e0d22b1e92"
   },
   {
     "id": "B06-P07",
@@ -2066,8 +2246,13 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "acf9ed0629f10c0c12f7d344328800b4cd0ffec82af90a58b330a3e2c969da0a"
   },
   {
     "id": "B06-P08",
@@ -2121,7 +2306,12 @@
       "rainy-front-right",
       "rear-left"
     ],
-    "imageStatus": "pending",
-    "implementationStatus": "not-started"
+    "imageStatus": "generated-reviewed-concept",
+    "implementationStatus": "not-started",
+    "imageSize": [
+      1536,
+      1024
+    ],
+    "imageSha256": "f03ed52277cc3058456d86ef47d0b25ddab0d4d48840d3856a2a9cc26e4975f5"
   }
 ]
