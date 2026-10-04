@@ -50,3 +50,16 @@
 ## 验证状态
 
 已在无头 Chromium（SwiftShader 软件 WebGL）中检查：首帧渲染、无控制台错误，旋转、缩放、平移及其边界，降雨、涟漪和信号灯动画；布局检查 C1–C11 全部通过。尚未在真实 GPU、iPad/手机上验证视觉效果和性能。道路建设的阶段进度见 PROGRESS.md。
+
+## 下一阶段：逐栋建筑构建
+
+建筑设计参考包已就绪：覆盖 38 个地块，含 38 张任务卡与 38 张八视图设计板。35 个地块待建，3 个已有样板仅审查保留；建筑实现尚未开始。
+
+- [建筑参考包入口](docs/buildings/README.md)
+- [统一规格](docs/buildings/BUILDING_SPEC.md)
+- [实施队列](docs/buildings/BUILDING_QUEUE.md)
+- [38 张八视图图库](docs/buildings/GALLERY.md)
+- [下一位 Agent 的实施提示词](docs/buildings/AGENT_START.md)
+
+先只实现 B05-P03 咖啡店，验收后再做 B05-P04 花店。尺寸、入口和高度以 layout.js 为准，参考图只是外观/结构概念。参考包自检：`node docs/buildings/check_kit.mjs`。
+

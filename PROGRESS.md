@@ -213,3 +213,16 @@
 - 布局检查：`node tools/measure_samples.mjs`（需要 Playwright 和 Chromium，生成样板俯视贴图并校验实测尺寸），然后运行 `node tools/layout_check.mjs --png`。
 - 实景检查：`node tools/live_topdown.mjs`（实景俯视叠加图），`node tools/views.mjs`（首帧、控制台、交互检查和审查截图）。
 - 冻结的布局坐标与变更规则：`docs/layout/LAYOUT_V1.md`。
+
+## 建筑阶段准备（P5 设计参考包，规格就绪，代码待建）
+
+2026-10-05（Australia/Adelaide）：新增 docs/buildings/；保留原始便利店提示词，并将细节标准扩展到社区，融合手绘漫画墨线、淡彩纸纹与赛璐璐明暗。
+
+- 38 个地块一一对应任务卡、生图提示词及八视图板，含四立面、屋顶、室内剖视与两个斜视；35 个地块待建，3 个旧样板不自动重建。
+- 每栋任务指定用途、边界、可建包络、入口、朝向、最大高度、室内外功能与局部动画；所有坐标保持布局 v1。
+- 队列先 B05-P03 咖啡店，再 B05-P04 花店，然后商店、公共设施、商住楼、住宅、学校。一次只实施一个地块。
+- 图像为 AI 新生成概念，不是实景截图或工程图。已查看用途和风格；跨视图小细节、招牌文字等裁决见 REFERENCE_REVIEW.md。
+- 参考包检查通过：38 地块、38 任务卡、38 JPEG、38 生图提示词；394 个本地 Markdown 链接完整。检查也核对任务数据与实际 layout.js。命令 `node docs/buildings/check_kit.mjs`。
+- 本次未修改 scene.js、layout.js、build.py 或 index.html，未进行建筑建模；真机性能欠项继续保留。
+- 下一位 Agent 完整指令：[AGENT_START.md](docs/buildings/AGENT_START.md)。首栋规格：[B05-P03](docs/buildings/tasks/B05-P03.md)，参考：[八视图](docs/buildings/references/B05-P03.jpg)。
+
