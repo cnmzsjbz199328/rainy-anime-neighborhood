@@ -16,7 +16,7 @@ fs.mkdirSync(outDir, { recursive: true });
 
 export const VIEWS = {
   far:          { yaw: 2.5,  pitch: 0.82, dist: 140, target: [0, 0, 0] },
-  storeCorner:  { yaw: 2.75, pitch: 0.32, dist: 14,  target: [-9, 1.4, 22] },
+  storeCorner:  { yaw: 2.75, pitch: 0.2,  dist: 13,  target: [-9, 1.4, 22] },
   intersection: { yaw: 0.9,  pitch: 0.2,  dist: 16,  target: [0, 0.3, 15] },
   top:          { yaw: 0,    pitch: 1.45, dist: 150, target: [0, 0, 0] },
 };
@@ -54,6 +54,20 @@ await page.evaluate(() => window.__scene.view.set({ dist: 1e4 }));
 results.push(['缩放上限 150', (await view()).dist === 150]);
 await page.evaluate(() => window.__scene.view.set({ dist: 0 }));
 results.push(['缩放下限 9', (await view()).dist === 9]);
+
+// Animation: rain falls, ripples grow, the X01 signals change phase (30 s cycle; sample over ~20 s).
+const anim = () => page.evaluate(() => {
+  const { scene, groups } = window.__scene, rain = scene.children.find(c => c.isLineSegments);
+  const rings = []; groups.wetStreet.traverse(o => { if (o.geometry && o.geometry.type === 'RingGeometry') rings.push(o.scale.x); });
+  const lamps = []; groups.streetFurniture.traverse(o => { if (o.geometry && o.geometry.type === 'SphereGeometry') lamps.push(o.material.color.getHexString()); });
+  return { rainY: rain.geometry.attributes.position.array[1], rings: rings.slice(0, 5), lamps: lamps.join(',') };
+});
+const a0 = await anim(); await page.waitForTimeout(4000); const a1 = await anim();
+results.push(['降雨动画（雨滴高度变化）', a0.rainY !== a1.rainY]);
+results.push(['水洼涟漪动画', a0.rings.some((v, i) => Math.abs(v - a1.rings[i]) > 1e-4)]);
+const seen = new Set([a0.lamps, a1.lamps]);
+for (let i = 0; i < 6 && seen.size < 2; i++) { await page.waitForTimeout(3500); seen.add((await anim()).lamps); }
+results.push(['X01 信号灯相位切换', seen.size >= 2]);
 
 for (const [name, v] of Object.entries(VIEWS)) {
   await page.evaluate(v => window.__scene.view.set(v), v);

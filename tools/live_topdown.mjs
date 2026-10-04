@@ -65,10 +65,13 @@ function overlay(win, ppu) {
   for (const k of L.curbCuts) o += rect(k.rect, `fill="none" stroke="${k.kind === 'ramp' ? '#ff6ad5' : '#ff9a3c'}" stroke-width="1.6"`);
   for (const a of L.alleys) o += rect(a.rect, `fill="none" stroke="#e8c27a" stroke-width="1"`);
   for (const s of L.samples) for (const part of s.parts) o += rect(sampleRect(s, [part.localBounds.min[0], part.localBounds.min[2], part.localBounds.max[0], part.localBounds.max[2]]), `fill="none" stroke="${part.role === 'building' ? '#ff3b30' : '#ff9500'}" stroke-width="1.6" ${part.role === 'building' ? '' : 'stroke-dasharray="3 2"'}`);
+  const furnCol = { lamp: '#ffe066', 'alley-lamp': '#fff3b0', pole: '#9ad0ff', signal: '#5dff9e', 'stop-sign': '#ff5a5a', legacy: '#c38bff' };
+  for (const f of L.furniture || []) o += `<circle cx="${X(f.x)}" cy="${Z(f.z)}" r="${Math.max(2.5, ppu * .18)}" fill="${furnCol[f.kind]}" stroke="#000" stroke-width=".8"/>`;
+  for (const g of L.grates || []) o += `<rect x="${(+X(g.x) - 2).toFixed(1)}" y="${(+Z(g.z) - 2).toFixed(1)}" width="4" height="4" fill="none" stroke="#00e5ff" stroke-width="1.2"/>`;
   for (const f of L.legacyFurniture) o += `<circle cx="${X(f.slot.x)}" cy="${Z(f.slot.z)}" r="${Math.max(3, ppu * .25)}" fill="none" stroke="#c38bff" stroke-width="2"/>`;
   return o;
 }
-const legend = [['#ffd34d', '6 4', 'layout.js 路缘线（人行岛边界与转角圆弧）'], ['#ffffff', '', '地块边界'], ['#b6f2a0', '3 3', '可建范围'], ['#ff6ad5', '', '过街坡道'], ['#ff9a3c', '', '车辆降坡'], ['#ff3b30', '', '样板建筑实测包围盒'], ['#ff9500', '3 2', '附属设施包围盒'], ['#c38bff', '', '原街道设施位置（圆圈）']];
+const legend = [['#ffd34d', '6 4', 'layout.js 路缘线（人行岛边界与转角圆弧）'], ['#ffffff', '', '地块边界'], ['#b6f2a0', '3 3', '可建范围'], ['#ff6ad5', '', '过街坡道'], ['#ff9a3c', '', '车辆降坡'], ['#ff3b30', '', '样板建筑实测包围盒'], ['#ff9500', '3 2', '附属设施包围盒'], ['#c38bff', '', '原街道设施位置（圆圈）'], ['#ffe066', '', '路灯/巷灯（点）'], ['#9ad0ff', '', '电杆（点）'], ['#5dff9e', '', '信号灯（点）'], ['#ff5a5a', '', '停车让行标志（点）'], ['#00e5ff', '', '雨水篦子（方框）']];
 let html = `<html><body style="margin:0;background:#f4f1ea;font-family:'Noto Sans CJK SC','Noto Sans SC',sans-serif">`;
 let width = 0, height = 0;
 for (const v of VIEWS) {

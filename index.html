@@ -76,14 +76,23 @@ const blocks = [
 ];
 
 // Setbacks per edge role; size = plan reference (frontage width × depth) used as a soft check.
+// fit = a typical candidate building (frontage width × depth) plus the ancillary space it needs on
+// the plot (parking reached from a frontage, service yard, bike shelter...). The P4 check packs
+// each reserved plot with its candidate to prove the reserved land is really buildable.
 const PLOT_TYPES = {
   store:     { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 9,  size: [[10, 14], [9, 14]] },
-  shop:      { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 9,  size: [[6, 9], [8, 12]] },
-  mixed:     { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 12, size: [[8, 12], [8, 14]] },
-  house:     { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 9,  size: [[8, 12], [10, 16]] },
-  apartment: { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 12, size: [[12, 18], [12, 20]] },
-  civic:     { setback: { front: 2, side: 1, rear: 1 },     maxHeight: 9,  size: [[8, 16], [8, 14]] },
-  school:    { setback: { front: 3, side: 3, rear: 3 },     maxHeight: 14, size: [[30, 44], [20, 30]] },
+  shop:      { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 9,  size: [[6, 9], [8, 12]],
+    fit: { building: [5.5, 6.5], annexes: [[1.2, 1.5, '后勤/垃圾']] } },
+  mixed:     { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 12, size: [[8, 12], [8, 14]],
+    fit: { building: [7.5, 6], annexes: [[1.5, 2.5, '自行车']] } },
+  house:     { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 9,  size: [[8, 12], [10, 16]],
+    fit: { building: [6.5, 7], annexes: [[2.5, 5, '停车位']] } },
+  apartment: { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 12, size: [[12, 18], [12, 20]],
+    fit: { building: [10, 8], annexes: [[2, 4, '自行车棚'], [1.5, 2, '垃圾站']] } },
+  civic:     { setback: { front: 2, side: 1, rear: 1 },     maxHeight: 9,  size: [[8, 16], [8, 14]],
+    fit: { building: [6, 6], annexes: [[2.5, 5, '停车位']] } },
+  school:    { setback: { front: 3, side: 3, rear: 3 },     maxHeight: 14, size: [[30, 44], [20, 30]],
+    fit: { building: [28, 8], annexes: [[24, 9, '操场'], [6, 4, '后勤/车库']] } },
   park:      { setback: { front: 0.5, side: 0.5, rear: 0.5 }, maxHeight: 4, size: [[10, 24], [8, 20]] },
 };
 
@@ -119,8 +128,8 @@ const plots = [
   plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'] }),
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'] }),
   // B04: koban on the main corner, clinic, a pocket park behind the eastbound bus stop.
-  plot('B04-P01', [6, 0, 14, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'] }),
-  plot('B04-P02', [14, 0, 26, 9], 'civic', 'S', { uses: ['诊所'] }),
+  plot('B04-P01', [6, 0, 16, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'], note: '10 宽：转角双退界后仍能放下交番与一个巡逻车位' }),
+  plot('B04-P02', [16, 0, 26, 9], 'civic', 'S', { uses: ['诊所'] }),
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35 }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'] }),
   plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'] }),
@@ -131,8 +140,8 @@ const plots = [
   plot('B05-P04', [-46, 21, -37, 30.5], 'shop', 'N', { uses: ['小店铺'] }),
   plot('B05-P05', [-18, 34, -6, 46], 'apartment', 'N', { frontages: ['N', 'E'], uses: ['小公寓'], status: 'occupied', sample: 'apartment' }),
   plot('B05-P06', [-28, 34, -18, 46], 'house', 'N', { uses: ['独栋住宅'] }),
-  plot('B05-P07', [-37, 34, -28, 46], 'house', 'N', { uses: ['独栋住宅'] }),
-  plot('B05-P08', [-46, 34, -37, 46], 'house', 'N', { uses: ['独栋住宅'] }),
+  plot('B05-P07', [-37, 34, -28, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -29.5, note: '面宽 9：入口靠东，停车位沿巷' }),
+  plot('B05-P08', [-46, 34, -37, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -38.5, note: '面宽 9：入口靠东，停车位沿巷' }),
   // B06: shop-houses on the main street (BS01 in front of P03), houses on alley A02.
   plot('B06-P01', [6, 21, 16, 30.5], 'mixed', 'N', { frontages: ['N', 'W'], uses: ['商住', '药店'] }),
   plot('B06-P02', [16, 21, 26, 30.5], 'mixed', 'N', { uses: ['商住'] }),
@@ -161,13 +170,13 @@ const samples = [
     door: { x: 6.9, z: 1.04 }, frontDir: [0, 1],
     parts: [
       { group: 'ramen', role: 'building', localBounds: { min: [5.09, 0.29, -3.61], max: [8.71, 3.12, 1.79], ground: [5.24, -3.53, 8.56, 1.1] } },
-      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.47, 0.33, 2.05], max: [7.9, 1.03, 2.45], ground: [5.47, 2.05, 7.9, 2.45] } },
+      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.46, 0.33, 2.06], max: [7.93, 1, 2.45], ground: [5.46, 2.06, 7.93, 2.45] } },
     ] },
   { id: 'apartment', name: 'こもれび荘', plot: 'B05-P05', transform: { x: -11.4, z: 33, rotY: Math.PI },
     door: { x: 0.9, z: -4.88 }, frontDir: [0, 1],
     parts: [
       { group: 'apartment', role: 'building', localBounds: { min: [-2.68, 0.18, -8.41], max: [3.91, 6.2, -4.19], ground: [-2.68, -8.26, 3.75, -4.8] } },
-      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.87, 0.33, -4.72], max: [-0.46, 1.02, -4.35], ground: [-1.87, -4.72, -0.46, -4.35] } },
+      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.9, 0.33, -4.68], max: [-0.47, 1.01, -4.32], ground: [-1.9, -4.68, -0.47, -4.32] } },
     ] },
 ];
 
@@ -177,13 +186,14 @@ const legacyFurniture = [
   { group: 'streetLamp',    anchor: [-3.7, 2.6],   slot: { road: 'R01', x: -6.6,  z: 18.75, rotY: Math.PI },      note: '便利店街角路灯（斑马线与转角圆弧之外）' },
   { group: 'guardRail',     anchor: [-0.85, 3.13], slot: { road: 'R01', x: -12.5, z: 18.75, rotY: Math.PI },      note: '店前护栏' },
   { group: 'trafficSignal', anchor: [5.1, -4.75],  slot: { road: 'R02', x: -3.5,  z: 22,    rotY: 0 },            note: 'X01 南向北进口信号' },
-  { group: 'utilityPole',   anchor: [-4.7, -3.85], slot: { road: 'R02', x: -3.5,  z: 29.5,  rotY: -Math.PI / 2 }, note: 'A01 巷口电杆，止まれ朝向出巷车辆' },
+  { group: 'utilityPole',   anchor: [-4.7, -3.85], slot: { road: 'R02', x: -3.5,  z: 29.5,  rotY: -Math.PI / 2 }, note: 'A01 巷口电杆，止まれ朝向出巷车辆',
+    wireAttach: [[-5.2, 5.49, -3.85], [-4.7, 5.49, -3.85], [-4.2, 5.49, -3.85]] },   // insulator tops (local); P3 wires start here
 ];
 // Original ground pieces that the new road network replaces (P2) or regenerates (P3).
 const legacyGround = [
   { group: 'base',         action: 'P2 替换为 96×96 底座' },
   { group: 'legacyGround', action: 'P2 移除：旧 L 形街道、地台、路缘、斑马线和小巷铺装由道路网络替代' },
-  { group: 'wetGround',    action: 'P3 按新道路重新生成水洼与反光' },
+  { group: 'wetGround',    action: 'P3 已移除，水洼、涟漪与反光由 wetStreet 按新道路生成' },
 ];
 
 // ---- Derived geometry (pure functions of the data above) ----
@@ -349,9 +359,203 @@ for (const p of plots) p.entrances.filter(e => e.kind === 'vehicle').forEach((e,
   curbCuts.push(cut(`${p.id}-DW${i + 1}`, 'driveway', r.id, -sgn, at - CURB_CUT.driveway / 2, at + CURB_CUT.driveway / 2, ROAD_TYPES[r.type].band));
 });
 
+// ---- P3: markings, drainage, street furniture and puddles ----
+// Japan drives on the left. Each intersection arm has one approach lane (the half of the carriageway
+// that leads into the junction). X01 is signalised; at X02 the branch road R02 has priority and R03 stops.
+const CONTROL = { X01: { kind: 'signal' }, X02: { kind: 'priority', major: 'R02' } };
+const MARKING = { line: 0.15, stop: 0.45, stopGap: 1, stripe: 0.45, stripeGap: 0.45, stripeInset: 0.25,
+  dash: [3, 3], solidBefore: 12, edgeInset: 0.25, diamond: [1.2, 3], diamondBefore: 10, text: [2.4, 2.2], textBefore: 2.6 };
+const cwHalf = r => ROAD_TYPES[r.type].carriageway / 2;
+const alongRect = (r, a0, a1, s0, s1) =>   // a = across offset from the centreline, s = along
+  band(r, Math.min(a0, a1), Math.max(a0, a1), Math.min(s0, s1), Math.max(s0, s1));
+const approaches = [];
+for (const n of roadNodes.filter(n => n.kind === 'intersection')) for (const r of roads) {
+  if (r.at !== (r.axis === 'x' ? n.z : n.x)) continue;
+  const o = roads.find(q => q.axis !== r.axis && q.at === (r.axis === 'x' ? n.x : n.z)), c = o.at;
+  const edge = cwHalf(o) + INTERSECTION.curbRadius + INTERSECTION.crosswalk.gap + INTERSECTION.crosswalk.width;
+  const ctl = CONTROL[n.name], control = ctl.kind === 'signal' ? 'signal' : r.id === ctl.major ? 'priority' : 'stop';
+  for (const side of [-1, 1]) {   // side of the junction the traffic comes from (along the road axis)
+    const arm = r.axis === 'x' ? (side < 0 ? 'W' : 'E') : (side < 0 ? 'N' : 'S');
+    approaches.push({ id: `${n.name}-${arm}`, node: n.id, road: r.id, arm, side, at: c, edge, control,
+      lane: r.axis === 'x' ? side : -side,                  // across sign of the approach half
+      heading: r.axis === 'x' ? [-side, 0] : [0, -side],   // direction of travel
+      stop: c + side * (edge + MARKING.stopGap),            // stop-line face nearest the junction
+      crosswalk: `${n.name}-CW-${arm}` });
+  }
+}
+const markings = [];   // { id, kind, rect } or { id, kind, x, z, heading, size }
+for (const a of approaches) {
+  const r = roadById[a.road], h = cwHalf(r);
+  if (a.control !== 'priority') markings.push({ id: `${a.id}-STOP`, kind: 'stop-line', rect: alongRect(r, 0, a.lane * h, a.stop, a.stop + a.side * MARKING.stop) });
+  const lc = r.at + a.lane * h / 2, pt = s => r.axis === 'x' ? [s, lc] : [lc, s];
+  const ds = a.stop + a.side * (MARKING.stop + MARKING.diamondBefore), clear = approaches.every(b => b.road !== a.road || b.node === a.node || Math.abs(ds - b.at) > b.edge + 4);
+  if (Math.abs(ds) < BASE.half - 3 && clear) { const [x, z] = pt(ds); markings.push({ id: `${a.id}-DIA`, kind: 'diamond', x, z, heading: a.heading, size: MARKING.diamond }); }
+  if (a.control === 'stop') { const [x, z] = pt(a.stop + a.side * (MARKING.stop + MARKING.textBefore)); markings.push({ id: `${a.id}-TXT`, kind: 'text', text: '止まれ', x, z, heading: a.heading, size: MARKING.text }); }
+}
+for (const c of crosswalks.filter(c => c.kind === 'zebra')) {   // stripes run with the traffic, carriageway only
+  const r = roadById[c.road], h = cwHalf(r), [s0, s1] = r.axis === 'x' ? [c.rect[0], c.rect[2]] : [c.rect[1], c.rect[3]];
+  let k = 0;
+  for (let o = -h + MARKING.stripeInset; o + MARKING.stripe <= h - MARKING.stripeInset + 1e-6; o += MARKING.stripe + MARKING.stripeGap)
+    markings.push({ id: `${c.id}-Z${++k}`, kind: 'zebra', rect: alongRect(r, o, o + MARKING.stripe, s0, s1) });
+}
+for (const r of roads) {   // centre line: dashed, solid for the last stretch before each junction
+  const h = cwHalf(r), mine = approaches.filter(a => a.road === r.id);
+  const gapsAt = [...new Set(mine.map(a => a.at))].map(c => { const as = mine.filter(a => a.at === c), reach = Math.max(...as.map(a => a.edge + (a.control === 'priority' ? 0 : MARKING.stopGap + MARKING.stop))); return [c - reach, c + reach]; });
+  for (const [s0, s1] of gaps(gapsAt)) {
+    const solid0 = gapsAt.some(g => Math.abs(g[1] - s0) < 1e-6) ? s0 + MARKING.solidBefore : s0, solid1 = gapsAt.some(g => Math.abs(g[0] - s1) < 1e-6) ? s1 - MARKING.solidBefore : s1;
+    if (solid0 > s0) markings.push({ id: `${r.id}-CL-${markings.length}`, kind: 'centre', rect: alongRect(r, -MARKING.line / 2, MARKING.line / 2, s0, Math.min(solid0, s1)) });
+    for (let s = solid0 + MARKING.dash[1] / 2; s + MARKING.dash[0] <= solid1; s += MARKING.dash[0] + MARKING.dash[1])
+      markings.push({ id: `${r.id}-CL-${markings.length}`, kind: 'centre', rect: alongRect(r, -MARKING.line / 2, MARKING.line / 2, s, s + MARKING.dash[0]) });
+    if (solid1 < s1 && solid1 >= solid0) markings.push({ id: `${r.id}-CL-${markings.length}`, kind: 'centre', rect: alongRect(r, -MARKING.line / 2, MARKING.line / 2, solid1, s1) });
+    if (r.type === 'main') for (const sg of [-1, 1]) {   // edge lines on the main street
+      const o = sg * (h - MARKING.edgeInset);
+      markings.push({ id: `${r.id}-EL-${markings.length}`, kind: 'edge', rect: alongRect(r, o, o - sg * MARKING.line, s0, s1) });
+    }
+  }
+}
+
+// Drainage: an L-gutter along every straight curb, grates every ~12 m and beside each ramp,
+// a covered channel down the middle of each alley, and outlets in the plinth face where they leave.
+const DRAIN = { gutter: 0.3, grate: [0.7, 0.3], spacing: 12, channel: 0.3 };
+const gutters = [], grates = [], outlets = [];
+for (const is of islands) {
+  const [x0, z0, x1, z1] = is.rect, R = INTERSECTION.curbRadius, g = DRAIN.gutter, rd = is.round;
+  const runs = [   // [rect, line, at, s0, s1, outward]
+    z0 > -H && [[x0 + (rd.NW ? R : 0), z0 - g, x1 - (rd.NE ? R : 0), z0], 'z', z0, x0 + (rd.NW ? R : 0), x1 - (rd.NE ? R : 0), -1],
+    z1 < H && [[x0 + (rd.SW ? R : 0), z1, x1 - (rd.SE ? R : 0), z1 + g], 'z', z1, x0 + (rd.SW ? R : 0), x1 - (rd.SE ? R : 0), 1],
+    x0 > -H && [[x0 - g, z0 + (rd.NW ? R : 0), x0, z1 - (rd.SW ? R : 0)], 'x', x0, z0 + (rd.NW ? R : 0), z1 - (rd.SW ? R : 0), -1],
+    x1 < H && [[x1, z0 + (rd.NE ? R : 0), x1 + g, z1 - (rd.SE ? R : 0)], 'x', x1, z0 + (rd.NE ? R : 0), z1 - (rd.SE ? R : 0), 1],
+  ].filter(Boolean);
+  for (const [rect, line, at, s0, s1, out] of runs) {
+    const id = `${is.id}-G${gutters.length + 1}`, mid = at + out * g / 2, pt = s => line === 'z' ? [s, mid] : [mid, s];
+    gutters.push({ id, rect, line });
+    const cuts = curbCuts.filter(k => k.line === line && Math.abs(k.at - at) < 1e-6 && k.s0 >= s0 - 1e-6 && k.s1 <= s1 + 1e-6);
+    const taken = cuts.map(k => [k.s0 - 0.6, k.s1 + 0.6]);
+    const ok = s => s >= s0 + 0.5 && s <= s1 - 0.5 && !taken.some(([a, b]) => s > a && s < b);
+    const add = (s, why, shift = 0) => {   // run grates may slide up to `shift` to clear driveways and ramps
+      for (const d of [0, ...Array.from({ length: shift * 2 }, (_, i) => (i % 2 ? -1 : 1) * (Math.floor(i / 2) + 1) * 0.5)]) if (ok(s + d)) {
+        taken.push([s + d - 2, s + d + 2]); const [x, z] = pt(s + d); grates.push({ id: `${id}-GR${grates.length + 1}`, x, z, line, why }); return; } };
+    for (const k of cuts.filter(k => k.kind === 'ramp')) { add(k.s0 - 0.9, 'ramp'); add(k.s1 + 0.9, 'ramp'); }
+    for (let s = s0 + DRAIN.spacing / 2; s < s1; s += DRAIN.spacing) add(s, 'run', 4);
+    for (const [e, face] of [[s0, -1], [s1, 1]]) if (Math.abs(Math.abs(e) - H) < 1e-6) { const [x, z] = pt(e); outlets.push({ id: `${id}-OUT`, x, z, face: line === 'z' ? [face, 0] : [0, face] }); }
+  }
+}
+const channels = alleys.map(a => {
+  const zc = (a.rect[1] + a.rect[3]) / 2, rect = [a.rect[0], zc - DRAIN.channel / 2, a.rect[2], zc + DRAIN.channel / 2];
+  for (const e of [a.rect[0], a.rect[2]]) if (Math.abs(Math.abs(e) - H) < 1e-6) outlets.push({ id: `${a.id}-OUT`, x: e, z: zc, face: [Math.sign(e), 0] });
+  return { id: `${a.id}-CH`, alley: a.id, rect };
+});
+
+// Street furniture in the facility bands. Signals and stop signs follow the approaches; utility poles
+// run along one band of each road (the pole/cable corridor), lamps along both bands, staggered.
+const FURNITURE = { lampSpacing: 16, poleSpacing: 22, maxSpan: 30, minGap: 2, entranceClear: 1.5, edgeClear: 1.5,
+  poleSide: { R01: -1, R02: -1, R03: 1 }, alleyLampSpacing: 14 };
+const bandPt = (r, side, s) => { const t = ROAD_TYPES[r.type], o = r.at + side * (t.carriageway / 2 + t.band / 2); return r.axis === 'x' ? [s, o] : [o, s]; };
+const furniture = legacyFurniture.map(f => ({ id: f.group, kind: 'legacy', group: f.group, road: f.slot.road, x: f.slot.x, z: f.slot.z,
+  extent: f.group === 'guardRail' ? 1.3 : 0 }));
+function blockedAlong(r, side) {   // along-road spans of this band where nothing may stand
+  const out = [];
+  for (const c of crosswalks.filter(c => c.road === r.id)) out.push(r.axis === 'x' ? [c.rect[0] - 0.8, c.rect[2] + 0.8] : [c.rect[1] - 0.8, c.rect[3] + 0.8]);
+  for (const k of curbCuts.filter(k => k.road === r.id && k.dir === side)) out.push([k.s0 - 0.5, k.s1 + 0.5]);
+  for (const o of roads.filter(o => o.axis !== r.axis)) { const e = cwHalf(o) + INTERSECTION.curbRadius + 0.3; out.push([o.at - e, o.at + e]); }
+  for (const p of plots) for (const e of p.entrances) {   // keep entrances on this side of the road clear
+    const [dx, dz] = DIRS[e.facing], s = r.axis === 'x' ? e.x : e.z, across = r.axis === 'x' ? e.z : e.x;
+    const faces = r.axis === 'x' ? dz !== 0 : dx !== 0, edge = r.at + side * half(r.type);
+    if (faces && Math.abs(across - edge) < 1e-6) out.push([s - FURNITURE.entranceClear, s + FURNITURE.entranceClear]);
+  }
+  out.push([-Infinity, -H + FURNITURE.edgeClear], [H - FURNITURE.edgeClear, Infinity]);
+  return out;
+}
+function place(r, side, s, kind, extra = {}) {
+  const blocked = blockedAlong(r, side);
+  for (const d of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3, 4, -4, 5, -5]) {
+    const t = s + d, [x, z] = bandPt(r, side, t);
+    if (blocked.some(([a, b]) => t > a && t < b)) continue;
+    if (furniture.some(f => Math.hypot(f.x - x, f.z - z) < FURNITURE.minGap + (f.extent || 0))) continue;
+    const f = { id: `${kind}-${r.id}-${furniture.length + 1}`, kind, road: r.id, side, s: t, x, z, ...extra };
+    furniture.push(f); return f;
+  }
+  return null;
+}
+for (const a of approaches) {   // signals at the junction side of the crosswalk, stop signs at the stop line
+  const r = roadById[a.road], s = a.control === 'signal' ? a.at + a.side * (a.edge - INTERSECTION.crosswalk.width - 0.5) : a.stop + a.side * (MARKING.stop + 0.4);
+  if (a.control === 'priority') continue;
+  const [x, z] = bandPt(r, a.lane, s), legacy = furniture.find(f => f.kind === 'legacy' && Math.hypot(f.x - x, f.z - z) < 0.3);
+  const face = r.axis === 'x' ? [a.side, 0] : [0, a.side];   // towards the approaching traffic
+  if (legacy) { legacy.approach = a.id; continue; }
+  furniture.push({ id: `${a.control === 'signal' ? 'SIG' : 'STOP'}-${a.id}`, kind: a.control === 'signal' ? 'signal' : 'stop-sign', road: r.id, side: a.lane, s, x, z, face, approach: a.id });
+}
+for (const a of alleys) for (const r of roads.filter(r => r.axis === 'z')) {   // stop signs for traffic leaving the alleys
+  const h = half(r.type), mouthW = Math.abs(a.rect[2] - (r.at - h)) < 1e-6, mouthE = Math.abs(a.rect[0] - (r.at + h)) < 1e-6;
+  if (!mouthW && !mouthE) continue;
+  const heading = mouthW ? 1 : -1, x = mouthW ? a.rect[2] - 0.6 : a.rect[0] + 0.6, z = heading > 0 ? a.rect[1] + 0.25 : a.rect[3] - 0.25;   // left of the exiting car
+  if (furniture.some(f => Math.hypot(f.x - x, f.z - z) < 3.5 && f.group === 'utilityPole')) continue;   // A01: the old pole carries its 止まれ
+  furniture.push({ id: `STOP-${a.id}`, kind: 'stop-sign', alley: a.id, x, z, face: [-heading, 0] });
+}
+const poleLines = [];
+function freeAt(r, side, t) {
+  const [x, z] = bandPt(r, side, t);
+  return !blockedAlong(r, side).some(([a, b]) => t > a && t < b) && !furniture.some(f => Math.hypot(f.x - x, f.z - z) < FURNITURE.minGap + (f.extent || 0));
+}
+for (const r of roads) {   // greedy walk: next pole ~poleSpacing on, pulled back to a free spot, never > maxSpan
+  const side = FURNITURE.poleSide[r.id], legacy = furniture.find(f => f.group === 'utilityPole' && f.road === r.id);
+  const line = legacy ? [legacy] : [], add = s => { const [x, z] = bandPt(r, side, s), p = { id: `pole-${r.id}-${furniture.length + 1}`, kind: 'pole', road: r.id, side, s, x, z, across: r.axis === 'x' ? [0, 1] : [1, 0] }; furniture.push(p); line.push(p); return s; };
+  const start = legacy ? (r.axis === 'x' ? legacy.x : legacy.z) : (() => { for (let t = -H + 4; t < 0; t += 0.5) if (freeAt(r, side, t)) return add(t); })();
+  for (const dir of legacy ? [-1, 1] : [1]) {
+    let prev = start;
+    for (;;) {
+      const target = prev + dir * FURNITURE.poleSpacing, limit = dir * (H - 2.5);
+      if (dir * target > dir * limit && dir * (limit - prev) < 8) break;
+      const want = dir * target > dir * limit ? limit : target;
+      let got = null;
+      for (let d = 0; d <= FURNITURE.maxSpan; d += 0.5) {   // back towards prev first, then further out
+        for (const t of [want - dir * d, want + dir * d]) if (dir * (t - prev) >= 6 && dir * (t - prev) <= FURNITURE.maxSpan && Math.abs(t) <= H - 2 && freeAt(r, side, t)) { got = t; break; }
+        if (got !== null) break;
+      }
+      if (got === null) break;
+      prev = add(got);
+    }
+  }
+  line.sort((p, q) => (r.axis === 'x' ? p.x - q.x : p.z - q.z));
+  const spans = [];
+  for (let i = 0; i + 1 < line.length; i++) spans.push([line[i].id, line[i + 1].id]);
+  poleLines.push({ road: r.id, side, poles: line.map(p => p.id), spans });
+}
+for (const r of roads) for (const side of [-1, 1]) {   // lamps, staggered between the two bands
+  for (let s = -H + 6 + (side > 0 ? FURNITURE.lampSpacing / 2 : 0); s < H - 2; s += FURNITURE.lampSpacing)
+    place(r, side, s, 'lamp', { face: r.axis === 'x' ? [0, -side] : [-side, 0] });
+}
+for (const a of alleys) {   // small security lamps on alternating alley edges
+  const len = a.rect[2] - a.rect[0];
+  for (let i = 0, s = a.rect[0] + 4; s < a.rect[2] - 2; s += FURNITURE.alleyLampSpacing, i++) {
+    const z = i % 2 ? a.rect[1] + 0.25 : a.rect[3] - 0.25;
+    if (furniture.some(f => Math.hypot(f.x - s, f.z - z) < FURNITURE.minGap)) continue;
+    furniture.push({ id: `ALAMP-${a.id}-${i + 1}`, kind: 'alley-lamp', alley: a.id, x: s, z, face: [0, i % 2 ? 1 : -1] });
+  }
+}
+
+// Puddles collect along gutters, in alley channels and at low corners (deterministic seed).
+let pseed = 20240917;
+const prnd = () => ((pseed = (pseed * 1664525 + 1013904223) >>> 0) / 4294967296);
+const puddles = [];
+for (const g of gutters) {
+  const len = g.line === 'z' ? g.rect[2] - g.rect[0] : g.rect[3] - g.rect[1], n = Math.floor(len / 9);
+  for (let i = 0; i < n; i++) {
+    const s = (g.line === 'z' ? g.rect[0] : g.rect[1]) + (i + 0.2 + prnd() * 0.6) * len / n;
+    const curbAt = g.line === 'z' ? (g.rect[1] + g.rect[3]) / 2 : (g.rect[0] + g.rect[2]) / 2;
+    const isl = islands.find(is => g.line === 'z' ? Math.abs(is.rect[1] - g.rect[3]) < 1e-6 || Math.abs(is.rect[3] - g.rect[1]) < 1e-6 : Math.abs(is.rect[0] - g.rect[2]) < 1e-6 || Math.abs(is.rect[2] - g.rect[0]) < 1e-6);
+    const out = isl ? (g.line === 'z' ? (Math.abs(isl.rect[1] - g.rect[3]) < 1e-6 ? -1 : 1) : (Math.abs(isl.rect[0] - g.rect[2]) < 1e-6 ? -1 : 1)) : 1;
+    const across = curbAt + out * (0.35 + prnd() * 0.5), rl = 0.8 + prnd() * 1.4, rw = 0.25 + prnd() * 0.35;
+    puddles.push(g.line === 'z' ? { x: s, z: across, rx: rl, rz: rw, on: 'road' } : { x: across, z: s, rx: rw, rz: rl, on: 'road' });
+  }
+}
+for (const c of channels) for (let s = c.rect[0] + 3; s < c.rect[2] - 2; s += 5 + prnd() * 4)
+  puddles.push({ x: s, z: (c.rect[1] + c.rect[3]) / 2 + (prnd() - 0.5) * 0.8, rx: 0.6 + prnd() * 0.9, rz: 0.3 + prnd() * 0.3, on: 'alley' });
+
 const LAYOUT = { BASE, SAMPLE_SCALE, ROAD_TYPES, ALLEY, INTERSECTION, PLOT_TYPES, DIRS, LEVELS, CURB_CUT,
   roadNodes, roads, alleys, roadSegments, walkways, aprons, blocks, plots, samples,
-  legacyFurniture, legacyGround, surfaces, crosswalks, islands, curbCuts, corridorRect, toWorld, rect };
+  legacyFurniture, legacyGround, surfaces, crosswalks, islands, curbCuts, CONTROL, MARKING, DRAIN, FURNITURE,
+  approaches, markings, gutters, grates, channels, outlets, furniture, poleLines, puddles, corridorRect, toWorld, rect };
 if (typeof module !== 'undefined' && module.exports) module.exports = LAYOUT;
 else global.LAYOUT = LAYOUT;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -383,64 +587,6 @@ function line(points,c='#34465c',r=.025,parent=root){const curve=new THREE.Catmu
 function glow(c,opacity=.2){return new THREE.MeshBasicMaterial({color:c,transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide});}
 function light(x,y,z,c,power,range){const l=new THREE.PointLight(c,power,range,2);l.position.set(x,y,z);root.add(l);return l;}
 function label(text,x,y,z,w,h,bg='#f6e9c5',fg='#254755',size=55){const c=document.createElement('canvas');c.width=1024;c.height=Math.round(1024*h/w);const q=c.getContext('2d');q.fillStyle=bg;q.fillRect(0,0,c.width,c.height);q.fillStyle=fg;q.font=`bold ${size}px sans-serif`;q.textAlign='center';q.textBaseline='middle';q.fillText(text,512,c.height/2);const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;return mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide}),x,y,z,false);}
-// Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
-// curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
-const L=LAYOUT,LV=L.LEVELS,BH=L.BASE.half,R=L.INTERSECTION.curbRadius;
-const flatMats={};function flatMat(c){return flatMats[c]||(flatMats[c]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map:paperTex,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));}
-// Paper grain repeats every 4 units on ground pieces instead of stretching across the whole face.
-function tileUV(g,sx,sy){const uv=g.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*sx,uv.getY(i)*sy);return g;}
-function slab([x0,z0,x1,z1],y0,y1,c,outline=true){const w=x1-x0,d=z1-z0,h=y1-y0,g=new THREE.BoxGeometry(w,h,d),uv=g.attributes.uv;for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),s=f<2?[d,h]:f<4?[w,d]:[w,h];uv.setXY(i,uv.getX(i)*s[0]/4,uv.getY(i)*s[1]/4);}return mesh(g,c,(x0+x1)/2,(y0+y1)/2,(z0+z1)/2,outline);}
-function flat([x0,z0,x1,z1],y,c){const a=mesh(tileUV(new THREE.PlaneGeometry(x1-x0,z1-z0),(x1-x0)/4,(z1-z0)/4),flatMat(c),(x0+x1)/2,y,(z0+z1)/2,false);a.rotation.x=-Math.PI/2;return a;}
-// Splits a rect along axis i (0 = x, 1 = z) around excluded [a, b] spans.
-function without(r,i,spans){let out=[r];for(const [a,b] of spans)out=out.flatMap(q=>{if(b<=q[i]||a>=q[i+2])return[q];const res=[];if(a>q[i]){const p=q.slice();p[i+2]=a;res.push(p);}if(b<q[i+2]){const p=q.slice();p[i]=b;res.push(p);}return res;});return out;}
-const overlaps=(a,b)=>a[0]<b[2]-1e-6&&b[0]<a[2]-1e-6&&a[1]<b[3]-1e-6&&b[1]<a[3]-1e-6;
-group('base');slab([-BH,-BH,BH,BH],LV.plinth-1.6,LV.plinth,'#273443');
-// One asphalt sheet under everything: crossing carriageways cannot overlap or leave seams.
-group('roads');slab([-BH,-BH,BH,BH],LV.plinth,LV.carriageway,'#3f4954',false);
-// Pavement islands: corners at intersections are curb-return arcs, curb cuts are notches in the curb.
-for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],names=['NW','NE','SE','SW'],mx=(x0+x1)/2,mz=(z0+z1)/2,pts=[];
-  for(let i=0;i<4;i++){const c=C[i],p=C[(i+3)%4],n=C[(i+1)%4];
-    if(is.round[names[i]]){const din=[Math.sign(c[0]-p[0]),Math.sign(c[1]-p[1])],dout=[Math.sign(n[0]-c[0]),Math.sign(n[1]-c[1])],o=[c[0]+Math.sign(mx-c[0])*R,c[1]+Math.sign(mz-c[1])*R];
-      const A0=Math.atan2(c[1]-din[1]*R-o[1],c[0]-din[0]*R-o[0]);let d=Math.atan2(c[1]+dout[1]*R-o[1],c[0]+dout[0]*R-o[0])-A0;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;
-      for(let k=0;k<=12;k++)pts.push([o[0]+R*Math.cos(A0+d*k/12),o[1]+R*Math.sin(A0+d*k/12)]);}
-    else pts.push(c);
-    const ax=c[1]===n[1]?'z':'x',v=ax==='z'?c[1]:c[0],sg=ax==='z'?Math.sign(n[0]-c[0]):Math.sign(n[1]-c[1]),P=(s,o)=>ax==='z'?[s,v+o]:[v+o,s];
-    const j=ax==='z'?0:1,lo=Math.min(c[j],n[j]),hi=Math.max(c[j],n[j]);
-    for(const k of L.curbCuts.filter(k=>k.line===ax&&k.at===v&&k.s0>=lo&&k.s1<=hi).sort((a,b)=>sg*(a.s0-b.s0))){
-      const [a,b]=sg>0?[k.s0,k.s1]:[k.s1,k.s0];pts.push(P(a,0),P(a,k.dir*k.depth),P(b,k.dir*k.depth),P(b,0));}}
-  const g=new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x,z])=>new THREE.Vector2(x,-z))),{depth:LV.pavement-LV.plinth,bevelEnabled:false,curveSegments:1});tileUV(g,.25,.25);
-  const m=mesh(g,'#7f8987',0,LV.plinth,0);m.rotation.x=-Math.PI/2;}
-// Ramps fill the notches: a 1:10 slope from the carriageway up to pavement level, no step at either end.
-for(const k of L.curbCuts){const lo=LV.carriageway,hi=LV.pavement,a=k.at,b=k.at+k.dir*k.depth;
-  const V=k.line==='x'?[[a,lo,k.s0],[a,lo,k.s1],[b,hi,k.s1],[b,hi,k.s0]]:[[k.s0,lo,a],[k.s1,lo,a],[k.s1,hi,b],[k.s0,hi,b]];
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(V.flat(),3));
-  const l=k.s1-k.s0;g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,l/4,0,l/4,k.depth/4,0,k.depth/4],2));
-  const up=(V[1][0]-V[0][0])*(V[2][2]-V[0][2])-(V[1][2]-V[0][2])*(V[2][0]-V[0][0])<0;g.setIndex(up?[0,1,2,0,2,3]:[0,2,1,0,3,2]);g.computeVertexNormals();
-  mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);}
-// Facility bands (curb strip where lamps, poles and drains stand), cut back at ramps, driveways and
-// the curb returns, which stay plain pavement.
-for(const s of L.surfaces.filter(s=>s.kind==='band')){const road=L.roads.find(r=>r.id===s.road),i=road.axis==='x'?0:1;
-  const returns=L.roads.filter(o=>o.axis!==road.axis).map(o=>{const h=L.ROAD_TYPES[o.type].carriageway/2;return[o.at-h-R,o.at+h+R];});
-  for(const r of without(s.rect,i,[...returns,...L.curbCuts.filter(k=>overlaps(k.rect,s.rect)).map(k=>[k.s0,k.s1])]))flat(r,LV.pavement,'#9aa29c');}
-for(const a of L.alleys)flat(a.rect,LV.pavement,'#8a8578');
-for(const w of L.walkways)flat([w.poly[0][0],w.poly[0][1],w.poly[2][0],w.poly[2][1]],LV.pavement,'#8d8c80');
-for(const a of L.aprons)flat([a.poly[0][0],a.poly[0][1],a.poly[2][0],a.poly[2][1]],LV.pavement,'#8c9ba3');
-// Plinth trim: a low planting strip around the blocks, open where roads and alleys leave the base.
-{const M=L.BASE.margin,open=[...L.roads.map(r=>L.corridorRect(r)),...L.alleys.map(a=>a.rect)];
-  for(const [r,i] of [[[-BH,-BH,BH,-BH+M],0],[[-BH,BH-M,BH,BH],0],[[-BH,-BH+M,-BH+M,BH-M],1],[[BH-M,-BH+M,BH,BH-M],1]])
-    for(const q of without(r,i,open.filter(o=>overlaps(o,r)).map(o=>[o[i],o[i+2]])))slab(q,LV.pavement,LV.pavement+.06,'#56664f');}
-// Plots: reserved land is low grass or cinder with the buildable envelope in pale gravel, so the
-// space kept for future buildings reads at a glance; occupied plots are paved up to the sample floor.
-group('plots');
-const groundOf={school:'#7f9a6f',park:'#759d6c',house:'#86997a',apartment:'#86997a',shop:'#8f9583',store:'#8f9583',mixed:'#8f9583',civic:'#899682'};
-const sampleTop=s=>Math.min(...s.parts.filter(p=>p.role==='building').map(p=>p.localBounds.min[1]))*(s.transform.scale??L.SAMPLE_SCALE);
-function worldRect(s,[x0,z0,x1,z1]){const c=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]].map(([x,z])=>L.toWorld(s,x,z)),xs=c.map(p=>p[0]),zs=c.map(p=>p[1]);return[Math.min(...xs),Math.min(...zs),Math.max(...xs),Math.max(...zs)];}
-for(const p of L.plots){const s=L.samples.find(s=>s.plot===p.id);
-  if(!s){slab(p.rect,LV.pavement,LV.plot,groundOf[p.type]);flat(p.buildable,LV.plot,p.type==='park'?'#86a777':'#a7a28c');continue;}
-  const top=sampleTop(s);slab(p.rect,LV.pavement,top,'#9a9384');
-  // Attachments (bicycles, planters, bins) stand on low concrete aprons instead of floating.
-  for(const part of s.parts.filter(q=>q.role==='attachment')){const y=part.localBounds.min[1]*(s.transform.scale??L.SAMPLE_SCALE);
-    if(y-top>.02){const r=worldRect(s,part.localBounds.ground);slab([r[0]-.06,r[1]-.06,r[2]+.06,r[3]+.06],top,y,'#8a877d');}}}
 group('store');
 // Store walls, tiled floor, and a shallow roof to retain window sightlines.
 box(.85,.3,-1,6.9,.16,5.6,'#e3d1ad');box(.85,1.85,-3.77,6.9,3,.14,'#809da1');box(4.26,1.85,-1,.14,3,5.5,'#739194');
@@ -523,11 +669,143 @@ for(let i=0;i<16;i++){box(-2.3,.38+i*.25,-5.05-i*.17,.7,.08,.32,'#768a97');}line
 // Down pipe and planters.
 group('store');line([[4.34,3.3,-2.4],[4.54,3.3,-2.4],[4.54,.45,-2.4]],'#7b8e97',.038);
 for(let i=0;i<7;i++){group(i<4?'ramenPlants':'apartmentPlants');let x=i<4?5.65+i*.7:-1.7+(i-4)*.53,z=i<4?2.25:-4.52;cyl(x,.48,z,.14,.3,'#aa8980');for(let k=0;k<4;k++){mesh(new THREE.SphereGeometry(.13,7,5),mat('#6f9690'),x+(rnd()-.5)*.17,.72+rnd()*.18,z+(rnd()-.5)*.17,false);}}
-group('wetGround');
-// Puddles with soft neon reflections; reflected sign glyphs fragmented by water.
-const puddles=[];for(let i=0;i<15;i++){const x=i<9?-2.4+i*.82:-4.45,z=i<9?3.65+(i%3)*.66:-4.3+(i-9)*1.18;let p=mesh(new THREE.CircleGeometry(.5,40),new THREE.MeshStandardMaterial({color:i%2?'#567b91':'#4c7d82',transparent:true,opacity:.55,metalness:.65,roughness:.17}),x,.105,z,false);p.rotation.x=-Math.PI/2;p.scale.set(1.2+(i%3)*.2,.35+(i%2)*.25,1);puddles.push([x,z]);}
-for(let i=0;i<95;i++){let x=-2.5+Math.random()*6.8,z=3.1+Math.random()*2.65;let s=box(x,.114,z,.025+Math.random()*.1,.005,.09+Math.random()*.37,glow(i%3?'#efc494':'#8ee1d2',.05+Math.random()*.12),false);}
-let ref=label('こもれび MART',.7,.122,3.7,5,.48,'#2c4354','#93b7ac',80);ref.rotation.x=-Math.PI/2;ref.material.transparent=true;ref.material.opacity=.22;
+// Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
+// curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
+const L=LAYOUT,LV=L.LEVELS,BH=L.BASE.half,R=L.INTERSECTION.curbRadius;
+// Hand-drawn ground textures on the paper grain (own seed, so the samples' random details never shift).
+let tseed=917;const trnd=()=>((tseed=(tseed*1664525+1013904223)>>>0)/4294967296);
+function groundTex(draw){const c=document.createElement('canvas');c.width=c.height=256;const q=c.getContext('2d');q.drawImage(paper,0,0);draw(q);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;}
+const TEX={   // one texture repeat = 4 × 4 units (64 px per unit)
+  paving:groundTex(q=>{q.strokeStyle='rgba(52,62,74,.17)';q.lineWidth=1.3;for(let r=0;r<8;r++){const y=r*32+.5;q.beginPath();q.moveTo(0,y+(trnd()-.5));q.lineTo(256,y+(trnd()-.5));q.stroke();for(let x=(r%2)*32;x<256;x+=64){q.beginPath();q.moveTo(x+.5,y);q.lineTo(x+.5+(trnd()-.5),y+32);q.stroke();}}}),
+  asphalt:groundTex(q=>{for(let i=0;i<2600;i++){q.fillStyle=trnd()<.5?'rgba(255,255,255,.05)':'rgba(0,0,0,.07)';q.fillRect(trnd()*256,trnd()*256,1+trnd()*1.5,1);}q.lineCap='round';for(let i=0;i<26;i++){q.strokeStyle='rgba(70,82,104,.05)';q.lineWidth=14+trnd()*22;q.beginPath();const x=trnd()*256,y=trnd()*256;q.moveTo(x,y);q.lineTo(x+40+trnd()*70,y+(trnd()-.5)*30);q.stroke();}}),
+  grass:groundTex(q=>{q.lineCap='round';for(let i=0;i<1100;i++){q.strokeStyle=`rgba(44,78,58,${.1+trnd()*.12})`;q.lineWidth=1;const x=trnd()*256,y=trnd()*256,l=4+trnd()*6;q.beginPath();q.moveTo(x,y);q.lineTo(x+l*.45,y-l);q.stroke();}}),
+  gravel:groundTex(q=>{for(let i=0;i<2400;i++){q.fillStyle=`rgba(${trnd()<.5?'58,60,62':'255,255,250'},${.08+trnd()*.12})`;const r=.6+trnd()*1.3;q.beginPath();q.arc(trnd()*256,trnd()*256,r,0,6.3);q.fill();}}),
+};
+const texMats={};function matT(c,tex,flat=false){const k=c+tex+flat;return texMats[k]||(texMats[k]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map:TEX[tex],polygonOffset:flat,polygonOffsetFactor:flat?-1:0,polygonOffsetUnits:flat?-2:0}));}
+const flatMats={};function flatMat(c){return flatMats[c]||(flatMats[c]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map:paperTex,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));}
+// Paper grain repeats every 4 units on ground pieces instead of stretching across the whole face.
+function tileUV(g,sx,sy){const uv=g.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*sx,uv.getY(i)*sy);return g;}
+function slab([x0,z0,x1,z1],y0,y1,c,outline=true){const w=x1-x0,d=z1-z0,h=y1-y0,g=new THREE.BoxGeometry(w,h,d),uv=g.attributes.uv;for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),s=f<2?[d,h]:f<4?[w,d]:[w,h];uv.setXY(i,uv.getX(i)*s[0]/4,uv.getY(i)*s[1]/4);}return mesh(g,c,(x0+x1)/2,(y0+y1)/2,(z0+z1)/2,outline);}
+function flat([x0,z0,x1,z1],y,c){const a=mesh(tileUV(new THREE.PlaneGeometry(x1-x0,z1-z0),(x1-x0)/4,(z1-z0)/4),typeof c==='string'?flatMat(c):c,(x0+x1)/2,y,(z0+z1)/2,false);a.rotation.x=-Math.PI/2;return a;}
+// Splits a rect along axis i (0 = x, 1 = z) around excluded [a, b] spans.
+function without(r,i,spans){let out=[r];for(const [a,b] of spans)out=out.flatMap(q=>{if(b<=q[i]||a>=q[i+2])return[q];const res=[];if(a>q[i]){const p=q.slice();p[i+2]=a;res.push(p);}if(b<q[i+2]){const p=q.slice();p[i]=b;res.push(p);}return res;});return out;}
+const overlaps=(a,b)=>a[0]<b[2]-1e-6&&b[0]<a[2]-1e-6&&a[1]<b[3]-1e-6&&b[1]<a[3]-1e-6;
+group('base');slab([-BH,-BH,BH,BH],LV.plinth-1.6,LV.plinth,'#273443');
+// One asphalt sheet under everything: crossing carriageways cannot overlap or leave seams.
+group('roads');slab([-BH,-BH,BH,BH],LV.plinth,LV.carriageway,matT('#46505b','asphalt'),false);
+// Pavement islands: corners at intersections are curb-return arcs, curb cuts are notches in the curb.
+for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],names=['NW','NE','SE','SW'],mx=(x0+x1)/2,mz=(z0+z1)/2,pts=[];
+  for(let i=0;i<4;i++){const c=C[i],p=C[(i+3)%4],n=C[(i+1)%4];
+    if(is.round[names[i]]){const din=[Math.sign(c[0]-p[0]),Math.sign(c[1]-p[1])],dout=[Math.sign(n[0]-c[0]),Math.sign(n[1]-c[1])],o=[c[0]+Math.sign(mx-c[0])*R,c[1]+Math.sign(mz-c[1])*R];
+      const A0=Math.atan2(c[1]-din[1]*R-o[1],c[0]-din[0]*R-o[0]);let d=Math.atan2(c[1]+dout[1]*R-o[1],c[0]+dout[0]*R-o[0])-A0;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;
+      for(let k=0;k<=12;k++)pts.push([o[0]+R*Math.cos(A0+d*k/12),o[1]+R*Math.sin(A0+d*k/12)]);}
+    else pts.push(c);
+    const ax=c[1]===n[1]?'z':'x',v=ax==='z'?c[1]:c[0],sg=ax==='z'?Math.sign(n[0]-c[0]):Math.sign(n[1]-c[1]),P=(s,o)=>ax==='z'?[s,v+o]:[v+o,s];
+    const j=ax==='z'?0:1,lo=Math.min(c[j],n[j]),hi=Math.max(c[j],n[j]);
+    for(const k of L.curbCuts.filter(k=>k.line===ax&&k.at===v&&k.s0>=lo&&k.s1<=hi).sort((a,b)=>sg*(a.s0-b.s0))){
+      const [a,b]=sg>0?[k.s0,k.s1]:[k.s1,k.s0];pts.push(P(a,0),P(a,k.dir*k.depth),P(b,k.dir*k.depth),P(b,0));}}
+  const g=new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x,z])=>new THREE.Vector2(x,-z))),{depth:LV.pavement-LV.plinth,bevelEnabled:false,curveSegments:1});tileUV(g,.25,.25);
+  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;}
+// Ramps fill the notches: a 1:10 slope from the carriageway up to pavement level, no step at either end.
+for(const k of L.curbCuts){const lo=LV.carriageway,hi=LV.pavement,a=k.at,b=k.at+k.dir*k.depth;
+  const V=k.line==='x'?[[a,lo,k.s0],[a,lo,k.s1],[b,hi,k.s1],[b,hi,k.s0]]:[[k.s0,lo,a],[k.s1,lo,a],[k.s1,hi,b],[k.s0,hi,b]];
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(V.flat(),3));
+  const l=k.s1-k.s0;g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,l/4,0,l/4,k.depth/4,0,k.depth/4],2));
+  const up=(V[1][0]-V[0][0])*(V[2][2]-V[0][2])-(V[1][2]-V[0][2])*(V[2][0]-V[0][0])<0;g.setIndex(up?[0,1,2,0,2,3]:[0,2,1,0,3,2]);g.computeVertexNormals();
+  mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);}
+// Facility bands (curb strip where lamps, poles and drains stand), cut back at ramps, driveways and
+// the curb returns, which stay plain pavement.
+for(const s of L.surfaces.filter(s=>s.kind==='band')){const road=L.roads.find(r=>r.id===s.road),i=road.axis==='x'?0:1;
+  const returns=L.roads.filter(o=>o.axis!==road.axis).map(o=>{const h=L.ROAD_TYPES[o.type].carriageway/2;return[o.at-h-R,o.at+h+R];});
+  for(const r of without(s.rect,i,[...returns,...L.curbCuts.filter(k=>overlaps(k.rect,s.rect)).map(k=>[k.s0,k.s1])]))flat(r,LV.pavement,'#9aa29c');}
+for(const a of L.alleys)flat(a.rect,LV.pavement,matT('#8f8a7c','paving',true));
+for(const w of L.walkways)flat([w.poly[0][0],w.poly[0][1],w.poly[2][0],w.poly[2][1]],LV.pavement,'#8d8c80');
+for(const a of L.aprons)flat([a.poly[0][0],a.poly[0][1],a.poly[2][0],a.poly[2][1]],LV.pavement,'#8c9ba3');
+// Plinth trim: a low planting strip around the blocks, open where roads and alleys leave the base.
+{const M=L.BASE.margin,open=[...L.roads.map(r=>L.corridorRect(r)),...L.alleys.map(a=>a.rect)];
+  for(const [r,i] of [[[-BH,-BH,BH,-BH+M],0],[[-BH,BH-M,BH,BH],0],[[-BH,-BH+M,-BH+M,BH-M],1],[[BH-M,-BH+M,BH,BH-M],1]])
+    for(const q of without(r,i,open.filter(o=>overlaps(o,r)).map(o=>[o[i],o[i+2]])))slab(q,LV.pavement,LV.pavement+.06,'#56664f');}
+// Plots: reserved land is low grass or cinder with the buildable envelope in pale gravel, so the
+// space kept for future buildings reads at a glance; occupied plots are paved up to the sample floor.
+group('plots');
+const groundOf={school:'#7f9a6f',park:'#759d6c',house:'#86997a',apartment:'#86997a',shop:'#8f9583',store:'#8f9583',mixed:'#8f9583',civic:'#899682'};
+const sampleTop=s=>Math.min(...s.parts.filter(p=>p.role==='building').map(p=>p.localBounds.min[1]))*(s.transform.scale??L.SAMPLE_SCALE);
+function worldRect(s,[x0,z0,x1,z1]){const c=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]].map(([x,z])=>L.toWorld(s,x,z)),xs=c.map(p=>p[0]),zs=c.map(p=>p[1]);return[Math.min(...xs),Math.min(...zs),Math.max(...xs),Math.max(...zs)];}
+for(const p of L.plots){const s=L.samples.find(s=>s.plot===p.id);
+  if(!s){const grass=['school','park','house','apartment'].includes(p.type);slab(p.rect,LV.pavement,LV.plot,matT(groundOf[p.type],grass?'grass':'gravel'));flat(p.buildable,LV.plot,p.type==='park'?matT('#8fae7e','grass',true):matT('#aca78f','gravel',true));continue;}
+  const top=sampleTop(s);slab(p.rect,LV.pavement,top,'#9a9384');
+  // Attachments (bicycles, planters, bins) stand on low concrete aprons instead of floating.
+  for(const part of s.parts.filter(q=>q.role==='attachment')){const y=part.localBounds.min[1]*(s.transform.scale??L.SAMPLE_SCALE);
+    if(y-top>.02){const r=worldRect(s,part.localBounds.ground);slab([r[0]-.06,r[1]-.06,r[2]+.06,r[3]+.06],top,y,'#8a877d');}}}
+// ---- Street details (P3): markings, drainage, lamps, poles and wires, signals, signs, wet ground ----
+// One quad batch per material keeps hundreds of stripes, gutters and channels to a few draw calls.
+function quads(rects,y,m){const P=[],U=[],I=[];rects.forEach(([x0,z0,x1,z1],k)=>{P.push(x0,y,z0,x1,y,z0,x1,y,z1,x0,y,z1);U.push(x0/4,-z0/4,x1/4,-z0/4,x1/4,-z1/4,x0/4,-z1/4);const b=k*4;I.push(b,b+2,b+1,b,b+3,b+2);});
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));g.setIndex(I);g.computeVertexNormals();return mesh(g,m,0,0,0,false);}
+function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;}
+// Flat decal lying on the ground, its "up" edge pointing along `heading`.
+function decal(tex,w,h,x,y,z,heading,m){const a=mesh(new THREE.PlaneGeometry(w,h),m||new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6}),x,y,z,false);a.rotation.set(-Math.PI/2,Math.atan2(-heading[0],-heading[1]),0,'YXZ');return a;}
+const faceY=([fx,fz])=>Math.atan2(fx,fz);   // rotation that turns local +z towards (fx, fz)
+group('markings');
+const paint=new THREE.MeshBasicMaterial({color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6});
+quads(L.markings.filter(m=>m.rect).map(m=>m.rect),LV.carriageway,paint);
+const paintTex=(w,h,draw)=>canvasTex(w,h,(q,W,H)=>{q.fillStyle=q.strokeStyle='#fff';draw(q,W,H);});
+const diaTex=paintTex(64,160,(q,W,H)=>{q.lineWidth=9;q.beginPath();q.moveTo(W/2,6);q.lineTo(W-6,H/2);q.lineTo(W/2,H-6);q.lineTo(6,H/2);q.closePath();q.stroke();});
+const textTex={};
+for(const m of L.markings.filter(m=>!m.rect)){
+  const tex=m.kind==='diamond'?diaTex:textTex[m.text]||(textTex[m.text]=paintTex(512,512,(q,W,H)=>{const k=2.3;q.font='bold 148px sans-serif';q.textAlign='center';q.textBaseline='middle';q.setTransform(1,0,0,k,0,0);q.fillText(m.text,W/2,H/2/k,W-24);}));
+  decal(tex,m.size[0],m.size[1],m.x,LV.carriageway,m.z,m.heading,new THREE.MeshBasicMaterial({map:tex,color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6}));}
+// Drainage: L-gutters along the curbs, grates, alley channels and outlets in the plinth face.
+group('drainage');
+quads(L.gutters.map(g=>g.rect),LV.carriageway,flatMat('#737c7d'));
+quads(L.channels.map(c=>c.rect),LV.pavement,flatMat('#5f6661'));
+const grateTex=canvasTex(64,32,(q,W,H)=>{q.fillStyle='#2b3239';q.fillRect(0,0,W,H);q.fillStyle='#69737a';for(let i=4;i<W;i+=7)q.fillRect(i,3,3,H-6);});
+const grateMat=new THREE.MeshToonMaterial({color:'#9aa3a6',gradientMap:ramp,map:grateTex});
+for(const g of L.grates){const [w,d]=L.DRAIN.grate,a=box(g.x,LV.carriageway+.006,g.z,g.line==='z'?w:d,.012,g.line==='z'?d:w,grateMat);}
+for(const c of L.channels)for(let x=c.rect[0]+1;x<c.rect[2]-.5;x+=1)box(x,LV.pavement+.004,(c.rect[1]+c.rect[3])/2,.04,.008,L.DRAIN.channel,'#3f4547',false);
+const stain=new THREE.MeshBasicMaterial({color:'#141b26',transparent:true,opacity:.45,depthWrite:false});
+for(const o of L.outlets){const [fx,fz]=o.face,y=-.22,g=new THREE.Group();g.position.set(o.x,0,o.z);g.rotation.y=faceY(o.face);root.add(g);
+  box(0,y,.03,.55,.36,.06,'#7d8584',true,g);const p=cyl(0,y,.09,.12,.14,'#5d6668',g);p.rotation.x=Math.PI/2;mesh(new THREE.CircleGeometry(.085,16),new THREE.MeshBasicMaterial({color:'#11161d'}),0,y,.161,false,g);
+  mesh(new THREE.PlaneGeometry(.22,1.1),stain,0,y-.72,.004,false,g);}
+// Street lamps, alley security lamps, utility poles with catenary wires, signals and stop signs.
+group('streetFurniture');
+const glowTex=canvasTex(128,128,(q,W)=>{const g=q.createRadialGradient(W/2,W/2,0,W/2,W/2,W/2);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.4,'rgba(255,255,255,.35)');g.addColorStop(1,'rgba(255,255,255,0)');q.fillStyle=g;q.fillRect(0,0,W,W);});
+const glowMat=(c,o)=>new THREE.MeshBasicMaterial({map:glowTex,color:c,transparent:true,opacity:o,depthWrite:false,blending:THREE.AdditiveBlending,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-8});
+const lampHead=new THREE.MeshBasicMaterial({color:'#ffe4b0'}),ledHead=new THREE.MeshBasicMaterial({color:'#eef2e4'});
+const lamps=[];
+for(const f of L.furniture){const g=new THREE.Group();g.position.set(f.x,LV.pavement,f.z);root.add(g);
+  if(f.kind==='lamp'){g.rotation.y=faceY(f.face);cyl(0,2.2,0,.06,4.4,'#596f80',g);line([[0,4.35,0],[0,4.6,.05],[0,4.66,.45],[0,4.6,.85]],'#597082',.05,g);box(0,4.56,.85,.25,.12,.48,'#b7c6bb',true,g);box(0,4.49,.85,.19,.015,.39,lampHead,false,g);
+    lamps.push({x:f.x+f.face[0]*.85,z:f.z+f.face[1]*.85,c:'#ffd9a0',r:3.6,o:.32});}
+  else if(f.kind==='alley-lamp'){g.rotation.y=faceY(f.face);cyl(0,1.6,0,.045,3.2,'#8a9096',g);box(0,3.05,.22,.08,.08,.4,'#8a9096',true,g);box(0,2.98,.4,.22,.09,.13,'#c9cec6',true,g);box(0,2.93,.4,.18,.01,.1,ledHead,false,g);
+    lamps.push({x:f.x+f.face[0]*.4,z:f.z+f.face[1]*.4,c:'#dfe9e2',r:2.4,o:.26});}
+  else if(f.kind==='pole'){g.rotation.y=faceY(f.across);cyl(0,2.85,0,.1,5.7,'#7c8290',g);box(0,5.1,0,.09,.08,1.28,'#748f9b',true,g);for(let i=0;i<3;i++)cyl(0,5.24,-.5+i*.5,.05,.2,'#a6bcb5',g);
+    box(0,2.6,.105,.3,.9,.012,'#cfd5c4',true,g);}   // the usual tin address plate
+  else if(f.kind==='signal'){g.rotation.y=faceY(f.face);box(0,2.25,0,.07,4.5,.07,'#4e6f7b',true,g);box(-.25,4.25,0,.6,.22,.2,'#364d58',true,g);
+    const heads=[0,1,2].map(i=>mesh(new THREE.SphereGeometry(.065,12,8),new THREE.MeshBasicMaterial({color:'#455563'}),-.44+i*.18,4.25,.115,false,g));f.heads=heads;}
+  else if(f.kind==='stop-sign'){g.rotation.y=faceY(f.face);cyl(0,1.25,0,.035,2.5,'#b3bcc0',g);
+    const t=canvasTex(256,224,(q,W,H)=>{q.fillStyle='#f1ece0';q.beginPath();q.moveTo(4,4);q.lineTo(W-4,4);q.lineTo(W/2,H-4);q.closePath();q.fill();q.fillStyle='#b6797b';q.beginPath();q.moveTo(22,15);q.lineTo(W-22,15);q.lineTo(W/2,H-26);q.closePath();q.fill();q.fillStyle='#f1ece0';q.font='bold 46px sans-serif';q.textAlign='center';q.fillText('止まれ',W/2,82);});
+    mesh(new THREE.PlaneGeometry(.75,.66),new THREE.MeshBasicMaterial({map:t,transparent:true}),0,2.25,.045,false,g);const b=mesh(new THREE.PlaneGeometry(.75,.66),new THREE.MeshBasicMaterial({map:t,color:'#59636b',transparent:true}),0,2.25,.04,false,g);b.rotation.y=Math.PI;}
+  f.group3=g;}
+// Wires: three conductors per span, each a sagging catenary between matching insulators.
+const legacyPole=L.legacyFurniture.find(f=>f.group==='utilityPole');groups.utilityPole.updateMatrixWorld(true);
+const attach=f=>f.kind==='legacy'?legacyPole.wireAttach.map(p=>groups.utilityPole.localToWorld(new THREE.Vector3(...p))):[0,1,2].map(i=>{const [ax,az]=f.across,o=-.5+i*.5;return new THREE.Vector3(f.x+ax*o,LV.pavement+5.34,f.z+az*o);});
+const byId=Object.fromEntries(L.furniture.map(f=>[f.id,f]));
+for(const pl of L.poleLines)for(const [a,b] of pl.spans){const A=attach(byId[a]),B=attach(byId[b]);for(let i=0;i<3;i++){const pts=[];for(let k=0;k<=6;k++){const t=k/6,p=A[i].clone().lerp(B[i],t);p.y-=.42*4*t*(1-t);pts.push(p.toArray());}line(pts,'#34465c',.012);}}
+// X01 phases: N–S traffic follows the original signal (green 0–19 s of a 30 s cycle), E–W gets green
+// after a short all-red, then amber.
+const phased=L.furniture.filter(f=>f.kind==='signal').map(f=>({h:f.heads,ns:L.roads.find(r=>r.id===f.road).axis==='z'}));
+// Light pools under the lamps: additive washes rather than real lights, so 35 lamps stay cheap.
+for(const l of lamps)decal(null,l.r*2,l.r*2,l.x,LV.pavement,l.z,[0,-1],glowMat(l.c,l.o));
+// Wet ground: puddles along the gutters and alley channels, ripples, restrained reflections of lamps.
+group('wetStreet');
+const puddleMat=new THREE.MeshStandardMaterial({color:'#456a80',transparent:true,opacity:.45,metalness:.6,roughness:.22,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4});
+const rings=[],ringMat=()=>new THREE.MeshBasicMaterial({color:'#acd8de',transparent:true,opacity:.2,depthWrite:false,side:THREE.DoubleSide});
+L.puddles.forEach((p,i)=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mesh(new THREE.CircleGeometry(1,32),puddleMat,p.x,y,p.z,false);a.rotation.x=-Math.PI/2;a.scale.set(p.rx,p.rz,1);
+  const near=lamps.find(l=>Math.hypot(l.x-p.x,l.z-p.z)<5.5);if(near){const r=decal(null,Math.min(p.rx,p.rz)*1.4,Math.max(p.rx,p.rz)*1.6,p.x,y,p.z,p.rx>p.rz?[1,0]:[0,1],glowMat(near.c,.22));}
+  for(let k=0;k<(i%3?1:2);k++){const r=mesh(new THREE.RingGeometry(.95,1,32),ringMat(),p.x+(Math.random()-.5)*p.rx,y+.004,p.z+(Math.random()-.5)*p.rz,false);r.rotation.x=-Math.PI/2;rings.push({a:r,phase:Math.random()});}});
+// The store's light spilling on the wet sidewalk in front of it: sign glyphs broken up by water.
+{const s=L.samples.find(s=>s.id==='store'),t=s.transform,g=new THREE.Group();g.position.set(t.x,LV.pavement+.012,t.z);g.rotation.y=t.rotY;root.add(g);
+  for(let i=0;i<70;i++)box(-2.5+Math.random()*6.8,0,4.1+Math.random()*1.8,.025+Math.random()*.1,.004,.09+Math.random()*.37,glow(i%3?'#efc494':'#8ee1d2',.05+Math.random()*.12),false,g);
+  const ref=label('こもれび MART',.7,.002,5,5,.48,'#2c4354','#93b7ac',80);g.add(ref);ref.rotation.x=-Math.PI/2;ref.material.transparent=true;ref.material.opacity=.2;ref.material.depthWrite=false;}
 // Existing samples move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
 for(const s of L.samples)for(const p of s.parts){const g=groups[p.group],t=s.transform;g.position.set(t.x,0,t.z);g.rotation.y=t.rotY;g.scale.setScalar(t.scale??L.SAMPLE_SCALE);}
 // Original street furniture goes to provisional slots in the facility bands, foot on the band.
@@ -535,8 +813,6 @@ for(const f of L.legacyFurniture){const g=groups[f.group],{x,z,rotY}=f.slot,c=Ma
   g.rotation.y=rotY;g.position.set(x-(ax*c+az*n),LV.pavement-y0,z-(-ax*n+az*c));}
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
-// Puddles and reflections belonged to the old street; P3 regenerates them for the new roads.
-groups.wetGround.visible=false;
 // Rain falls in a box that follows the view target (clamped to the plinth), never under sample roofs.
 const roofs=L.samples.flatMap(s=>s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
 const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6),speeds=[];let rb=[0,0,0,0];
@@ -544,7 +820,6 @@ function rainBounds(){const h=rainBox/2;rb=[Math.max(-BH,target.x-h),Math.max(-B
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
 const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});scene.add(new THREE.LineSegments(rg,rainMat));
-const rings=[];for(let i=0;i<35;i++){let [x,z]=puddles[i%puddles.length];let a=mesh(new THREE.RingGeometry(.95,1,32),glow('#acd8de',.2),x+(Math.random()-.5)*.4,.119,z+(Math.random()-.5)*.2,false);a.rotation.x=-Math.PI/2;rings.push({a,phase:Math.random()});}
 group('store');const drops=[];for(let i=0;i<40;i++){let x=-2.4+Math.random()*6.5;let a=box(x,.7+Math.random()*2,1.806,.012,.07+Math.random()*.06,.003,glow('#c1e4df',.32),false);drops.push(a);}
 group('store');const drips=[];for(let i=0;i<18;i++){let a=box(-2.7+Math.random()*7.1,Math.random()*3,2.55,.013,.09,.012,glow('#cee7e5',.5),false);drips.push(a);}
 root=scene;
@@ -553,7 +828,7 @@ root=scene;
 const ZOOM=[9,150],PAN_LIMIT=BH-2,zoomTo=d=>Math.max(ZOOM[0],Math.min(ZOOM[1],d));
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);target.x=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.x-(dx*c+dy*n)*k));target.z=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.z-(-dx*n+dy*c)*k));}
 const pointers=new Map();let last=null,pinch=0;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);dist=zoomTo(dist*pinch/d);pinch=d;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(e.buttons===2)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);last=null;});canvas.addEventListener('wheel',e=>{e.preventDefault();dist=zoomTo(dist*Math.exp(e.deltaY*.001));},{passive:false});
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,dt=Math.min(.04,t-prev);prev=t;camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}for(const d of drops){d.position.y-=dt*.11;if(d.position.y<.6)d.position.y=2.85;}for(const d of drips){d.position.y-=dt*2.2;if(d.position.y<.25)d.position.y=3.02;}let cycle=t%19,open=cycle>10&&cycle<15?Math.min(1,(cycle-10)*1.5,(15-cycle)*1.5):0;doors[0].position.x=1.58-open*.46;doors[1].position.x=2.1+open*.46;sign.material.color.setScalar(1-.07*Math.pow(Math.sin(t*1.7),24));signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');renderer.render(scene,camera);}requestAnimationFrame(frame);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,dt=Math.min(.04,t-prev);prev=t;camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}for(const d of drops){d.position.y-=dt*.11;if(d.position.y<.6)d.position.y=2.85;}for(const d of drips){d.position.y-=dt*2.2;if(d.position.y<.25)d.position.y=3.02;}let cycle=t%19,open=cycle>10&&cycle<15?Math.min(1,(cycle-10)*1.5,(15-cycle)*1.5):0;doors[0].position.x=1.58-open*.46;doors[1].position.x=2.1+open*.46;sign.material.color.setScalar(1-.07*Math.pow(Math.sin(t*1.7),24));signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for the browser checks in tools/ (view control without synthetic input).
 window.__scene={scene,renderer,camera,groups,view:{get:()=>({yaw,pitch,dist,target:target.toArray()}),set(v){if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);},pan}};
 })();

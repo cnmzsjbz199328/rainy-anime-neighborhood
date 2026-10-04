@@ -66,14 +66,23 @@ const blocks = [
 ];
 
 // Setbacks per edge role; size = plan reference (frontage width × depth) used as a soft check.
+// fit = a typical candidate building (frontage width × depth) plus the ancillary space it needs on
+// the plot (parking reached from a frontage, service yard, bike shelter...). The P4 check packs
+// each reserved plot with its candidate to prove the reserved land is really buildable.
 const PLOT_TYPES = {
   store:     { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 9,  size: [[10, 14], [9, 14]] },
-  shop:      { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 9,  size: [[6, 9], [8, 12]] },
-  mixed:     { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 12, size: [[8, 12], [8, 14]] },
-  house:     { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 9,  size: [[8, 12], [10, 16]] },
-  apartment: { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 12, size: [[12, 18], [12, 20]] },
-  civic:     { setback: { front: 2, side: 1, rear: 1 },     maxHeight: 9,  size: [[8, 16], [8, 14]] },
-  school:    { setback: { front: 3, side: 3, rear: 3 },     maxHeight: 14, size: [[30, 44], [20, 30]] },
+  shop:      { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 9,  size: [[6, 9], [8, 12]],
+    fit: { building: [5.5, 6.5], annexes: [[1.2, 1.5, '后勤/垃圾']] } },
+  mixed:     { setback: { front: 1, side: 0.5, rear: 1 },   maxHeight: 12, size: [[8, 12], [8, 14]],
+    fit: { building: [7.5, 6], annexes: [[1.5, 2.5, '自行车']] } },
+  house:     { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 9,  size: [[8, 12], [10, 16]],
+    fit: { building: [6.5, 7], annexes: [[2.5, 5, '停车位']] } },
+  apartment: { setback: { front: 2, side: 1, rear: 1.5 },   maxHeight: 12, size: [[12, 18], [12, 20]],
+    fit: { building: [10, 8], annexes: [[2, 4, '自行车棚'], [1.5, 2, '垃圾站']] } },
+  civic:     { setback: { front: 2, side: 1, rear: 1 },     maxHeight: 9,  size: [[8, 16], [8, 14]],
+    fit: { building: [6, 6], annexes: [[2.5, 5, '停车位']] } },
+  school:    { setback: { front: 3, side: 3, rear: 3 },     maxHeight: 14, size: [[30, 44], [20, 30]],
+    fit: { building: [28, 8], annexes: [[24, 9, '操场'], [6, 4, '后勤/车库']] } },
   park:      { setback: { front: 0.5, side: 0.5, rear: 0.5 }, maxHeight: 4, size: [[10, 24], [8, 20]] },
 };
 
@@ -109,8 +118,8 @@ const plots = [
   plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'] }),
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'] }),
   // B04: koban on the main corner, clinic, a pocket park behind the eastbound bus stop.
-  plot('B04-P01', [6, 0, 14, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'] }),
-  plot('B04-P02', [14, 0, 26, 9], 'civic', 'S', { uses: ['诊所'] }),
+  plot('B04-P01', [6, 0, 16, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'], note: '10 宽：转角双退界后仍能放下交番与一个巡逻车位' }),
+  plot('B04-P02', [16, 0, 26, 9], 'civic', 'S', { uses: ['诊所'] }),
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35 }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'] }),
   plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'] }),
@@ -121,8 +130,8 @@ const plots = [
   plot('B05-P04', [-46, 21, -37, 30.5], 'shop', 'N', { uses: ['小店铺'] }),
   plot('B05-P05', [-18, 34, -6, 46], 'apartment', 'N', { frontages: ['N', 'E'], uses: ['小公寓'], status: 'occupied', sample: 'apartment' }),
   plot('B05-P06', [-28, 34, -18, 46], 'house', 'N', { uses: ['独栋住宅'] }),
-  plot('B05-P07', [-37, 34, -28, 46], 'house', 'N', { uses: ['独栋住宅'] }),
-  plot('B05-P08', [-46, 34, -37, 46], 'house', 'N', { uses: ['独栋住宅'] }),
+  plot('B05-P07', [-37, 34, -28, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -29.5, note: '面宽 9：入口靠东，停车位沿巷' }),
+  plot('B05-P08', [-46, 34, -37, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -38.5, note: '面宽 9：入口靠东，停车位沿巷' }),
   // B06: shop-houses on the main street (BS01 in front of P03), houses on alley A02.
   plot('B06-P01', [6, 21, 16, 30.5], 'mixed', 'N', { frontages: ['N', 'W'], uses: ['商住', '药店'] }),
   plot('B06-P02', [16, 21, 26, 30.5], 'mixed', 'N', { uses: ['商住'] }),
@@ -151,13 +160,13 @@ const samples = [
     door: { x: 6.9, z: 1.04 }, frontDir: [0, 1],
     parts: [
       { group: 'ramen', role: 'building', localBounds: { min: [5.09, 0.29, -3.61], max: [8.71, 3.12, 1.79], ground: [5.24, -3.53, 8.56, 1.1] } },
-      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.47, 0.33, 2.05], max: [7.9, 1.03, 2.45], ground: [5.47, 2.05, 7.9, 2.45] } },
+      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.46, 0.33, 2.06], max: [7.93, 1, 2.45], ground: [5.46, 2.06, 7.93, 2.45] } },
     ] },
   { id: 'apartment', name: 'こもれび荘', plot: 'B05-P05', transform: { x: -11.4, z: 33, rotY: Math.PI },
     door: { x: 0.9, z: -4.88 }, frontDir: [0, 1],
     parts: [
       { group: 'apartment', role: 'building', localBounds: { min: [-2.68, 0.18, -8.41], max: [3.91, 6.2, -4.19], ground: [-2.68, -8.26, 3.75, -4.8] } },
-      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.87, 0.33, -4.72], max: [-0.46, 1.02, -4.35], ground: [-1.87, -4.72, -0.46, -4.35] } },
+      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.9, 0.33, -4.68], max: [-0.47, 1.01, -4.32], ground: [-1.9, -4.68, -0.47, -4.32] } },
     ] },
 ];
 
@@ -167,13 +176,14 @@ const legacyFurniture = [
   { group: 'streetLamp',    anchor: [-3.7, 2.6],   slot: { road: 'R01', x: -6.6,  z: 18.75, rotY: Math.PI },      note: '便利店街角路灯（斑马线与转角圆弧之外）' },
   { group: 'guardRail',     anchor: [-0.85, 3.13], slot: { road: 'R01', x: -12.5, z: 18.75, rotY: Math.PI },      note: '店前护栏' },
   { group: 'trafficSignal', anchor: [5.1, -4.75],  slot: { road: 'R02', x: -3.5,  z: 22,    rotY: 0 },            note: 'X01 南向北进口信号' },
-  { group: 'utilityPole',   anchor: [-4.7, -3.85], slot: { road: 'R02', x: -3.5,  z: 29.5,  rotY: -Math.PI / 2 }, note: 'A01 巷口电杆，止まれ朝向出巷车辆' },
+  { group: 'utilityPole',   anchor: [-4.7, -3.85], slot: { road: 'R02', x: -3.5,  z: 29.5,  rotY: -Math.PI / 2 }, note: 'A01 巷口电杆，止まれ朝向出巷车辆',
+    wireAttach: [[-5.2, 5.49, -3.85], [-4.7, 5.49, -3.85], [-4.2, 5.49, -3.85]] },   // insulator tops (local); P3 wires start here
 ];
 // Original ground pieces that the new road network replaces (P2) or regenerates (P3).
 const legacyGround = [
   { group: 'base',         action: 'P2 替换为 96×96 底座' },
   { group: 'legacyGround', action: 'P2 移除：旧 L 形街道、地台、路缘、斑马线和小巷铺装由道路网络替代' },
-  { group: 'wetGround',    action: 'P3 按新道路重新生成水洼与反光' },
+  { group: 'wetGround',    action: 'P3 已移除，水洼、涟漪与反光由 wetStreet 按新道路生成' },
 ];
 
 // ---- Derived geometry (pure functions of the data above) ----
@@ -339,9 +349,203 @@ for (const p of plots) p.entrances.filter(e => e.kind === 'vehicle').forEach((e,
   curbCuts.push(cut(`${p.id}-DW${i + 1}`, 'driveway', r.id, -sgn, at - CURB_CUT.driveway / 2, at + CURB_CUT.driveway / 2, ROAD_TYPES[r.type].band));
 });
 
+// ---- P3: markings, drainage, street furniture and puddles ----
+// Japan drives on the left. Each intersection arm has one approach lane (the half of the carriageway
+// that leads into the junction). X01 is signalised; at X02 the branch road R02 has priority and R03 stops.
+const CONTROL = { X01: { kind: 'signal' }, X02: { kind: 'priority', major: 'R02' } };
+const MARKING = { line: 0.15, stop: 0.45, stopGap: 1, stripe: 0.45, stripeGap: 0.45, stripeInset: 0.25,
+  dash: [3, 3], solidBefore: 12, edgeInset: 0.25, diamond: [1.2, 3], diamondBefore: 10, text: [2.4, 2.2], textBefore: 2.6 };
+const cwHalf = r => ROAD_TYPES[r.type].carriageway / 2;
+const alongRect = (r, a0, a1, s0, s1) =>   // a = across offset from the centreline, s = along
+  band(r, Math.min(a0, a1), Math.max(a0, a1), Math.min(s0, s1), Math.max(s0, s1));
+const approaches = [];
+for (const n of roadNodes.filter(n => n.kind === 'intersection')) for (const r of roads) {
+  if (r.at !== (r.axis === 'x' ? n.z : n.x)) continue;
+  const o = roads.find(q => q.axis !== r.axis && q.at === (r.axis === 'x' ? n.x : n.z)), c = o.at;
+  const edge = cwHalf(o) + INTERSECTION.curbRadius + INTERSECTION.crosswalk.gap + INTERSECTION.crosswalk.width;
+  const ctl = CONTROL[n.name], control = ctl.kind === 'signal' ? 'signal' : r.id === ctl.major ? 'priority' : 'stop';
+  for (const side of [-1, 1]) {   // side of the junction the traffic comes from (along the road axis)
+    const arm = r.axis === 'x' ? (side < 0 ? 'W' : 'E') : (side < 0 ? 'N' : 'S');
+    approaches.push({ id: `${n.name}-${arm}`, node: n.id, road: r.id, arm, side, at: c, edge, control,
+      lane: r.axis === 'x' ? side : -side,                  // across sign of the approach half
+      heading: r.axis === 'x' ? [-side, 0] : [0, -side],   // direction of travel
+      stop: c + side * (edge + MARKING.stopGap),            // stop-line face nearest the junction
+      crosswalk: `${n.name}-CW-${arm}` });
+  }
+}
+const markings = [];   // { id, kind, rect } or { id, kind, x, z, heading, size }
+for (const a of approaches) {
+  const r = roadById[a.road], h = cwHalf(r);
+  if (a.control !== 'priority') markings.push({ id: `${a.id}-STOP`, kind: 'stop-line', rect: alongRect(r, 0, a.lane * h, a.stop, a.stop + a.side * MARKING.stop) });
+  const lc = r.at + a.lane * h / 2, pt = s => r.axis === 'x' ? [s, lc] : [lc, s];
+  const ds = a.stop + a.side * (MARKING.stop + MARKING.diamondBefore), clear = approaches.every(b => b.road !== a.road || b.node === a.node || Math.abs(ds - b.at) > b.edge + 4);
+  if (Math.abs(ds) < BASE.half - 3 && clear) { const [x, z] = pt(ds); markings.push({ id: `${a.id}-DIA`, kind: 'diamond', x, z, heading: a.heading, size: MARKING.diamond }); }
+  if (a.control === 'stop') { const [x, z] = pt(a.stop + a.side * (MARKING.stop + MARKING.textBefore)); markings.push({ id: `${a.id}-TXT`, kind: 'text', text: '止まれ', x, z, heading: a.heading, size: MARKING.text }); }
+}
+for (const c of crosswalks.filter(c => c.kind === 'zebra')) {   // stripes run with the traffic, carriageway only
+  const r = roadById[c.road], h = cwHalf(r), [s0, s1] = r.axis === 'x' ? [c.rect[0], c.rect[2]] : [c.rect[1], c.rect[3]];
+  let k = 0;
+  for (let o = -h + MARKING.stripeInset; o + MARKING.stripe <= h - MARKING.stripeInset + 1e-6; o += MARKING.stripe + MARKING.stripeGap)
+    markings.push({ id: `${c.id}-Z${++k}`, kind: 'zebra', rect: alongRect(r, o, o + MARKING.stripe, s0, s1) });
+}
+for (const r of roads) {   // centre line: dashed, solid for the last stretch before each junction
+  const h = cwHalf(r), mine = approaches.filter(a => a.road === r.id);
+  const gapsAt = [...new Set(mine.map(a => a.at))].map(c => { const as = mine.filter(a => a.at === c), reach = Math.max(...as.map(a => a.edge + (a.control === 'priority' ? 0 : MARKING.stopGap + MARKING.stop))); return [c - reach, c + reach]; });
+  for (const [s0, s1] of gaps(gapsAt)) {
+    const solid0 = gapsAt.some(g => Math.abs(g[1] - s0) < 1e-6) ? s0 + MARKING.solidBefore : s0, solid1 = gapsAt.some(g => Math.abs(g[0] - s1) < 1e-6) ? s1 - MARKING.solidBefore : s1;
+    if (solid0 > s0) markings.push({ id: `${r.id}-CL-${markings.length}`, kind: 'centre', rect: alongRect(r, -MARKING.line / 2, MARKING.line / 2, s0, Math.min(solid0, s1)) });
+    for (let s = solid0 + MARKING.dash[1] / 2; s + MARKING.dash[0] <= solid1; s += MARKING.dash[0] + MARKING.dash[1])
+      markings.push({ id: `${r.id}-CL-${markings.length}`, kind: 'centre', rect: alongRect(r, -MARKING.line / 2, MARKING.line / 2, s, s + MARKING.dash[0]) });
+    if (solid1 < s1 && solid1 >= solid0) markings.push({ id: `${r.id}-CL-${markings.length}`, kind: 'centre', rect: alongRect(r, -MARKING.line / 2, MARKING.line / 2, solid1, s1) });
+    if (r.type === 'main') for (const sg of [-1, 1]) {   // edge lines on the main street
+      const o = sg * (h - MARKING.edgeInset);
+      markings.push({ id: `${r.id}-EL-${markings.length}`, kind: 'edge', rect: alongRect(r, o, o - sg * MARKING.line, s0, s1) });
+    }
+  }
+}
+
+// Drainage: an L-gutter along every straight curb, grates every ~12 m and beside each ramp,
+// a covered channel down the middle of each alley, and outlets in the plinth face where they leave.
+const DRAIN = { gutter: 0.3, grate: [0.7, 0.3], spacing: 12, channel: 0.3 };
+const gutters = [], grates = [], outlets = [];
+for (const is of islands) {
+  const [x0, z0, x1, z1] = is.rect, R = INTERSECTION.curbRadius, g = DRAIN.gutter, rd = is.round;
+  const runs = [   // [rect, line, at, s0, s1, outward]
+    z0 > -H && [[x0 + (rd.NW ? R : 0), z0 - g, x1 - (rd.NE ? R : 0), z0], 'z', z0, x0 + (rd.NW ? R : 0), x1 - (rd.NE ? R : 0), -1],
+    z1 < H && [[x0 + (rd.SW ? R : 0), z1, x1 - (rd.SE ? R : 0), z1 + g], 'z', z1, x0 + (rd.SW ? R : 0), x1 - (rd.SE ? R : 0), 1],
+    x0 > -H && [[x0 - g, z0 + (rd.NW ? R : 0), x0, z1 - (rd.SW ? R : 0)], 'x', x0, z0 + (rd.NW ? R : 0), z1 - (rd.SW ? R : 0), -1],
+    x1 < H && [[x1, z0 + (rd.NE ? R : 0), x1 + g, z1 - (rd.SE ? R : 0)], 'x', x1, z0 + (rd.NE ? R : 0), z1 - (rd.SE ? R : 0), 1],
+  ].filter(Boolean);
+  for (const [rect, line, at, s0, s1, out] of runs) {
+    const id = `${is.id}-G${gutters.length + 1}`, mid = at + out * g / 2, pt = s => line === 'z' ? [s, mid] : [mid, s];
+    gutters.push({ id, rect, line });
+    const cuts = curbCuts.filter(k => k.line === line && Math.abs(k.at - at) < 1e-6 && k.s0 >= s0 - 1e-6 && k.s1 <= s1 + 1e-6);
+    const taken = cuts.map(k => [k.s0 - 0.6, k.s1 + 0.6]);
+    const ok = s => s >= s0 + 0.5 && s <= s1 - 0.5 && !taken.some(([a, b]) => s > a && s < b);
+    const add = (s, why, shift = 0) => {   // run grates may slide up to `shift` to clear driveways and ramps
+      for (const d of [0, ...Array.from({ length: shift * 2 }, (_, i) => (i % 2 ? -1 : 1) * (Math.floor(i / 2) + 1) * 0.5)]) if (ok(s + d)) {
+        taken.push([s + d - 2, s + d + 2]); const [x, z] = pt(s + d); grates.push({ id: `${id}-GR${grates.length + 1}`, x, z, line, why }); return; } };
+    for (const k of cuts.filter(k => k.kind === 'ramp')) { add(k.s0 - 0.9, 'ramp'); add(k.s1 + 0.9, 'ramp'); }
+    for (let s = s0 + DRAIN.spacing / 2; s < s1; s += DRAIN.spacing) add(s, 'run', 4);
+    for (const [e, face] of [[s0, -1], [s1, 1]]) if (Math.abs(Math.abs(e) - H) < 1e-6) { const [x, z] = pt(e); outlets.push({ id: `${id}-OUT`, x, z, face: line === 'z' ? [face, 0] : [0, face] }); }
+  }
+}
+const channels = alleys.map(a => {
+  const zc = (a.rect[1] + a.rect[3]) / 2, rect = [a.rect[0], zc - DRAIN.channel / 2, a.rect[2], zc + DRAIN.channel / 2];
+  for (const e of [a.rect[0], a.rect[2]]) if (Math.abs(Math.abs(e) - H) < 1e-6) outlets.push({ id: `${a.id}-OUT`, x: e, z: zc, face: [Math.sign(e), 0] });
+  return { id: `${a.id}-CH`, alley: a.id, rect };
+});
+
+// Street furniture in the facility bands. Signals and stop signs follow the approaches; utility poles
+// run along one band of each road (the pole/cable corridor), lamps along both bands, staggered.
+const FURNITURE = { lampSpacing: 16, poleSpacing: 22, maxSpan: 30, minGap: 2, entranceClear: 1.5, edgeClear: 1.5,
+  poleSide: { R01: -1, R02: -1, R03: 1 }, alleyLampSpacing: 14 };
+const bandPt = (r, side, s) => { const t = ROAD_TYPES[r.type], o = r.at + side * (t.carriageway / 2 + t.band / 2); return r.axis === 'x' ? [s, o] : [o, s]; };
+const furniture = legacyFurniture.map(f => ({ id: f.group, kind: 'legacy', group: f.group, road: f.slot.road, x: f.slot.x, z: f.slot.z,
+  extent: f.group === 'guardRail' ? 1.3 : 0 }));
+function blockedAlong(r, side) {   // along-road spans of this band where nothing may stand
+  const out = [];
+  for (const c of crosswalks.filter(c => c.road === r.id)) out.push(r.axis === 'x' ? [c.rect[0] - 0.8, c.rect[2] + 0.8] : [c.rect[1] - 0.8, c.rect[3] + 0.8]);
+  for (const k of curbCuts.filter(k => k.road === r.id && k.dir === side)) out.push([k.s0 - 0.5, k.s1 + 0.5]);
+  for (const o of roads.filter(o => o.axis !== r.axis)) { const e = cwHalf(o) + INTERSECTION.curbRadius + 0.3; out.push([o.at - e, o.at + e]); }
+  for (const p of plots) for (const e of p.entrances) {   // keep entrances on this side of the road clear
+    const [dx, dz] = DIRS[e.facing], s = r.axis === 'x' ? e.x : e.z, across = r.axis === 'x' ? e.z : e.x;
+    const faces = r.axis === 'x' ? dz !== 0 : dx !== 0, edge = r.at + side * half(r.type);
+    if (faces && Math.abs(across - edge) < 1e-6) out.push([s - FURNITURE.entranceClear, s + FURNITURE.entranceClear]);
+  }
+  out.push([-Infinity, -H + FURNITURE.edgeClear], [H - FURNITURE.edgeClear, Infinity]);
+  return out;
+}
+function place(r, side, s, kind, extra = {}) {
+  const blocked = blockedAlong(r, side);
+  for (const d of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3, 4, -4, 5, -5]) {
+    const t = s + d, [x, z] = bandPt(r, side, t);
+    if (blocked.some(([a, b]) => t > a && t < b)) continue;
+    if (furniture.some(f => Math.hypot(f.x - x, f.z - z) < FURNITURE.minGap + (f.extent || 0))) continue;
+    const f = { id: `${kind}-${r.id}-${furniture.length + 1}`, kind, road: r.id, side, s: t, x, z, ...extra };
+    furniture.push(f); return f;
+  }
+  return null;
+}
+for (const a of approaches) {   // signals at the junction side of the crosswalk, stop signs at the stop line
+  const r = roadById[a.road], s = a.control === 'signal' ? a.at + a.side * (a.edge - INTERSECTION.crosswalk.width - 0.5) : a.stop + a.side * (MARKING.stop + 0.4);
+  if (a.control === 'priority') continue;
+  const [x, z] = bandPt(r, a.lane, s), legacy = furniture.find(f => f.kind === 'legacy' && Math.hypot(f.x - x, f.z - z) < 0.3);
+  const face = r.axis === 'x' ? [a.side, 0] : [0, a.side];   // towards the approaching traffic
+  if (legacy) { legacy.approach = a.id; continue; }
+  furniture.push({ id: `${a.control === 'signal' ? 'SIG' : 'STOP'}-${a.id}`, kind: a.control === 'signal' ? 'signal' : 'stop-sign', road: r.id, side: a.lane, s, x, z, face, approach: a.id });
+}
+for (const a of alleys) for (const r of roads.filter(r => r.axis === 'z')) {   // stop signs for traffic leaving the alleys
+  const h = half(r.type), mouthW = Math.abs(a.rect[2] - (r.at - h)) < 1e-6, mouthE = Math.abs(a.rect[0] - (r.at + h)) < 1e-6;
+  if (!mouthW && !mouthE) continue;
+  const heading = mouthW ? 1 : -1, x = mouthW ? a.rect[2] - 0.6 : a.rect[0] + 0.6, z = heading > 0 ? a.rect[1] + 0.25 : a.rect[3] - 0.25;   // left of the exiting car
+  if (furniture.some(f => Math.hypot(f.x - x, f.z - z) < 3.5 && f.group === 'utilityPole')) continue;   // A01: the old pole carries its 止まれ
+  furniture.push({ id: `STOP-${a.id}`, kind: 'stop-sign', alley: a.id, x, z, face: [-heading, 0] });
+}
+const poleLines = [];
+function freeAt(r, side, t) {
+  const [x, z] = bandPt(r, side, t);
+  return !blockedAlong(r, side).some(([a, b]) => t > a && t < b) && !furniture.some(f => Math.hypot(f.x - x, f.z - z) < FURNITURE.minGap + (f.extent || 0));
+}
+for (const r of roads) {   // greedy walk: next pole ~poleSpacing on, pulled back to a free spot, never > maxSpan
+  const side = FURNITURE.poleSide[r.id], legacy = furniture.find(f => f.group === 'utilityPole' && f.road === r.id);
+  const line = legacy ? [legacy] : [], add = s => { const [x, z] = bandPt(r, side, s), p = { id: `pole-${r.id}-${furniture.length + 1}`, kind: 'pole', road: r.id, side, s, x, z, across: r.axis === 'x' ? [0, 1] : [1, 0] }; furniture.push(p); line.push(p); return s; };
+  const start = legacy ? (r.axis === 'x' ? legacy.x : legacy.z) : (() => { for (let t = -H + 4; t < 0; t += 0.5) if (freeAt(r, side, t)) return add(t); })();
+  for (const dir of legacy ? [-1, 1] : [1]) {
+    let prev = start;
+    for (;;) {
+      const target = prev + dir * FURNITURE.poleSpacing, limit = dir * (H - 2.5);
+      if (dir * target > dir * limit && dir * (limit - prev) < 8) break;
+      const want = dir * target > dir * limit ? limit : target;
+      let got = null;
+      for (let d = 0; d <= FURNITURE.maxSpan; d += 0.5) {   // back towards prev first, then further out
+        for (const t of [want - dir * d, want + dir * d]) if (dir * (t - prev) >= 6 && dir * (t - prev) <= FURNITURE.maxSpan && Math.abs(t) <= H - 2 && freeAt(r, side, t)) { got = t; break; }
+        if (got !== null) break;
+      }
+      if (got === null) break;
+      prev = add(got);
+    }
+  }
+  line.sort((p, q) => (r.axis === 'x' ? p.x - q.x : p.z - q.z));
+  const spans = [];
+  for (let i = 0; i + 1 < line.length; i++) spans.push([line[i].id, line[i + 1].id]);
+  poleLines.push({ road: r.id, side, poles: line.map(p => p.id), spans });
+}
+for (const r of roads) for (const side of [-1, 1]) {   // lamps, staggered between the two bands
+  for (let s = -H + 6 + (side > 0 ? FURNITURE.lampSpacing / 2 : 0); s < H - 2; s += FURNITURE.lampSpacing)
+    place(r, side, s, 'lamp', { face: r.axis === 'x' ? [0, -side] : [-side, 0] });
+}
+for (const a of alleys) {   // small security lamps on alternating alley edges
+  const len = a.rect[2] - a.rect[0];
+  for (let i = 0, s = a.rect[0] + 4; s < a.rect[2] - 2; s += FURNITURE.alleyLampSpacing, i++) {
+    const z = i % 2 ? a.rect[1] + 0.25 : a.rect[3] - 0.25;
+    if (furniture.some(f => Math.hypot(f.x - s, f.z - z) < FURNITURE.minGap)) continue;
+    furniture.push({ id: `ALAMP-${a.id}-${i + 1}`, kind: 'alley-lamp', alley: a.id, x: s, z, face: [0, i % 2 ? 1 : -1] });
+  }
+}
+
+// Puddles collect along gutters, in alley channels and at low corners (deterministic seed).
+let pseed = 20240917;
+const prnd = () => ((pseed = (pseed * 1664525 + 1013904223) >>> 0) / 4294967296);
+const puddles = [];
+for (const g of gutters) {
+  const len = g.line === 'z' ? g.rect[2] - g.rect[0] : g.rect[3] - g.rect[1], n = Math.floor(len / 9);
+  for (let i = 0; i < n; i++) {
+    const s = (g.line === 'z' ? g.rect[0] : g.rect[1]) + (i + 0.2 + prnd() * 0.6) * len / n;
+    const curbAt = g.line === 'z' ? (g.rect[1] + g.rect[3]) / 2 : (g.rect[0] + g.rect[2]) / 2;
+    const isl = islands.find(is => g.line === 'z' ? Math.abs(is.rect[1] - g.rect[3]) < 1e-6 || Math.abs(is.rect[3] - g.rect[1]) < 1e-6 : Math.abs(is.rect[0] - g.rect[2]) < 1e-6 || Math.abs(is.rect[2] - g.rect[0]) < 1e-6);
+    const out = isl ? (g.line === 'z' ? (Math.abs(isl.rect[1] - g.rect[3]) < 1e-6 ? -1 : 1) : (Math.abs(isl.rect[0] - g.rect[2]) < 1e-6 ? -1 : 1)) : 1;
+    const across = curbAt + out * (0.35 + prnd() * 0.5), rl = 0.8 + prnd() * 1.4, rw = 0.25 + prnd() * 0.35;
+    puddles.push(g.line === 'z' ? { x: s, z: across, rx: rl, rz: rw, on: 'road' } : { x: across, z: s, rx: rw, rz: rl, on: 'road' });
+  }
+}
+for (const c of channels) for (let s = c.rect[0] + 3; s < c.rect[2] - 2; s += 5 + prnd() * 4)
+  puddles.push({ x: s, z: (c.rect[1] + c.rect[3]) / 2 + (prnd() - 0.5) * 0.8, rx: 0.6 + prnd() * 0.9, rz: 0.3 + prnd() * 0.3, on: 'alley' });
+
 const LAYOUT = { BASE, SAMPLE_SCALE, ROAD_TYPES, ALLEY, INTERSECTION, PLOT_TYPES, DIRS, LEVELS, CURB_CUT,
   roadNodes, roads, alleys, roadSegments, walkways, aprons, blocks, plots, samples,
-  legacyFurniture, legacyGround, surfaces, crosswalks, islands, curbCuts, corridorRect, toWorld, rect };
+  legacyFurniture, legacyGround, surfaces, crosswalks, islands, curbCuts, CONTROL, MARKING, DRAIN, FURNITURE,
+  approaches, markings, gutters, grates, channels, outlets, furniture, poleLines, puddles, corridorRect, toWorld, rect };
 if (typeof module !== 'undefined' && module.exports) module.exports = LAYOUT;
 else global.LAYOUT = LAYOUT;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
