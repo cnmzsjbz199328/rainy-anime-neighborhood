@@ -1,6 +1,6 @@
 # 雨音街角 · Rainy Anime Neighborhood
 
-交互式 Three.js 日本雨夜社区微缩模型。当前初始版本包括便利店、拉面店、三层公寓和服务小巷；采用墨线轮廓、程序化淡彩颗粒与分层明暗。
+交互式 Three.js 日本雨夜社区微缩模型。当前版本是 96 × 96 的小城道路骨架：三条道路、两个十字路口、六个街区和 38 块地块，其中便利店、拉面店和三层公寓已就位，其余地块留作将来的建筑用地；采用墨线轮廓、程序化淡彩颗粒与分层明暗。
 
 ## 运行
 
@@ -13,7 +13,7 @@
 - `index.html`：包含渲染库、布局数据和场景脚本的单文件交付版。
 - `scene.js`：可编辑的场景源码；已有样板按命名分组（store、ramen、apartment 等），便于整体放置。
 - `layout.js`：道路、街区、地块与样板放置的布局数据（坐标约定见文件头）。
-- `tools/`：布局工具。`measure_samples.mjs` 在 Chromium 中实测样板尺寸；`layout_check.mjs` 检查布局并生成 `docs/layout/` 下的俯视检查图和报告。
+- `tools/`：布局与浏览器检查工具。`measure_samples.mjs` 在 Chromium 中实测样板尺寸；`layout_check.mjs` 检查布局并生成 `docs/layout/` 下的俯视检查图和报告；`live_topdown.mjs` 渲染实景俯视并叠加布局线；`views.mjs` 检查首帧、控制台和交互，并输出审查截图。
 - `PROGRESS.md`：分阶段进度、检查结果和待验证项。
 - `ROAD_NETWORK_PLAN.md`：道路与用地建设计划。
 - `three.min.js`：Three.js 0.160.1，保留原始版权头。
@@ -23,7 +23,7 @@
 
 修改 `scene.js` 或 `layout.js` 后运行 `python3 build.py`，更新 `index.html`；不要同时手工编辑生成文件和源码。
 
-布局检查需要 Node 与 Playwright（Chromium）：先运行 `node tools/measure_samples.mjs`，再运行 `node tools/layout_check.mjs --png`。
+布局检查需要 Node 与 Playwright（Chromium）：先运行 `node tools/measure_samples.mjs`，再运行 `node tools/layout_check.mjs --png`；实景检查运行 `node tools/live_topdown.mjs` 与 `node tools/views.mjs`。
 
 ## 当前效果
 

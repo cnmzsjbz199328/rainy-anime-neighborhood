@@ -30,6 +30,9 @@ const sets = Object.fromEntries(LAYOUT.samples.map(s => [s.id, s.parts.map(p => 
 const result = await page.evaluate(({ sets, ppu }) => {
   const { scene, groups } = window.__scene;
   const r2 = v => Math.round(v * 100) / 100;
+  // Groups are placed by layout.js transforms; measure in each group's own (sample-local) frame.
+  const placed = Object.values(groups).map(g => [g, g.position.clone(), g.quaternion.clone(), g.scale.clone(), g.visible]);
+  for (const [g] of placed) { g.position.set(0, 0, 0); g.quaternion.identity(); g.scale.set(1, 1, 1); g.visible = true; g.updateMatrixWorld(true); }
   const bounds = {};
   for (const [name, g] of Object.entries(groups)) {
     const b = new THREE.Box3().setFromObject(g, true);
@@ -59,6 +62,7 @@ const result = await page.evaluate(({ sets, ppu }) => {
   }
   scene.children.forEach((c, i) => { c.visible = saved.vis[i]; });
   scene.background = saved.bg; scene.fog = saved.fog; renderer.dispose();
+  for (const [g, p, q, k, v] of placed) { g.position.copy(p); g.quaternion.copy(q); g.scale.copy(k); g.visible = v; g.updateMatrixWorld(true); }
   return { bounds, sprites };
 }, { sets, ppu: PX_PER_UNIT });
 await browser.close();

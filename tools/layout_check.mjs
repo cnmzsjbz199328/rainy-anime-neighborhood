@@ -292,10 +292,44 @@ const S = 11, PAD = 40, MAPW = 2 * H * S;          // main map: 11 px per unit
 const DS = 26, detail = [-47, 19.5, -4.5, 47];      // B05 detail view window and scale
 const DW = (detail[2] - detail[0]) * DS, DH = (detail[3] - detail[1]) * DS;
 const W = PAD * 2 + Math.max(MAPW + 470, DW), Hh = PAD * 2 + MAPW + 90 + DH + 60;
-const C = { trim: '#2c3949', ground: '#d9d6c4', plotRes: '#e8ead2', plotOcc: '#f1d9b4', build: '#8a8f6e', cw: '#47566a', band: '#8d99a3', sw: '#c9cfd1', alley: '#bfae8e', walk: '#d6c6a3', apron: '#b9d3df', zebra: '#ffffff', ink: '#273647', node: '#c0504d', ped: '#2f7d5b', veh: '#d07a2a', bld: '#c0392b', att: '#e08a1e' };
+const C = { trim: '#2c3949', ground: '#d9d6c4', plotRes: '#e8ead2', plotOcc: '#f1d9b4', build: '#8a8f6e', cw: '#47566a', band: '#8d99a3', sw: '#c9cfd1', alley: '#bfae8e', walk: '#d6c6a3', apron: '#b9d3df', zebra: '#ffffff', ink: '#273647', node: '#c0504d', ped: '#2f7d5b', veh: '#d07a2a', bld: '#c0392b', att: '#e08a1e', ramp: '#f3e08a', drive: '#e0a96d' };
 const sprites = (() => { try { return JSON.parse(fs.readFileSync(path.join(root, 'tools', 'out', 'sample_bounds.json'), 'utf8')).sprites; } catch { return null; } })();
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
+// ---------- C9 step-free crossings and driveways ----------
+check('C9', '斑马线两端有无台阶坡道，车辆出入口只降设施带，人行道保持连续', ({ fail, info }) => {
+  const cuts = L.curbCuts || [], lv = L.LEVELS, cc = L.CURB_CUT, curb = lv.pavement - lv.carriageway;
+  if (!cuts.length) { fail('layout.js 未定义 curbCuts'); return; }
+  const roadOf = id => roadById[id], typeOf = k => L.ROAD_TYPES[roadOf(k.road).type];
+  for (const c of L.crosswalks.filter(c => c.kind === 'zebra')) {
+    const r = roadOf(c.road), span = r.axis === 'z' ? [c.rect[1], c.rect[3]] : [c.rect[0], c.rect[2]];
+    const ends = cuts.filter(k => k.kind === 'ramp' && k.road === c.road && Math.abs(k.s0 - span[0]) < EPS && Math.abs(k.s1 - span[1]) < EPS);
+    if (new Set(ends.map(k => k.dir)).size !== 2) fail(`${c.id} 两端坡道不全（找到 ${ends.length} 处）`);
+  }
+  for (const k of cuts) {
+    const t = typeOf(k), slope = curb / k.depth, flatLeft = t.band + t.sidewalk - k.depth;
+    if (k.kind === 'ramp') {
+      if (slope > 1 / 8 + EPS) fail(`${k.id} 坡度 1:${(1 / slope).toFixed(1)} 陡于 1:8`);
+      if (flatLeft < cc.minFlatSidewalk - EPS) fail(`${k.id} 坡道后人行道平段只剩 ${flatLeft.toFixed(2)}`);
+    } else if (k.depth > t.band + EPS) fail(`${k.id} 车辆出入口降坡伸进人行道，人行道应保持连续`);
+    // must sit on the straight part of an island edge, clear of the curb returns
+    const is = L.islands.find(i => (k.line === 'x' ? [i.rect[0], i.rect[2]] : [i.rect[1], i.rect[3]]).some(v => Math.abs(v - k.at) < EPS)
+      && (k.line === 'x' ? k.s0 >= i.rect[1] - EPS && k.s1 <= i.rect[3] + EPS : k.s0 >= i.rect[0] - EPS && k.s1 <= i.rect[2] + EPS));
+    if (!is) { fail(`${k.id} 不在任何人行岛的路缘线上`); continue; }
+    const [a, b] = k.line === 'x' ? [is.rect[1], is.rect[3]] : [is.rect[0], is.rect[2]], R = L.INTERSECTION.curbRadius;
+    const lowSide = k.line === 'x' ? (Math.abs(k.at - is.rect[0]) < EPS ? 'W' : 'E') : (Math.abs(k.at - is.rect[1]) < EPS ? 'N' : 'S');
+    const corners = k.line === 'x' ? [`N${lowSide}`, `S${lowSide}`] : [`${lowSide}W`, `${lowSide}E`];
+    if ((is.round[corners[0]] && k.s0 < a + R - EPS) || (is.round[corners[1]] && k.s1 > b - R + EPS)) fail(`${k.id} 压到转角圆弧`);
+    for (const f of L.legacyFurniture) if (pointIn(k.rect, f.slot.x, f.slot.z)) fail(`${f.group} 立柱落在 ${k.id} 坡道上`);
+    for (const o of cuts) if (o.id > k.id && overlapArea(o.rect, k.rect) > EPS) fail(`${k.id} 与 ${o.id} 重叠`);
+  }
+  for (const a of L.alleys) for (const r of L.roads.filter(r => r.axis === 'z'))
+    if (touches(a.rect, L.corridorRect(r), 1) && !cuts.some(k => k.id === `${a.id}-DW`)) fail(`${a.id} 巷口缺少车辆降坡`);
+  for (const p of L.plots) p.entrances.filter(e => e.kind === 'vehicle').forEach((e, i) => { if (!cuts.some(k => k.id === `${p.id}-DW${i + 1}`)) fail(`${p.id} 车辆出入口缺少降坡`); });
+  const ramps = cuts.filter(k => k.kind === 'ramp');
+  info(`坡道 ${ramps.length} 处（坡度 1:${(ramps[0].depth / curb).toFixed(0)}，进深 ${ramps[0].depth.toFixed(2)}），车辆降坡 ${cuts.length - ramps.length} 处：${cuts.filter(k => k.kind !== 'ramp').map(k => k.id).join('、')}`);
+  info(`路缘高 ${curb.toFixed(2)}：车行道 y=${lv.carriageway}，人行面 y=${lv.pavement}，地块 y=${lv.plot}`);
+});
 function layer(tx, tz, k, win) {   // world → svg mapping helpers for a view
   const X = x => tx + (x - win[0]) * k, Z = z => tz + (z - win[1]) * k;
   const R = (r, attrs) => { const a = inter(r, win); if (a[2] <= a[0] || a[3] <= a[1]) return ''; return `<rect x="${X(a[0]).toFixed(1)}" y="${Z(a[1]).toFixed(1)}" width="${((a[2] - a[0]) * k).toFixed(1)}" height="${((a[3] - a[1]) * k).toFixed(1)}" ${attrs}/>`; };
@@ -334,6 +368,7 @@ function drawView(tx, tz, k, win, detailed) {
     const len = alongX ? r[3] - r[1] : r[2] - r[0];
     for (let t = 0.25; t < len - 0.2; t += 0.9) o += R(alongX ? [r[0], r[1] + t, r[2], r[1] + t + 0.45] : [r[0] + t, r[1], r[0] + t + 0.45, r[3]], `fill="${C.zebra}" opacity=".9"`);
   }
+  for (const k of L.curbCuts || []) o += R(k.rect, `fill="${k.kind === 'ramp' ? C.ramp : C.drive}" stroke="${C.ink}" stroke-width=".5"`);
   if (detailed && sprites) for (const s of L.samples) {
     const sp = sprites[s.id]; if (!sp) continue;
     const png = fs.readFileSync(path.join(root, 'tools', 'out', sp.file)).toString('base64');
@@ -392,7 +427,7 @@ for (let v = -H; v <= H; v += 16) svg += `<text x="${gx + (v + H) * S}" y="${gy 
 svg += `<rect x="${gx + (detail[0] + H) * S}" y="${gy + (detail[1] + H) * S}" width="${(detail[2] - detail[0]) * S}" height="${(detail[3] - detail[1]) * S}" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="8 4"/>`;
 // legend + results
 const lx = gx + MAPW + 30; let ly = gy + 6;
-const leg = [[C.cw, '车行道'], [C.band, '路缘/设施带'], [C.sw, '人行道（净宽 2）'], [C.alley, '内巷（共享 3.5）'], [C.walk, '人行通道'], [C.apron, '公交候车区'], [C.plotRes, '预留空地'], [C.plotOcc, '已有样板地块'], [C.trim, '底座收边']];
+const leg = [[C.cw, '车行道'], [C.band, '路缘/设施带'], [C.sw, '人行道（净宽 2）'], [C.alley, '内巷（共享 3.5）'], [C.walk, '人行通道'], [C.apron, '公交候车区'], [C.ramp, '无台阶过街坡道（1:10）'], [C.drive, '车辆出入口降坡（仅设施带）'], [C.plotRes, '预留空地'], [C.plotOcc, '已有样板地块'], [C.trim, '底座收边']];
 svg += `<text x="${lx}" y="${ly}" font-size="15" font-weight="800" fill="${C.ink}">图例</text>`; ly += 12;
 for (const [c, t] of leg) { svg += `<rect x="${lx}" y="${ly}" width="22" height="13" fill="${c}" stroke="${C.ink}" stroke-width=".6"/><text x="${lx + 30}" y="${ly + 11}" font-size="12" fill="${C.ink}">${t}</text>`; ly += 19; }
 const legL = [['line', C.build, '4 3', '可建范围（扣除退界）'], ['line', C.bld, '', '样板建筑实测包围盒'], ['line', C.att, '3 2', '附属设施实测包围盒'], ['line', '#1d6fa5', '2 2', '行走高度占地（y 0.3–1.8）'], ['line', '#f2d27a', '6 4', '道路中心线（连接图）'], ['line', '#7a5a2a', '6 4', '内巷中心线'], ['arrow', C.ped, '', '人行入口与朝向'], ['arrow', C.veh, '', '车辆出入口'], ['dot', C.node, '', '道路节点 / ○ 边界出口'], ['dot', '#6a4c93', '', '原街道设施临时位置'], ['zebra', '#fff', '', '斑马线（虚线框=候选过街）']];

@@ -151,13 +151,13 @@ const samples = [
     door: { x: 6.9, z: 1.04 }, frontDir: [0, 1],
     parts: [
       { group: 'ramen', role: 'building', localBounds: { min: [5.09, 0.29, -3.61], max: [8.71, 3.12, 1.79], ground: [5.24, -3.53, 8.56, 1.1] } },
-      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.46, 0.33, 2.05], max: [7.91, 1.03, 2.41], ground: [5.46, 2.05, 7.91, 2.41] } },
+      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.47, 0.33, 2.05], max: [7.9, 1.03, 2.45], ground: [5.47, 2.05, 7.9, 2.45] } },
     ] },
   { id: 'apartment', name: 'こもれび荘', plot: 'B05-P05', transform: { x: -11.4, z: 33, rotY: Math.PI },
     door: { x: 0.9, z: -4.88 }, frontDir: [0, 1],
     parts: [
       { group: 'apartment', role: 'building', localBounds: { min: [-2.68, 0.18, -8.41], max: [3.91, 6.2, -4.19], ground: [-2.68, -8.26, 3.75, -4.8] } },
-      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.9, 0.33, -4.72], max: [-0.45, 1.02, -4.32], ground: [-1.9, -4.72, -0.45, -4.32] } },
+      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.87, 0.33, -4.72], max: [-0.46, 1.02, -4.35], ground: [-1.87, -4.72, -0.46, -4.35] } },
     ] },
 ];
 
@@ -287,9 +287,61 @@ for (const s of samples) {
   e.door = [Math.round(dx * 100) / 100, Math.round(dz * 100) / 100];
 }
 
-const LAYOUT = { BASE, SAMPLE_SCALE, ROAD_TYPES, ALLEY, INTERSECTION, PLOT_TYPES, DIRS,
+// ---- Levels, pavement islands and curb cuts (P2) ----
+// Carriageways sit just above the plinth; everything between carriageways is one raised pavement
+// island (bands, sidewalks, blocks, alleys), so the curb runs unbroken around each island and the
+// corners at intersections are curb returns of radius INTERSECTION.curbRadius.
+const LEVELS = { plinth: 0, carriageway: 0.02, pavement: 0.15, plot: 0.19 };
+const CURB = LEVELS.pavement - LEVELS.carriageway;
+// Step-free crossings: a 1:10 ramp at both ends of every zebra, cut back from the curb line.
+// Driveways (alley mouths, vehicle entrances) drop only inside the facility band so the
+// sidewalk stays level and continuous across them.
+const CURB_CUT = { rampDepth: CURB * 10, driveway: 3, minFlatSidewalk: 1 };
+const H = BASE.half;
+const cwSpan = r => [r.at - ROAD_TYPES[r.type].carriageway / 2, r.at + ROAD_TYPES[r.type].carriageway / 2];
+function gaps(spansList) {
+  const out = []; let s = -H;
+  for (const [a, b] of spansList.slice().sort((p, q) => p[0] - q[0])) { if (a > s) out.push([s, a]); s = Math.max(s, b); }
+  if (s < H) out.push([s, H]);
+  return out;
+}
+const islands = [];
+for (const [z0, z1] of gaps(roads.filter(r => r.axis === 'x').map(cwSpan)))
+  for (const [x0, x1] of gaps(roads.filter(r => r.axis === 'z').map(cwSpan))) {
+    const inX0 = x0 > -H, inX1 = x1 < H, inZ0 = z0 > -H, inZ1 = z1 < H;
+    islands.push({ id: `IS${islands.length + 1}`, rect: [x0, z0, x1, z1],
+      // a corner is a curb return when both of its edges are carriageway edges
+      round: { NW: inX0 && inZ0, NE: inX1 && inZ0, SE: inX1 && inZ1, SW: inX0 && inZ1 } });
+  }
+// Curb cut on the curb line of `road`: line = the constant coordinate ('x' for N–S roads),
+// at = curb line position, dir = +1/−1 pointing into the pavement, [s0, s1] along the curb.
+function cut(id, kind, road, side, s0, s1, depth) {
+  const r = roadById[road], line = r.axis === 'z' ? 'x' : 'z', at = cwSpan(r)[side > 0 ? 1 : 0];
+  const [d0, d1] = [Math.min(at, at + side * depth), Math.max(at, at + side * depth)];
+  return { id, kind, road, line, at, dir: side, s0, s1, depth, rect: line === 'x' ? [d0, s0, d1, s1] : [s0, d0, s1, d1] };
+}
+const curbCuts = [];
+for (const c of crosswalks.filter(c => c.kind === 'zebra')) {
+  const r = roadById[c.road], [s0, s1] = r.axis === 'z' ? [c.rect[1], c.rect[3]] : [c.rect[0], c.rect[2]];
+  for (const side of [-1, 1]) curbCuts.push(cut(`${c.id}-RP${side < 0 ? 'a' : 'b'}`, 'ramp', r.id, side, s0, s1, CURB_CUT.rampDepth));
+}
+for (const a of alleys) for (const r of roads.filter(r => r.axis === 'z')) {   // alley mouths on N–S roads
+  const h = half(r.type);
+  if (Math.abs(a.rect[2] - (r.at - h)) < 1e-6) curbCuts.push(cut(`${a.id}-DW`, 'driveway', r.id, -1, a.rect[1], a.rect[3], ROAD_TYPES[r.type].band));
+  if (Math.abs(a.rect[0] - (r.at + h)) < 1e-6) curbCuts.push(cut(`${a.id}-DW`, 'driveway', r.id, 1, a.rect[1], a.rect[3], ROAD_TYPES[r.type].band));
+}
+for (const p of plots) p.entrances.filter(e => e.kind === 'vehicle').forEach((e, i) => {   // plot driveways
+  const [x0, z0, x1, z1] = p.rect, f = e.facing;
+  const edge = { N: z0, S: z1, W: x0, E: x1 }[f], sgn = f === 'E' || f === 'S' ? 1 : -1;
+  const r = roads.find(r => (r.axis === 'z') === (f === 'E' || f === 'W') && Math.abs(r.at - sgn * half(r.type) - edge) < 1e-6);
+  if (!r) return;
+  const at = f === 'N' || f === 'S' ? e.x : e.z;
+  curbCuts.push(cut(`${p.id}-DW${i + 1}`, 'driveway', r.id, -sgn, at - CURB_CUT.driveway / 2, at + CURB_CUT.driveway / 2, ROAD_TYPES[r.type].band));
+});
+
+const LAYOUT = { BASE, SAMPLE_SCALE, ROAD_TYPES, ALLEY, INTERSECTION, PLOT_TYPES, DIRS, LEVELS, CURB_CUT,
   roadNodes, roads, alleys, roadSegments, walkways, aprons, blocks, plots, samples,
-  legacyFurniture, legacyGround, surfaces, crosswalks, corridorRect, toWorld, rect };
+  legacyFurniture, legacyGround, surfaces, crosswalks, islands, curbCuts, corridorRect, toWorld, rect };
 if (typeof module !== 'undefined' && module.exports) module.exports = LAYOUT;
 else global.LAYOUT = LAYOUT;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
