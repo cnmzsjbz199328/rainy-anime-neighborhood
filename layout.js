@@ -113,7 +113,7 @@ const plots = [
   plot('B03-P02', [-22, 0, -14, 9], 'shop', 'S', { uses: ['洗衣店', '花店'], status: 'occupied', building: 'laundry' }),
   plot('B03-P03', [-30, 0, -22, 9], 'shop', 'S', { uses: ['书店', '花店'], status: 'occupied', building: 'bookshop' }),
   plot('B03-P04', [-38, 0, -30, 9], 'shop', 'S', { uses: ['小餐馆', '杂货'], status: 'occupied', building: 'diner' }),
-  plot('B03-P05', [-46, 0, -38, 9], 'shop', 'S', { uses: ['小店铺'] }),
+  plot('B03-P05', [-46, 0, -38, 9], 'shop', 'S', { uses: ['小店铺'], status: 'occupied', building: 'grocery' }),
   plot('B03-P06', [-18, -9, -6, 0], 'civic', 'N', { frontages: ['N', 'E'], uses: ['社区会所', '诊所'] }),
   plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'] }),
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'] }),
@@ -249,6 +249,18 @@ const buildings = [
       { group: 'dinerRear', role: 'attachment', localBounds: { min: [-0.66, 0.18, -5.67], max: [1.53, 1.09, -5.31], ground: [-0.65, -5.63, 1.52, -5.32] } },
       { group: 'dinerService', role: 'attachment', localBounds: { min: [1.48, 0.18, -6.06], max: [3.16, 1.4, -5.23], ground: [1.49, -6.06, 3.16, -5.24] } },
       { group: 'dinerGround', role: 'ground', localBounds: { min: [-3.5, 0.19, -6.1], max: [3.5, 0.23, 1.8], ground: null } },
+    ] },
+  { id: 'grocery', name: 'みどり屋 雑貨店', plot: 'B03-P05', module: 'B03-P05', transform: { x: -42, z: 7.15, rotY: 0 },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-3.1, -5.9, 3.1, 0.3], [-2.85, 0.3, 2.85, 0.8], [0.95, -6.03, 2.05, -5.9]],   // gable roof, street awning, back-door canopy
+    parts: [
+      { group: 'grocery', role: 'building', localBounds: { min: [-3.14, 0.18, -6.05], max: [3.15, 6.38, 0.83], ground: [-3.08, -5.91, 3.08, 0.31] } },
+      { group: 'groceryFrontW', role: 'attachment', localBounds: { min: [-3.31, 0.18, 0.06], max: [-1.1, 1.36, 1.1], ground: [-3.31, 0.07, -1.11, 1.1] } },
+      { group: 'groceryFrontE', role: 'attachment', localBounds: { min: [1.1, 0.18, -0.01], max: [3.33, 1.36, 0.76], ground: [1.11, -0.01, 3.33, 0.76] } },
+      { group: 'grocerySideW', role: 'attachment', localBounds: { min: [-3.35, 0.18, -4.89], max: [-2.83, 1.31, -0.6], ground: [-3.35, -4.89, -2.83, -0.6] } },
+      { group: 'grocerySideE', role: 'attachment', localBounds: { min: [2.74, 0.19, -4.19], max: [3.25, 1.9, -0.46], ground: [2.75, -4.18, 3.25, -0.46] } },
+      { group: 'groceryRear', role: 'attachment', localBounds: { min: [-1.58, 0.18, -6.12], max: [2.2, 1.9, -5.66], ground: [-1.57, -6.11, 1.2, -5.67] } },
+      { group: 'groceryGround', role: 'ground', localBounds: { min: [-3.65, 0.19, -6.1], max: [3.65, 0.23, 1.85], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];

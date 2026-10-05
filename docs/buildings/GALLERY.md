@@ -82,7 +82,7 @@
 
 ## B03-P05 · 杂货店
 
-[构建任务卡](tasks/B03-P05.md) · 待建地块
+[构建任务卡](tasks/B03-P05.md) · 已实现，实际模型截图见 [screenshots/B03-P05](screenshots/B03-P05/)
 
 ![B03-P05 杂货店 八视图](references/B03-P05.jpg)
 

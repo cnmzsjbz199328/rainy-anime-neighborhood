@@ -812,7 +812,7 @@
     "name": "杂货店",
     "archetype": "grocery",
     "phase": 3,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "shop",
     "front": "S",
     "frontages": [
@@ -835,7 +835,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": -42,
-        "z": 9
+        "z": 9,
+        "door": [
+          -42,
+          7.15
+        ]
       }
     ],
     "maxHeight": 9,
@@ -860,7 +864,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
