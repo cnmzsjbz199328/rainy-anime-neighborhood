@@ -184,7 +184,7 @@
 
 ## B06-P01 · 底层药店商住楼
 
-[构建任务卡](tasks/B06-P01.md) · 待建地块
+[构建任务卡](tasks/B06-P01.md) · 已实现，实际模型截图见 [screenshots/B06-P01](screenshots/B06-P01/)
 
 ![B06-P01 底层药店商住楼 八视图](references/B06-P01.jpg)
 

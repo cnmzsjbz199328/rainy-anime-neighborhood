@@ -133,7 +133,7 @@ const plots = [
   plot('B05-P07', [-37, 34, -28, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -29.5, note: '面宽 9：入口靠东，停车位沿巷' }),
   plot('B05-P08', [-46, 34, -37, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -38.5, note: '面宽 9：入口靠东，停车位沿巷' }),
   // B06: shop-houses on the main street (BS01 in front of P03), houses on alley A02.
-  plot('B06-P01', [6, 21, 16, 30.5], 'mixed', 'N', { frontages: ['N', 'W'], uses: ['商住', '药店'] }),
+  plot('B06-P01', [6, 21, 16, 30.5], 'mixed', 'N', { frontages: ['N', 'W'], uses: ['商住', '药店'], status: 'occupied', building: 'pharmacy' }),
   plot('B06-P02', [16, 21, 26, 30.5], 'mixed', 'N', { uses: ['商住'] }),
   plot('B06-P03', [26, 22.5, 36, 30.5], 'mixed', 'N', { uses: ['商住'], note: '前方为公交候车区 BS01' }),
   plot('B06-P04', [36, 21, 46, 30.5], 'mixed', 'N', { uses: ['商住'] }),
@@ -398,6 +398,16 @@ const buildings = [
       { group: 'stationeryFrontE', role: 'attachment', localBounds: { min: [1.04,0.18,0.1], max: [2.61,1.3,1.18], ground: [1.04,0.56,2.6,1.18] } },
       { group: 'stationeryRear', role: 'attachment', localBounds: { min: [-3.69,0.18,-5.24], max: [2.26,1.3,-4.79], ground: [-3.69,-5.23,2.25,-4.81] } },
       { group: 'stationeryGround', role: 'ground', localBounds: { min: [-4.9,0.19,-5.35], max: [4.6,0.23,2], ground: null } },
+    ] },
+  { id: 'pharmacy', name: 'ひなた薬局', plot: 'B06-P01', module: 'B06-P01', transform: { x: 11, z: 23.4, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 3,
+    shelter: [[-4.4, -4.95, 3.75, 0.25], [-4.2, 0, 0.9, 0.95], [-3.15, -5.15, -2.1, -4.7]],   // hip roof merged with the west bicycle shelter, balcony slab, rear canopy
+    parts: [
+      { group: 'pharmacy', role: 'building', localBounds: { min: [-4.5,0.18,-5.15], max: [3.85,11.27,1.1], ground: [-4.21,-5,3.8,0.95] } },
+      { group: 'pharmacyFrontW', role: 'attachment', localBounds: { min: [-4.19,0.18,0.27], max: [-0.82,1.09,1.58], ground: [-4.19,0.27,-0.82,1.58] } },
+      { group: 'pharmacyFrontE', role: 'attachment', localBounds: { min: [0.79,0.19,0.1], max: [2.46,1.3,1.18], ground: [0.79,0.56,2.45,1.18] } },
+      { group: 'pharmacyRear', role: 'attachment', localBounds: { min: [-3.69,0.18,-5.24], max: [2.25,1.3,-4.78], ground: [-3.69,-5.23,2.25,-4.81] } },
+      { group: 'pharmacyGround', role: 'ground', localBounds: { min: [-4.75,0.19,-5.35], max: [3.9,0.23,2], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];
