@@ -18,6 +18,7 @@
 - `PROGRESS.md`：分阶段进度、检查结果和待验证项。
 - `docs/layout/LAYOUT_V1.md`：冻结的首版道路与地块坐标，以及新增建筑时的变更规则。
 - `ROAD_NETWORK_PLAN.md`：道路与用地建设计划。
+- `WORLD_PLAN.md`：星球化建设计划（城镇以外的地形、区域、全球路网和地标）；参考包在 `docs/world/`。
 - `three.min.js`：Three.js 0.160.1，保留原始版权头。
 - `build.py`：将源码（three.min.js、layout.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
 - `DESIGN.md`：风格约束与扩展路线。
@@ -64,3 +65,11 @@
 
 下一轮只实现 B03-P02 洗衣店，复用咖啡店/花店/面包店的集成方式（buildings/ 模块 + `buildings` 登记 + C12 + building_views）。尺寸、入口和高度以 layout.js 为准，参考图只是外观/结构概念。参考包自检：`node docs/buildings/check_kit.mjs`。
 
+
+## 规划中：星球化
+
+计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。目前处于 W0 规划阶段：总计划、统一规格和 38 张设计卡已就绪，参考图待生成，代码尚未实施。逐栋建筑可以与之并行。
+
+- [星球计划](WORLD_PLAN.md)
+- [星球规划参考包](docs/world/README.md)
+- [参考图生成提示词（图像 Agent 通用模板）](docs/world/IMAGE_AGENT_START.md)：每轮只需告诉 Agent「读取 docs/world/IMAGE_AGENT_START.md 并执行，本轮卡片：ST01」
