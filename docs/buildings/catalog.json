@@ -1134,7 +1134,7 @@
     "name": "诊所",
     "archetype": "clinic",
     "phase": 4,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "civic",
     "front": "S",
     "frontages": [
@@ -1157,8 +1157,7 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 21,
-        "z": 9
-      }
+        "z": 9, "door": [21, 6.1] }
     ],
     "maxHeight": 9,
     "floors": 1,
@@ -1182,7 +1181,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

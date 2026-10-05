@@ -119,7 +119,7 @@ const plots = [
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'], status: 'occupied', building: 'shrine' }),
   // B04: koban on the main corner, clinic, a pocket park behind the eastbound bus stop.
   plot('B04-P01', [6, 0, 16, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'], status: 'occupied', building: 'koban', note: '10 宽：转角双退界后仍能放下交番与一个巡逻车位' }),
-  plot('B04-P02', [16, 0, 26, 9], 'civic', 'S', { uses: ['诊所'] }),
+  plot('B04-P02', [16, 0, 26, 9], 'civic', 'S', { uses: ['诊所'], status: 'occupied', building: 'clinic' }),
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35 }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'] }),
   plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'] }),
@@ -323,6 +323,18 @@ const buildings = [
       { group: 'kobanSideW', role: 'attachment', localBounds: { min: [-4.85, 0.18, -4.38], max: [-2.85, 1.66, -0.29], ground: [-4.85, -4.37, -2.85, -0.3] } },
       { group: 'kobanRear', role: 'attachment', localBounds: { min: [-3.09, 0.18, -5.4], max: [3.41, 2.63, -4.12], ground: [-3.09, -5.15, 3.4, -4.12] } },
       { group: 'kobanGround', role: 'ground', localBounds: { min: [-4.9, 0.19, -5.9], max: [4.9, 0.23, 2.9], ground: null } },
+    ] },
+  { id: 'clinic', name: 'あめまち診療所', plot: 'B04-P02', module: 'B04-P02', transform: { x: 21, z: 6.1, rotY: 0 },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-3.8, -5.0, 3.9, 0.1], [-1.1, 0.1, 1.1, 0.75]],   // flat roof with the east carport, door canopy
+    parts: [
+      { group: 'clinic', role: 'building', localBounds: { min: [-3.87, 0.18, -5.04], max: [3.96, 4.3, 0.78], ground: [-3.8, -4.96, 3.9, 0.09] } },
+      { group: 'clinicFrontW', role: 'attachment', localBounds: { min: [-3.56, 0.18, 0.35], max: [-1.6, 1.51, 1.64], ground: [-3.55, 0.35, -1.6, 1.64] } },
+      { group: 'clinicFrontE', role: 'attachment', localBounds: { min: [0.94, 0.19, 0.35], max: [1.99, 1.11, 0.81], ground: [0.95, 0.35, 1.99, 0.8] } },
+      { group: 'clinicCar', role: 'attachment', localBounds: { min: [1.9, 0.21, -3.94], max: [3.6, 1.75, -0.4], ground: [1.9, -3.94, 3.6, -0.65] } },
+      { group: 'clinicSideW', role: 'attachment', localBounds: { min: [-4.75, 0.18, -4.57], max: [-3.72, 1.8, -0.09], ground: [-4.75, -4.57, -3.72, -0.09] } },
+      { group: 'clinicRear', role: 'attachment', localBounds: { min: [-3.95, 0.18, -5.93], max: [3.53, 2.63, -4.9], ground: [-3.95, -5.93, 3.53, -4.9] } },
+      { group: 'clinicGround', role: 'ground', localBounds: { min: [-4.9, 0.19, -5.9], max: [4.9, 0.28, 2.9], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];
