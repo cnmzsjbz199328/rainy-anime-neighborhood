@@ -555,7 +555,7 @@
     "name": "转角面包店",
     "archetype": "bakery",
     "phase": 3,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "shop",
     "front": "S",
     "frontages": [
@@ -579,7 +579,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": -10,
-        "z": 9
+        "z": 9,
+        "door": [
+          -10,
+          7.1
+        ]
       }
     ],
     "maxHeight": 9,
@@ -604,7 +608,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
