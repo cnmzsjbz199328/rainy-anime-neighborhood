@@ -146,5 +146,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B03-P08 | 雨宿神社 小神社与庭院（首个公园/神社） | 见 PROGRESS.md「P5 B03-P08」 | [screenshots/B03-P08](screenshots/B03-P08/) |
 | B04-P01 | あめまち交番 | 见 PROGRESS.md「P5 B04-P01」 | [screenshots/B04-P01](screenshots/B04-P01/) |
 | B04-P02 | あめまち診療所 诊所 | 见 PROGRESS.md「P5 B04-P02」 | [screenshots/B04-P02](screenshots/B04-P02/) |
+| B04-P03 | 雨だまり公園 公交旁口袋公园 | 见 PROGRESS.md「P5 B04-P03」 | [screenshots/B04-P03](screenshots/B04-P03/) |
 
 每轮完成后在此表追加一行。

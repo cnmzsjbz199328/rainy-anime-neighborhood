@@ -118,7 +118,7 @@
 
 ## B04-P03 · 公交旁口袋公园
 
-[构建任务卡](tasks/B04-P03.md) · 待建地块
+[构建任务卡](tasks/B04-P03.md) · 已实现，实际模型截图见 [screenshots/B04-P03](screenshots/B04-P03/)
 
 ![B04-P03 公交旁口袋公园 八视图](references/B04-P03.jpg)
 
