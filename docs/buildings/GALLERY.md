@@ -34,7 +34,7 @@
 
 ## B02-P05 · 独栋住宅 5
 
-[构建任务卡](tasks/B02-P05.md) · 待建地块
+[构建任务卡](tasks/B02-P05.md) · 已实现，实际模型截图见 [screenshots/B02-P05](screenshots/B02-P05/)
 
 ![B02-P05 独栋住宅 5 八视图](references/B02-P05.jpg)
 
