@@ -64,7 +64,7 @@
 
 ## B03-P02 · 洗衣店
 
-[构建任务卡](tasks/B03-P02.md) · 待建地块
+[构建任务卡](tasks/B03-P02.md) · 已实现，实际模型截图见 [screenshots/B03-P02](screenshots/B03-P02/)
 
 ![B03-P02 洗衣店 八视图](references/B03-P02.jpg)
 

@@ -110,7 +110,7 @@ const plots = [
   plot('B02-P08', [36, -46, 46, -35.25], 'house', 'S', { uses: ['独栋住宅'] }),
   // B03: neighbourhood shops face the main street; small public uses face R03.
   plot('B03-P01', [-14, 0, -6, 9], 'shop', 'S', { frontages: ['S', 'E'], uses: ['面包店', '药店'], status: 'occupied', building: 'bakery' }),
-  plot('B03-P02', [-22, 0, -14, 9], 'shop', 'S', { uses: ['洗衣店', '花店'] }),
+  plot('B03-P02', [-22, 0, -14, 9], 'shop', 'S', { uses: ['洗衣店', '花店'], status: 'occupied', building: 'laundry' }),
   plot('B03-P03', [-30, 0, -22, 9], 'shop', 'S', { uses: ['书店', '花店'] }),
   plot('B03-P04', [-38, 0, -30, 9], 'shop', 'S', { uses: ['小餐馆', '杂货'] }),
   plot('B03-P05', [-46, 0, -38, 9], 'shop', 'S', { uses: ['小店铺'] }),
@@ -212,6 +212,18 @@ const buildings = [
       { group: 'bakUtility', role: 'attachment', localBounds: { min: [-3.5, 0.19, -4.05], max: [-3.1, 1.86, -1.06], ground: [-3.5, -4.05, -3.11, -1.06] } },
       { group: 'bakService', role: 'attachment', localBounds: { min: [-2.07, 0.18, -6.25], max: [2.16, 1.1, -5.69], ground: [-2.07, -6.24, 2.15, -5.69] } },
       { group: 'bakGround', role: 'ground', localBounds: { min: [-3.6, 0.19, -6.75], max: [3.9, 0.23, 1.9], ground: null } },
+    ] },
+  { id: 'laundry', name: 'コインランドリー ふわり', plot: 'B03-P02', module: 'B03-P02', transform: { x: -18, z: 7.1, rotY: 0 },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-2.85, -5.65, 2.85, 0.05], [-2.75, 0, 2.75, 0.55], [-0.55, -5.95, 0.55, -5.6]],   // roof, street canopy, back-door canopy
+    parts: [
+      { group: 'laundry', role: 'building', localBounds: { min: [-3.03, 0.18, -5.97], max: [3.22, 4.85, 0.56], ground: [-2.97, -5.9, 2.91, 0.06] } },
+      { group: 'launFrontW', role: 'attachment', localBounds: { min: [-2.65, 0.19, 0.15], max: [-0.75, 1.17, 0.53], ground: [-2.65, 0.15, -0.75, 0.53] } },
+      { group: 'launFrontE', role: 'attachment', localBounds: { min: [1.53, 0.18, 0.1], max: [3, 2.01, 1.09], ground: [1.53, 0.11, 2.76, 1.09] } },
+      { group: 'launSideE', role: 'attachment', localBounds: { min: [2.8, 0.19, -4.31], max: [3.16, 1.96, -3.39], ground: [2.81, -4.3, 3.16, -3.4] } },
+      { group: 'launGas', role: 'attachment', localBounds: { min: [-2.78, 0.18, -6.25], max: [-1.92, 1.6, -5.65], ground: [-2.77, -6.24, -1.93, -5.66] } },
+      { group: 'launService', role: 'attachment', localBounds: { min: [0.75, 0.18, -6.29], max: [2.7, 0.99, -5.67], ground: [0.75, -6.28, 2.7, -5.68] } },
+      { group: 'launGround', role: 'ground', localBounds: { min: [-3.6, 0.19, -6.9], max: [3.6, 0.23, 1.9], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];
