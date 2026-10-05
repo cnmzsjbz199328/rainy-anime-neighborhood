@@ -168,5 +168,8 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B06-P06 | 独栋住宅 13（B06 南排第二栋，错落双坡） | 见 PROGRESS.md「P5 B06-P06」 | [screenshots/B06-P06](screenshots/B06-P06/) |
 | B06-P07 | 独栋住宅 14（B06 南排第三栋，前山墙后四坡） | 见 PROGRESS.md「P5 B06-P07」 | [screenshots/B06-P07](screenshots/B06-P07/) |
 | B06-P08 | 独栋住宅 15（B06 南排东端，最后一栋住宅，对称侧山墙金属屋顶） | 见 PROGRESS.md「P5 B06-P08」 | [screenshots/B06-P08](screenshots/B06-P08/) |
+| B01-P01 | あめまち小学校（阶段 7，唯一的整块大地块，三层教学翼加低翼与院落） | 见 PROGRESS.md「P5 B01-P01」 | [screenshots/B01-P01](screenshots/B01-P01/) |
 
 每轮完成后在此表追加一行。
+
+**全部 35 个预留地块已建成（2026-10-06）。** 三栋旧样板（B05-P01 便利店、B05-P02 拉面店、B05-P05 公寓）的升级需要单独任务，不属于本模板。

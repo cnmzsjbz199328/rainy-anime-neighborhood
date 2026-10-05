@@ -4,7 +4,7 @@
 
 ## B01-P01 · 院落型小学
 
-[构建任务卡](tasks/B01-P01.md) · 待建地块
+[构建任务卡](tasks/B01-P01.md) · 已实现，实际模型截图见 [screenshots/B01-P01](screenshots/B01-P01/)
 
 ![B01-P01 院落型小学 八视图](references/B01-P01.jpg)
 

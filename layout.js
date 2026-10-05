@@ -97,7 +97,7 @@ function plot(id, r, type, front, opts = {}) {
 }
 const plots = [
   // B01: one block-scale plot for a school or community centre (courtyard, parking, service yard inside).
-  plot('B01-P01', [-46, -46, -6, -21], 'school', 'S', { frontages: ['S', 'E'], uses: ['学校', '社区中心'],
+  plot('B01-P01', [-46, -46, -6, -21], 'school', 'S', { frontages: ['S', 'E'], uses: ['学校', '社区中心'], status: 'occupied', building: 'school',
     entrances: [{ at: -26, facing: 'S', kind: 'pedestrian' }, { at: -40, facing: 'E', kind: 'vehicle' }] }),
   // B02: two rows of houses; the north row is reached from alley A03.
   plot('B02-P01', [6, -31.75, 16, -21], 'house', 'S', { frontages: ['S', 'W'], uses: ['独栋住宅'], status: 'occupied', building: 'house' }),
@@ -626,6 +626,31 @@ const buildings = [
       { group: 'house15East', role: 'attachment', localBounds: { min: [-4.87,0.19,-5.94], max: [-2.21,1.07,1.93], ground: [-4.87,-5.93,-2.22,1.93] } },
       { group: 'house15Rear', role: 'attachment', localBounds: { min: [-3.91,0.18,-8.85], max: [4.4,1.02,-6.59], ground: [-3.91,-8.85,4.4,-6.64] } },
       { group: 'house15Ground', role: 'ground', localBounds: { min: [-4.9,0.19,-8.9], max: [4.9,0.23,2.5], ground: null } },
+    ] },
+  { id: 'school', name: 'あめまち小学校', plot: 'B01-P01', module: 'B01-P01', transform: { x: -26, z: -35, rotY: 0 },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 3,
+    shelter: [[-13.5, -7.75, 15.5, 0.5], [-16.6, 0, -9.4, 9.7], [-2.6, 0, 2.6, 1.75]],   // teaching-wing roof, low-wing roof, entrance canopy
+    parts: [
+      { group: 'school', role: 'building', localBounds: { min: [-16.71,0.18,-7.87], max: [15.56,12.41,9.74], ground: [-13.05,-7.7,15.05,0.45] } },
+      { group: 'schoolLow', role: 'building', localBounds: { min: [-16.26,0.18,0], max: [-9.26,3.8,9.61], ground: [-16.2,0,-9.31,9.55] } },
+      { group: 'schoolWallS1', role: 'attachment', localBounds: { min: [-19.73,0.18,11.84], max: [-1.62,2.99,13.85], ground: [-19.72,11.85,-1.62,13.79] } },
+      { group: 'schoolWallS2', role: 'attachment', localBounds: { min: [1.62,0.18,11.85], max: [19.73,2.99,13.85], ground: [1.63,11.85,19.72,13.77] } },
+      { group: 'schoolWallN', role: 'attachment', localBounds: { min: [-19.72,0.18,-10.89], max: [19.73,2.05,-10.51], ground: [-19.7,-10.85,19.7,-10.55] } },
+      { group: 'schoolWallW', role: 'attachment', localBounds: { min: [-19.88,0.18,-10.74], max: [-19.52,2.06,13.38], ground: [-19.85,-10.7,-19.55,13.35] } },
+      { group: 'schoolWallE1', role: 'attachment', localBounds: { min: [19.25,0.18,-10.74], max: [19.95,2.48,-6.35], ground: [19.33,-10.7,19.88,-6.43] } },
+      { group: 'schoolWallE2', role: 'attachment', localBounds: { min: [17.79,0.18,-6.48], max: [19.94,2.98,13.39], ground: [17.8,-6.47,19.88,13.38] } },
+      { group: 'schoolBikes', role: 'attachment', localBounds: { min: [2.94,0.18,9.8], max: [11.06,2.88,13.13], ground: [2.95,9.8,11.05,13.12] } },
+      { group: 'schoolGoal', role: 'attachment', localBounds: { min: [13.25,0.18,4.94], max: [13.7,2.43,7.66], ground: [13.26,4.96,13.7,7.64] } },
+      { group: 'schoolGearW', role: 'attachment', localBounds: { min: [-8.61,0.18,10.72], max: [-3.19,6.59,12.75], ground: [-8.6,10.73,-3.2,12.75] } },
+      { group: 'schoolGearE', role: 'attachment', localBounds: { min: [3.19,0.18,10.72], max: [7.61,0.94,12.73], ground: [3.2,10.73,7.6,12.73] } },
+      { group: 'schoolTree1', role: 'attachment', localBounds: { min: [16.25,0.19,1.07], max: [18.76,4.59,3.09], ground: [17.44,1.89,17.71,2.15] } },
+      { group: 'schoolTree2', role: 'attachment', localBounds: { min: [16.41,0.19,8.17], max: [18.68,4.19,10], ground: [17.41,8.69,18.68,10] } },
+      { group: 'schoolTree3', role: 'attachment', localBounds: { min: [-19.11,0.19,10.53], max: [-16.83,4.19,12.36], ground: [-18.11,11.06,-16.83,12.36] } },
+      { group: 'schoolTree4', role: 'attachment', localBounds: { min: [-8.55,0.19,11.37], max: [-6.51,3.79,13.03], ground: [-8.55,11.41,-6.51,13.03] } },
+      { group: 'schoolTree5', role: 'attachment', localBounds: { min: [16.4,0.19,-8.94], max: [18.67,4.19,-7.09], ground: [17.47,-8.14,17.7,-7.9] } },
+      { group: 'schoolRear', role: 'attachment', localBounds: { min: [-17.21,0.18,-10.56], max: [11.92,3.29,-7.77], ground: [-17,-10.3,11.9,-7.78] } },
+      { group: 'schoolEast', role: 'attachment', localBounds: { min: [16.42,0.18,0.39], max: [19.31,2.38,7.68], ground: [16.43,0.6,19.1,7.68] } },
+      { group: 'schoolPlay', role: 'ground', localBounds: { min: [-19.6,0.19,-10.6], max: [19.7,0.22,13.6], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];
