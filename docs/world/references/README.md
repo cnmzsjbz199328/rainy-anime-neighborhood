@@ -2,11 +2,11 @@
 
 每张设计卡对应一张横版设计板，文件名为 `<卡片ID>.jpg`，由图像生成 Agent 按 [IMAGE_AGENT_START.md](../IMAGE_AGENT_START.md) 生成。全部为概念设计，不是代码截图或工程图。生成状态见 [catalog.json](../catalog.json)，审查记录见 [REFERENCE_REVIEW.md](../REFERENCE_REVIEW.md)。
 
-- `ST01.jpg` — 星球风格总板 · [设计卡](../cards/ST01.md)
+- [ST01.jpg](ST01.jpg)（已生成） — 星球风格总板 · [设计卡](../cards/ST01.md)
 - `ST02.jpg` — 星球全景四向 · [设计卡](../cards/ST02.md)
-- `ST03.jpg` — 样板断面：城镇边缘到海洋 · [设计卡](../cards/ST03.md)
+- [ST03.jpg](ST03.jpg)（已生成） — 样板断面：城镇边缘到海洋 · [设计卡](../cards/ST03.md)
 - `ST04.jpg` — 城镇卷成星球的过渡分镜 · [设计卡](../cards/ST04.md)
-- `ST05.jpg` — 天气状态板 · [设计卡](../cards/ST05.md)
+- [ST05.jpg](ST05.jpg)（已生成） — 天气状态板 · [设计卡](../cards/ST05.md)
 - `BI01.jpg` — 海洋 · [设计卡](../cards/BI01.md)
 - `BI02.jpg` — 森林 · [设计卡](../cards/BI02.md)
 - `BI03.jpg` — 草原 · [设计卡](../cards/BI03.md)
