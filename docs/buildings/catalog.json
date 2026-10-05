@@ -2312,7 +2312,7 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 41,
-        "z": 34
+        "z": 34, "door": [41, 36.6]
       }
     ],
     "maxHeight": 9,

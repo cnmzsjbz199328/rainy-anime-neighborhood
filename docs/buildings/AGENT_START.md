@@ -167,5 +167,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B06-P05 | 独栋住宅 12（B06 南排第一栋，转角，屋顶露台） | 见 PROGRESS.md「P5 B06-P05」 | [screenshots/B06-P05](screenshots/B06-P05/) |
 | B06-P06 | 独栋住宅 13（B06 南排第二栋，错落双坡） | 见 PROGRESS.md「P5 B06-P06」 | [screenshots/B06-P06](screenshots/B06-P06/) |
 | B06-P07 | 独栋住宅 14（B06 南排第三栋，前山墙后四坡） | 见 PROGRESS.md「P5 B06-P07」 | [screenshots/B06-P07](screenshots/B06-P07/) |
+| B06-P08 | 独栋住宅 15（B06 南排东端，最后一栋住宅，对称侧山墙金属屋顶） | 见 PROGRESS.md「P5 B06-P08」 | [screenshots/B06-P08](screenshots/B06-P08/) |
 
 每轮完成后在此表追加一行。
