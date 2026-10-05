@@ -370,7 +370,7 @@
     "name": "独栋住宅 6",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "S",
     "frontages": [
@@ -393,8 +393,7 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 21,
-        "z": -35.25
-      }
+        "z": -35.25, "door": [21, -37.85] }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -418,7 +417,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

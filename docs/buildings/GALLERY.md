@@ -40,7 +40,7 @@
 
 ## B02-P06 · 独栋住宅 6
 
-[构建任务卡](tasks/B02-P06.md) · 待建地块
+[构建任务卡](tasks/B02-P06.md) · 已实现，实际模型截图见 [screenshots/B02-P06](screenshots/B02-P06/)
 
 ![B02-P06 独栋住宅 6 八视图](references/B02-P06.jpg)
 
