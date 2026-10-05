@@ -6,6 +6,7 @@
 - `ST02.jpg` — 星球全景四向 · [设计卡](../cards/ST02.md)
 - `ST03.jpg` — 样板断面：城镇边缘到海洋 · [设计卡](../cards/ST03.md)
 - `ST04.jpg` — 城镇卷成星球的过渡分镜 · [设计卡](../cards/ST04.md)
+- `ST05.jpg` — 天气状态板 · [设计卡](../cards/ST05.md)
 - `BI01.jpg` — 海洋 · [设计卡](../cards/BI01.md)
 - `BI02.jpg` — 森林 · [设计卡](../cards/BI02.md)
 - `BI03.jpg` — 草原 · [设计卡](../cards/BI03.md)

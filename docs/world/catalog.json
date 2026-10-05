@@ -20,7 +20,7 @@
       "TOWN STREET 城镇街角（风格锚点）",
       "FOREST GROUND 林间小径",
       "COAST GROUND 海岸",
-      "GLOBE NIGHT 星球夜景"
+      "GLOBE NIGHT 星球全景（晴朗月夜）"
     ]
   },
   {
@@ -41,7 +41,7 @@
       "EAST 东侧",
       "BACK 背面",
       "WEST 西侧",
-      "以上四向的雨夜版本（4 格）"
+      "以上四向的晴朗月夜版本（4 格）"
     ]
   },
   {
@@ -80,7 +80,31 @@
     "card": "cards/ST04.md",
     "reference": "references/ST04.jpg",
     "views": [
-      "八格连续分镜：平面城镇 → 拉远 → 开始弯曲 → 卷到一半 → 接近闭合 → 完整星球 → 夜景光带 → 推近回城镇"
+      "八格连续分镜：雨中的平面城镇 → 拉远、雨变稀 → 开始弯曲、雨几乎消失 → 卷到一半、云散去 → 接近闭合 → 晴朗月夜下的完整星球 → 夜景光带 → 推近回城镇、雨重新出现"
+    ]
+  },
+  {
+    "id": "ST05",
+    "type": "style",
+    "name": "天气状态板",
+    "subjectEnglish": "weather states board",
+    "zone": "全局",
+    "placement": "不对应具体位置；定义近距离与行人视角下的天气状态，以及从近处到全景的天气淡出。",
+    "neighbors": "所有卡片的天气表现。",
+    "status": "spec-ready",
+    "referenceStatus": "pending",
+    "implementationStatus": "not-started",
+    "card": "cards/ST05.md",
+    "reference": "references/ST05.jpg",
+    "views": [
+      "RAIN 雨（默认）",
+      "AFTER RAIN 雨后",
+      "OVERCAST 阴",
+      "CLEAR NIGHT 晴夜",
+      "SNOW 雪（冰原边缘）",
+      "MIST 雾（森林山谷）",
+      "GLOBE CLEAR 星球全景（晴朗月夜）",
+      "DISTANCE BLEND 天气随距离淡出"
     ]
   },
   {
@@ -101,7 +125,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -125,7 +149,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -149,7 +173,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -173,7 +197,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -197,7 +221,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -221,7 +245,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -245,7 +269,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -269,7 +293,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -293,7 +317,7 @@
       "AERIAL 50M 半空斜俯视（中性光）",
       "GROUND 5M 地面视角（中性光）",
       "SWATCH 色板与三块材质样本",
-      "GLOBE NIGHT 全景雨夜",
+      "GLOBE NIGHT 全景（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "MOTION 三格动态分镜"
@@ -317,7 +341,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -341,7 +365,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -365,7 +389,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -389,7 +413,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -413,7 +437,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -437,7 +461,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -461,7 +485,7 @@
       "PLAN 约 40 m 长的俯视条带",
       "AERIAL 50M 半空斜俯视",
       "GROUND 5M 地面视角",
-      "GLOBE 星球全景上的交界",
+      "GLOBE 星球全景上的交界（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 交界元素特写"
@@ -485,7 +509,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -509,7 +533,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -533,7 +557,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -557,7 +581,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -581,7 +605,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -605,7 +629,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -629,7 +653,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
@@ -653,7 +677,7 @@
       "PLAN 直线段、弯道与路口俯视",
       "GROUND 5M 沿路的地面视角",
       "AERIAL 50M 半空斜俯视",
-      "GLOBE NIGHT 星球夜景上的路线",
+      "GLOBE NIGHT 星球全景上的路线（晴朗月夜）",
       "AERIAL NIGHT 半空雨夜",
       "GROUND NIGHT 地面雨夜",
       "DETAIL 路面、路缘、标志与设施特写"
