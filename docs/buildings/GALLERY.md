@@ -130,7 +130,7 @@
 
 ## B04-P05 · 底层文具店商住楼
 
-[构建任务卡](tasks/B04-P05.md) · 待建地块
+[构建任务卡](tasks/B04-P05.md) · 已实现，实际模型截图见 [screenshots/B04-P05](screenshots/B04-P05/)
 
 ![B04-P05 底层文具店商住楼 八视图](references/B04-P05.jpg)
 

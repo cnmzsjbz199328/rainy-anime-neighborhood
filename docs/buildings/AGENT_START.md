@@ -148,5 +148,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B04-P02 | あめまち診療所 诊所 | 见 PROGRESS.md「P5 B04-P02」 | [screenshots/B04-P02](screenshots/B04-P02/) |
 | B04-P03 | 雨だまり公園 公交旁口袋公园 | 见 PROGRESS.md「P5 B04-P03」 | [screenshots/B04-P03](screenshots/B04-P03/) |
 | B04-P04 | 辻の小社 街角小神社 | 见 PROGRESS.md「P5 B04-P04」 | [screenshots/B04-P04](screenshots/B04-P04/) |
+| B04-P05 | ことのは文具店 底层文具店商住楼（首个三层） | 见 PROGRESS.md「P5 B04-P05」 | [screenshots/B04-P05](screenshots/B04-P05/) |
 
 每轮完成后在此表追加一行。

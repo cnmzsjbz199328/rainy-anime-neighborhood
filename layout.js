@@ -122,7 +122,7 @@ const plots = [
   plot('B04-P02', [16, 0, 26, 9], 'civic', 'S', { uses: ['诊所'], status: 'occupied', building: 'clinic' }),
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35, status: 'occupied', building: 'pocketpark' }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'], status: 'occupied', building: 'hokora' }),
-  plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'] }),
+  plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'], status: 'occupied', building: 'stationery' }),
   // B05: existing samples. Store on the X01 corner, ramen beside it, apartment behind on alley A01.
   plot('B05-P01', [-17, 21, -6, 30.5], 'store', 'N', { frontages: ['N', 'E'], uses: ['便利店'], status: 'occupied', sample: 'store' }),
   plot('B05-P02', [-28, 21, -19, 30.5], 'shop', 'N', { uses: ['拉面店'], status: 'occupied', sample: 'ramen' }),
@@ -388,6 +388,16 @@ const buildings = [
       { group: 'hokoraTreeNW', role: 'attachment', localBounds: { min: [2.18, 0.19, -4.8], max: [4.68, 3.54, -2.06], ground: [2.3,  -4.62,  4.68,  -2.06] } },
       { group: 'hokoraTreeSE', role: 'attachment', localBounds: { min: [-4.79, 0.19, 1.08], max: [-3.13, 2.58, 2.71], ground: [-4.79,  1.08,  -3.13,  2.71] } },
       { group: 'hokoraGround', role: 'ground', localBounds: { min: [-4.95, 0.19, -5.48], max: [4.95, 0.23, 3.48], ground: null } },
+    ] },
+  { id: 'stationery', name: 'ことのは文具店', plot: 'B04-P05', module: 'B04-P05', transform: { x: 21, z: -6.3, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 3,
+    shelter: [[-4.35, -5.05, 4.45, 0.35], [-4.05, 0, 0.9, 0.95], [-3.15, -5.15, -2.1, -4.7]],   // hip roof merged with the west bicycle shelter (the two small yard corners beside it are treated as covered), balcony slab, rear canopy
+    parts: [
+      { group: 'stationery', role: 'building', localBounds: { min: [-4.5,0.18,-5.16], max: [4.46,11.27,1.1], ground: [-4.06,-5,4.46,0.95] } },
+      { group: 'stationeryFrontW', role: 'attachment', localBounds: { min: [-4.01,0.18,0.27], max: [-0.82,1.09,1.58], ground: [-4.01,0.27,-0.82,1.58] } },
+      { group: 'stationeryFrontE', role: 'attachment', localBounds: { min: [1.04,0.18,0.1], max: [2.61,1.3,1.18], ground: [1.04,0.56,2.6,1.18] } },
+      { group: 'stationeryRear', role: 'attachment', localBounds: { min: [-3.69,0.18,-5.24], max: [2.26,1.3,-4.79], ground: [-3.69,-5.23,2.25,-4.81] } },
+      { group: 'stationeryGround', role: 'ground', localBounds: { min: [-4.9,0.19,-5.35], max: [4.6,0.23,2], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];

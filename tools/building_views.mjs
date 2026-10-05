@@ -43,7 +43,7 @@ const VIEWS = {
   frontNear:    { yaw: front + 0.25,          pitch: 0.12, dist: 9,        target: [cx + fx * 2, 1.4, cz + fz * 2] },   // eye-level look through the glass
 };
 // Multi-storey buildings: a second cutaway also lifts the module's 'f2' layer (upper storey) to show the ground floor.
-if (b.floors > 1) VIEWS.interiorGround = { yaw: front + 0.35, pitch: 1.0, dist: d * 1.05, target: [cx, 0.8, cz], cutaway: ['roof', 'f2'] };
+if (b.floors > 1) VIEWS.interiorGround = { yaw: front + 0.35, pitch: 1.0, dist: d * 1.05, target: [cx, 0.8, cz], cutaway: b.floors > 2 ? ['roof', 'f3', 'f2'] : ['roof', 'f2'] };
 const groupsOf = b.parts.map(p => p.group);
 
 const browser = await launchChromium();
