@@ -143,5 +143,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B03-P05 | みどり屋 雑貨店 杂货店 | 89a33b3 | [screenshots/B03-P05](screenshots/B03-P05/) |
 | B03-P06 | あじさい会館 社区会所（首个两层） | 见 PROGRESS.md「P5 B03-P06」 | [screenshots/B03-P06](screenshots/B03-P06/) |
 | B03-P07 | 邮政服务站 | 见 PROGRESS.md「P5 B03-P07」 | [screenshots/B03-P07](screenshots/B03-P07/) |
+| B03-P08 | 雨宿神社 小神社与庭院（首个公园/神社） | 见 PROGRESS.md「P5 B03-P08」 | [screenshots/B03-P08](screenshots/B03-P08/) |
 
 每轮完成后在此表追加一行。

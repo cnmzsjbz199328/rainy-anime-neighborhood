@@ -1005,7 +1005,7 @@
     "name": "小神社与庭院",
     "archetype": "shrine",
     "phase": 4,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "park",
     "front": "N",
     "frontages": [
@@ -1028,7 +1028,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": -38,
-        "z": -9
+        "z": -9,
+        "door": [
+          -38,
+          -5.5
+        ]
       }
     ],
     "maxHeight": 4,
@@ -1053,7 +1057,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

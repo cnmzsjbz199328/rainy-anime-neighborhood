@@ -100,7 +100,7 @@
 
 ## B03-P08 · 小神社与庭院
 
-[构建任务卡](tasks/B03-P08.md) · 待建地块
+[构建任务卡](tasks/B03-P08.md) · 已实现，实际模型截图见 [screenshots/B03-P08](screenshots/B03-P08/)
 
 ![B03-P08 小神社与庭院 八视图](references/B03-P08.jpg)
 
