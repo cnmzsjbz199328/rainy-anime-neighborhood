@@ -220,7 +220,7 @@
 
 ## B06-P07 · 独栋住宅 14
 
-[构建任务卡](tasks/B06-P07.md) · 待建地块
+[构建任务卡](tasks/B06-P07.md) · 已实现，实际模型截图见 [screenshots/B06-P07](screenshots/B06-P07/)
 
 ![B06-P07 独栋住宅 14 八视图](references/B06-P07.jpg)
 
