@@ -125,6 +125,9 @@ node docs/world/check_kit.mjs --refs   # 全部 39 张生成完毕后必须通�
 
 | 4 | TR01–TR07 | 本批 main 提交（见 git log） | 2026-10-05；各 3 次；TR03 保留第 2 次，其余第 3 次；均有残余问题，见 REFERENCE_REVIEW |
 
-当前进度：19 / 39 已生成，20 张待生成。下一批 RD01–RD08；道路使用 ST01 风格参考。ST01 用户确认已记录，无需重复确认。
+| 5 (部分) | RD01、RD02 | 本批 main 提交（见 git log） | 2026-10-05；各 3 次，保留第 3 次；生图 API 额度已满，generated-with-issues，裁决见 REFERENCE_REVIEW |
+
+当前进度：21 / 39 已生成，18 张待生成。下一批 RD03–RD08；道路使用 ST01 风格参考。ST01 用户确认已记录，无需重复确认。
+
 
 每批完成后在此表追加一行。

@@ -1,6 +1,6 @@
 # 星球参考图审查与实施时的裁决
 
-状态：已生成 ST01、ST03、ST05、BI01–BI09、TR01–TR07（19 / 39），均已审查并记录裁决；ST01 风格已获用户确认，其余 20 张待生成。
+状态：已生成 ST01、ST03、ST05、BI01–BI09、TR01–TR07、RD01–RD02（21 / 39），均已审查并记录裁决；ST01 风格已获用户确认，其余 18 张待生成。
 
 ## 生成方式
 
@@ -419,8 +419,47 @@ Review corrections: Landscape 1536 x 1024 or larger; exactly eight panels with o
 ```
 
 
-### 第 4 批交接
-- 已完成 TR01–TR07，各 3 次，共 21 次独立生成；TR03 保留第 2 次，其余保留第 3 次。七张均为 generated-with-issues，不能视为所有视觉约束已经通过。尤其 TR06 全景蒸汽与球外水面不得照搬。
-- 输出位于 `docs/world/references/TR01.jpg` 至 `docs/world/references/TR07.jpg`；只更新世界参考包，未实施场景代码。
-- 下一批 RD01–RD08；总进度 19 / 39，待生成 20 张。
-- 验证：`node docs/world/check_kit.mjs` PASS（39 卡、39 提示词、389 本地链接；19 已生成、20 待生成，隐藏线索大圆对齐）；七张图片解码、1536 × 1024、quality=92 量化表、4:4:4 采样与目录状态一致性通过。`--refs` 待全部 39 张齐全后运行。
+### 第五批逐卡审查（2026-10-05，RD01–RD02）
+
+- 工具：内置 image_gen；每次独立生成，使用 ST01.jpg（整体风格）作为参考输入。RD01、RD02 各 3 次，保留第 3 次。由于生图 API 额度达到上限（429 Resource Exhausted），本轮完成 RD01、RD02 两张并记录审查，后续 RD03–RD08 待下一轮生成。
+- 提示词：第 1 次使用 IMAGE_PROMPTS.json 原文；第 2、3 次追加格式严格修正，去除版面标题、尺寸数字与多余文字。
+- 输出：`docs/world/references/RD01.jpg` 与 `docs/world/references/RD02.jpg`，1536 × 1024 JPEG quality=92、yuv444p 无色度子采样。
+- 审查状态：均位 `generated-with-issues`。
+
+
+### RD01 环球主干道
+- 工具与日期：内置 image_gen，2026-10-05。
+- 尝试次数：3；保留第 3 次。第 1 次带中文标题栏与详细英文标注；第 2 次修正版式与标签，但横断面带尺寸数字；第 3 次精简横断面尺寸数字，清晰呈现隧道口、路灯、里程桩、公交站与排水沟特写。
+- 输出：[RD01.jpg](references/RD01.jpg)，1536 × 1024，JPEG quality=92、yuv444p。
+- 审查结果：generated-with-issues。8 格版式与英文标签齐全；CROSS SECTION 与 PLAN 表现双车道、路肩与排水沟；GROUND/AERIAL 视图风格与 ST01 一致；GLOBE NIGHT 晴朗月夜无云雨，路灯绕星球连成明显光带；雨夜地面显示路面水洼涟漪。无人、无移动车辆、无水印。
+- 残余问题与裁决：CROSS SECTION 格仍带少量 1m 示意线，实施时以卡片数值（7m 车道、1m 路肩）为准，不从图上量取；里程桩数字仅示意，实施时以拓扑距离为准。
+
+
+### RD02 跨海大桥
+- 工具与日期：内置 image_gen，2026-10-05。
+- 尝试次数：3；保留第 3 次。第 1 次带中文标题与文字标注；第 2 次呈现行星曲面弯曲 Bridge Elevation，但跨格边界偏斜；第 3 次严格对齐 4×2 八格，ELEVATION 正确跨在 top row 展露桥墩垂直于当地曲面地面的结构。
+- 输出：[RD02.jpg](references/RD02.jpg)，1536 × 1024，JPEG quality=92、yuv444p。
+- 审查结果：generated-with-issues。8 格版式与英文标签齐全；ELEVATION 清晰表达跨海大桥沿星球曲面弯曲且桥墩垂直于当地地面的法则；GLOBE NIGHT 晴朗月夜海面倒影清晰，AERIAL NIGHT 与 GROUND NIGHT 表现雨夜海浪与湿润路面；DETAIL 展现航道灯、检修楼梯与伸缩缝。无人、无移动车辆、无水印。
+- 残余问题与裁决：CROSS SECTION 格带少量 10m 尺寸标注，实施时以卡片数值（10m 桥面、4–8m 桥高）为准。
+
+
+#### 本轮实际追加提示词（RD01、RD02）
+
+##### RD01 第 3 次追加
+```text
+Review corrections: Produce exactly a 1536 x 1024 landscape sheet with 8 clearly separated panels in a 4x2 grid. Input 1 ST01.jpg is the overall style anchor. Only the eight simple English panel labels CROSS SECTION, PLAN, GROUND 5M, AERIAL 50M, GLOBE NIGHT, AERIAL NIGHT, GROUND NIGHT, DETAIL may appear. No title, card ID, Chinese text, extra text annotations, dimensions, measurements, captions, signs or other lettering. Cross section must show road profile with plain dimension lines without numbers. Globe night must be cloudless clear moonlit night with bright road light string winding around the planet. Rainy night views show wet asphalt with puddle ripples. Keep all human scale consistent (7m 2-lane road, 1m shoulders, guardrails, streetlamps). No vehicles, no people.
+Final clarification: Ensure all 8 panel labels are clearly positioned on top of each frame. Ensure cross section dimension lines have no numbers or digits. Keep GLOBE NIGHT cloudless with clear moonlit surface.
+```
+
+##### RD02 第 3 次追加
+```text
+Review corrections: Produce exactly a 1536 x 1024 landscape sheet with 8 clearly separated panels in a 4x2 grid. Input 1 ST01.jpg is the overall style anchor. Only the eight simple English panel labels CROSS SECTION, PLAN, GROUND 5M, AERIAL 50M, GLOBE NIGHT, AERIAL NIGHT, GROUND NIGHT, DETAIL may appear. No title, card ID, Chinese text, extra text annotations, dimensions, measurements, captions, signs or other lettering. Cross section must show bridge profile with plain dimension lines without numbers. Plan panel includes a side elevation of the curving bridge. Globe night must be cloudless clear moonlit night with bridge lights reflected on sea surface. Rainy night views show wet deck and sea wave reflections. Keep all human scale consistent (10m deck, low piers). No vehicles, no people.
+Final clarification: Keep 4x2 grid layout strictly aligned with clean panel titles centered on top of each panel. Ensure no text inside panels.
+```
+
+
+### 第 5 批交接（部分：RD01–RD02）
+- 已完成 RD01、RD02，各 3 次尝试，均保留第 3 次。两张均为 generated-with-issues。
+- 生图工具额度暂达上限（429 错误），已保存并阶段验收 RD01、RD02；下一批继续生成 RD03–RD08。
+- 图像输出位于 `docs/world/references/RD01.jpg` 与 `docs/world/references/RD02.jpg`。
+- 总进度：21 / 39 已生成，18 张待生成。
