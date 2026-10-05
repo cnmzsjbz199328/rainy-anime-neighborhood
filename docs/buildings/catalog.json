@@ -1810,7 +1810,7 @@
     "name": "独栋住宅 11",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "N",
     "frontages": [
@@ -1834,7 +1834,7 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": -38.5,
-        "z": 34
+        "z": 34, "door": [-38.5, 36.6]
       }
     ],
     "maxHeight": 9,
@@ -1859,7 +1859,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

@@ -178,7 +178,7 @@
 
 ## B05-P08 · 独栋住宅 11
 
-[构建任务卡](tasks/B05-P08.md) · 待建地块
+[构建任务卡](tasks/B05-P08.md) · 已实现，实际模型截图见 [screenshots/B05-P08](screenshots/B05-P08/)
 
 ![B05-P08 独栋住宅 11 八视图](references/B05-P08.jpg)
 

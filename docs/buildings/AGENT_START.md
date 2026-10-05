@@ -163,5 +163,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B02-P08 | 独栋住宅 8（北排东端） | 见 PROGRESS.md「P5 B02-P08」 | [screenshots/B02-P08](screenshots/B02-P08/) |
 | B05-P06 | 独栋住宅 9（B05 南排第一栋，首个朝 N） | 见 PROGRESS.md「P5 B05-P06」 | [screenshots/B05-P06](screenshots/B05-P06/) |
 | B05-P07 | 独栋住宅 10（B05 南排第二栋，角门） | 见 PROGRESS.md「P5 B05-P07」 | [screenshots/B05-P07](screenshots/B05-P07/) |
+| B05-P08 | 独栋住宅 11（B05 南排第三栋，角门，半切妻） | 见 PROGRESS.md「P5 B05-P08」 | [screenshots/B05-P08](screenshots/B05-P08/) |
 
 每轮完成后在此表追加一行。
