@@ -100,7 +100,7 @@ const plots = [
   plot('B01-P01', [-46, -46, -6, -21], 'school', 'S', { frontages: ['S', 'E'], uses: ['学校', '社区中心'],
     entrances: [{ at: -26, facing: 'S', kind: 'pedestrian' }, { at: -40, facing: 'E', kind: 'vehicle' }] }),
   // B02: two rows of houses; the north row is reached from alley A03.
-  plot('B02-P01', [6, -31.75, 16, -21], 'house', 'S', { frontages: ['S', 'W'], uses: ['独栋住宅'] }),
+  plot('B02-P01', [6, -31.75, 16, -21], 'house', 'S', { frontages: ['S', 'W'], uses: ['独栋住宅'], status: 'occupied', building: 'house' }),
   plot('B02-P02', [16, -31.75, 26, -21], 'house', 'S', { uses: ['独栋住宅'] }),
   plot('B02-P03', [26, -31.75, 36, -21], 'house', 'S', { uses: ['独栋住宅'] }),
   plot('B02-P04', [36, -31.75, 46, -21], 'house', 'S', { uses: ['独栋住宅'] }),
@@ -442,6 +442,16 @@ const buildings = [
       { group: 'yamadaWest', role: 'attachment', localBounds: { min: [3.02,0.18,-6.03], max: [4.51,1.79,-4.12], ground: [3.02,-6.02,4.5,-4.13] } },
       { group: 'yamadaRear', role: 'attachment', localBounds: { min: [-3.14,0.18,-6.14], max: [2.86,1.3,-5.68], ground: [-3.14,-6.13,2.85,-5.7] } },
       { group: 'yamadaGround', role: 'ground', localBounds: { min: [-4.45,0.19,-6.6], max: [4.45,0.23,2], ground: null } },
+    ] },
+  { id: 'house', name: '独栋住宅 1', plot: 'B02-P01', module: 'B02-P01', transform: { x: 11.5, z: -23.6, rotY: 0 },
+    door: { x: -0.5, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 2,
+    shelter: [[-3.4, -6.4, 3.35, 0.5]],   // gable roof merged with the left carport (the rear-left yard corner beside it is treated as covered)
+    parts: [
+      { group: 'house', role: 'building', localBounds: { min: [-3.46,0.18,-6.46], max: [3.48,7.59,0.56], ground: [-3.43,-6.25,3.41,0.5] } },
+      { group: 'houseGarden', role: 'attachment', localBounds: { min: [-1.16,0.18,0.36], max: [4.44,3.04,2.56], ground: [-0.03,0.36,4.43,2.55] } },
+      { group: 'houseEast', role: 'attachment', localBounds: { min: [3.12,0.18,-5.12], max: [4.41,1.59,-0.2], ground: [3.12,-5.12,4.41,-0.2] } },
+      { group: 'houseRear', role: 'attachment', localBounds: { min: [-1.08,0.18,-6.84], max: [2.73,0.93,-6.08], ground: [-1.08,-6.84,2.73,-6.12] } },
+      { group: 'houseGround', role: 'ground', localBounds: { min: [-3.4,0.19,-6.55], max: [4.3,0.23,2.5], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];

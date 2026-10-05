@@ -10,7 +10,7 @@
 
 ## B02-P01 · 独栋住宅 1
 
-[构建任务卡](tasks/B02-P01.md) · 待建地块
+[构建任务卡](tasks/B02-P01.md) · 已实现，实际模型截图见 [screenshots/B02-P01](screenshots/B02-P01/)
 
 ![B02-P01 独栋住宅 1 八视图](references/B02-P01.jpg)
 
