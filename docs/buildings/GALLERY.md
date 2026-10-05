@@ -88,7 +88,7 @@
 
 ## B03-P06 · 社区会所
 
-[构建任务卡](tasks/B03-P06.md) · 待建地块
+[构建任务卡](tasks/B03-P06.md) · 已实现，实际模型截图见 [screenshots/B03-P06](screenshots/B03-P06/)
 
 ![B03-P06 社区会所 八视图](references/B03-P06.jpg)
 

@@ -114,7 +114,7 @@ const plots = [
   plot('B03-P03', [-30, 0, -22, 9], 'shop', 'S', { uses: ['书店', '花店'], status: 'occupied', building: 'bookshop' }),
   plot('B03-P04', [-38, 0, -30, 9], 'shop', 'S', { uses: ['小餐馆', '杂货'], status: 'occupied', building: 'diner' }),
   plot('B03-P05', [-46, 0, -38, 9], 'shop', 'S', { uses: ['小店铺'], status: 'occupied', building: 'grocery' }),
-  plot('B03-P06', [-18, -9, -6, 0], 'civic', 'N', { frontages: ['N', 'E'], uses: ['社区会所', '诊所'] }),
+  plot('B03-P06', [-18, -9, -6, 0], 'civic', 'N', { frontages: ['N', 'E'], uses: ['社区会所', '诊所'], status: 'occupied', building: 'hall' }),
   plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'] }),
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'] }),
   // B04: koban on the main corner, clinic, a pocket park behind the eastbound bus stop.
@@ -261,6 +261,19 @@ const buildings = [
       { group: 'grocerySideE', role: 'attachment', localBounds: { min: [2.74, 0.19, -4.19], max: [3.25, 1.9, -0.46], ground: [2.75, -4.18, 3.25, -0.46] } },
       { group: 'groceryRear', role: 'attachment', localBounds: { min: [-1.58, 0.18, -6.12], max: [2.2, 1.9, -5.66], ground: [-1.57, -6.11, 1.2, -5.67] } },
       { group: 'groceryGround', role: 'ground', localBounds: { min: [-3.65, 0.19, -6.1], max: [3.65, 0.23, 1.85], ground: null } },
+    ] },
+  { id: 'hall', name: 'あじさい会館', plot: 'B03-P06', module: 'B03-P06', transform: { x: -12, z: -6.1, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 2,
+    shelter: [[-3.85, -4.95, 2.25, 0.35]],   // hip roof with eaves
+    parts: [
+      { group: 'hall', role: 'building', localBounds: { min: [-3.94, 0.18, -5.05], max: [2.74, 7.25, 0.87], ground: [-3.83, -4.94, 2.55, 0.8] } },
+      { group: 'hallRamp', role: 'attachment', localBounds: { min: [-3.3, 0.19, 0.08], max: [-0.85, 1.2, 0.83], ground: [-3.3, 0.1, -0.85, 0.83] } },
+      { group: 'hallNotice', role: 'attachment', localBounds: { min: [-3.78, 0.18, 1.57], max: [-1.79, 1.79, 1.97], ground: [-3.78, 1.57, -1.79, 1.96] } },
+      { group: 'hallBike', role: 'attachment', localBounds: { min: [1.53, 0.19, 0.55], max: [2.9, 0.83, 1.6], ground: [1.53, 0.55, 2.9, 1.6] } },
+      { group: 'hallBed', role: 'attachment', localBounds: { min: [-4.17, 0.18, -4.05], max: [-3.74, 0.57, 0.55], ground: [-4.17, -4.04, -3.74, 0.54] } },
+      { group: 'hallParking', role: 'attachment', localBounds: { min: [2.84, 0.18, -5.05], max: [4.96, 1.4, 0.17], ground: [2.84, -5.05, 4.95, 0.16] } },
+      { group: 'hallRear', role: 'attachment', localBounds: { min: [-2.66, 0.18, -5.12], max: [2.2, 1.29, -4.68], ground: [-2.65, -5.11, 2.2, -4.71] } },
+      { group: 'hallGround', role: 'ground', localBounds: { min: [-4.4, 0.19, -5.9], max: [4.97, 0.23, 2.3], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];

@@ -4,7 +4,7 @@
 //
 // Eight views of the actual model, framed from its own transform: front, rear, left, right (left/right as
 // seen by a viewer facing the front), roof top, interior cutaway (roof and ceiling hidden for this shot
-// only: the module's 'roof' layer), rainy-night front-right and rear-left obliques; plus the scene's default view and the whole town.
+// only: the module's 'roof' layer; two-storey buildings add interiorGround, which also lifts the 'f2' layer), rainy-night front-right and rear-left obliques; plus the scene's default view and the whole town.
 // Also reports page errors and draw calls / triangles / geometries / textures with the building shown and
 // hidden at the same views. Look at every image; the exit code only covers errors.
 import fs from 'node:fs';
@@ -40,6 +40,8 @@ const VIEWS = {
   rearLeft:     { yaw: front + Math.PI * 1.25, pitch: 0.32, dist: d * 1.15, target: tgt },
   frontNear:    { yaw: front + 0.25,          pitch: 0.12, dist: 9,        target: [cx + fx * 2, 1.4, cz + fz * 2] },   // eye-level look through the glass
 };
+// Multi-storey buildings: a second cutaway also lifts the module's 'f2' layer (upper storey) to show the ground floor.
+if (b.floors > 1) VIEWS.interiorGround = { yaw: front + 0.35, pitch: 1.0, dist: d * 1.05, target: [cx, 0.8, cz], cutaway: ['roof', 'f2'] };
 const groupsOf = b.parts.map(p => p.group);
 
 const browser = await launchChromium();
@@ -82,7 +84,7 @@ const moving = p0.filter((y, i) => y !== p1[i]).length;
 for (const [name, v] of Object.entries(VIEWS)) {
   await page.evaluate(v => window.__scene.view.set(v), v);
   // Cutaway: lift off everything the module built on its 'roof' layer (roof, parapet, rooftop plant, ceiling).
-  if (v.cutaway) await page.evaluate(names => { for (const n of names) window.__scene.groups[n].traverse(o => { if ((o.isMesh || o.isLineSegments) && o.userData.layer === 'roof') { o.userData.cutaway = true; o.visible = false; } }); }, groupsOf);
+  if (v.cutaway) await page.evaluate(([names, layers]) => { for (const n of names) window.__scene.groups[n].traverse(o => { if ((o.isMesh || o.isLineSegments) && layers.includes(o.userData.layer)) { o.userData.cutaway = true; o.visible = false; } }); }, [groupsOf, v.cutaway === true ? ['roof'] : v.cutaway]);
   await frames(); await page.waitForTimeout(800);   // SwiftShader: let a few frames render
   await page.screenshot({ path: path.join(outDir, `${name}.png`) });
   if (v.cutaway) await page.evaluate(names => { for (const n of names) window.__scene.groups[n].traverse(o => { if (o.userData.cutaway) { o.visible = true; delete o.userData.cutaway; } }); }, groupsOf);

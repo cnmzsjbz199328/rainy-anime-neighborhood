@@ -140,6 +140,7 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B03-P02 | コインランドリー ふわり 洗衣店 | 535bf67 | [screenshots/B03-P02](screenshots/B03-P02/) |
 | B03-P03 | 古書 しおり堂 旧书店 | c58009c | [screenshots/B03-P03](screenshots/B03-P03/) |
 | B03-P04 | ひだまり食堂 食堂 | b9e1511 | [screenshots/B03-P04](screenshots/B03-P04/) |
-| B03-P05 | みどり屋 雑貨店 杂货店 | 见 PROGRESS.md「P5 B03-P05」 | [screenshots/B03-P05](screenshots/B03-P05/) |
+| B03-P05 | みどり屋 雑貨店 杂货店 | 89a33b3 | [screenshots/B03-P05](screenshots/B03-P05/) |
+| B03-P06 | あじさい会館 社区会所（首个两层） | 见 PROGRESS.md「P5 B03-P06」 | [screenshots/B03-P06](screenshots/B03-P06/) |
 
 每轮完成后在此表追加一行。
