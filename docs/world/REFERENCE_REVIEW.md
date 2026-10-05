@@ -1,6 +1,6 @@
 # 星球参考图审查与实施时的裁决
 
-状态：已生成 ST01、ST03、ST05、BI01–BI09、TR01–TR07、RD01–RD02（21 / 39），均已审查并记录裁决；ST01 风格已获用户确认，其余 18 张待生成。
+状态：已生成 ST01、ST03、ST05、BI01–BI09、TR01–TR07、RD01–RD08（27 / 39），均已审查并记录裁决；ST01 风格已获用户确认，其余 12 张待生成。
 
 ## 生成方式
 
@@ -463,3 +463,72 @@ Final clarification: Keep 4x2 grid layout strictly aligned with clean panel titl
 - 生图工具额度暂达上限（429 错误），已保存并阶段验收 RD01、RD02；下一批继续生成 RD03–RD08。
 - 图像输出位于 `docs/world/references/RD01.jpg` 与 `docs/world/references/RD02.jpg`。
 - 总进度：21 / 39 已生成，18 张待生成。
+
+### RD03 乡道
+- 工具与日期：内置 image_gen，2026-10-05；风格参考 ST01.jpg。
+- 尝试次数：2；保留第 2 次。第 1 次乡间路面与设施齐全，但全景路灯带和夜景光晕过强；第 2 次压低道路光带和灯光强度。
+- 输出：[RD03.jpg](references/RD03.jpg)，1536 × 1024，JPEG 高质量、yuv444p，不裁剪。
+- 提示词：第 1 次完整使用 IMAGE_PROMPTS.json 原文。第 2 次在原文后追加以下修正：
+
+```text
+Focused correction: Keep all four daytime panels softly overcast neutral and retain exactly the eight required labels. In the bottom row, the country road is a narrow dim grey route, not a continuous glowing ribbon. In GLOBE NIGHT, show only a faint, sparse route line; no extra illuminated highways or broad settlement light clusters. In AERIAL NIGHT and GROUND NIGHT, use only widely spaced low-output lamps about 25 m apart, with a little more light at one junction and the bus stop; do not let lamp halos dominate the road. Preserve all required country-road details and the ST01 watercolor ink style.
+```
+
+- 审查结果：generated-with-issues。八格标签、单车道、田渠、会车段、电线杆、反射镜、自动售货机、路牌与公交站牌可辨；无行人、车辆和水印。第二版更接近卡片的稀疏低亮度路灯，但全景仍有少量偏亮的人类活动光点。
+- 裁决：尺寸线不作为尺寸依据；实施按单车道 4–5 m、灯距约 25 m 执行，并控制路灯低亮度。自动售货机和路牌上的符号/伪文字不照搬。
+
+### RD04 废弃道路
+- 工具与日期：内置 image_gen，2026-10-05；风格参考 ST01.jpg。
+- 尝试次数：2；保留第 2 次。首版全景路线上出现暖色光带；第二版改为无灯、靠月光辨认的路线。
+- 输出：[RD04.jpg](references/RD04.jpg)，1536 × 1024，JPEG 高质量、yuv444p，不裁剪。
+- 提示词：第 1 次使用 JSON 提示词，个别短语调整为“倾斜的电线杆与下垂的电线”“倒伏的标志牌”。第 2 次以 JSON 原文为基础，追加：
+
+```text
+Focused correction: Keep the abandoned road fully unlit in every panel, especially GLOBE NIGHT: it must be a faint dark winding trace visible by moonlight only, with absolutely no warm road lights, no glowing route, and no luminous roadside settlements near this route. In rainy night views, show broken unlit lamp heads only; the road remains dark grey with small wet reflections from moonlight. Retain exactly the eight panel labels, no extra titles or card IDs. Keep the quiet overgrown atmosphere, no catastrophe or debris.
+```
+
+- 审查结果：generated。八格、龟裂与植被、褪色线、倾斜电杆、锈栏杆、倒牌、红白路障和积水均出现；无战争灾难、涂鸦或垃圾堆。夜景路灯关闭，全景为晴朗月夜。
+- 裁决：横断面仅示意原道路与残存通行带关系；实施保留 5–6 m 原宽、2–3 m 可通行宽。全景可见的其他道路/聚落灯光不代表废弃路段通电。
+
+### RD05 土路与林道
+- 工具与日期：内置 image_gen，2026-10-05；风格参考 ST01.jpg。
+- 尝试次数：2；保留第 2 次。首版右上角多出“RD05”卡号，全景路迹稍亮；第二版去除卡号并压暗路迹。
+- 输出：[RD05.jpg](references/RD05.jpg)，1536 × 1024，JPEG 高质量、yuv444p，不裁剪。
+- 提示词：第 1 次基于 JSON 原文，将必备细节中的水坑扩写为水坑涟漪，并强化无人工灯。第 2 次在原文后追加：
+
+```text
+Focused correction: Do not put a title, heading, card ID, watermark or extra text anywhere, including the upper right margin; show only the eight exact panel labels. In GLOBE NIGHT, the route is dark and unlit, visible only as a subtle pale moonlit track with absolutely no warm lights or glowing points along it. Keep the globe clear moonlit night. Preserve both woodland and sandy gravel versions within the same consistent narrow overgrown track design; include the fallen log, stone cairn and timber route posts.
+```
+
+- 审查结果：generated-with-issues。八格展示森林土路和沙漠砂砾路；车辙、草带、水坑、倒木、木路标及沙漠标杆可辨，卡号已移除。全景路线仍比纯月光下略亮，但没有明显人工灯具。
+- 裁决：按无灯路处理，路迹只作为月光下的地表对比；保持窄、弯、被植被侵入，禁止照图拓宽或拉直。
+
+### RD06 石阶与山径
+- 工具与日期：内置 image_gen，2026-10-05；风格参考 ST01.jpg。
+- 尝试次数：1；使用 IMAGE_PROMPTS.json 原文。
+- 输出：[RD06.jpg](references/RD06.jpg)，1536 × 1024，JPEG 高质量、yuv444p，不裁剪。
+- 审查结果：generated-with-issues。八格标签、苔石阶、平台、麻绳扶手、褪色鸟居、石灯笼、地藏、长凳和石柱均可辨；夜间为雨夜，石阶边缘水光清楚。全景中的灯笼光点略密、偏亮。
+- 裁决：以卡片的 1.2–2 m 宽、0.15–0.18 m 踏步高及坡度规则为准；实施时只在少数节点放置微弱石灯笼，不能复刻全景的连续光链。图中文字样式石柱不代表需要生成可读字样。
+
+### RD07 木栈道
+- 工具与日期：内置 image_gen，2026-10-05；风格参考 ST01.jpg。
+- 尝试次数：1；使用 IMAGE_PROMPTS.json 原文。
+- 输出：[RD07.jpg](references/RD07.jpg)，1536 × 1024，JPEG 高质量、yuv444p，不裁剪。
+- 审查结果：generated-with-issues。八格、木桩横梁、板缝、绳栏杆、末端平台、系船柱、救生圈和稀疏灯柱可辨；夜景水面倒影明确。全景的栈道灯点略密且亮。
+- 裁决：实施按 1.5–2.5 m 宽、灯柱约 10 m 间距，使用低亮度；木板风化、桩脚海藻藤壶以卡片为准，不能照搬图中较新的亮面木材。
+
+### RD08 冰原标杆路线
+- 工具与日期：内置 image_gen，2026-10-05；风格参考 ST01.jpg。
+- 尝试次数：1；以 IMAGE_PROMPTS.json 为基础，强化橙色半埋避难屋、轻柔雪雾和“反光片仅反射微弱月光”的表述。
+- 输出：[RD08.jpg](references/RD08.jpg)，1536 × 1024，JPEG 高质量、yuv444p，不裁剪。
+- 审查结果：generated。八格、红白标杆、压实雪道、中途橙色半埋避难屋与终点废弃观测小屋均出现；全景是晴朗月夜，局部夜景表现冰雪，没有脚印、雪地车或人物。
+- 裁决：标杆高 2 m、约 8 m 间距、约 2 m 雪道宽度以卡片为准；反光片与雪雾的亮度、密度仅作氛围示意。
+
+#### 本轮追加提示词（RD03–RD05）
+
+RD03 第 2 次、RD04 第 2 次、RD05 第 2 次追加内容如各卡记录所示；其他卡片没有重试追加。六张图均使用内置 image_gen，输入参考图仅为 ST01.jpg。输出采用 1536 × 1024，JPEG 高质量、4:4:4 色度采样，无裁剪。
+
+### 第 5 批交接（剩余：RD03–RD08）
+- 已完成 RD03–RD05，各 2 次尝试；RD06–RD08 各 1 次。各卡状态及残余问题已更新。
+- 六张参考图已保存至 `docs/world/references/RD03.jpg`–`RD08.jpg`。
+- 总进度：27 / 39 已生成，12 张待生成。下一批 LM01–LM10。
