@@ -684,7 +684,7 @@
     "name": "旧书店",
     "archetype": "bookstore",
     "phase": 3,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "shop",
     "front": "S",
     "frontages": [
@@ -707,7 +707,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": -26,
-        "z": 9
+        "z": 9,
+        "door": [
+          -26,
+          7.1
+        ]
       }
     ],
     "maxHeight": 9,
@@ -732,7 +736,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

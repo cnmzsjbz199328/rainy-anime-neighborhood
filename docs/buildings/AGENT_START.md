@@ -138,5 +138,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B05-P04 | はなや しずく 邻里花店 | b9a4245 | [screenshots/B05-P04](screenshots/B05-P04/) |
 | B03-P01 | こむぎ堂 转角面包店 | b2263a3 | [screenshots/B03-P01](screenshots/B03-P01/) |
 | B03-P02 | コインランドリー ふわり 洗衣店 | 535bf67 | [screenshots/B03-P02](screenshots/B03-P02/) |
+| B03-P03 | 古書 しおり堂 旧书店 | 见 PROGRESS.md「P5 B03-P03」 | [screenshots/B03-P03](screenshots/B03-P03/) |
 
 每轮完成后在此表追加一行。

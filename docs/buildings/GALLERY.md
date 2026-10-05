@@ -70,7 +70,7 @@
 
 ## B03-P03 · 旧书店
 
-[构建任务卡](tasks/B03-P03.md) · 待建地块
+[构建任务卡](tasks/B03-P03.md) · 已实现，实际模型截图见 [screenshots/B03-P03](screenshots/B03-P03/)
 
 ![B03-P03 旧书店 八视图](references/B03-P03.jpg)
 
