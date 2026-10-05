@@ -106,7 +106,7 @@ const plots = [
   plot('B02-P04', [36, -31.75, 46, -21], 'house', 'S', { uses: ['独栋住宅'], status: 'occupied', building: 'house4' }),
   plot('B02-P05', [6, -46, 16, -35.25], 'house', 'S', { frontages: ['S', 'W'], uses: ['独栋住宅', '小公寓'], status: 'occupied', building: 'house5' }),
   plot('B02-P06', [16, -46, 26, -35.25], 'house', 'S', { uses: ['独栋住宅'], status: 'occupied', building: 'house6' }),
-  plot('B02-P07', [26, -46, 36, -35.25], 'house', 'S', { uses: ['独栋住宅'] }),
+  plot('B02-P07', [26, -46, 36, -35.25], 'house', 'S', { uses: ['独栋住宅'], status: 'occupied', building: 'house7' }),
   plot('B02-P08', [36, -46, 46, -35.25], 'house', 'S', { uses: ['独栋住宅'] }),
   // B03: neighbourhood shops face the main street; small public uses face R03.
   plot('B03-P01', [-14, 0, -6, 9], 'shop', 'S', { frontages: ['S', 'E'], uses: ['面包店', '药店'], status: 'occupied', building: 'bakery' }),
@@ -511,6 +511,19 @@ const buildings = [
       { group: 'house6East', role: 'attachment', localBounds: { min: [1.77,0.18,-5.73], max: [4.41,1.2,0.39], ground: [1.78,-5.73,4.41,0.39] } },
       { group: 'house6Rear', role: 'attachment', localBounds: { min: [-3.29,0.18,-7.06], max: [1.87,1.02,-6.08], ground: [-3.29,-7.06,1.87,-6.13] } },
       { group: 'house6Ground', role: 'ground', localBounds: { min: [-4.9,0.19,-7.1], max: [4.6,0.23,2.5], ground: null } },
+    ] },
+  { id: 'house7', name: '独栋住宅 7', plot: 'B02-P07', module: 'B02-P07', transform: { x: 31, z: -37.85, rotY: 0 },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 2,
+    shelter: [[-3.9, -6.35, 3.6, 0.5], [-1.6, 0, 3.4, 0.56]],   // salt-box roof merged with the left carport (the rear corner beside it is treated as covered), front canopy
+    parts: [
+      { group: 'house7', role: 'building', localBounds: { min: [-3.96,0.18,-6.45], max: [3.73,7.56,0.58], ground: [-3.92,-6.3,3.66,0.5] } },
+      { group: 'house7Step', role: 'attachment', localBounds: { min: [-0.7,0.18,0.5], max: [0.7,0.26,2.25], ground: null } },
+      { group: 'house7Garden', role: 'attachment', localBounds: { min: [0.3,0.18,0.35], max: [4.63,3.04,2.56], ground: [0.67,0.7,4.63,2.55] } },
+      { group: 'house7FrontW', role: 'attachment', localBounds: { min: [-1.43,0.19,0.32], max: [-0.85,0.57,0.95], ground: [-1.43,0.32,-0.85,0.95] } },
+      { group: 'house7West', role: 'attachment', localBounds: { min: [-4.96,0.18,-5.61], max: [-4.05,1.13,1.61], ground: [-4.95,-5.6,-4.05,1.6] } },
+      { group: 'house7East', role: 'attachment', localBounds: { min: [3.34,0.18,-5.86], max: [4.79,1.7,2.03], ground: [3.34,-5.85,4.79,2.03] } },
+      { group: 'house7Rear', role: 'attachment', localBounds: { min: [-1.53,0.19,-7.02], max: [3.14,1.07,-6.05], ground: [-1.53,-6.84,3.14,-6.05] } },
+      { group: 'house7Ground', role: 'ground', localBounds: { min: [-4.9,0.19,-7.1], max: [4.6,0.23,2.5], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];
