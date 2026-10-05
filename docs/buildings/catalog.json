@@ -1254,7 +1254,7 @@
     "name": "街角小神社",
     "archetype": "shrine",
     "phase": 4,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "civic",
     "front": "N",
     "frontages": [
@@ -1278,8 +1278,7 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 11,
-        "z": -9
-      }
+        "z": -9, "door": [11, -5.5] }
     ],
     "maxHeight": 9,
     "floors": 1,
@@ -1303,7 +1302,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

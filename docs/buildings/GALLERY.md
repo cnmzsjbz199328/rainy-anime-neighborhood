@@ -124,7 +124,7 @@
 
 ## B04-P04 · 街角小神社
 
-[构建任务卡](tasks/B04-P04.md) · 待建地块
+[构建任务卡](tasks/B04-P04.md) · 已实现，实际模型截图见 [screenshots/B04-P04](screenshots/B04-P04/)
 
 ![B04-P04 街角小神社 八视图](references/B04-P04.jpg)
 
