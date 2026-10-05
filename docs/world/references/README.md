@@ -38,6 +38,6 @@
 - [LM05.jpg](LM05.jpg)（已生成） — 星见石环（隐藏线索 1） · [设计卡](../cards/LM05.md)
 - [LM06.jpg](LM06.jpg)（已生成，有裁决项） — 砂没驿与半埋巨碑（隐藏线索 2） · [设计卡](../cards/LM06.md)
 - [LM07.jpg](LM07.jpg)（已生成，有裁决项） — 冰封轮廓（隐藏线索 3） · [设计卡](../cards/LM07.md)
-- [LM08.jpg](LM08.jpg)（已生成，有裁决项） — 灯塔岛 · [设计卡](../cards/LM08.md)
+- [LM08.jpg](LM08.jpg)（已生成） — 灯塔岛 · [设计卡](../cards/LM08.md)
 - [LM09.jpg](LM09.jpg)（已生成） — 乡间无人站 · [设计卡](../cards/LM09.md)
 - [LM10.jpg](LM10.jpg)（已生成） — 小渔港 · [设计卡](../cards/LM10.md)

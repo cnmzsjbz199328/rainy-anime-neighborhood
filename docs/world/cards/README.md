@@ -62,6 +62,6 @@
 | [LM05](LM05.md) | 星见石环（隐藏线索 1） | 建筑带 | [已生成](../references/LM05.jpg) |
 | [LM06](LM06.md) | 砂没驿与半埋巨碑（隐藏线索 2） | 建筑带 | [已生成](../references/LM06.jpg)（有裁决项） |
 | [LM07](LM07.md) | 冰封轮廓（隐藏线索 3） | 冰盖 | [已生成](../references/LM07.jpg)（有裁决项） |
-| [LM08](LM08.md) | 灯塔岛 | 海洋中的小岛 | [已生成](../references/LM08.jpg)（有裁决项） |
+| [LM08](LM08.md) | 灯塔岛 | 海洋中的小岛 | [已生成](../references/LM08.jpg) |
 | [LM09](LM09.md) | 乡间无人站 | 建筑带 | [已生成](../references/LM09.jpg) |
 | [LM10](LM10.md) | 小渔港 | 建筑带 | [已生成](../references/LM10.jpg) |

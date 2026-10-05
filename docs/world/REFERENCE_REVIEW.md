@@ -1,6 +1,6 @@
 # 星球参考图审查与实施时的裁决
 
-状态：37 / 39 张参考图已生成并逐张审查；LM06–LM08 有残余实施裁决项。ST01 风格已获用户确认。仅 ST02、ST04 待生成。
+状态：37 / 39 张参考图已生成并逐张审查；LM06、LM07 有残余实施裁决项；LM08 已完成柔光修正。ST01 风格已获用户确认。仅 ST02、ST04 待生成。
 
 ## 生成方式
 
@@ -538,12 +538,17 @@ RD03 第 2 次、RD04 第 2 次、RD05 第 2 次追加内容如各卡记录所�
 
 - 工具：内置 image_gen。每张独立生成，输入 ST01.jpg 作为确认后的整体风格参考，并输入 B05-P03.jpg 作为城镇建筑画风参考；逐张查看输出后选版。
 - 输出：LM01–LM10 均为 1536 × 1024，完整画面转 JPEG 高质量 4:4:4，无裁切。生成文件保留于 Codex 生成图目录，参考图位于 `references/LM01.jpg`–`LM10.jpg`。
-- 尝试：LM01 2 次（保留第 1 次）；LM02 3 次（保留第 3 次）；LM03、LM04 各 1 次；LM05 2 次（保留第 2 次）；LM06 1 次；LM07 2 次（保留第 2 次）；LM08、LM09、LM10 各 1 次。LM07 第 3 次和 LM08 的追加重试遭遇 image_gen 429 usage limit，未产生新图；LM08 保留唯一成功输出。其余尝试均成功返回。
+- 尝试：LM01 2 次（保留第 1 次）；LM02 3 次（保留第 3 次）；LM03、LM04 各 1 次；LM05 2 次（保留第 2 次）；LM06 3 次（保留第 3 次）；LM07 3 次成功输出（保留第 2 次，另有 1 次第三版请求遇 429）；LM08 2 次成功输出（保留第 2 次，另有 1 次请求遇 429）；LM09、LM10 各 1 次。LM07 第 3 张成功图移除了冰下线索，故保留第 2 次；LM08 额度重置后重跑成功。
 - 提示词：除下述追加外，均使用 IMAGE_PROMPTS.json 对应 `prompt` 原文；没有修改卡片设计内容。所有尝试均沿用 ST01 与 B05-P03 建筑参考板。
 
 #### LM01 雨见岳
 - 输出：[LM01.jpg](references/LM01.jpg)。首版与二版均八格齐全，选首版：雪顶、火口湖、细蒸汽、南坡森林梯田、北坡熔岩均可辨；FROM AFAR 为晴朗月夜，弯曲地平线清楚。二版出现过多环绕海岸和景观变化，因此未选。
 - 审查结果：generated。背景地形与村镇只作氛围，不据图确定全局布局；高度、坡面方向及火口弱光依卡片实施。
+- 第 2 次实际提示词（第 1 次使用 JSON 原文）：
+
+```text
+An aesthetic concept reference sheet for a hand-drawn manga-style tiny planet, matching the attached ST01 style board and B05-P03 Japanese neighborhood cafe reference board. Exactly 8 clean aligned panels in a 4-column x 2-row grid, horizontal 1536x1024. One same site in all panels; only labels FRONT, REAR, LEFT, RIGHT, SITE PLAN, SECTION, RAINY NIGHT, FROM AFAR. No title, no card ID, no extra writing. The site is LM01 Amami-dake, a quiet dormant Japanese stratovolcano: low rounded slightly asymmetric Fuji-like mountain, 26m high, about 60m base, small 12m summit crater with a crater lake and a delicate steam vent, blue-white snow cap above 20m. South face toward town has blue-green forest and small terraces at the lower slope, a stone stair trail from a tiny hot spring hamlet, sparse stone lanterns, small summit shrine and marker. North and northwest slopes have charcoal old lava fields. Grey-violet and grey-brown mountain, cool moonlit night, restrained watercolor washes, dark blue-grey ink outlines, anime cel shading, miniature collectible model quality, not photorealistic and not flat map. Top four near-orthographic neutral-light elevations; bottom site plan top down, section through mountain, rainy night three-quarter view, and FROM AFAR showing the mountain crest rising over a strongly curved tiny-planet horizon at a clear moonlit night. Whole-planet far view is clear, no clouds or rain. Rainy night panel has gentle rain. Crater glow is barely perceptible dark red, never an eruption, never thick smoke. Steam and a thin moving mid-slope mist band. Human scale correct. No people, no animals, no moving vehicles, no watermark. Output a single image.
+```
 
 #### LM02 湯けむり温泉村
 - 输出：[LM02.jpg](references/LM02.jpg)。第 1 次有额外页眉/说明；第 2 次去掉页眉，但背景火口偏亮；第 3 次选版，八格齐全，村落、温泉、竹篱、溪流、小桥、鸟居和公交站清楚，背景火口仅为极弱暗红点。
@@ -578,10 +583,23 @@ Attempt 2 correction: preserve an unmistakable ordinary ancient Japanese standin
 ```
 
 #### LM06 砂没驿与半埋巨碑（隐藏线索 2）
-- 输出：[LM06.jpg](references/LM06.jpg)。审查结果：generated-with-issues。八格齐全；半埋候车屋、单节锈蚀车厢、短轨、倒信号灯与深色无标记巨碑均出现；无发光纹路或科幻装饰。巨碑在部分格对比偏强，实施时降低反差、让车站先入眼；铁路严格为短残段，不延伸成全球铁路。
+- 输出：[LM06.jpg](references/LM06.jpg)，保留第 3 次。第 1 次巨碑近黑且突出；第 2 次将车站放大，但巨碑仍对比过强；第 3 次压低巨碑反差，车站成为首要读感。
+- 审查结果：generated-with-issues。八格齐全；半埋候车屋、单节锈蚀车厢、短轨、倒信号灯与无标记巨碑均出现，无发光纹路或科幻装饰。巨碑仍可直接注意到；实施时维持 7 m 高度与无刻纹表面，但降低其与沙丘的明度/色相反差。铁路只保留卡片要求的短残段。
+- 第 2 次追加：
+
+```text
+Review correction: first read must be the abandoned Japanese rural railway halt: broken wooden waiting hut, short platform, one rusty single-carriage railcar, disappearing short track, and fallen signal. Keep the required dark, unweathered monolith nearby, but move it farther behind the station and reduce its visual contrast with dusty charcoal-grey surfaces; it must be a quiet secondary detail, not dominate any view. No glow, writing, glyphs, sci-fi decoration, alien object or extra railway. Exactly eight panels and only their exact English labels. FROM AFAR clear moonlit night with strongly curved horizon.
+```
+
+- 第 3 次（保留版）追加：
+
+```text
+Final review correction: keep the monolith at the card's required 7 m exposed height and about 25 m from the station, but use a muted dusty charcoal-grey close in value to the surrounding shadows so it does not dominate. Its perfectly smooth unmarked surface is visible only on careful inspection; no glow, lines, symbols or writing. The abandoned rural Japanese station, broken hut, rusty single carriage and short track must be the dominant read in the front and rainy-night panels. No extra railway. Exactly the specified eight English labels, no other text. Keep a clear moonlit FROM AFAR with a strongly curved horizon.
+```
 
 #### LM07 冰封轮廓（隐藏线索 3）
-- 输出：[LM07.jpg](references/LM07.jpg)。第二版把冰下几何弱化为隐约暗影，冰原、小屋和标杆路线清楚，FROM AFAR 无云雨；SECTION 仍有 `0 m / 2 m / 4 m` 尺寸字样，因此状态为 generated-with-issues。实施时忽略这些数字，暗影保持模糊、不描边。第三版移除尺寸数字的请求因额度限制未成功生成。
+- 输出：[LM07.jpg](references/LM07.jpg)，共 3 次成功输出，保留第 2 次。第二版把冰下几何弱化为隐约暗影，冰原、小屋和标杆路线清楚，FROM AFAR 无云雨；SECTION 仍有 `0 m / 2 m / 4 m` 尺寸字样。第三版移除了数字，却也把冰下线索完全抹掉，故不采用。
+- 审查结果：generated-with-issues。实施时忽略第二版尺寸数字，暗影保持模糊、不描边。
 - 第 1 次追加：
 
 ```text
@@ -594,24 +612,46 @@ Review emphasis: show the landmark first as its ordinary Japanese ancient ruin /
 Correction: this must first read as an ordinary vast polar ice field with a half-buried faded orange observation hut and red-white route markers. The buried hexagon is a very subtle uneven cool dark shadow visible only on close inspection; no crisp outlined hexagon, no glowing surface lines, no visible alien object above the ice. In SITE PLAN show just a faint irregular dark tonal variation beneath translucent ice, not a sharply drawn polygon. FROM AFAR is a clear cloudless moonlit night.
 ```
 
-- 未完成的第 3 次追加：
+- 第 3 次最初追加（该请求遇 429，未生成图）：
 
 ```text
 Final review correction: keep the hidden buried hexagon nearly impossible to notice, only a vague soft dark-cyan tonal patch beneath translucent ice, never a clear polygon in any view. SECTION must contain no numbers, measurements, scale bars, captions or text of any kind. Show the ice layers and hut visually without labels. Keep the ordinary polar ice field as the first read; no alien objects above the ice. Exactly the eight specified English panel labels.
 ```
 
+- 额度恢复后第 3 次成功生成实际追加（该版去掉尺寸数字，但也抹掉了冰下轮廓，未采用）：
+
+```text
+Review correction: render the buried clue only as a barely perceptible soft cool dark patch under translucent ice. No crisp hexagon or sci-fi lines; the polar ice field, faded orange half-buried observatory and red-white route markers remain the first read. In SECTION, show the ice layers without ANY text, numerals, measurements, scale bars, dimension marks or captions. Only the eight exact English panel labels are permitted. FROM AFAR must be a clear cloudless moonlit night with no rain or clouds.
+```
+
 #### LM08 灯塔岛
-- 输出：[LM08.jpg](references/LM08.jpg)。审查结果：generated-with-issues。八格齐全；灯塔、环形灯室阳台、守塔人小屋、木码头、系泊小船和桥下检修梯可辨；全景晴朗月夜。唯一成功版的光束偏硬且跨空较远；应调成近海面柔和低亮度雾光。一次减弱光束的重试因 429 未产生图像。
-- 未完成重试追加：
+- 输出：[LM08.jpg](references/LM08.jpg)，保留第 2 次成功输出。审查结果：generated。八格齐全；灯塔、环形灯室阳台、守塔人小屋、木码头、系泊小船和桥下检修梯可辨；第二次将灯束改为近海面柔和雾光，FROM AFAR 是晴朗月夜。先前一次相同修正因 429 未产生图像，额度重置后重新生成成功。
+- 首次实际提示词在 JSON 原文后追加：
+
+```text
+Review emphasis: exactly eight clean panels, only the specified English panel labels and no title, card ID, extra labels, measurements or invented text. Keep the landmark site design consistent across all views; FROM AFAR must show the landmark rising over a strongly curved tiny-planet horizon at a clear moonlit night. Respect all card prohibitions, no people and no moving vehicles.
+```
+
+- 第 2 次追加（第一次调用因 429 未产生图像；额度重置后以同一提示词重跑并成功）：
 
 ```text
 Review correction: lighthouse beam is a soft, faint, diffuse warm-white haze that barely touches the nearby water, not a hard triangular shaft, not a searchlight, and not a dramatic beam across the sky. Keep the white 12 m lighthouse, red-roof keeper cottage, tiny wooden pier, tied small boat, tide pools, wind vane, laundry line, and maintenance stairs from the bridge. Preserve only eight exact English panel labels, no added title or annotations, and no people.
 ```
 
+##### LM08–LM10 首次生成的公共追加提示
+
+LM08、LM09、LM10 均在各自 IMAGE_PROMPTS.json 原文后追加以下格式与一致性约束；LM08 的专项减弱光束修正另见上文。
+
+```text
+Review emphasis: exactly eight clean panels, only the specified English panel labels and no title, card ID, extra labels, measurements or invented text. Keep the landmark site design consistent across all views; FROM AFAR must show the landmark rising over a strongly curved tiny-planet horizon at a clear moonlit night. Respect all card prohibitions, no people and no moving vehicles.
+```
+
+- 续生成与复审（2026-10-06）：LM06 第 3 次输出替换旧图；LM07 完成第 3 次成功输出并与第 2 次比较后保留有淡影的第 2 版；LM08 在额度重置后完成柔光修正版并替换旧图。以上均再次逐图查看，并更新 JPEG 文件。
+
 #### LM09 乡间无人站
-- 输出：[LM09.jpg](references/LM09.jpg)。审查结果：generated。站台、候车屋、静止柴油车、回车场、自行车架、道口、电话亭与稻田可辨；夜间全景晴朗。远景伴随其他环境地标属于星球背景示意，不表示增设铁路或额外交通线路。
+- 输出：[LM09.jpg](references/LM09.jpg)。审查结果：generated。站台、候车屋、静止柴油车、回车场、自行车架、道口、电话亭与稻田可辨；夜间全景晴朗。远景伴随其他环境地标属于星球背景示意，不表示增设铁路或额外交通线路。JSON 原文后追加 LM08 首次生成所列的同一格式澄清句（仅允许八个英文标签、视图一致、无人物/移动车辆）。
 
 #### LM10 小渔港
-- 输出：[LM10.jpg](references/LM10.jpg)。审查结果：generated。八格齐全；防波堤与红白灯桩、渔船、仓库、制冰屋、晾网、浮球/鱼箱、小神社与村后道路均可辨；无大型工业港或货柜。跨视图船只数量有差异，实施固定为 4–5 艘。
+- 输出：[LM10.jpg](references/LM10.jpg)。审查结果：generated。八格齐全；防波堤与红白灯桩、渔船、仓库、制冰屋、晾网、浮球/鱼箱、小神社与村后道路均可辨；无大型工业港或货柜。跨视图船只数量有差异，实施固定为 4–5 艘。JSON 原文后追加 LM08 首次生成所列的同一格式澄清句（仅允许八个英文标签、视图一致、无人物/移动车辆）。
 
 - 总进度：37 / 39 已生成，2 张待生成。下一批仅余 ST02、ST04；它们需在前序内容确认后生成。

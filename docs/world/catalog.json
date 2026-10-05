@@ -876,7 +876,7 @@
     "lon": -170,
     "neighbors": "BI01、TR02、RD02、RD07、T01、T11。",
     "status": "spec-ready",
-    "referenceStatus": "generated-with-issues",
+    "referenceStatus": "generated",
     "implementationStatus": "not-started",
     "card": "cards/LM08.md",
     "reference": "references/LM08.jpg",
