@@ -1,6 +1,6 @@
 # 星球参考图审查与实施时的裁决
 
-状态：37 / 39 张参考图已生成并逐张审查；LM06、LM07 有残余实施裁决项；LM08 已完成柔光修正。ST01 风格已获用户确认。仅 ST02、ST04 待生成。
+状态：39 / 39 张参考图已生成并逐张审查；LM06、LM07 有残余实施裁决项；LM08 已完成柔光修正。ST01 风格已获用户确认。W0 参考图包齐全。
 
 ## 生成方式
 
@@ -654,4 +654,25 @@ Review emphasis: exactly eight clean panels, only the specified English panel la
 #### LM10 小渔港
 - 输出：[LM10.jpg](references/LM10.jpg)。审查结果：generated。八格齐全；防波堤与红白灯桩、渔船、仓库、制冰屋、晾网、浮球/鱼箱、小神社与村后道路均可辨；无大型工业港或货柜。跨视图船只数量有差异，实施固定为 4–5 艘。JSON 原文后追加 LM08 首次生成所列的同一格式澄清句（仅允许八个英文标签、视图一致、无人物/移动车辆）。
 
-- 总进度：37 / 39 已生成，2 张待生成。下一批仅余 ST02、ST04；它们需在前序内容确认后生成。
+- 总进度：39 / 39 已生成。ST02、ST04 是本参考包最后一批；W0 参考图任务完成。
+
+
+### 第七批逐卡审查（2026-10-06，ST02、ST04）
+
+#### ST02 星球全景四向
+- 工具与日期：内置 image_gen，2026-10-06；独立生成，每次附 ST01、ST03、城镇实景及 B05-P03 建筑参考板。
+- 尝试次数：2；保留第 2 次。
+- 实际提示词：以 IMAGE_PROMPTS.json 的 ST02 原文为基础。第 1 次追加：“Review emphasis: produce exactly eight fully visible globe panels and the exact English direction labels FRONT, EAST, BACK, WEST on both rows (night row may append NIGHT); no title, card ID, annotation, measurement, extra text, rain, clouds, or cloud cover in any whole-planet view. Preserve the same geographic layout across all eight rotating views. Match the attached references by style only: Image 1 is the approved ST01 global style sheet; Image 2 is the ST03 natural-terrain style and material reference; Images 3–5 show the existing town rendering and approved building illustration style. The town is one small settlement on the globe; avoid dense urban lights.” 该次上排仍出现暮色中性光，未采用。
+- 第 2 次将原文 “Top row in soft neutral overcast dusk light” 替换为 “Top row also in a clear moonlit night: absolutely no rain, no clouds and no overcast or neutral research lighting. Show a visible moon and stars in every globe panel”，并追加：“Review correction for this second attempt: every single one of the eight panels is a clear moonlit night, including FRONT, EAST, BACK and WEST in the top row. Put a visible moon and stars in the sky around every globe; remove all overcast, daytime, dusk, pale cloud texture or cloud cover. Keep exactly the same four directional geography, eight separated globe panels, and only these eight exact labels: FRONT, EAST, BACK, WEST, FRONT NIGHT, EAST NIGHT, BACK NIGHT, WEST NIGHT. No title, annotation or other text.”
+- 输出：[ST02.jpg](references/ST02.jpg)，1536 × 1024；完整原图转 JPEG quality=92、subsampling=0，不裁剪、不缩放。
+- 审查结果：generated。八格与方向标签正确；上、下排全部为晴朗月夜，月亮与星空清楚，无雨、云层或遮挡；正面城镇、东侧海峡桥、背面灯塔岛、森林和沙漠等地理元素可辨；极区冰盖不规则，环球道路为细光带，灯点数量克制。风格与 ST01 水彩、墨线和低饱和色调一致，无人物、动物、移动车辆、大城市灯海、水印或多余文字。最终版作为四向结构和氛围参考；实际大陆轮廓由 WORLD_PLAN 与 W1 的 world.js 决定。
+
+#### ST04 城镇卷成星球的过渡分镜
+- 工具与日期：内置 image_gen，2026-10-06；附 ST01、ST03、城镇实景截图及 B05-P03 建筑参考板。
+- 尝试次数：1。
+- 实际提示词：IMAGE_PROMPTS.json 的 ST04 原文后追加：“Review emphasis: make the eight numbered storyboard frames read clearly left-to-right, top row then bottom row. Keep the same compact town layout and undistorted buildings while the surrounding ground gradually curls; do not squash, stretch, or rearrange the town. The first and final close views are rainy; rain thins as the camera pulls back, and frames 6 and 7 are completely clear moonlit whole-planet night scenes with stars, no clouds and no rain. Show a visible physical progression from flat plane to shallow bend, half-cylinder, nearly closed sphere, then complete globe. Use only the required small frame numbers 1–8; no title, captions, UI, arrows, progress bar, annotations, or extra text. Match references by style only: Image 1 approved ST01 global style, Image 2 ST03 terrain rendering, Image 3 existing town rendering, Image 4 approved building illustration board.”
+- 输出：[ST04.jpg](references/ST04.jpg)，1536 × 1024；完整原图转 JPEG quality=92、subsampling=0，不裁剪、不缩放。
+- 审查结果：generated。八格编号、阅读顺序及从平面到卷曲、近闭合、完整星球、再推近回城镇的进程清晰；雨势随拉远减弱，完整全景格晴朗无云，末格恢复雨夜。城镇建筑没有明显压扁；没有 UI、进度条、解释文字、人物、动物、移动车辆或水印。
+- 裁决：卷曲中间格仍保留较浓云雾，符合雾逐渐散去的过渡表现；实施时按 D8 继续控制云雨渐淡，并保持冻结城镇几何。无其他需返工问题。
+
+- 本批验收：`node docs/world/check_kit.mjs` 与 `node docs/world/check_kit.mjs --refs` 均 PASS；39 张卡、39 条提示词、471 个本地链接、39 张参考图，隐藏线索大圆对齐。`git diff --check -- docs/world` PASS。

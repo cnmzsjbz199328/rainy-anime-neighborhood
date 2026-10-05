@@ -124,7 +124,8 @@ node docs/world/check_kit.mjs --refs   # 全部 39 张生成完毕后必须通�
 | 5 (部分) | RD01、RD02 | 本批 main 提交（见 git log） | 2026-10-05；各 3 次，保留第 3 次；生图 API 额度已满，generated-with-issues，裁决见 REFERENCE_REVIEW |
 | 5 (剩余) | RD03–RD08 | 本批 main 提交（见 git log） | 2026-10-05；RD03–RD05 各 2 次，RD06–RD08 各 1 次；均完成审查，裁决见 REFERENCE_REVIEW |
 | 6 | LM01–LM10 | 本批 main 提交（见 git log） | 2026-10-05；LM01 保留第 1 次（2 次输出），LM02 第 3 次，LM05 第 2 次，LM06 第 3 次（3 次输出），LM07 第 2 次（3 次输出；第 3 次移除了线索），LM08 第 2 次（两次成功输出，重试一次遇 429 后恢复）；详见 REFERENCE_REVIEW |
-当前进度：37 / 39 已生成，2 张待生成。LM01–LM10 于 2026-10-05 完成；LM06、LM07 的残余裁决见 REFERENCE_REVIEW.md；LM08 修正版已通过审查。下一批 ST02、ST04；继续使用 ST01 风格参考，且全景均为晴朗月夜。ST01 用户确认已记录，无需重复确认。
+| 7 | ST02、ST04 | 本批 main 提交（见 git log） | 2026-10-06；ST02 2 次，保留第 2 次以满足全景晴朗月夜；ST04 1 次；详见 REFERENCE_REVIEW |
+当前进度：39 / 39 已生成。LM06、LM07 的残余裁决见 REFERENCE_REVIEW.md；其余参考图已完成审查。W0 参考图包完成，后续进入 WORLD_PLAN.md 的 W1。ST01 用户确认已记录，无需重复确认。
 
 
 每批完成后在此表追加一行。
