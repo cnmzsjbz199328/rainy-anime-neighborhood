@@ -8,7 +8,7 @@
     "placement": "不对应具体位置；所有卡片的风格基准，必须第一个生成。",
     "neighbors": "所有卡片。",
     "status": "spec-ready",
-    "referenceStatus": "pending",
+    "referenceStatus": "generated-with-issues",
     "implementationStatus": "not-started",
     "card": "cards/ST01.md",
     "reference": "references/ST01.jpg",
