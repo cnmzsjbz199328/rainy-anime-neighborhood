@@ -22,9 +22,15 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+// Animated groups (swaying trees, drips) change their bounds with the page clock, and the scene gets slower to start as buildings are added, so
+// measuring after a real-time wait made the result drift between runs. Pause the page clock before loading, jump to t = 1.5 s, advance two frames, then measure.
+await page.clock.install({ time: 0 });
+await page.clock.pauseAt(100);
 await page.goto(pathToFileURL(path.join(root, 'index.html')).href);
-await page.waitForFunction(() => window.__scene && window.__scene.groups);
-await page.waitForTimeout(500);
+await page.waitForFunction(() => window.__scene && window.__scene.groups, null, { polling: 200 });
+await page.clock.fastForward(1400);
+await page.clock.runFor(32);
+await page.waitForTimeout(1500);
 
 const sets = Object.fromEntries(LAYOUT.structures.map(s => [s.id, s.parts.map(p => p.group)]));
 const result = await page.evaluate(({ sets, ppu }) => {
