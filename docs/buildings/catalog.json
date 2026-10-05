@@ -1069,7 +1069,7 @@
     "name": "交番",
     "archetype": "koban",
     "phase": 4,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "civic",
     "front": "S",
     "frontages": [
@@ -1093,7 +1093,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 11,
-        "z": 9
+        "z": 9,
+        "door": [
+          11,
+          6.1
+        ]
       }
     ],
     "maxHeight": 9,
@@ -1118,7 +1122,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

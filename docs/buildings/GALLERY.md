@@ -106,7 +106,7 @@
 
 ## B04-P01 · 交番
 
-[构建任务卡](tasks/B04-P01.md) · 待建地块
+[构建任务卡](tasks/B04-P01.md) · 已实现，实际模型截图见 [screenshots/B04-P01](screenshots/B04-P01/)
 
 ![B04-P01 交番 八视图](references/B04-P01.jpg)
 

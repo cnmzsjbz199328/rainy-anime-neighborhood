@@ -118,7 +118,7 @@ const plots = [
   plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'], status: 'occupied', building: 'post' }),
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'], status: 'occupied', building: 'shrine' }),
   // B04: koban on the main corner, clinic, a pocket park behind the eastbound bus stop.
-  plot('B04-P01', [6, 0, 16, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'], note: '10 宽：转角双退界后仍能放下交番与一个巡逻车位' }),
+  plot('B04-P01', [6, 0, 16, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'], status: 'occupied', building: 'koban', note: '10 宽：转角双退界后仍能放下交番与一个巡逻车位' }),
   plot('B04-P02', [16, 0, 26, 9], 'civic', 'S', { uses: ['诊所'] }),
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35 }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'] }),
@@ -311,6 +311,18 @@ const buildings = [
       { group: 'shrineTreeSE', role: 'attachment', localBounds: { min: [-7.25, 0.18, 0.36], max: [-5.25, 2.77, 2.64], ground: [-7.25, 0.36, -5.25, 2.64] } },
       { group: 'shrineTreeSW', role: 'attachment', localBounds: { min: [5.08, 0.18, 0.52], max: [6.96, 2.91, 2.67], ground: [5.08, 0.52, 6.96, 2.67] } },
       { group: 'shrineGround', role: 'ground', localBounds: { min: [-8, 0.18, -5.5], max: [8, 0.23, 3.5], ground: null } },
+    ] },
+  { id: 'koban', name: 'あめまち交番', plot: 'B04-P01', module: 'B04-P01', transform: { x: 11, z: 6.1, rotY: 0 },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-2.9, -4.4, 3.9, 0.1], [-2.9, 0.1, 1.7, 0.8]],   // flat roof with the east bicycle shelter, front awning
+    parts: [
+      { group: 'koban', role: 'building', localBounds: { min: [-2.97, 0.18, -4.44], max: [3.96, 5.2, 0.83], ground: [-2.9, -4.36, 3.9, 0.1] } },
+      { group: 'kobanFrontW', role: 'attachment', localBounds: { min: [-3.3, 0.18, 0.54], max: [-1.1, 1.89, 1.35], ground: [-3.3, 0.55, -1.25, 1.3] } },
+      { group: 'kobanFrontE', role: 'attachment', localBounds: { min: [0.94, 0.18, 0.33], max: [3.76, 0.97, 1.21], ground: [0.95, 0.33, 3.76, 1.13] } },
+      { group: 'kobanBikes', role: 'attachment', localBounds: { min: [2.28, 0.2, -2.84], max: [3.47, 1.13, -1.16], ground: [2.28, -2.84, 3.46, -1.16] } },
+      { group: 'kobanSideW', role: 'attachment', localBounds: { min: [-4.85, 0.18, -4.38], max: [-2.85, 1.66, -0.29], ground: [-4.85, -4.37, -2.85, -0.3] } },
+      { group: 'kobanRear', role: 'attachment', localBounds: { min: [-3.09, 0.18, -5.4], max: [3.41, 2.63, -4.12], ground: [-3.09, -5.15, 3.4, -4.12] } },
+      { group: 'kobanGround', role: 'ground', localBounds: { min: [-4.9, 0.19, -5.9], max: [4.9, 0.23, 2.9], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];
