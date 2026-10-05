@@ -489,7 +489,7 @@
     "name": "独栋住宅 8",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "S",
     "frontages": [
@@ -512,7 +512,7 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 41,
-        "z": -35.25
+        "z": -35.25, "door": [41, -37.85]
       }
     ],
     "maxHeight": 9,
@@ -537,7 +537,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

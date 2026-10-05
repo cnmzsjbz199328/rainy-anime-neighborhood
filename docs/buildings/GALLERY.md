@@ -52,7 +52,7 @@
 
 ## B02-P08 · 独栋住宅 8
 
-[构建任务卡](tasks/B02-P08.md) · 待建地块
+[构建任务卡](tasks/B02-P08.md) · 已实现，实际模型截图见 [screenshots/B02-P08](screenshots/B02-P08/)
 
 ![B02-P08 独栋住宅 8 八视图](references/B02-P08.jpg)
 
