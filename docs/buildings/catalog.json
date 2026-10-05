@@ -133,7 +133,7 @@
     "name": "独栋住宅 2",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "S",
     "frontages": [
@@ -156,8 +156,7 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 21,
-        "z": -21
-      }
+        "z": -21, "door": [21, -23.6] }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -181,7 +180,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024

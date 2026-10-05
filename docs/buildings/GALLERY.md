@@ -16,7 +16,7 @@
 
 ## B02-P02 · 独栋住宅 2
 
-[构建任务卡](tasks/B02-P02.md) · 待建地块
+[构建任务卡](tasks/B02-P02.md) · 已实现，实际模型截图见 [screenshots/B02-P02](screenshots/B02-P02/)
 
 ![B02-P02 独栋住宅 2 八视图](references/B02-P02.jpg)
 
