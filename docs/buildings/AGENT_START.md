@@ -156,5 +156,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B02-P01 | 独栋住宅 1（首个独栋住宅） | 见 PROGRESS.md「P5 B02-P01」 | [screenshots/B02-P01](screenshots/B02-P01/) |
 | B02-P02 | 独栋住宅 2 | 见 PROGRESS.md「P5 B02-P02」 | [screenshots/B02-P02](screenshots/B02-P02/) |
 | B02-P03 | 独栋住宅 3 | 见 PROGRESS.md「P5 B02-P03」 | [screenshots/B02-P03](screenshots/B02-P03/) |
+| B02-P04 | 独栋住宅 4 | 见 PROGRESS.md「P5 B02-P04」 | [screenshots/B02-P04](screenshots/B02-P04/) |
 
 每轮完成后在此表追加一行。

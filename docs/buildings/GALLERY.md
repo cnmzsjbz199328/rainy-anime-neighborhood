@@ -28,7 +28,7 @@
 
 ## B02-P04 · 独栋住宅 4
 
-[构建任务卡](tasks/B02-P04.md) · 待建地块
+[构建任务卡](tasks/B02-P04.md) · 已实现，实际模型截图见 [screenshots/B02-P04](screenshots/B02-P04/)
 
 ![B02-P04 独栋住宅 4 八视图](references/B02-P04.jpg)
 
