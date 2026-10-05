@@ -196,7 +196,7 @@
 
 ## B06-P03 · 底层小文具店商住楼
 
-[构建任务卡](tasks/B06-P03.md) · 待建地块
+[构建任务卡](tasks/B06-P03.md) · 已实现，实际模型截图见 [screenshots/B06-P03](screenshots/B06-P03/)
 
 ![B06-P03 底层小文具店商住楼 八视图](references/B06-P03.jpg)
 
