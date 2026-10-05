@@ -136,7 +136,7 @@ const plots = [
   plot('B06-P01', [6, 21, 16, 30.5], 'mixed', 'N', { frontages: ['N', 'W'], uses: ['商住', '药店'], status: 'occupied', building: 'pharmacy' }),
   plot('B06-P02', [16, 21, 26, 30.5], 'mixed', 'N', { uses: ['商住', '理发店'], status: 'occupied', building: 'barber' }),
   plot('B06-P03', [26, 22.5, 36, 30.5], 'mixed', 'N', { uses: ['商住', '文具店'], status: 'occupied', building: 'yamashita', note: '前方为公交候车区 BS01' }),
-  plot('B06-P04', [36, 21, 46, 30.5], 'mixed', 'N', { uses: ['商住'] }),
+  plot('B06-P04', [36, 21, 46, 30.5], 'mixed', 'N', { uses: ['商住', '修理铺'], status: 'occupied', building: 'yamada' }),
   plot('B06-P05', [6, 34, 16, 46], 'house', 'N', { frontages: ['N', 'W'], uses: ['独栋住宅'] }),
   plot('B06-P06', [16, 34, 26, 46], 'house', 'N', { uses: ['独栋住宅'] }),
   plot('B06-P07', [26, 34, 36, 46], 'house', 'N', { uses: ['独栋住宅'] }),
@@ -430,6 +430,18 @@ const buildings = [
       { group: 'yamashitaWest', role: 'attachment', localBounds: { min: [3.05,0.18,-3.79], max: [4.51,1.23,-0.09], ground: [3.22,-3.78,4.51,-0.09] } },
       { group: 'yamashitaRear', role: 'attachment', localBounds: { min: [-3,0.18,-5.17], max: [2.66,1.3,-4.49], ground: [-2.95,-5.13,2.65,-4.51] } },
       { group: 'yamashitaGround', role: 'ground', localBounds: { min: [-4.45,0.19,-5.45], max: [4.45,0.23,2], ground: null } },
+    ] },
+  { id: 'yamada', name: '山田修理舗', plot: 'B06-P04', module: 'B06-P04', transform: { x: 41, z: 23.3, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 3,
+    shelter: [[-3.2, -5.9, 4.4, 0.3], [-2.95, 0, 0.95, 0.8], [-0.2, -5.95, 0.95, -5.6]],   // pyramid hip roof merged with the west bicycle shed (the front-corner yard beside it is treated as covered), balcony slab, rear canopy
+    parts: [
+      { group: 'yamada', role: 'building', localBounds: { min: [-3.3,0.18,-6.02], max: [4.41,11.23,1], ground: [-2.96,-5.9,4.38,0.84] } },
+      { group: 'yamadaFrontW', role: 'attachment', localBounds: { min: [-3.92,0.19,0.35], max: [-0.67,1.21,1.74], ground: [-3.92,0.35,-0.68,1.74] } },
+      { group: 'yamadaFrontE', role: 'attachment', localBounds: { min: [0.9,0.18,0.1], max: [2.66,1.3,1.43], ground: [0.9,0.3,2.65,1.43] } },
+      { group: 'yamadaEast', role: 'attachment', localBounds: { min: [-4.57,0.18,-5.93], max: [-2.98,3.59,-0.47], ground: [-4.57,-5.92,-2.98,-0.48] } },
+      { group: 'yamadaWest', role: 'attachment', localBounds: { min: [3.02,0.18,-6.03], max: [4.51,1.79,-4.12], ground: [3.02,-6.02,4.5,-4.13] } },
+      { group: 'yamadaRear', role: 'attachment', localBounds: { min: [-3.14,0.18,-6.14], max: [2.86,1.3,-5.68], ground: [-3.14,-6.13,2.85,-5.7] } },
+      { group: 'yamadaGround', role: 'ground', localBounds: { min: [-4.45,0.19,-6.6], max: [4.45,0.23,2], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];

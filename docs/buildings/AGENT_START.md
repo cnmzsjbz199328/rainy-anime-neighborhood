@@ -152,5 +152,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B06-P01 | ひなた薬局 底层药店商住楼 | 见 PROGRESS.md「P5 B06-P01」 | [screenshots/B06-P01](screenshots/B06-P01/) |
 | B06-P02 | やまの理髪店 底层理发店商住楼 | 见 PROGRESS.md「P5 B06-P02」 | [screenshots/B06-P02](screenshots/B06-P02/) |
 | B06-P03 | やました文具店 底层小文具店商住楼 | 见 PROGRESS.md「P5 B06-P03」 | [screenshots/B06-P03](screenshots/B06-P03/) |
+| B06-P04 | 山田修理舗 底层修理铺商住楼 | 见 PROGRESS.md「P5 B06-P04」 | [screenshots/B06-P04](screenshots/B06-P04/) |
 
 每轮完成后在此表追加一行。

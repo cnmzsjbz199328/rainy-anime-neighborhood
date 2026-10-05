@@ -202,7 +202,7 @@
 
 ## B06-P04 · 底层修理铺商住楼
 
-[构建任务卡](tasks/B06-P04.md) · 待建地块
+[构建任务卡](tasks/B06-P04.md) · 已实现，实际模型截图见 [screenshots/B06-P04](screenshots/B06-P04/)
 
 ![B06-P04 底层修理铺商住楼 八视图](references/B06-P04.jpg)
 

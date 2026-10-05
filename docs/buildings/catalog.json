@@ -2055,7 +2055,7 @@
     "name": "底层修理铺商住楼",
     "archetype": "mixed",
     "phase": 5,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "mixed",
     "front": "N",
     "frontages": [
@@ -2078,8 +2078,7 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 41,
-        "z": 21
-      }
+        "z": 21, "door": [41, 23.3] }
     ],
     "maxHeight": 12,
     "floors": 3,
@@ -2103,7 +2102,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
@@ -2115,7 +2114,7 @@
     "name": "独栋住宅 12",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "N",
     "frontages": [
@@ -2164,7 +2163,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
@@ -2176,7 +2175,7 @@
     "name": "独栋住宅 13",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "N",
     "frontages": [
@@ -2224,7 +2223,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
@@ -2236,7 +2235,7 @@
     "name": "独栋住宅 14",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "N",
     "frontages": [
@@ -2284,7 +2283,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
@@ -2296,7 +2295,7 @@
     "name": "独栋住宅 15",
     "archetype": "house",
     "phase": 6,
-    "status": "ready-spec",
+    "status": "implemented",
     "plotType": "house",
     "front": "N",
     "frontages": [
@@ -2344,7 +2343,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "not-started",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
