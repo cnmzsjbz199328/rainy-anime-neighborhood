@@ -166,7 +166,7 @@
 
 ## B05-P06 · 独栋住宅 9
 
-[构建任务卡](tasks/B05-P06.md) · 待建地块
+[构建任务卡](tasks/B05-P06.md) · 已实现，实际模型截图见 [screenshots/B05-P06](screenshots/B05-P06/)
 
 ![B05-P06 独栋住宅 9 八视图](references/B05-P06.jpg)
 
