@@ -190,7 +190,7 @@
 
 ## B06-P02 · 底层理发店商住楼
 
-[构建任务卡](tasks/B06-P02.md) · 待建地块
+[构建任务卡](tasks/B06-P02.md) · 已实现，实际模型截图见 [screenshots/B06-P02](screenshots/B06-P02/)
 
 ![B06-P02 底层理发店商住楼 八视图](references/B06-P02.jpg)
 
