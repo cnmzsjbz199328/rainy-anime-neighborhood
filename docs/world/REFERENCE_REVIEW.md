@@ -1,6 +1,6 @@
 # 星球参考图审查与实施时的裁决
 
-状态：已生成 ST01、ST03、ST05、BI01–BI09（12 / 39），均已审查并记录裁决；ST01 风格已获用户确认，其余 27 张待生成。
+状态：已生成 ST01、ST03、ST05、BI01–BI09、TR01–TR07（19 / 39），均已审查并记录裁决；ST01 风格已获用户确认，其余 20 张待生成。
 
 ## 生成方式
 
@@ -265,3 +265,162 @@ Review corrections: References are STYLE ONLY. Focus on rounded hills, broad con
 Review corrections: References are STYLE ONLY. Focus on rounded hills, broad connected mountain ridges, scree, river valley and one RD01 tunnel mouth; no large settlements, lighthouses or glowing volcano. Both GLOBE panels CLEAR MOONLIT NIGHT with NO clouds, fog bands, steam or white wisps anywhere on or around the planet. Thin valley mist ONLY in local panels. Highest ridges get gentle snow, valley below snowline gets rain. Avoid serrated needle peaks. Exactly eight original labels including SWATCH, no extra PALETTE or MATERIALS headings. SWATCH has labelled chips plus three SQUARE material samples. MOTION three NARROW VERTICAL rectangles SIDE BY SIDE left-to-right with arrows, one fixed valley scene showing slow mist displacement and stream movement. 1536x1024 landscape. Neutral local upper panels are material studies, not daytime game states.
 Final correction: BOTH globe panels have identical dark cool blue-grey moonlit exposure; no warm sunlit mountain faces. Simplify distant trees to unoutlined masses and outline only ridge silhouettes. In AERIAL NIGHT clearly separate soft snow flakes over the white high ridge from short rain strokes ONLY in the low valley, never rain over snowy summit. Broad rounded mountains, not serrated alpine spikes. Preserve one tunnel and one flowing stream, quiet thin local mist and horizontal MOTION.
 ```
+
+
+### TR01 — 城镇边缘
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成并输入 ST01.jpg、ST03.jpg。
+- 尝试次数：3；保留第 3 次。1：多余标题和尺寸文字、全景云团、边缘落差过大；2：去文字与云团，但坡陡、火山光偏强；3：坡地及火山改善，保留。
+- 输出：[TR01.jpg](references/TR01.jpg)，1536 × 1024；完整原图转 JPEG，quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批提示词记录。
+- 审查结果：generated-with-issues。八格及标签齐全；墨线淡彩与 ST01 相符，碎石、沟渠、竹篱、电杆、护栏、售货机可辨；月夜全景无云雨，近处雨与涟漪清晰。 人造物比例总体可信（本卡无人工物时不适用），无人物、动物、移动车辆、水印；动态仅为静态表现，不能证明代码动画。
+- 残余问题与裁决：剖面坡度仍偏陡且排水落差偏大；PLAN/半空/地面道路曲线和田块位置有差异，图中城镇不是布局 v1 的几何证据。实施按冻结布局接续 9 个出口、10–20 m 平缓带与 ≤5% 坡度，不照搬剖面台坎；半空树冠墨线减密。
+
+
+### TR02 — 海岸
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成并输入 ST01.jpg、ST03.jpg。
+- 尝试次数：3；保留第 3 次。1：多余尺寸、全景云团；2：去云和文字，但 PLAN 斜视、地面机位不对应、火山偏亮；3：改俯视、配对机位和火山，保留。
+- 输出：[TR02.jpg](references/TR02.jpg)，1536 × 1024；完整原图转 JPEG，quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批提示词记录。
+- 审查结果：generated-with-issues。八格标签齐全，PLAN 已接近垂直俯视；沙滩、湿沙、礁石潮池、消波块、防风松、海堤台阶与漂流木海草齐全；全景无云雨，局部雨夜与湿沙月光反射可读。 人造物比例总体可信（本卡无人工物时不适用），无人物、动物、移动车辆、水印；动态仅为静态表现，不能证明代码动画。
+- 残余问题与裁决：部分视图出现多于两只小船，海堤台阶、礁石及船位跨视图变化；海堤视觉高度偏大。实施固定一套海岸几何，海堤按 2–3 m、沙滩按 3–8 m，仅保留一两只静止小船；全景不采用单树密描边。
+
+
+### TR03 — 林缘
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成并输入 ST01.jpg、ST03.jpg。
+- 尝试次数：3；保留第 2 次。1：尺寸注释、全景云、石灯偏亮；2：去云和注释，保留；3：灯光更克制，但全景下缘出现云状白块，放弃。
+- 输出：[TR03.jpg](references/TR03.jpg)，1536 × 1024；完整原图转 JPEG，quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批提示词记录。
+- 审查结果：generated-with-issues。八格与标签齐全；草地—灌木—幼树—成林渐变、倒木、小鸟居、石灯笼、苔藓石阶及路标可辨；保留图全景为无云月夜，地面为雨夜。 人造物比例总体可信（本卡无人工物时不适用），无人物、动物、移动车辆、水印；动态仅为静态表现，不能证明代码动画。
+- 残余问题与裁决：保留第 2 次以优先满足全景无云；石灯笼及湿路暖反光仍过亮，PLAN 偏斜俯视，灯笼/台阶/倒木跨视图略变。实施仅入口极弱暖光、森林内部快速变暗，固定 5–10 m 灌木幼树渐变带与物件位置；第 3 次虽减光但全景再出现云状白块，未采用。
+
+
+### TR04 — 弃耕地：农田被森林吞没
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成并输入 ST01.jpg、ST03.jpg。
+- 尝试次数：3；保留第 3 次。1：标题尺寸、全景云及选区框；2：去注释但山后小云残留、田埂太完整；3：无云、檐水及破损田埂改善，保留。
+- 输出：[TR04.jpg](references/TR04.jpg)，1536 × 1024；完整原图转 JPEG，quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批提示词记录。
+- 审查结果：generated-with-issues。八格及标签齐全；锈蚀小屋、藤蔓农机、倾斜电杆与下垂电线、倒伏稻架、杂草田块均有表现，檐水细节清楚；局部无人工灯、全景无云雨，气氛安静而非灾后垃圾场。 人造物比例总体可信（本卡无人工物时不适用），无人物、动物、移动车辆、水印；动态仅为静态表现，不能证明代码动画。
+- 残余问题与裁决：旧田埂仍较齐整、PLAN 偏斜俯视，稻架/农机及电杆跨视图位置稍变；全景弃耕区附近暖光易被误读为本区照明。实施让田埂逐渐坍塌并被幼林吞没，区内无灯，远处村灯不得成为弃耕地灯源；小屋与农机固定一套几何。
+
+
+### TR05 — 雪线与冰缘
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成并输入 ST01.jpg、ST03.jpg。
+- 尝试次数：3；保留第 3 次。1：标题注释、全景云、大冰墙和过大冰盖；2：去云和文字，但误加发光小屋、冰壁偏高；3：移除小屋、低矮苔原坡及两极冰盖改善，保留。
+- 输出：[TR05.jpg](references/TR05.jpg)，1536 × 1024；完整原图转 JPEG，quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批提示词记录。
+- 审查结果：generated-with-issues。八格标签完整；苔原灌木、斑驳雪线、融水溪、冰碛石与雪檐齐全，配色蓝白/灰紫；局部雪夜无建筑或暖光，GLOBE 为无云无降水月夜且两极冰盖可见。 人造物比例总体可信（本卡无人工物时不适用），无人物、动物、移动车辆、水印；动态仅为静态表现，不能证明代码动画。
+- 残余问题与裁决：冰缘仍偏陡、局部断面偏高，雨夹雪到雪的空间变化不明显，雪檐与溪流跨视图略变；全景冰盖面积仅示意，不能据图推算 8%。实施按海拔/纬度生成 5–15 m 不规则混合带与融水出口，保留温和雪势，雪线以上只下雪；全景墨线需按距离简化。
+
+
+### TR06 — 熔岩—植被交界
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成并输入 ST01.jpg、ST03.jpg。
+- 尝试次数：3；保留第 3 次。1：尺寸文字、全景云、误加鸟居灯笼与亮硫黄；2：去鸟居灯笼、但硫黄偏亮且全景有云状残留；3：硫黄与渐变带最好、火山暗，保留，仍有全景蒸汽问题。
+- 输出：[TR06.jpg](references/TR06.jpg)，1536 × 1024；完整原图转 JPEG，quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批提示词记录。
+- 审查结果：generated-with-issues。八格标签齐全；冷却炭黑熔岩—地衣—苔藓—蕨草—灌木森林的过渡更完整，局部雨夜、温泉蒸汽和石路标可辨；无火焰或流动岩浆，第三次火山已暗。 人造物比例总体可信（本卡无人工物时不适用），无人物、动物、移动车辆、水印；动态仅为静态表现，不能证明代码动画。
+- 残余问题与裁决：全景仍有蒸汽遮挡与球外平面水面，未完全满足 GLOBE 晴朗无遮挡规则；石路标存在伪文字，近处蒸汽偏多、硫黄仍稍亮，PLAN 偏斜俯视。实施全景必须清除蒸汽与球外水面，石标重绘、硫黄无自发光，暖色只来自温泉村方向；控制 1–3 处轻慢动态，固定渐变带几何。
+
+
+### TR07 — 沙漠—草原
+- 工具与日期：内置 image_gen，2026-10-05；每次独立生成，附 ST01.jpg、ST03.jpg。
+- 尝试次数：3，保留第 3 次。第 1 次标题/色板/尺寸文字、全景云团与过长铁路；第 2 次去云和注释、缩短断轨，但全景偏白昼且断轨交叉；第 3 次回到有聚落海洋的小星球、减弱暖色，保留。
+- 输出：[TR07.jpg](references/TR07.jpg)，1536 × 1024；完整原图转 JPEG quality=92、subsampling=0，不裁剪、不缩放。
+- 实际提示词：第 1 次为本轮同步后的 IMAGE_PROMPTS.json 原文；第 2、3 次追加全文见本批记录。
+- 审查结果：generated-with-issues。八格及标签齐全；草簇—砂砾—沙丘渐变、干河床卵石、木路标和短残轨可辨；局部为干燥晴夜，无灯无雨，全景无云雨；墨线淡彩与参考风格一致，无人物、动物、移动车辆或水印。木路标比例可信，铁路结构按残余问题处理。
+- 残余问题与裁决：全景草沙仍偏亮暖、地形分区偏大；铁轨多数视图仅一根清楚可辨，半埋程度与位置略变，风沙动态不明显。实施按银灰/淡紫月光调色，固定短段双轨与枕木且保持装饰性、不延伸为全球铁路；保留干河床，补足轻微流沙和草摆。
+### 第 4 批实际追加提示词（TR01–TR07）
+
+2026-10-05；内置 image_gen。每次均独立生成，输入 ST01.jpg、ST03.jpg，仅作风格参考。第 1 次完整使用本次同步后的 IMAGE_PROMPTS.json 对应 prompt；第 2、3 次在同一原文后追加下面各自全文，不累加其他版本。
+
+模板最小同步：七张 TR 提示词将 `Top row in soft neutral overcast dusk light:` 改为 `Top row in soft neutral material-study illumination (not a daytime game state):`；TR05 的夜景改为雪夜（苔原交界雨夹雪、雪线以上为雪），TR07 改为通常晴朗干燥月夜，并同步两张卡的参考图要求及验收天气措辞。这是 D8/D9 的既定边界同步，不改变设计决策。重试中的低冰缘、浅沟数值仅用于构图纠偏，不新增实施尺寸要求。
+
+#### TR01 第 2 次追加
+
+```text
+Review corrections: Output landscape 1536 x 1024 or larger. The two input images are STYLE references only, not layouts or geometry to copy. Exactly eight panels and only these labels: SECTION, PLAN, AERIAL 50M, GROUND 5M, GLOBE, AERIAL NIGHT, GROUND NIGHT, DETAIL. No titles, card IDs, Chinese, dimensions, annotations, signs with lettering, inset selection boxes or other text. GLOBE must show a clear starry moonlit night with absolutely zero clouds, fog or rain anywhere around or on the planet. The town edge is a gentle continuous 10–20 m slope of at most 5%, not a retaining wall, cliff, waterfall or steps; drainage flows along a shallow ditch. Show the same layout in matched aerial and ground pairs. Only town streetlights and distant country-road or village lights; do not copy the shrine lantern from the references.
+```
+
+#### TR01 第 3 次追加
+
+```text
+Review corrections: Output landscape 1536 x 1024 or larger. The two input images are STYLE references only, not layouts or geometry to copy. Exactly eight panels and only these labels: SECTION, PLAN, AERIAL 50M, GROUND 5M, GLOBE, AERIAL NIGHT, GROUND NIGHT, DETAIL. No titles, card IDs, Chinese, dimensions, annotations, signs with lettering, inset selection boxes or other text. GLOBE must show a clear starry moonlit night with absolutely zero clouds, fog or rain anywhere around or on the planet. The town edge is a gentle continuous 10–20 m slope of at most 5%, not a retaining wall, cliff, waterfall or steps; drainage flows along a shallow ditch. Show the same layout in matched aerial and ground pairs. Only town streetlights and distant country-road or village lights; do not copy the shrine lantern from the references. Final corrections: SECTION must show a nearly level continuous ground surface, no vertical terrace drop, no deep trench, no cliff. A shallow drainage channel is only 0.2 m deep beside the gravel shoulder. Keep the 10–20 m transition visually broad and gradual. GLOBE has no visibly glowing volcanic crater, and only sparse restrained amber town/country road lamps. Keep matching aerial cameras identical and matching ground cameras identical.
+```
+
+#### TR02 第 2 次追加
+
+```text
+Review corrections: Output landscape 1536 x 1024 or larger. Input ST01 and ST03 are style references only. Exactly eight panels with only SECTION, PLAN, AERIAL 50M, GROUND 5M, GLOBE, AERIAL NIGHT, GROUND NIGHT, DETAIL labels. No other text, numbers, titles, dimensions, scale bars or annotations. GLOBE: absolutely no clouds, fog, smoke or rain anywhere on or around the planet, only clear starry moonlit night. Keep shoreline irregular, preserve the identical seawall, stairway, pine belt, tidal rocks and one or two stationary boats in matching views. Neutral top-row studies are material/form studies only, not a daytime game state.
+```
+
+#### TR02 第 3 次追加
+
+```text
+Review corrections: Output landscape 1536 x 1024 or larger. Input ST01 and ST03 are style references only. Exactly eight panels with only SECTION, PLAN, AERIAL 50M, GROUND 5M, GLOBE, AERIAL NIGHT, GROUND NIGHT, DETAIL labels. No other text, numbers, titles, dimensions, scale bars or annotations. GLOBE: absolutely no clouds, fog, smoke or rain anywhere on or around the planet, only clear starry moonlit night. Keep shoreline irregular, preserve the identical seawall, stairway, pine belt, tidal rocks and one or two stationary boats in matching views. Neutral top-row studies are material/form studies only, not a daytime game state. Final corrections: PLAN must be a true vertical orthographic overhead strip, not an oblique view. GROUND 5M and GROUND NIGHT must have the identical camera and identical seawall stairway/rocks arrangement. GLOBE has no visibly glowing crater and no second flat ocean horizon outside the spherical planet; planet floats against a plain starry night sky. Show realistic human-scale 2–3 m seawall and its stairway.
+```
+
+#### TR03 第 2 次追加
+
+```text
+Review corrections: Output 1536 x 1024 landscape or larger. ST01 and ST03 are style references only. Exactly eight panels and only the eight specified English labels. Remove all dimensions, scale bars, title, card ID, stone inscriptions and extra text. PLAN is a true vertical overhead strip, not oblique. GLOBE is a clear starry moonlit night with absolutely no clouds, mist or rain anywhere on or around the planet, and no flat sea horizon outside it. No bright volcanic glow. Shrine stone lanterns emit extremely dim warm light only at the entrance, forest interior stays dark. Preserve the same camera, torii, lanterns, fallen log, steps and rocks between paired views. Show a broad irregular gradient from grass to shrubs to saplings to mature trees.
+```
+
+#### TR03 第 3 次追加
+
+```text
+Review corrections: Output 1536 x 1024 landscape or larger. ST01 and ST03 are style references only. Exactly eight panels and only the eight specified English labels. Remove all dimensions, scale bars, title, card ID, stone inscriptions and extra text. PLAN is a true vertical overhead strip, not oblique. GLOBE is a clear starry moonlit night with absolutely no clouds, mist or rain anywhere on or around the planet, and no flat sea horizon outside it. No bright volcanic glow. Shrine stone lanterns emit extremely dim warm light only at the entrance, forest interior stays dark. Preserve the same camera, torii, lanterns, fallen log, steps and rocks between paired views. Show a broad irregular gradient from grass to shrubs to saplings to mature trees. Final corrections: Stone lantern emission must be barely visible, a tiny dim amber point through the aperture, with NO long golden reflections, NO illuminated path or tree foliage. Forest is moonlit blue-grey with dark interior. PLAN must show only roofs/tops from exactly overhead, no perspective sides. DETAIL must include shrubs and young saplings as well as the lantern and mossy steps. Keep the same single left-hand stone lantern across views.
+```
+
+#### TR04 第 2 次追加
+
+```text
+Review corrections: Output landscape 1536 x 1024 or larger. Input images are style references only. Exactly eight panels with only the eight specified English labels; no card ID, titles, dimensions, scale bars, annotations, selection rectangles or other text. GLOBE: absolutely no clouds, fog, rain or smoke anywhere around or on the planet. No visible volcanic glow. PLAN must be true orthographic vertical overhead. Local abandoned field has no artificial light, no lit windows or lanterns, only cool moonlight at night. Show weeds overtaking recognizable fields, collapsed bunds, shrubs and young woodland, rusty shed, one vine-covered old farm machine, leaning pole with sagging wire and fallen rice rack. Same layout/camera for paired aerial and ground views.
+```
+
+#### TR04 第 3 次追加
+
+```text
+Review corrections: Output landscape 1536 x 1024 or larger. Input images are style references only. Exactly eight panels with only the eight specified English labels; no card ID, titles, dimensions, scale bars, annotations, selection rectangles or other text. GLOBE: absolutely no clouds, fog, rain or smoke anywhere around or on the planet. No visible volcanic glow. PLAN must be true orthographic vertical overhead. Local abandoned field has no artificial light, no lit windows or lanterns, only cool moonlight at night. Show weeds overtaking recognizable fields, collapsed bunds, shrubs and young woodland, rusty shed, one vine-covered old farm machine, leaning pole with sagging wire and fallen rice rack. Same layout/camera for paired aerial and ground views. Final corrections: The GLOBE has NO white cloud puffs behind mountain, at poles, along coasts, or outside its silhouette; remove the flat ocean horizon outside the sphere. Use only cool moonlight on the abandoned transition. Field bunds nearest the forest are visibly collapsed and broken, weeds obscure them, young saplings invade the old rectangular plots. Do not draw neat maintained rice fields across the entire transition. Keep the one old machine in the same position beside the shed in all views; rain drips visibly from its rusty roof.
+```
+
+#### TR05 第 2 次追加
+
+```text
+Review corrections: Landscape 1536 x 1024 or larger; eight panels with only specified English panel labels. No title, Chinese, dimensions, scale bars or annotations. ST01/ST03 are style references only. GLOBE must be clear moonlit starry night with no clouds, fog, smoke, rain or snow particles anywhere on or around the sphere; only small polar caps totaling about 8% of the sphere, not an ice-covered hemisphere. Local transition is tundra/low shrubs, scattered snow patches, continuous snow, then low blue-white ice with meltwater stream, moraine stones and a modest snow cornice. No giant vertical glacial wall, no vast alpine megamountains; heights are miniature 15–26 m terrain. PLAN is true vertical overhead; paired aerial/ground cameras match. Snow at upper ice, sleet at lower tundra edge, quiet weather without blizzard. Cold moonlight only in local night views.
+```
+
+#### TR05 第 3 次追加
+
+```text
+Review corrections: Landscape 1536 x 1024 or larger; eight panels with only specified English panel labels. No title, Chinese, dimensions, scale bars or annotations. ST01/ST03 are style references only. GLOBE must be clear moonlit starry night with no clouds, fog, smoke, rain or snow particles anywhere on or around the sphere; only small polar caps totaling about 8% of the sphere, not an ice-covered hemisphere. Local transition is tundra/low shrubs, scattered snow patches, continuous snow, then low blue-white ice with meltwater stream, moraine stones and a modest snow cornice. No giant vertical glacial wall, no vast alpine megamountains; heights are miniature 15–26 m terrain. PLAN is true vertical overhead; paired aerial/ground cameras match. Snow at upper ice, sleet at lower tundra edge, quiet weather without blizzard. Cold moonlight only in local night views. Final corrections: No buildings, cabins, lanterns, lamps or warm lights in any local panel. Local view is a modest low tundra slope with a smooth snow blanket interrupted by stones; ice edge rises only about 0.5 m, no tall ice cliffs, no huge crevasses. A small overhanging snow lip demonstrates cornice. No bright volcanic crater anywhere. GLOBE polar snow appears as two narrow irregular caps, while most visible surface remains ocean, forest and town. Snowfall is sparse gentle flakes with excellent visibility, not dense diagonal streaks. SECTION must be a true left-to-right side section from brown tundra to blue-white ice, not a perspective valley cutaway.
+```
+
+#### TR06 第 2 次追加
+
+```text
+Review corrections: Landscape 1536 x 1024 or larger. Exactly eight panels, only specified English labels. No measurements, title, card ID, scale bars, annotations or other text. Inputs ST01/ST03 are STYLE only: do not copy shrine, torii, lanterns, or shrine steps. Subject is old cold charcoal lava transitioning irregularly into lichen, moss, ferns, grass, shrubs and forest; small hot-spring vent with pale non-emissive sulfur deposits, a simple stone direction marker. No flame, glowing cracks, glowing lava, or visibly bright crater. Warm light ONLY spills weakly from distant hot-spring village windows onto a little steam, not from local lanterns or vents. GLOBE: completely clear starry moonlit night, no cloud puffs, fog, smoke, steam or rain anywhere on or around globe. PLAN vertical orthographic overhead; paired cameras and object positions match. Sparse gentle local rain and thin slow steam, no large plume.
+```
+
+#### TR06 第 3 次追加
+
+```text
+Review corrections: Landscape 1536 x 1024 or larger. Exactly eight panels, only specified English labels. No measurements, title, card ID, scale bars, annotations or other text. Inputs ST01/ST03 are STYLE only: do not copy shrine, torii, lanterns, or shrine steps. Subject is old cold charcoal lava transitioning irregularly into lichen, moss, ferns, grass, shrubs and forest; small hot-spring vent with pale non-emissive sulfur deposits, a simple stone direction marker. No flame, glowing cracks, glowing lava, or visibly bright crater. Warm light ONLY spills weakly from distant hot-spring village windows onto a little steam, not from local lanterns or vents. GLOBE: completely clear starry moonlit night, no cloud puffs, fog, smoke, steam or rain anywhere on or around globe. PLAN vertical orthographic overhead; paired cameras and object positions match. Sparse gentle local rain and thin slow steam, no large plume. Final corrections: Sulfur deposits are sparse pale grey-yellow matte crust, NOT bright golden pools, NOT emitting any light. Local rocks and vents remain cool blue-grey at night. Only a faint amber tint on one edge of steam comes from distant village. GLOBE absolutely has no white puffs even behind mountains or by coasts, and volcano is completely dark. Make vegetation succession visible over the whole irregular boundary: lichen speckles, moss mats, small ferns, grass, shrubs, then trees, rather than a sharp edge split by a path.
+```
+
+#### TR07 第 2 次追加
+
+```text
+Review corrections: Landscape 1536 x 1024 or larger; exactly eight panels with only specified English labels. No titles, card IDs, Chinese, palette strips, dimensions, scale bars or other text; wooden sign has no lettering. Reference images are style only. GLOBE is a complete curved sphere against clear starry moonlit sky, absolutely no clouds, fog, smoke or rain anywhere, no flat water outside sphere, no bright crater. Grassland fades irregularly through dry grass clumps and gravel to sand dunes across a broad transition. Dry riverbed has stones and no water. Railway is only a SHORT broken half-buried decorative remnant toward LM06, never a functioning global railway or long orbiting track. Night local views are clear dry moonlight with no lamps, no rain or wet puddles. True vertical overhead PLAN. Identical cameras and object layouts for paired views.
+```
+
+#### TR07 第 3 次追加
+
+```text
+Review corrections: Landscape 1536 x 1024 or larger; exactly eight panels with only specified English labels. No titles, card IDs, Chinese, palette strips, dimensions, scale bars or other text; wooden sign has no lettering. Reference images are style only. GLOBE is a complete curved sphere against clear starry moonlit sky, absolutely no clouds, fog, smoke or rain anywhere, no flat water outside sphere, no bright crater. Grassland fades irregularly through dry grass clumps and gravel to sand dunes across a broad transition. Dry riverbed has stones and no water. Railway is only a SHORT broken half-buried decorative remnant toward LM06, never a functioning global railway or long orbiting track. Night local views are clear dry moonlight with no lamps, no rain or wet puddles. True vertical overhead PLAN. Identical cameras and object layouts for paired views. Final corrections: GLOBE ground must be cool silver-blue and lavender-grey under moonlight, distinctly darker than neutral top row, no sunlit yellow dunes or bright daytime green grass. Retain readable night shadow planes and a few distant town buildings/ocean areas so this remains the same inhabited planet, not an all-desert world. Broken railway remnant is one pair of parallel rusty rails on a few sleepers, half buried in sand, never an X crossing or rail junction. Same rail position and shape in PLAN, AERIAL, GROUND and paired NIGHT views. Show gentle wind-blown sand wisps low across the ground and slight bending dry grass without dust storm.
+```
+
+
+### 第 4 批交接
+- 已完成 TR01–TR07，各 3 次，共 21 次独立生成；TR03 保留第 2 次，其余保留第 3 次。七张均为 generated-with-issues，不能视为所有视觉约束已经通过。尤其 TR06 全景蒸汽与球外水面不得照搬。
+- 输出位于 `docs/world/references/TR01.jpg` 至 `docs/world/references/TR07.jpg`；只更新世界参考包，未实施场景代码。
+- 下一批 RD01–RD08；总进度 19 / 39，待生成 20 张。
+- 验证：`node docs/world/check_kit.mjs` PASS（39 卡、39 提示词、389 本地链接；19 已生成、20 待生成，隐藏线索大圆对齐）；七张图片解码、1536 × 1024、quality=92 量化表、4:4:4 采样与目录状态一致性通过。`--refs` 待全部 39 张齐全后运行。
