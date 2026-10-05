@@ -115,7 +115,7 @@ const plots = [
   plot('B03-P04', [-38, 0, -30, 9], 'shop', 'S', { uses: ['小餐馆', '杂货'], status: 'occupied', building: 'diner' }),
   plot('B03-P05', [-46, 0, -38, 9], 'shop', 'S', { uses: ['小店铺'], status: 'occupied', building: 'grocery' }),
   plot('B03-P06', [-18, -9, -6, 0], 'civic', 'N', { frontages: ['N', 'E'], uses: ['社区会所', '诊所'], status: 'occupied', building: 'hall' }),
-  plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'] }),
+  plot('B03-P07', [-30, -9, -18, 0], 'civic', 'N', { uses: ['小型公共设施'], status: 'occupied', building: 'post' }),
   plot('B03-P08', [-46, -9, -30, 0], 'park', 'N', { uses: ['口袋公园', '小神社'] }),
   // B04: koban on the main corner, clinic, a pocket park behind the eastbound bus stop.
   plot('B04-P01', [6, 0, 16, 9], 'civic', 'S', { frontages: ['S', 'W'], uses: ['交番'], note: '10 宽：转角双退界后仍能放下交番与一个巡逻车位' }),
@@ -274,6 +274,18 @@ const buildings = [
       { group: 'hallParking', role: 'attachment', localBounds: { min: [2.84, 0.18, -5.05], max: [4.96, 1.4, 0.17], ground: [2.84, -5.05, 4.95, 0.16] } },
       { group: 'hallRear', role: 'attachment', localBounds: { min: [-2.66, 0.18, -5.12], max: [2.2, 1.29, -4.68], ground: [-2.65, -5.11, 2.2, -4.71] } },
       { group: 'hallGround', role: 'ground', localBounds: { min: [-4.4, 0.19, -5.9], max: [4.97, 0.23, 2.3], ground: null } },
+    ] },
+  { id: 'post', name: '邮政服务站', plot: 'B03-P07', module: 'B03-P07', transform: { x: -24, z: -6.1, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-3.1, -5.0, 2.5, 0.1], [-2.1, 0.1, 2.1, 0.8]],   // flat roof inside the fascia, glass entrance canopy
+    parts: [
+      { group: 'post', role: 'building', localBounds: { min: [-3.32, 0.18, -5.04], max: [2.6, 4.6, 0.84], ground: [-3.19, -5.01, 2.51, 0.09] } },
+      { group: 'postFrontE', role: 'attachment', localBounds: { min: [-3.58, 0.18, 0.09], max: [-1.5, 1.71, 0.79], ground: [-3.57, 0.1, -1.5, 0.77] } },
+      { group: 'postFrontW', role: 'attachment', localBounds: { min: [1.54, 0.18, 0.19], max: [3.01, 1.44, 0.71], ground: [1.59, 0.22, 3, 0.71] } },
+      { group: 'postSideE', role: 'attachment', localBounds: { min: [-5.79, 0.18, -5.94], max: [-3.14, 1.64, -0.5], ground: [-5.78, -5.93, -3.19, -0.5] } },
+      { group: 'postParking', role: 'attachment', localBounds: { min: [3.2, 0.19, -5.33], max: [5.81, 1.63, 0.53], ground: [3.89, -5.33, 5.81, 0.53] } },
+      { group: 'postRear', role: 'attachment', localBounds: { min: [-3.26, 0.17, -6], max: [2.74, 2.67, -4.94], ground: [-3.25, -6, 2.74, -4.94] } },
+      { group: 'postGround', role: 'ground', localBounds: { min: [-4.2, 0.19, -6.1], max: [5.7, 0.23, 2.3], ground: null } },
     ] },
 ];
 const structures = [...samples, ...buildings];

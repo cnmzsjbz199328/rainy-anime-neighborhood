@@ -28,10 +28,11 @@ const t = b.transform, fx = Math.sin(t.rotY) * b.frontDir[1] + Math.cos(t.rotY) 
 const front = Math.atan2(fx, fz);   // camera yaw that looks at the front face
 const size = Math.max(main.max[0] - main.min[0], main.max[2] - main.min[2]), h = main.max[1];
 const tgt = [cx, h * 0.45, cz], d = Math.max(9, size * 1.75);
+const REAR_PITCH = Number(process.env.REAR_PITCH) || 0.12;
 const VIEWS = {
   // Elevations: near-level; the sides look down over the neighbours' roofs (plots are only 9-10 wide).
   front:        { yaw: front + 0.12,          pitch: 0.1,  dist: d,        target: tgt },
-  rear:         { yaw: front + Math.PI,       pitch: 0.12, dist: d,        target: tgt },
+  rear:         { yaw: front + Math.PI,       pitch: REAR_PITCH, dist: d,  target: tgt },   // REAR_PITCH=0.4 lifts the camera over a tall neighbour behind the plot
   left:         { yaw: front - Math.PI / 2,   pitch: 0.45, dist: d,        target: tgt },   // viewer's left when facing the front
   right:        { yaw: front + Math.PI / 2,   pitch: 0.45, dist: d,        target: tgt },
   roof:         { yaw: front,                 pitch: 1.45, dist: d * 1.25, target: [cx, 0, cz] },

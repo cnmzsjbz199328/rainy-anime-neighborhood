@@ -142,5 +142,6 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 | B03-P04 | ひだまり食堂 食堂 | b9e1511 | [screenshots/B03-P04](screenshots/B03-P04/) |
 | B03-P05 | みどり屋 雑貨店 杂货店 | 89a33b3 | [screenshots/B03-P05](screenshots/B03-P05/) |
 | B03-P06 | あじさい会館 社区会所（首个两层） | 见 PROGRESS.md「P5 B03-P06」 | [screenshots/B03-P06](screenshots/B03-P06/) |
+| B03-P07 | 邮政服务站 | 见 PROGRESS.md「P5 B03-P07」 | [screenshots/B03-P07](screenshots/B03-P07/) |
 
 每轮完成后在此表追加一行。
