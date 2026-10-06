@@ -30,7 +30,7 @@
 | C1 | 相机控制修复（插队） | 修正漫游 A/D 左右反向；漫游拖动改为 360° 环视且不自动回正、与自由视角同向；自由视角增加 Shift/Ctrl 拖动、触屏双指、WASD/方向键平移；只改 `scene.js` 相机段与 `tools/views.mjs`，不动冻结布局，保持 `view.get/set` 接口与默认视角 | S4 | 待确认 | 2026-10-06 · 已合并 main（`114541b`、`727ecc5`；基线标签 `baseline/pre-camera-fix`；未推送） |
 | W2 | 弯曲渲染 | 确定性回归基线、弯曲着色器、点光源同步、法线、剔除（规格 [W2_SPEC](docs/world/W2_SPEC.md)） | S4 | 完成 | 2026-10-06 · `e6c8671`（分支 `world/W2` 已合并 main，未推送）；基线标签 `pre-w2`（`68117a6`） |
 | W3 | 星球地形网格与城镇边缘 | 球体网格、抬高、城镇边缘渐变、9 个出口（规格 [W3_SPEC](docs/world/W3_SPEC.md)） | W2、WS | 完成 | 2026-10-06 · `2ee15be`（分支 `world/W3` 已合并 main，未推送）；基线标签 `pre-w3`（`a49cb15`） |
-| W4 | 样板断面（闸门 G1） | ST03 全质量实现；记录性能；**交付后停下等用户确认**（规格 [W4_SPEC](docs/world/W4_SPEC.md)） | W3 | 待确认 | 2026-10-06 · 提交 `待填`（分支 `world/W4`，未推送）；基线标签 `pre-w4`（`618638c`）；截图 `docs/world/w4/`；外推表与结论见 [PROGRESS](PROGRESS.md) 的「W4 样板断面交付」 |
+| W4 | 样板断面（闸门 G1） | ST03 全质量实现；记录性能；**交付后停下等用户确认**（规格 [W4_SPEC](docs/world/W4_SPEC.md)） | W3 | 待确认 | 2026-10-06 · 提交 `b4cbc40`（分支 `world/W4`，未推送）；基线标签 `pre-w4`（`618638c`）；截图 `docs/world/w4/`；外推表与结论见 [PROGRESS](PROGRESS.md) 的「W4 样板断面交付」 |
 | W5 | 全球路网 | RD01–RD08、桥、隧道口、栈道、光带（规格 [W5_SPEC](docs/world/W5_SPEC.md)，可拆 W5a/W5b） | W4 确认 | 待办 | |
 | W6 | 地貌系统铺设 | BI01–BI09、TR02–TR07、实例化、细节层级（规格 [W6_SPEC](docs/world/W6_SPEC.md)；必须拆成 W6a–W6e 五行，开工前在本表加行） | W4 确认 | 待办 | |
 | W7 | 地标逐个实施 | LM01–LM10，每轮一个（规格 [W7_SPEC](docs/world/W7_SPEC.md)，逐地标表；建议顺序见起始词） | W5、W6 | 待办 | |
