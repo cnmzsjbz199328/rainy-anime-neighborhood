@@ -141,6 +141,19 @@ function make(THREE) {
   T('seaMark', b => b.add(cyl(0.06, 0.05, 2.2, 5), PAL.woodD).add(box, PAL.red, { p: [0, 2.1, 0], s: [0.3, 0.3, 0.05] }));
   T('wallBlock', b => b.add(box, PAL.concrete, { p: [0, 0.5, 0], s: [1.9, 1.0, 0.8], noise: 0.05 }));
 
+  // ---- W5 road parts: concrete barrier, milestone, bridge piers (column, cap, waterline foot, footing), navigation light, lamp pool
+  T('barrierConcrete', b => { b.add(box, PAL.concrete, { p: [0, 0.4, 0], s: [1.98, 0.8, 0.3], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, 0.78, 0], s: [1.98, 0.08, 0.34] }); for (const x of [-0.99, 0.99]) b.add(box, PAL.concreteD, { p: [x, 0.4, 0], s: [0.04, 0.8, 0.34] }); return b; });
+  T('milestone', b => b.add(box, PAL.stone, { p: [0, 0.3, 0], s: [0.22, 0.6, 0.16], top: PAL.white, noise: 0.05 }).add(box, PAL.red, { p: [0, 0.62, 0], s: [0.23, 0.06, 0.17] }));
+  T('pierColumn', b => b.add(box, PAL.concrete, { p: [0, 0.5, 0], s: [1.3, 1, 1.3], noise: 0.04, top: PAL.concreteD }));
+  T('pierCap', b => b.add(box, PAL.concrete, { p: [0, -0.45, 0], s: [8.4, 0.9, 1.7], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, -0.92, 0], s: [8.4, 0.08, 1.74] }));
+  T('pierFoot', b => b.add(box, PAL.concreteD, { p: [0, 0, 0], s: [1.42, 1.7, 1.42], top: '#2e3b48', noise: 0.05 }));
+  T('pierFooting', b => b.add(box, PAL.concreteD, { p: [0, 0.4, 0], s: [2.6, 0.8, 2.6], noise: 0.06 }));
+  T('navLight', b => b.add(cyl(0.05, 0.05, 0.9, 5), PAL.metal).add(box, PAL.lampHead, { p: [0, 0.95, 0], s: [0.2, 0.16, 0.2] }));
+  T('navLightGlow', b => b.add(box, '#ffb870', { p: [0, 0.95, 0], s: [0.14, 0.11, 0.14] }));
+  T('lampPool', b => b.add(new THREE.CircleGeometry(3.4, 18).rotateX(-Math.PI / 2), '#ffd9a0', { p: [0, 0.03, 0] }));
+  T('pylonTop', b => { for (const x of [-5.9, 5.9]) b.add(box, PAL.concrete, { p: [x, 6.5, 0], s: [1.1, 13, 1.1], noise: 0.04, top: PAL.concreteD }); return b.add(box, PAL.concrete, { p: [0, 12.5, 0], s: [12.9, 1.0, 1.0], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, 7.6, 0], s: [11.8, 0.6, 0.8] }); });
+  T('busBench', b => b.add(box, PAL.woodL, { p: [0, 0.45, 0], s: [1.5, 0.08, 0.4] }).add(box, PAL.woodD, { p: [-0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }).add(box, PAL.woodD, { p: [0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }));
+
   return { geometries: G, palette: PAL, builder, hash3 };
 }
 

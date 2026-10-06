@@ -167,7 +167,7 @@ function builder(W) {
     return out;
   }
 
-  return { buildFlat, buildCap, buildStubs, lats, ringLons, inPatch, flatX, flatZ };
+  return { buildFlat, buildCap, buildStubs, vertex, lats, ringLons, inPatch, flatX, flatZ };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -175,8 +175,11 @@ const RING_WINDOW = { lonMin: -52, lonMax: 52, latMin: -46, latMax: 46 };
 
 // Height of the rendered mesh (barycentric on the same triangles buildFlat makes) inside a lon/lat window, W.height elsewhere (the town patch is the
 // town's own surface). Objects and ground strips of a section sit on this, not on height(): the two differ by up to the W3-C1 tolerance.
-function sampler(W, win) {
-  const B = builder(W), chunks = B.buildFlat({ ring: true, rest: true, window: win }), cells = new Map(), key = (i, j) => i * 4096 + j;
+function sampler(W, win) { return samplerFromChunks(W, builder(W).buildFlat({ ring: true, rest: true, window: win })); }
+// Same lookup over chunks that already exist (buildFlat output, ring and rest parts may be separate lists): the global road builder uses the
+// chunks the terrain meshes were made from, so the whole planet is not meshed a second time.
+function samplerFromChunks(W, chunks) {
+  const cells = new Map(), key = (i, j) => i * 4096 + j;
   for (const c of chunks) for (const idx of [c.ringIndex, c.restIndex]) if (idx) for (let t = 0; t < idx.length; t += 3) {
     const v = [0, 1, 2].map(k => { const i = idx[t + k]; return [c.lonlat[i * 2], c.lonlat[i * 2 + 1], c.alt[i]]; });
     const tri = [].concat(...v), lo0 = Math.min(v[0][0], v[1][0], v[2][0]), lo1 = Math.max(v[0][0], v[1][0], v[2][0]), la0 = Math.min(v[0][1], v[1][1], v[2][1]), la1 = Math.max(v[0][1], v[1][1], v[2][1]);
@@ -193,7 +196,7 @@ function sampler(W, win) {
   };
 }
 
-const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler };
+const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler, samplerFromChunks };
 
 // ---- scene part (needs THREE); the data builder above never touches it
 // THREE.MathUtils.generateUUID draws from Math.random. The rain of scene.js draws from the same stream every frame, so creating terrain
@@ -239,6 +242,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   function buildRest() {
     if (state.restBuilt) return; state.restBuilt = true;
     const t = performance.now(), restData = B.buildFlat({ ring: false, rest: true }), capData = [true, false].map(north => B.buildCap(north));
+    state.restData = restData;
     withPrivateRandom(() => {
       for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), material, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0; }
       capData.forEach((c, k) => {
@@ -256,6 +260,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     for (const m of state.caps) m.visible = u >= 0.98;
   }
   BEND.onChange(apply);
+  state.ringData = ringData;
+  // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
+  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...ringData, ...state.restData]); } return state.samplerFn; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;
