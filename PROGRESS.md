@@ -1672,3 +1672,27 @@
 - 待办池新增：无。真实 GPU、iPad/手机构图、帧率和触屏手感：待验证。下一阶段仅 S4 清理旧样板代码；本轮未实施。
 
 - S3 交付提交：`e16b916`，`upgrade/B05-P01` 已快进合并到 `main`；未推送。ROADMAP 的 S3 已完成，S4 待办。用户原有规划草稿及 AGENTS/ROADMAP 的其他改动未纳入本轮提交。
+
+## S4 阶段细化（2026-10-06）
+
+- 规格：`docs/buildings/SAMPLE_UPGRADE_PLAN.md` 阶段 4、风险 R2–R4、第 6 节门槛；起始词 `SAMPLE_UPGRADE_AGENT_START.md`。
+- 范围：删除 scene.js 里已摘除的旧样板代码（store、vending、bicycles、storeProps、ramen、ramenPlants、apartment、apartmentPlants 及其动画/雨痕/倒影引用）与 `samples` 空列表依赖；废止 SAMPLE_REVIEW_AGENT_START.md；更新 AGENT_START.md 中的旧样板说明。
+- 不做：冻结布局、道路、其余建筑、新模块代码、街道设施与电杆电线的改动；不重写 `layout.js` 数据格式（`samples` 导出由 `structures`/工具依赖，是否保留见下）。
+- 精确保留：kit 仍引用的 `colors`、`glass`；街道设施分组 guardRail、streetLamp、utilityPole、trafficSignal 与 `signals`（信号灯相位仍用）。按分组名删除，不按行区间（R3）。
+- 退出标准：构建；`measure_samples` 全部分组与清理前一致；`layout_check --png` C1–C12 通过；`frozen_diff pre-sample-upgrade`；`views.mjs` 全部通过（含信号灯相位、漫游）；`building_views`、`docs/buildings/check_kit.mjs`；页面无控制台错误。
+- 逐分组几何哈希前后比对（临时脚本，不入库），确认 R4 随机序列移位的影响。
+- 预算：默认视角绘制调用不得上升（清理只删已摘除的组，预期完全持平）。
+- 风险：误删共享函数/变量；删除后随机序列移位改变线稿抖动；某工具仍读取 `samples`。
+- 停止：其余建筑实测变化且无法用保持序列的方式消除；需要改冻结数据。
+- 裁决：S4 在 main 上做单个「清理」提交，不开分支；回滚靠 `git revert` 或标签 `pre-sample-upgrade`。不推送。
+
+## S4 清理旧样板代码（2026-10-06）
+
+- 输出：`scene.js` 删除已摘除的旧分组源码——store、vending、bicycles、storeProps、ramen、ramenPlants、apartment、apartmentPlants，以及自动门/招牌闪烁、雨痕/檐水、湿路面倒影（`L.samples.find('store')`，早已被守卫跳过）和退役循环。按分组名删除，不按行区间。保留 kit 仍用的 `glass`、`colors`，以及街道设施 guardRail、streetLamp、utilityPole、trafficSignal 与 `signals`。提交 `da92e78`（main，未推送）。
+- 随机序列（R4）：旧代码最先消耗线稿抖动序列，直接删除会让其余全部建筑线稿移位。把序列固定为清理前的两个值（`seed=679665027` 在街道设施前，`seed=1395410823` 在建筑模块前，值由临时探针取自旧版）；逐分组几何哈希（含世界矩阵）比对：除 8 个已删分组外，只有 `wetStreet` 不同，它的涟漪用 `Math.random`，两次同版本运行本就不同。
+- 验证：`python3 build.py`；`measure_samples` 页面无错误、与登记一致，其余 329 个分组与清理前逐值相同（337→329，仅删 8 组）；`layout_check --png` C1–C12 全 PASS；`frozen_diff pre-sample-upgrade` 与 `HEAD` 均通过（对 `HEAD` 无任何导出变化）；`views.mjs` 19 项全过（含信号灯相位、漫游、触屏），无页面错误；`building_views B05-P01` 动画 2/8、无页面错误；`docs/buildings/check_kit.mjs` 通过（文档链接改动后复跑）。
+- 性能：默认视角绘制调用 2361、三角形 237,479，与 S3 交付时完全相同（旧组早已摘除，清理只减源码）；对 `pre-sample-upgrade` 基线 3982 → 2361。预算无变化。
+- 文档：废止 `SAMPLE_REVIEW_AGENT_START.md`（文件头注明）；更新 `AGENT_START.md`、`references/README.md`、`LAYOUT_V1.md`、`BUILDING_SPEC.md` 中关于旧样板的说明；ROADMAP 的 S4 改为完成；BACKLOG 关闭 ramenPlants/apartmentPlants 漂移项。
+- 截图：[docs/buildings/sample-upgrade-baseline-views-s4/](docs/buildings/sample-upgrade-baseline-views-s4/)（default、far、intersection、roamStreet、storeCorner、top）。逐张按协议 12 项检查：街道设施（护栏、路灯、电杆线、信号灯）完整落地，便利店仍是最亮暖光锚点，雨不穿屋顶，无空白墙/悬空/闪烁，控制台无错误；真机观感仍待验证。
+- 遗留（已入 BACKLOG）：`layout.js` 的 `samples` 空导出与几处工具读取作兼容保留；抖动序列常量可在 W2 后评估去除。
+- 范围外：`AGENTS.md`、ROADMAP 与 BACKLOG 等用户规划草稿未纳入提交；下一阶段在 S 轨道已无，W 轨道见 ROADMAP（W1 待办；W2 前置 S4 现已满足）。真实 GPU、iPad/手机构图、帧率和触屏手感：待验证；S4 之后可做「城镇 v1.0」真机验收。

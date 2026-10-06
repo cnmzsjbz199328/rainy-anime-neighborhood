@@ -11,12 +11,12 @@
 - **本轮地块**以用户给出的编号为准。若用户没给，取 [BUILDING_QUEUE.md](BUILDING_QUEUE.md) 中阶段最小、排序最前的「待建」地块，并在开始时说明选了哪一个。
 - 下文中的 `<地块>` 指本轮地块编号（如 `B05-P04`），`<入口x>` 指任务卡「入口」一行给出的坐标（南北朝向的地块看 x，东西朝向的地块看 z）。
 - 名称、用途、尺寸、入口、限高全部从 `docs/buildings/tasks/<地块>.md` 和实际 `layout.js` 读取，本模板不写死任何一栋的数值。
-- 已有样板（B05-P01 便利店、B05-P02 拉面店、B05-P05 公寓）的升级不属于本模板，需要单独任务。
-- 若用户要求审查这三栋旧样板的当前状态，使用 [SAMPLE_REVIEW_AGENT_START.md](SAMPLE_REVIEW_AGENT_START.md)；其现状截图与本目录的升级概念图分开保存。
+- 三栋旧样板（B05-P01、B05-P02、B05-P05）已在 S1–S3 升级为独立模块，旧代码已在 S4 删除；不再有「旧样板」例外。
+- 旧样板审查起始词 [SAMPLE_REVIEW_AGENT_START.md](SAMPLE_REVIEW_AGENT_START.md) 已废止（S4）。
 
 ## 本轮范围
 
-- 只实现 `<地块>` 一栋。道路布局 v1 已冻结；三栋旧样板、已完成的新建筑和其他空地都保持原状。
+- 只实现 `<地块>` 一栋。道路布局 v1 已冻结；已完成的新建筑和其他空地都保持原状。
 - 不要顺手实施队列里的下一栋，也不要自动做整份 38 地块清单。完成并验收本栋后停止。
 
 ## 先读
@@ -36,7 +36,7 @@
 - **源码位置**：新建 `buildings/<地块>.js`，注册 `BUILDINGS['<地块>'] = (K, rec) => { …; return { update(t, dt) {…} }; }`。build.py 会按 three → layout → buildings/*.js → scene 的顺序自动嵌入，不需要改 build.py。
 - **本地坐标**：前方 +Z 朝向地块入口，门中心作原点，地坪高度取 `rec.floor`。放置只用平移、绕 Y 旋转 90° 的倍数、统一尺度 1（朝 N 时 `rotY: Math.PI`）。
 - **分组命名**：以建筑 id 为前缀，例如 `florist`、`floristFrontE`、`floristService`、`floristGround`。主体一个分组（role `building`，含雨棚、檐口、招牌、落水管）。附属设施按位置分成几个小分组（role `attachment`），**不要把门两侧的东西放进同一分组**：C7/C12 按分组包围盒找通行路径，合成一个会堵住门口。地坪铺装与光斑用 role `ground`。
-- **共享工具**：只用 kit 提供的 `mat`、`warm`（室内暖色自发光）、`wall`（带洞口整墙）、`panel`（室内饰面）、`glass`、`glow`、`label`、`canvasTex` 等，沿用同一套墨线、toon 色阶和纸纹。确实缺少的通用工具加到 scene.js 的 kit 里，并保持对旧样板无影响。
+- **共享工具**：只用 kit 提供的 `mat`、`warm`（室内暖色自发光）、`wall`（带洞口整墙）、`panel`（室内饰面）、`glass`、`glow`、`label`、`canvasTex` 等，沿用同一套墨线、toon 色阶和纸纹。确实缺少的通用工具加到 scene.js 的 kit 里，并保持对已有建筑无影响。
 - **合批与分层**：加载器会对每个登记分组执行 `bake()`，所以静态细节不必顾虑绘制调用数量。动画物件放在 `userData.live = true` 的分组里；屋顶、女儿墙、屋顶设备和天花板放在 `userData.layer = 'roof'` 的分组里，剖视截图会移除这一层。多层建筑的楼层可用 `layer: 'f2'` 等，如截图需要分层剖视，扩展 building_views.mjs。
 - **登记数据**：在 layout.js 的 `buildings` 中登记（**不要放进 `samples`**），字段照 `cafe`：`id, name, plot, module, transform, door, frontDir, floor, floors, shelter, parts`。地块改为 `status: 'occupied', building: '<id>'`。`parts` 的 localBounds 必须是 `node tools/measure_samples.mjs` 的实测值。
 - **遮雨**：`shelter` 列出屋顶与每个雨棚的本地矩形，场景据此排除雨滴。C12 会检查遮雨区都在实测主体内，并且屋顶覆盖墙体。
@@ -105,7 +105,7 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 ## 不得做
 
 - 不改道路、交叉口、街区边界、`LEVELS`、街道设施，也不改其他地块和已有建筑。冻结布局确需修改时，停下来报告具体原因。
-- 不把新建筑登记进 `samples`，也不修改三栋旧样板的建模代码或尺度。
+- 不把新建筑登记进 `samples`（该列表已为空，仅作兼容保留），不修改已完成建筑的模块或尺度。
 - 不手工编辑 index.html（只用 build.py 生成），不引入外网依赖，不把参考图嵌入运行页面。
 - 不虚报真实设备测试：SwiftShader 的帧时间只代表本环境，真机项保留为「待验证」。
 
@@ -173,4 +173,4 @@ node docs/buildings/check_kit.mjs       # 参考包与 layout.js 一致
 
 每轮完成后在此表追加一行。
 
-**全部 35 个预留地块已建成（2026-10-06）。** 三栋旧样板（B05-P01 便利店、B05-P02 拉面店、B05-P05 公寓）的升级需要单独任务，不属于本模板。
+**全部 35 个预留地块已建成（2026-10-06）。** 三栋旧样板（B05-P01 便利店、B05-P02 拉面店、B05-P05 公寓）已由 S 轨道升级，旧代码已在 S4 清理（2026-10-06），38 个地块全部为新建筑标准。
