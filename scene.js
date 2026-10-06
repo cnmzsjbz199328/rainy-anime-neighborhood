@@ -186,7 +186,7 @@ const buildingFx=[];
   for(const b of LAYOUT.buildings){const build=(globalThis.BUILDINGS||{})[b.module];if(!build)continue;const fx=build(kit,b);if(fx&&fx.update)buildingFx.push(fx.update);
     for(const p of b.parts)if(groups[p.group])bake(groups[p.group]);}
   // S1 retirement: keep the legacy ramen source above for rollback, but detach its two groups from the scene.
-  for(const name of ['ramen','ramenPlants'])groups[name]?.removeFromParent();
+  for(const name of ['ramen','ramenPlants','apartment','apartmentPlants'])groups[name]?.removeFromParent();
   seed=s0;root=scene;}
 // Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
 // curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.

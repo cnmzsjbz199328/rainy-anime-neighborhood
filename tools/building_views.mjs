@@ -38,7 +38,7 @@ const VIEWS = {
   rear:         { yaw: front + Math.PI,       pitch: REAR_PITCH, dist: d,  target: tgt },   // REAR_PITCH=0.4 lifts the camera over a tall neighbour behind the plot
   left:         { yaw: front - Math.PI / 2,   pitch: 0.45, dist: d,        target: tgt },   // viewer's left when facing the front
   right:        { yaw: front + Math.PI / 2,   pitch: 0.45, dist: d,        target: tgt },
-  roof:         { yaw: front,                 pitch: 1.45, dist: d * 1.25, target: [cx, 0, cz] },
+  roof:         { yaw: front,                 pitch: 1.45, dist: d * 1.25, target: [cx, h * 0.85, cz] },
   interior:     { yaw: front + 0.35,          pitch: 1.0,  dist: d * 1.05, target: [cx, 0.8, cz], cutaway: true },
   frontRight:   { yaw: front + Math.PI / 4,   pitch: 0.32, dist: d * 1.15, target: tgt },
   rearLeft:     { yaw: front + Math.PI * 1.25, pitch: REAR_LEFT_PITCH, dist: d * 1.15, target: tgt },

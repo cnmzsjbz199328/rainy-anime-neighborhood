@@ -128,7 +128,7 @@ const plots = [
   plot('B05-P02', [-28, 21, -19, 30.5], 'shop', 'N', { uses: ['拉面店'], status: 'occupied', building: 'ramenShop' }),
   plot('B05-P03', [-37, 21, -28, 30.5], 'shop', 'N', { uses: ['小店铺', '咖啡店'], status: 'occupied', building: 'cafe' }),
   plot('B05-P04', [-46, 21, -37, 30.5], 'shop', 'N', { uses: ['小店铺', '花店'], status: 'occupied', building: 'florist' }),
-  plot('B05-P05', [-18, 34, -6, 46], 'apartment', 'N', { frontages: ['N', 'E'], uses: ['小公寓'], status: 'occupied', sample: 'apartment' }),
+  plot('B05-P05', [-18, 34, -6, 46], 'apartment', 'N', { frontages: ['N', 'E'], uses: ['小公寓'], status: 'occupied', building: 'apartmentNew' }),
   plot('B05-P06', [-28, 34, -18, 46], 'house', 'N', { uses: ['独栋住宅'], status: 'occupied', building: 'house9' }),
   plot('B05-P07', [-37, 34, -28, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -29.5, note: '面宽 9：入口靠东，停车位沿巷', status: 'occupied', building: 'house10' }),
   plot('B05-P08', [-46, 34, -37, 46], 'house', 'N', { uses: ['独栋住宅'], entrance: -38.5, note: '面宽 9：入口靠东，停车位沿巷', status: 'occupied', building: 'house11' }),
@@ -156,12 +156,7 @@ const samples = [
       { group: 'bicycles', role: 'attachment', localBounds: { min: [-3.44, 0.28, -2.48], max: [-3.07, 1.25, 0.58], ground: [-3.44, -2.48, -3.07, 0.58] } },
       { group: 'storeProps', role: 'attachment', localBounds: { min: [2.51, 0.26, -3.23], max: [5.14, 1.31, 2.36], ground: [2.51, -3.23, 5.14, 2.36] } },
     ] },
-  { id: 'apartment', name: 'こもれび荘', plot: 'B05-P05', transform: { x: -11.4, z: 33, rotY: Math.PI },
-    door: { x: 0.9, z: -4.88 }, frontDir: [0, 1],
-    parts: [
-      { group: 'apartment', role: 'building', localBounds: { min: [-3.4, 0.13, -8.4], max: [3.91, 6.2, -4.19], ground: [-3.36, -8.26, 3.76, -4.56] } },
-      { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.9, 0.33, -4.68], max: [-0.47, 1.01, -4.32], ground: [-1.9, -4.68, -0.47, -4.32] } },
-    ] },
+
 ];
 
 // New buildings (P5 on), one per plot, modelled in buildings/<plot>.js. Same placement rule and measured
@@ -656,6 +651,15 @@ const buildings = [
       { group: 'schoolRear', role: 'attachment', localBounds: { min: [-17.21,0.18,-10.56], max: [11.92,3.29,-7.77], ground: [-17,-10.3,11.9,-7.78] } },
       { group: 'schoolEast', role: 'attachment', localBounds: { min: [16.42,0.18,0.39], max: [19.31,2.38,7.68], ground: [16.43,0.6,19.1,7.68] } },
       { group: 'schoolPlay', role: 'ground', localBounds: { min: [-19.6,0.19,-10.6], max: [19.7,0.22,13.6], ground: null } },
+    ] },
+  { id: 'apartmentNew', name: 'こもれび荘', plot: 'B05-P05', module: 'B05-P05', transform: { x: -12.3, z: 37.88, rotY: Math.PI },
+    door: { x: 0, z: 0 }, doorOffset: -0.3, frontDir: [0, 1], floor: 0.3, floors: 3,
+    shelter: [[-3.7, -6.28, 3.7, 0.14], [-0.8, 0.14, 0.8, 1.08]],
+    parts: [
+      { group: 'apartmentNew', role: 'building', localBounds: { min: [-3.71, 0.22, -6.28], max: [3.71, 9.3, 1.08], ground: [-3.65, -6.06, 3.47, 0.24] } },
+      { group: 'apartmentGallery', role: 'building', localBounds: { min: [-3.18, 2.95, 0.02], max: [3.18, 6.84, 1.08], ground: null } },
+      { group: 'apartmentStair', role: 'attachment', localBounds: { min: [3.39, 0.29, -3.04], max: [5.4, 6.78, 0.28], ground: [3.57, -3.03, 5.39, 0.27] } },
+      { group: 'apartmentEntry', role: 'attachment', localBounds: { min: [-3.27, 0.19, -0.57], max: [3.27, 1.24, -0.13], ground: [-3.27, -0.57, 3.27, -0.13] } },
     ] },
 ];
 const structures = [...samples, ...buildings];

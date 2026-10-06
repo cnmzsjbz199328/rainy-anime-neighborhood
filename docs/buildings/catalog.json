@@ -29,7 +29,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": -26,
-        "z": -21, "door": [-26, -35]
+        "z": -21,
+        "door": [
+          -26,
+          -35
+        ]
       },
       {
         "at": -40,
@@ -97,7 +101,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 11,
-        "z": -21, "door": [11, -23.6] }
+        "z": -21,
+        "door": [
+          11,
+          -23.6
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -156,7 +165,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 21,
-        "z": -21, "door": [21, -23.6] }
+        "z": -21,
+        "door": [
+          21,
+          -23.6
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -215,7 +229,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 31,
-        "z": -21, "door": [31, -23.6] }
+        "z": -21,
+        "door": [
+          31,
+          -23.6
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -274,7 +293,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 41,
-        "z": -21, "door": [41, -23.6] }
+        "z": -21,
+        "door": [
+          41,
+          -23.6
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -334,7 +358,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 11,
-        "z": -35.25, "door": [11, -37.85] }
+        "z": -35.25,
+        "door": [
+          11,
+          -37.85
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -393,7 +422,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 21,
-        "z": -35.25, "door": [21, -37.85] }
+        "z": -35.25,
+        "door": [
+          21,
+          -37.85
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 2,
@@ -452,7 +486,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 31,
-        "z": -35.25, "door": [31, -37.85]
+        "z": -35.25,
+        "door": [
+          31,
+          -37.85
+        ]
       }
     ],
     "maxHeight": 9,
@@ -512,7 +550,11 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 41,
-        "z": -35.25, "door": [41, -37.85]
+        "z": -35.25,
+        "door": [
+          41,
+          -37.85
+        ]
       }
     ],
     "maxHeight": 9,
@@ -1151,7 +1193,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 21,
-        "z": 9, "door": [21, 6.1] }
+        "z": 9,
+        "door": [
+          21,
+          6.1
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 1,
@@ -1212,7 +1259,12 @@
         "facing": "S",
         "kind": "pedestrian",
         "x": 35,
-        "z": 7.5, "door": [35, 6.4] }
+        "z": 7.5,
+        "door": [
+          35,
+          6.4
+        ]
+      }
     ],
     "maxHeight": 4,
     "floors": 0,
@@ -1272,7 +1324,12 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 11,
-        "z": -9, "door": [11, -5.5] }
+        "z": -9,
+        "door": [
+          11,
+          -5.5
+        ]
+      }
     ],
     "maxHeight": 9,
     "floors": 1,
@@ -1331,7 +1388,12 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 21,
-        "z": -9, "door": [21, -6.3] }
+        "z": -9,
+        "door": [
+          21,
+          -6.3
+        ]
+      }
     ],
     "maxHeight": 12,
     "floors": 3,
@@ -1621,10 +1683,10 @@
   },
   {
     "id": "B05-P05",
-    "name": "现有公寓样板",
+    "name": "こもれび荘 三层公寓",
     "archetype": "apartment",
     "phase": 0,
-    "status": "existing-review-only",
+    "status": "implemented",
     "plotType": "apartment",
     "front": "N",
     "frontages": [
@@ -1657,12 +1719,12 @@
     ],
     "maxHeight": 12,
     "floors": 3,
-    "dimensions": "已有样板实测约6.59×4.22；新增版本参照10×8主体但不自动改变现样板",
+    "dimensions": "实测主体约 7.42 × 7.36 m，含屋檐、入口雨棚；最高点 9.30 m",
     "style": "米灰抹墙、灰蓝金属屋顶、暖木栏杆、外廊",
-    "exterior": "外楼梯、各户门、邮箱、阳台、雨管、自行车棚、垃圾区、空调",
-    "interior": "每层独立住户、玄关、厨房、起居与床、真实楼板、外廊与楼梯连通",
-    "structure": "保留现有模型；层高与底阶问题单列升级，不以整体非等比缩放修正",
-    "animation": "部分亮窗、雨管滴水、外廊低灯",
+    "exterior": "三层外廊、东侧折返楼梯与真实侧门、前门厅、屋顶水箱、四面开窗",
+    "interior": "三层住户、隔墙、家具与楼板；f2/f3 可剖视",
+    "structure": "厚墙洞口、独立楼层与屋顶层；门原点变换保持旧门世界坐标；登记门相对入口锚偏移 -0.30 m",
+    "animation": "门厅灯轻微位移脉动；无新增实时光源",
     "variantEnglish": "",
     "reference": "references/B05-P05.jpg",
     "task": "tasks/B05-P05.md",
@@ -1677,12 +1739,13 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "existing-review-only",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
     ],
-    "imageSha256": "eb706864a7e24a713f516b5f1a167c18ffb03f1f80a6e0ff9d10f6782abff1a8"
+    "imageSha256": "eb706864a7e24a713f516b5f1a167c18ffb03f1f80a6e0ff9d10f6782abff1a8",
+    "implementationModule": "buildings/B05-P05.js"
   },
   {
     "id": "B05-P06",
@@ -1712,7 +1775,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": -23,
-        "z": 34, "door": [-23, 36.6]
+        "z": 34,
+        "door": [
+          -23,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
@@ -1773,7 +1840,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": -29.5,
-        "z": 34, "door": [-29.5, 36.6]
+        "z": 34,
+        "door": [
+          -29.5,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
@@ -1834,7 +1905,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": -38.5,
-        "z": 34, "door": [-38.5, 36.6]
+        "z": 34,
+        "door": [
+          -38.5,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
@@ -1895,7 +1970,12 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 11,
-        "z": 21, "door": [11, 23.4] }
+        "z": 21,
+        "door": [
+          11,
+          23.4
+        ]
+      }
     ],
     "maxHeight": 12,
     "floors": 3,
@@ -1954,7 +2034,12 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 21,
-        "z": 21, "door": [21, 23.4] }
+        "z": 21,
+        "door": [
+          21,
+          23.4
+        ]
+      }
     ],
     "maxHeight": 12,
     "floors": 3,
@@ -2013,7 +2098,12 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 31,
-        "z": 22.5, "door": [31, 24.6] }
+        "z": 22.5,
+        "door": [
+          31,
+          24.6
+        ]
+      }
     ],
     "maxHeight": 12,
     "floors": 3,
@@ -2072,7 +2162,12 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 41,
-        "z": 21, "door": [41, 23.3] }
+        "z": 21,
+        "door": [
+          41,
+          23.3
+        ]
+      }
     ],
     "maxHeight": 12,
     "floors": 3,
@@ -2132,7 +2227,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 11,
-        "z": 34, "door": [11, 36.6]
+        "z": 34,
+        "door": [
+          11,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
@@ -2192,7 +2291,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 21,
-        "z": 34, "door": [21, 36.6]
+        "z": 34,
+        "door": [
+          21,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
@@ -2252,7 +2355,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 31,
-        "z": 34, "door": [31, 36.6]
+        "z": 34,
+        "door": [
+          31,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
@@ -2312,7 +2419,11 @@
         "facing": "N",
         "kind": "pedestrian",
         "x": 41,
-        "z": 34, "door": [41, 36.6]
+        "z": 34,
+        "door": [
+          41,
+          36.6
+        ]
       }
     ],
     "maxHeight": 9,
