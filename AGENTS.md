@@ -7,6 +7,8 @@
 - Preserve the frozen town layout in `docs/layout/LAYOUT_V1.md`. Use `layout.js` for authoritative dimensions and placements.
 
 ## Task entry points
+- Overall roadmap and stage status: `ROADMAP.md` (single source for what is next); deferred non-blocking items go to `docs/BACKLOG.md`.
+- Planet stages (W1–W9b): `docs/world/WORLD_AGENT_START.md`. Legacy-sample upgrade (S0–S4): `docs/buildings/SAMPLE_UPGRADE_AGENT_START.md`. Each round does one stage only.
 - Building implementation: read `docs/buildings/AGENT_START.md`, the selected card, and `BUILDING_SPEC.md`.
 - Planet reference images: read `docs/world/IMAGE_AGENT_START.md`, `WORLD_PLAN.md`, `docs/world/WORLD_SPEC.md`, selected cards, and corresponding `IMAGE_PROMPTS.json` entries.
 - Follow the selected workflow's scope; reference-image work does not authorize implementing scene code.
