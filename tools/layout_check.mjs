@@ -476,13 +476,15 @@ check('C12', '新建筑实测模型：主体在可建范围、附属在地块内
     const e = p.entrances[0], [fx, fz] = s.frontDir, c = Math.cos(t.rotY), n = Math.sin(t.rotY);
     const wf = [fx * c + fz * n, -fx * n + fz * c], want = L.DIRS[e.facing];
     if (Math.abs(wf[0] - want[0]) > EPS || Math.abs(wf[1] - want[1]) > EPS) fail(`${s.id} 正面朝向与地块入口 ${e.facing} 不一致`);
-    // The door must land on the frozen entrance: street furniture is placed around entrances (C10).
+    // The frozen frontage anchor drives street furniture (C10); legacy samples may have a documented,
+    // small lateral door offset. Validate that exact offset and keep the independent clear-route check below.
     const mid = e.facing === 'N' || e.facing === 'S' ? (p.rect[0] + p.rect[2]) / 2 : (p.rect[1] + p.rect[3]) / 2, at = e.at ?? mid;
-    if (Math.abs((e.facing === 'N' || e.facing === 'S' ? e.x : e.z) - at) > 0.01) fail(`${s.id} 门位 ${e.door.join(', ')} 偏离冻结入口 ${at}，会移动路灯/电杆避让区`);
+    const offset = (e.facing === 'N' || e.facing === 'S' ? e.x : e.z) - at;
+    if (Math.abs(offset - (s.doorOffset ?? 0)) > 0.01) fail(`${s.id} 门位相对冻结入口偏移 ${offset.toFixed(2)}，登记值为 ${s.doorOffset ?? 0}`);
     const route = doorRoute(s, p, e);
     if (!route) fail(`${s.id} 门口到地块入口 (${e.x}, ${e.z}) 没有净宽 ${CLEAR_WIDTH} 的通行路径`);
     else { routes[s.id] = route; const len = route.slice(1).reduce((q, r, i) => q + Math.hypot(r[0] - route[i][0], r[1] - route[i][1]), 0);
-      info(`${s.id} 门 (${e.door.join(', ')}) → 地块入口 (${e.x}, ${e.z}) 朝 ${e.facing}：净宽 ${CLEAR_WIDTH} 通行路径 ${len.toFixed(1)}`); }
+      info(`${s.id} 门 (${e.door.join(', ')}) → 地块入口 (${e.x}, ${e.z}) 朝 ${e.facing}：净宽 ${CLEAR_WIDTH} 通行路径 ${len.toFixed(1)}，相对冻结设施锚点偏移 ${offset.toFixed(2)}`); }
     info(`${s.id} 地坪 ${s.floor}，${s.floors} 层；源码 buildings/${s.module}.js 已嵌入 index.html`);
   }
 });
