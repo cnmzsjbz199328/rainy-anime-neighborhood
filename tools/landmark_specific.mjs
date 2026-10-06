@@ -74,3 +74,19 @@ CHECKS.LM03 = async ({ page, info, fail, f, W, lm, M }) => {
   info.push(`东缘（局部 x = −12 处，朝东）地形比锚点高 ${f(eh, 2)} m（山脊脚近 0）：模块在此处只有地面圆盘，没有立物`);
   if (eh > 0.6) fail('东缘地形已明显上升');
 };
+
+CHECKS.LM10 = async ({ page, info, fail, f, W, lm, M, renderShot, shots }) => {
+  const st = M.stats || {};
+  info.push(`渔船 ${st.boats} 艘（规格 4–5），共享一份船体几何（${st.shared}）与材质，每艘各自缓慢起伏（相位错开）；防波堤长 ${st.breakwater} m（20 ± 1），顶面高出海面 1.3 m，端头红白灯桩灯光 ${st.lampPeriod} s 一个周期的升余弦明暗（≥ 4 s）；建筑 ${st.buildings} 栋（渔协仓库、冰屋、2 栋住宅，其中 2 层 ${st.houses2}）、惠比寿小神社 ${st.ebisu}、自动售货机 ${st.vending}、晾网架（网会摆动）、浮球与鱼箱；站前路 5.8 m（z = 17 → 22.78）接 T01 的入口`);
+  if (st.boats < 4 || st.boats > 5) fail('渔船不是 4–5 艘'); if (Math.abs(st.breakwater - 20) > 1) fail('防波堤不是 20 ± 1 m'); if (st.lampPeriod < 4) fail('灯桩周期 < 4 s');
+  // breakwater and boats against the coast of world.js: the breakwater base is in the sea or on the shore, the boats float in water deeper than 0.3 m, the land buildings stand on land
+  const D = Math.PI / 180, at = (x, z) => { const d = Math.hypot(x, z), p = d < 1e-9 ? lm : W.destination(lm, 180 + Math.atan2(-x, z) / D, d); return W.height(p.lon, p.lat); };
+  const boats = [[20.5, -2.2], [23.0, -5.6], [25.6, -2.4], [22.8, -9.2], [27.4, -6.6]], depth = boats.map(([x, z]) => -at(x, z)); const wh = [[3.5, -3.5], [5.2, 7.8], [-6.5, -7.0], [-6.8, 7.0]].map(([x, z]) => at(x, z));
+  info.push(`船位水深 ${depth.map(d => f(d, 2)).join('、')} m（都 > 0.3 m，浮在海面）；陆上建筑所在地形海拔 ${wh.map(h => f(h, 2)).join('、')} m（都 > 0.5 m）；防波堤陆端 (11, 3.2) 海拔 ${f(at(11, 3.2), 2)} m、海端 (31, 3.2) 海拔 ${f(at(31, 3.2), 2)} m；海岸线与 world.js 一致（物件按 height() 落地，模块没有自己的海岸）`);
+  if (depth.some(d => d < 0.3)) fail('有船不在水里'); if (wh.some(h => h < 0.5)) fail('有建筑不在陆上');
+  // slope of the land inside r = 17 on the landward side (west of the coast): world.js maxSlope 0.4
+  let worst = 0; for (let a = 180; a <= 360; a += 10) for (let d = 1; d <= 17; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`陆侧（南到西）r ≤ 17 m 的最大坡度 ${f(worst * 100, 1)}%（world.js 上限 40%；规格写现 20.7%）`); if (worst > 0.4) fail('坡度 > 40%');
+  const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM10.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
+  info.push(`夜间：渔港最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}（${f(e.lm / e.town * 100, 0)}%）：东洲上最主要的暖光点，从城镇街道看不会盖过便利店`); if (e.lm > e.town) fail('渔港亮于城镇');
+};

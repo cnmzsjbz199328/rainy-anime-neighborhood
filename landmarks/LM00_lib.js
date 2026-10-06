@@ -69,3 +69,13 @@ globalThis.LMLIB = function (K) {
   return L;
 };
 })();
+// ---- ground sampling for modules on sloping sites (LM08, LM10): the terrain height at a local point relative to the anchor altitude
+(function () {
+const prev = globalThis.LMLIB;
+globalThis.LMLIB = function (K) {
+  const L = prev(K);
+  L.groundFn = rec => { const W = globalThis.WORLD, h0 = W.height(rec.lon, rec.lat), head = rec.entrances[0].heading, A = { lon: rec.lon, lat: rec.lat };
+    const f = (x, z) => { const d = Math.hypot(x, z); const p = d < 1e-9 ? A : W.destination(A, head + Math.atan2(-x, z) * 180 / Math.PI, d); return W.height(p.lon, p.lat) - h0; }; f.h0 = h0; f.sea = -h0; return f; };
+  return L;
+};
+})();

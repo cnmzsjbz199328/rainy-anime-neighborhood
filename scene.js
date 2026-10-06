@@ -265,7 +265,7 @@ function buildLandmarks(){if(landmarksBuilt)return;landmarksBuilt=true;const t0=
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);
       const h=WO.height(lm.lon,lm.lat),headDeg=lm.entrances[0]?lm.entrances[0].heading:0,th=Math.PI-headDeg*DD,cth=Math.cos(th),sth=Math.sin(th),own=[];
       // local point -> [flat x, flat y, flat z, 1 / cos(lat), k]
-      const map=(x,y,z)=>{const d0=Math.hypot(x,z),yt=Math.max(0,h+y-1.6),kk=RR/(RR+yt),d=d0*kk;let lon=lm.lon,lat=lm.lat;
+      const map=(x,y,z)=>{const d0=Math.hypot(x,z),yt=Math.max(-1.6,h+y-1.6),kk=RR/(RR+yt),d=d0*kk;let lon=lm.lon,lat=lm.lat;
         if(d0>1e-9){const q=WO.destination({lon:lm.lon,lat:lm.lat},headDeg+Math.atan2(-x,z)/DD,d);lat=q.lat;lon=lm.lon+(((q.lon-lm.lon+540)%360)-180);}
         const cc=1/Math.cos(lat*DD);return[RR*lon*DD,(h+y-1.6)*cc,-RR*Math.asinh(Math.tan(lat*DD)),cc,kk];};
       const warp=o=>{const g=o.geometry,p=g.attributes.position,nrm=g.attributes.normal;g.userData.local=Float32Array.from(p.array);
