@@ -165,11 +165,11 @@ export async function renderShot(page, v, opts = {}) {
     if (v.band) RD.setLightBand({ distance: 300 }); else RD.setLightBand({ auto: true });
     const t = opts.t ?? 1.2; SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && LC.tick(t, cam); SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && (LC.tick(t, cam), LC.reload(cam)); SEC.forceLod(cam);
     const hiddenCut = []; if (v.lmCut) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) g.traverse(o => { if (o.userData && v.lmCut.includes(o.userData.layer) && o.visible) { o.visible = false; hiddenCut.push(o); } });
-    if (opts.noOcean && OC) OC.state.root.visible = false; if (opts.noCover && LC) LC.state.root.visible = false; if (opts.noRoads) RD.state.root.visible = false;     // cost measurement with the same camera
+    if (opts.noOcean && OC) OC.state.root.visible = false; if (opts.noCover && LC) LC.state.root.visible = false; if (opts.noLandmarks) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) { g.userData._v = g.visible; g.visible = false; } if (opts.noRoads) RD.state.root.visible = false;     // cost measurement with the same camera
     const t0 = Date.now(); S.renderer.render(S.scene, cam); S.renderer.getContext().finish(); const ms = Date.now() - t0;
     const url = S.renderer.domElement.toDataURL('image/png'), info = { calls: S.renderer.info.render.calls, triangles: S.renderer.info.render.triangles, ms };
     for (const o of hiddenCut) o.visible = true;
-    if (opts.noOcean && OC) OC.state.root.visible = true; if (opts.noCover && LC) LC.state.root.visible = true; if (opts.noRoads) RD.state.root.visible = true;
+    if (opts.noOcean && OC) OC.state.root.visible = true; if (opts.noCover && LC) LC.state.root.visible = true; if (opts.noLandmarks) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) g.visible = g.userData._v; if (opts.noRoads) RD.state.root.visible = true;
     cam.fov = 36; cam.near = 0.25; cam.far = 400; cam.up.set(0, 1, 0); cam.updateProjectionMatrix(); S.scene.fog.density = fog0; SEC.set({ light: 'rainy', ink: 'auto' });
     return { url, info, ink: SEC.get().ink };
   }, [v, opts]);

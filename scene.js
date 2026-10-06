@@ -253,17 +253,37 @@ const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.do
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);e.preventDefault();}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',()=>keys.clear());
 function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joystickValue[0],z=(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joystickValue[1],m=Math.hypot(x,z);if(m>1){x/=m;z/=m;}return[x,z];}
 // Planet landmarks (W7): landmarks/<id>.js registers LANDMARKS[id](kit, record) and draws in its own local frame (origin = site anchor, +Z towards the first entrance,
-// 1 unit = 1 m). They are built the first time the planet is shown (inside the terrain's private random stream, so the town's rain is untouched), placed in the flat
-// Mercator frame like the terrain (position (R lon, (h - 1.6)/cos lat, -R asinh(tan lat)), rotation pi - heading, scale 1/cos lat) and rolled onto the sphere by bend.js.
+// +X to the left of +Z, 1 unit = 1 m). They are built the first time the planet is shown (inside the terrain's private random stream, so the town's rain is untouched) and
+// then mapped vertex by vertex into the flat Mercator frame of the terrain (docs/world/W7_SPEC.md section 2): a local point (x, y, z) at distance d and bearing heading + atan2(-x, z)
+// from the anchor is moved to the lon/lat that lies d * R / (R + altitude) along the sphere (the bend lengthens lateral distances at height by (R + altitude) / R, so this keeps
+// every length in true metres, at any latitude), its flat height is (anchor altitude + y - 1.6) / cos(lat), and the normals are turned by the heading. bend.js then rolls it onto the sphere.
+// Animated parts (userData.live) are not baked: they are re-parented into a wrapper at their mapped position with the local scale 1 / cos(lat).
 const landmarkGroups=[],landmarkFx=[],landmarkInfo={};let landmarksBuilt=false;
 function buildLandmarks(){if(landmarksBuilt)return;landmarksBuilt=true;const t0=Date.now();
   TERRAIN.withPrivateRandom(()=>{const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
     for(const lm of WO.landmarks){if(lm.id==='TOWN')continue;const build=(globalThis.LANDMARKS||{})[lm.id];if(!build)continue;
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);
-      const lat=lm.lat*DD,c=1/Math.cos(lat),x=RR*lm.lon*DD,z=-RR*Math.asinh(Math.tan(lat)),h=WO.height(lm.lon,lm.lat),head=(lm.entrances[0]?lm.entrances[0].heading:0)*DD,own=[];
-      for(const name of Object.keys(groups))if(!before.has(name)){const g=groups[name];g.position.set(x,(h-1.6)*c,z);g.rotation.y=Math.PI-head;g.scale.setScalar(c);bake(g);g.visible=false;landmarkGroups.push(g);own.push(g);}
-      landmarkInfo[lm.id]={groups:own,anchor:{x,y:(h-1.6)*c,z},scale:c,heading:lm.entrances[0]?lm.entrances[0].heading:0,height:h};
-      if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});}
+      const h=WO.height(lm.lon,lm.lat),headDeg=lm.entrances[0]?lm.entrances[0].heading:0,th=Math.PI-headDeg*DD,cth=Math.cos(th),sth=Math.sin(th),own=[];
+      // local point -> [flat x, flat y, flat z, 1 / cos(lat), k]
+      const map=(x,y,z)=>{const d0=Math.hypot(x,z),yt=Math.max(0,h+y-1.6),kk=RR/(RR+yt),d=d0*kk;let lon=lm.lon,lat=lm.lat;
+        if(d0>1e-9){const q=WO.destination({lon:lm.lon,lat:lm.lat},headDeg+Math.atan2(-x,z)/DD,d);lat=q.lat;lon=lm.lon+(((q.lon-lm.lon+540)%360)-180);}
+        const cc=1/Math.cos(lat*DD);return[RR*lon*DD,(h+y-1.6)*cc,-RR*Math.asinh(Math.tan(lat*DD)),cc,kk];};
+      const warp=o=>{const g=o.geometry,p=g.attributes.position,nrm=g.attributes.normal;g.userData.local=Float32Array.from(p.array);
+        for(let i=0;i<p.count;i++){const m=map(p.getX(i),p.getY(i),p.getZ(i));p.setXYZ(i,m[0],m[1],m[2]);
+          if(nrm){const nx=nrm.getX(i),nz=nrm.getZ(i);nrm.setXYZ(i,nx*cth+nz*sth,nrm.getY(i),-nx*sth+nz*cth);}}
+        p.needsUpdate=true;if(nrm)nrm.needsUpdate=true;g.computeBoundingSphere();g.computeBoundingBox();o.matrixAutoUpdate=false;o.updateMatrix();};
+      for(const name of Object.keys(groups))if(!before.has(name)){const g=groups[name];g.updateMatrixWorld(true);
+        // live objects: detach with their local position, re-attach in a wrapper at the mapped position
+        const live=[];g.traverse(o=>{if(o.userData&&o.userData.live&&!live.some(q=>q.contains&&0))live.push(o);});
+        const topLive=live.filter(o=>{for(let p=o.parent;p&&p!==g;p=p.parent)if(p.userData&&p.userData.live)return false;return true;});
+        const wraps=topLive.map(o=>{const v=new THREE.Vector3();o.getWorldPosition(v);const m=map(v.x,v.y,v.z);o.updateMatrixWorld(true);const parentInv=new THREE.Matrix4().copy(o.parent.matrixWorld).invert();void parentInv;
+          const w=new THREE.Group();w.name=name+':live';w.position.set(m[0],m[1],m[2]);w.rotation.y=th;w.scale.set(m[3]*m[4],m[3],m[3]*m[4]);
+          // keep the object's own orientation and place it at the wrapper origin
+          const q=new THREE.Quaternion();o.getWorldQuaternion(q);const sc=new THREE.Vector3();o.getWorldScale(sc);o.parent.remove(o);o.position.set(0,0,0);o.quaternion.copy(q);o.scale.copy(sc);w.add(o);scene.add(w);return w;});
+        bake(g);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
+        g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=false;wraps.forEach(w=>{w.visible=false;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
+      landmarkInfo[lm.id]={groups:own,heading:headDeg,height:h};
+      landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});}
     seed=s0;root=scene;});
   landmarkInfo.buildMs=Date.now()-t0;}
 function landmarksVisible(){const show=BEND.get()>0||(window.SECTION_API&&window.SECTION_API.state.mode);if(show&&!landmarksBuilt&&Object.keys(globalThis.LANDMARKS||{}).length)buildLandmarks();for(const g of landmarkGroups)g.visible=!!show;return show;}

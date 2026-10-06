@@ -21,6 +21,6 @@ export function shots(id) {
     ['site-plan', { eye: p(0, F.top, 0), look: p(0, 0, 0), fov: 45, upLocal: [0, 0, -1], light: 'neutral', rain: false }],
     ['section', { eye: p(0, F.h + 1, F.d * 0.9), look: p(0, F.ty * 0.6, 0), fov: 50, lmCut: F.cut, light: 'neutral', rain: false }],
     ['rainy-night', { eye: p(-F.d * c, F.h + 1.5, F.d * c), look: p(0, F.ty, 0), fov: 50 }],
-    ['from-afar', { sphere: F.far, d: 130, fov: 34, light: 'panorama', ink: 'panorama', rain: false, band: true }],
+    ['from-afar', { sphere: F.far, d: 215, fov: 26, light: 'panorama', ink: 'panorama', rain: false, band: true }],
   ];
 }
