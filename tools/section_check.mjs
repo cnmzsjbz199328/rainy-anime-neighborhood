@@ -85,6 +85,19 @@ check('W4-C2', '道路：中线 ≤ 0.05 m，宽度符合卡片，坡度 ≤ WC4
     if (lim && worstG > lim) fail(`${id} 最大坡度 ${f(worstG * 100, 1)}% > ${lim * 100}%`);
     info(`${id} ${r.class}：长 ${f(r.length, 2)} m，中线偏差 ${f(worstC, 4)} m，宽 ${f(w, 2)} m（${lo}–${hi}），最大坡度 ${f(worstG * 100, 1)}%${lim ? `（上限 ${lim * 100}%）` : '（boardwalk 不计）'}`);
   }
+  // the T03 transition chain: centre line, class widths away from the joints, smooth width change, no jump in colour along the paved edge
+  { const CH = RK.chain(W, ['T03-01', 'T03-02', 'T03-03']), S = CH.samples, m = CH.grid.length, st = CH.strip; let j = 0; while (!(CH.grid[j] <= 0 && CH.grid[j + 1] >= 0)) j++;
+    const t = (0 - CH.grid[j]) / (CH.grid[j + 1] - CH.grid[j]); let worstC = 0;
+    for (let i = 0; i < S.length; i++) { const a = j + i * m, b = a + 1, x = st.pos[a * 3] * (1 - t) + st.pos[b * 3] * t, z = st.pos[a * 3 + 2] * (1 - t) + st.pos[b * 3 + 2] * t; worstC = Math.max(worstC, arc(unflat(x, z), S[i])); }
+    if (worstC > 0.05) fail(`过渡链中线偏差 ${f(worstC)} m > 0.05`);
+    const wd = CH.paved.map(p => p[1] - p[0]); let worstD = 0; for (let i = 1; i < wd.length; i++) worstD = Math.max(worstD, Math.abs(wd[i] - wd[i - 1]) / 0.5);
+    const at = s => wd[Math.round(s / 0.5)], pure = [[1.5, 4.5, 'RD03'], [11, 2.5, 'RD04'], [22, 3.0, 'RD05']];
+    for (const [sx, want, cls] of pure) if (Math.abs(at(sx) - want) > 0.06) fail(`过渡链在 s = ${sx} m 的铺装宽 ${f(at(sx), 2)} ≠ ${cls} 的 ${want} m`);
+    if (worstD > 0.6) fail(`铺装宽变化 ${f(worstD, 2)} m/m > 0.6，不够平滑`);
+    // colour continuity of the centre column: no jump larger than 0.25 (linear sRGB, max channel) between samples 0.5 m apart outside the hashed cracks
+    let jump = 0; for (let i = 1; i < S.length; i++) { const a = (j + i * m) * 3, b = (j + (i - 1) * m) * 3; jump = Math.max(jump, ...[0, 1, 2].map(c => Math.abs(st.col[a + c] - st.col[b + c]))); }
+    info(`过渡链 T03-01→02→03：长 ${f(CH.length, 2)} m，混合带 ± ${RK.BLEND} m，中线偏差 ${f(worstC, 4)} m；铺装宽 ${wd.filter((_, i) => i % 6 === 0).map(v => f(v, 2)).join(' → ')} m，最大变化 ${f(worstD, 2)} m/m（上限 0.6）；中线相邻样点最大颜色差 ${f(jump, 2)}（含裂纹）；磨损 0 → ${f(CH.wear[CH.wear.length - 1], 2)}`);
+  }
   const bw = built['T11-01'];
   if (!bw.widths.pileAboveWater || bw.widths.pileAboveWater[0] < 0.5 || bw.widths.pileAboveWater[1] > 1.5) fail(`木桩高出水面 ${bw.widths.pileAboveWater} 不在 0.5–1.5 m`); else info(`木桩高出水面 ${bw.widths.pileAboveWater.map(v => f(v, 2)).join('–')} m（卡片 0.5–1.5 m）`);
   const S = W.roadNetwork.samplePath(W.roadNetwork.edges.find(e => e.id === 'T11-01'), 0.5), sOf = it => { let b = 0, bd = Infinity; S.forEach((p, i) => { const d = arc(p, it); if (d < bd) { bd = d; b = i; } }); return S[b].s; };

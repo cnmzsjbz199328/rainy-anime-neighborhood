@@ -65,6 +65,10 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     for (const [t, list] of Object.entries(PLAN.items)) all[t] = list.map(it => ({ ...it, m: matrixOf(it) }));
     // roads: strips and instances
     const roadOut = ['T03-01', 'T03-02', 'T03-03', 'T11-01'].map(id => global.ROADKIT.build(WS, id));
+    // T03-01/02/03 are swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping in); their own strips and edge lines are replaced
+    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03']); S.chain = CH;
+    for (const r of roadOut.slice(0, 3)) { r.strips = []; r.lines = {}; }
+    for (const [t, list] of Object.entries(CH.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     S.roadOut = roadOut;
     const mkInst = (name, list, geoName, withHull, mat = floraMat, hmat = hullMat) => {
@@ -97,7 +101,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const nrm = new Float32Array(st.pos.length); for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(st.index, 1)); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.name = 'sec:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
-    for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
+    stripMesh(CH.strip, groundMat); for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
     // TR01 town edge: gravel shoulder and grass band along the patch's south edge, in the corridor
     { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
       stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }
@@ -183,7 +187,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
         if (cellId[(j + 1) * (nu + 1) + i] !== a && j + 1 < nv) { const [lo, la] = PLAN.toLL(u, v + P.step), [lo2, la2] = PLAN.toLL(u + P.step, v + P.step); poly([{ lon: lo, lat: la }, { lon: lo2, lat: la2 }], 0.26, segs); }
       }
       // road edges
-      for (const r of roadOut) { if (r.lines.edgeL) poly(r.lines.edgeL, 0, segs); if (r.lines.edgeR) poly(r.lines.edgeR, 0, segs); }
+      for (const r of [...roadOut, CH]) { if (r.lines.edgeL) poly(r.lines.edgeL, 0, segs); if (r.lines.edgeR) poly(r.lines.edgeR, 0, segs); }
       addLines('aerial', segs);
       // corridor coast: bisect coastDistance = 0 along each parallel
       const coast = []; for (let u = -16; u <= 42; u += 0.5) { let lo = 34, hi = 50; const f = v => { const [lon, lat] = PLAN.toLL(u, v); return W.coastDistance(lon, lat); }; if (f(lo) <= 0 || f(hi) > 0) continue; for (let n = 0; n < 24; n++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; } const [lon, lat] = PLAN.toLL(u, (lo + hi) / 2); coast.push({ lon, lat, alt: 0.03 }); }

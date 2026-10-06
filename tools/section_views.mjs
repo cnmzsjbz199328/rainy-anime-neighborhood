@@ -18,6 +18,10 @@ export const SHOTS = [
   ['panorama-planet', { sphere: [0, -30], d: 300, fov: 36, light: 'panorama', ink: 'panorama', rain: false }],
   // other local weather: clear night on the ground
   ['ground-clear-night', { eye: [-1, 35.5, 1.6], look: [4, 44, 0.3], fov: 62, rain: false }],
+  // the T03 road from the town edge outward: asphalt street -> cracked lane -> dirt track, weeds creeping in
+  ['road-transition-ground', { eye: [0.9, 0.8, 1.8], look: [3, 16, 0.8], fov: 62 }],
+  ['road-transition-aerial', { eye: [8, 3, 9], look: [1.5, 14, 0], fov: 50 }],
+  ['road-transition-looking-back', { eye: [2.4, 15, 1.7], look: [1.0, 3, 1.6], fov: 62 }],
   // five junctions
   ['transition-town-paddies', { eye: [-1.5, 6, 1.7], look: [-1.5, -2, 2.0], fov: 62 }],
   ['transition-paddies-fallow-forest', { eye: [-4, 14, 2.5], look: [0, 24, 1.5], fov: 62 }],

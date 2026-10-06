@@ -123,7 +123,61 @@ function build(W, edgeId, opts = {}) {
   throw new Error('roadkit: no profile for ' + cls);
 }
 
-const ROADKIT = { build, sweep, PROFILES, DECK, COL, lin };
+// ---- transition chain (user review of W4): the three rural edges of T03 are swept as ONE strip whose cross-section changes gradually, so an asphalt
+// street turns into a cracked lane, then into a dirt track with weeds creeping in, instead of three profiles that meet at a hard joint.
+// Every profile is sampled on one common lateral grid; at each sample the two neighbouring road classes are blended with a smoothstep over
+// 2 x BLEND metres around their joint, and a wear value (0 at the town edge, 1 at the end) frays the paved edge and cracks the surface.
+const BLEND = 3.2;
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function evalProfile(prof, o) {          // lift and linear colour of a profile at lateral offset o (clamped at the ends)
+  const P = prof.pts; if (o <= P[0][0]) return { l: P[0][1], c: lin(COL[P[0][2]]) }; if (o >= P[P.length - 1][0]) return { l: P[P.length - 1][1], c: lin(COL[P[P.length - 1][2]]) };
+  let j = 0; while (P[j + 1][0] < o) j++;
+  const t = (o - P[j][0]) / (P[j + 1][0] - P[j][0]), ca = lin(COL[P[j][2]]), cb = lin(COL[P[j + 1][2]]);
+  return { l: P[j][1] + (P[j + 1][1] - P[j][1]) * t, c: ca.map((v, i) => v + (cb[i] - v) * t) };
+}
+function chain(W, ids) {
+  const NET = W.roadNetwork, edges = ids.map(id => NET.edges.find(e => e.id === id)), classes = edges.map(e => e.class);
+  const S = [], edgeOf = []; let off = 0; const joints = [];
+  edges.forEach((e, k) => { const P = NET.samplePath(e, 0.5); P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, s: p.s + off }); edgeOf.push(k); }); off += NET.edgeLength(e); if (k + 1 < edges.length) joints.push(off); });
+  const n = S.length, total = off, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
+  const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
+  const grid = [...new Set(classes.flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0]))].sort((a, b) => a - b), m = grid.length;
+  const pos = [], col = [], idx = [], paved = [], wearOf = [];
+  const profile = i => {                 // class k = u(k-1) - u(k), where u(k) steps 0 -> 1 over 2 x BLEND metres around joint k
+    const u = joints.map(jt => smooth(jt - BLEND, jt + BLEND, S[i].s)), w = classes.map((_, k) => (k === 0 ? 1 : u[k - 1]) - (k < joints.length ? u[k] : 0));
+    return w;
+  };
+  for (let i = 0; i < n; i++) {
+    const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], br = W.bearing(a, b), w = profile(i), wear = smooth(0, total * 0.85, S[i].s);
+    wearOf.push(wear);
+    const pl = w.reduce((s, v, k) => s + v * PROFILES[classes[k]].paved[0], 0), pr = w.reduce((s, v, k) => s + v * PROFILES[classes[k]].paved[1], 0);
+    paved.push([pl, pr]);
+    for (let j = 0; j < m; j++) {
+      const o = grid[j], q = o ? W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)) : S[i], k = F[i].k, h = W.height(q.lon, q.lat);
+      let lift = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalProfile(PROFILES[classes[kk]], o); lift += wk * e.l; c = c.map((v, ci) => v + wk * e.c[ci]); } });
+      // wear: the paved edge frays (a hashed mix toward gravel and weed) and the surface cracks more as the road gets older
+      const distEdge = Math.min(Math.abs(o - pl), Math.abs(o - pr)), inside = o > pl && o < pr;
+      const hz = hash(S[i].s * 2.1, o * 9.3), hz2 = hash(S[i].s * 0.7, o * 3.1);
+      if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const g = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((v, ci) => v + (g[ci] - v) * mixv); } }
+      if (inside && wear > 0.1) { const crack = hash(S[i].s * 3.3, o * 5.7); if (crack > 1 - 0.18 * wear) { const g = lin(COL.crack); c = c.map((v, ci) => v + (g[ci] - v) * 0.7); } c = c.map(v => v * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
+      pos.push(F[i].x + (-T[i][1]) * o * k, (h + lift - BASE) * k, F[i].z + T[i][0] * o * k); col.push(c[0], c[1], c[2]);
+    }
+  }
+  for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; idx.push(a, c, b, b, c, d); }
+  for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+  // weeds and tufts creep in along the paved edge: none at the town edge, more and more with wear (the RD04 / RD05 parts add their own in build())
+  const instances = {};
+  for (let st = 1.5; st < joints[0]; st += 0.7) {
+    const i = Math.round(st / 0.5), wear = wearOf[i]; if (hash(st, 41) > wear * 1.2) continue;
+    const side = hash(st, 43) < 0.5 ? -1 : 1, o = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47)), a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], q = W.destination(S[i], W.bearing(a, b) + (side > 0 ? 90 : -90), Math.abs(o));
+    const type = hash(st, 49) < 0.5 ? 'tuft' : 'weed'; (instances[type] = instances[type] || []).push({ type, lon: q.lon, lat: q.lat, alt: W.height(q.lon, q.lat), yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], lean: [0, 0], tint: [1, 1, 1] });
+  }
+  const lateral = (i, o) => { const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], br = W.bearing(a, b), q = W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat]; };
+  const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }) };
+  return { ids, classes, joints, samples: S, instances, strip: { name: 'T03 transition chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total };
+}
+
+const ROADKIT = { build, sweep, chain, PROFILES, DECK, COL, lin, BLEND };
 if (typeof module !== 'undefined' && module.exports) module.exports = ROADKIT;
 else global.ROADKIT = ROADKIT;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
