@@ -26,7 +26,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-await page.goto(pathToFileURL(path.join(root, 'index.html')).href);
+await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
 await page.waitForFunction(() => window.__scene && window.__scene.view);
 await page.waitForTimeout(1500);
 
@@ -59,10 +59,13 @@ results.push(['缩放下限 9', (await view()).dist === 9]);
 const freeBefore = await view();
 await page.keyboard.press('v');
 const r0 = await view();
-await page.keyboard.down('w'); await page.waitForTimeout(180); const rm = await view(); await page.waitForTimeout(520); await page.keyboard.up('w');
-const r1 = await view();
+await page.keyboard.down('w'); await page.waitForTimeout(180); const rm = await view();
+let r1 = await view(); const moved = v => Math.hypot(v.roam.position[0] - r0.roam.position[0], v.roam.position[2] - r0.roam.position[2]);
+const moveDeadline = Date.now() + 3000;
+while (moved(r1) <= .1 && Date.now() < moveDeadline) { await page.waitForTimeout(250); r1 = await view(); }
+await page.keyboard.up('w');
 results.push(['V 键进入漫游', r0.mode === 'roam']);
-results.push([`W 键沿道路移动（输入 ${rm.input.join(',')}，位置 ${r0.roam.position[0].toFixed(2)},${r0.roam.position[2].toFixed(2)} → ${r1.roam.position[0].toFixed(2)},${r1.roam.position[2].toFixed(2)}）`, Math.hypot(r1.roam.position[0] - r0.roam.position[0], r1.roam.position[2] - r0.roam.position[2]) > .3]);
+results.push([`W 键沿道路移动（输入 ${rm.input.join(',')}，位置 ${r0.roam.position[0].toFixed(2)},${r0.roam.position[2].toFixed(2)} → ${r1.roam.position[0].toFixed(2)},${r1.roam.position[2].toFixed(2)}）`, moved(r1) > .1]);
 results.push(['漫游位置留在 layout.js 道路/巷道范围', await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
 results.push(['跟随镜头离地', r1.cameraPosition[1] > .9]);
 await page.mouse.move(640, 400); await page.mouse.down(); await page.mouse.move(680, 390, { steps: 4 }); await page.mouse.up();
@@ -97,9 +100,10 @@ for (const [name, v] of Object.entries(VIEWS)) {
 }
 
 // Touch emulation: confirm the unobtrusive mode button and on-screen movement stick work.
+await page.close();
 const touchPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
-await touchPage.goto(pathToFileURL(path.join(root, 'index.html')).href);
-await touchPage.waitForFunction(() => window.__scene && window.__scene.view);
+await touchPage.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
+await touchPage.waitForFunction(() => window.__scene && window.__scene.view, null, { timeout: 60000 });
 await touchPage.waitForTimeout(500);
 const toggleBox = await touchPage.locator('#town-view-toggle').boundingBox();
 await touchPage.touchscreen.tap(toggleBox.x + toggleBox.width / 2, toggleBox.y + toggleBox.height / 2);

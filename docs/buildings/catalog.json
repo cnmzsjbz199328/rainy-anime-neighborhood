@@ -1429,10 +1429,10 @@
   },
   {
     "id": "B05-P02",
-    "name": "现有拉面店样板",
+    "name": "雨音らーめん",
     "archetype": "ramen",
     "phase": 0,
-    "status": "existing-review-only",
+    "status": "implemented",
     "plotType": "shop",
     "front": "N",
     "frontages": [
@@ -1464,11 +1464,11 @@
     ],
     "maxHeight": 9,
     "floors": 1,
-    "dimensions": "已有样板主体约3.62×5.4；保持既有变换与尺度",
+    "dimensions": "实测主体（含檐口）约7.06×6.34；门原点放在(-23.5,23.96)，rotY π，尺度1",
     "style": "暖木、米灰抹墙、暗红暖帘、琥珀灯笼、灰瓦小屋顶",
     "exterior": "店名灯箱、门帘、菜单柜、花盆、后厨排气、空调、雨水管",
     "interior": "L形吧台、圆凳、拉面碗、汤锅、煮面灶、抽油烟罩、冰箱、碗架、水槽、后勤门",
-    "structure": "吧台与操作区分离；参考图仅指导后续样板升级，不自动重建",
+    "structure": "单层切妻瓦顶；顾客区与后厨以带门帘隔墙分开，门窗为真实墙洞",
     "animation": "微弱蒸汽、灯笼柔亮、门帘轻摆、檐水",
     "variantEnglish": "",
     "reference": "references/B05-P02.jpg",
@@ -1484,7 +1484,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "existing-review-only",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
