@@ -39,7 +39,7 @@
 | W6d | 地貌 d：草原、沙漠与过渡 | BI03 草原、BI04 沙漠、TR07 沙漠—草原 | W4 确认 | 完成 | 2026-10-07 · 提交 `1836faf`（同上）；截图 `docs/world/w6d/`；结果见 [PROGRESS](PROGRESS.md) 的「W6d」 |
 | W6e | 地貌 e：冰、熔岩、山地与雪线 | BI07 冰原、BI08 熔岩原、BI09 丘陵与高山、TR05 雪线、TR06 熔岩—植被 | W4 确认 | 完成 | 2026-10-07 · 提交 `1836faf`（同上）；截图 `docs/world/w6e/`；结果见 [PROGRESS](PROGRESS.md) 的「W6e」 |
 | W7 | 地标逐个实施 | LM01–LM10，每轮一个（规格 [W7_SPEC](docs/world/W7_SPEC.md)，逐地标表；建议顺序见起始词） | W5、W6 | 进行中 | 拆成下面 10 行（每轮一个地标） |
-| W7-LM01 | 地标 雨见岳 | `landmarks/LM01.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6e | 待办 | |
+| W7-LM01 | 地标 雨见岳 | `landmarks/LM01.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6e | 完成 | 2026-10-07 · 提交 `ff203a1`（分支 `world/W7-LM01` 已合并 main，未推送）；基线标签 `pre-w7-lm01`；截图 `docs/world/landmarks/LM01/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM01」 |
 | W7-LM02 | 地标 湯けむり温泉村 | `landmarks/LM02.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6b、W6e | 待办 | |
 | W7-LM04 | 地标 森中废神社 | `landmarks/LM04.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6c | 待办 | |
 | W7-LM09 | 地标 乡间无人站 | `landmarks/LM09.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6b | 待办 | |
