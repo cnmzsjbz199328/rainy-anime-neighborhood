@@ -80,6 +80,7 @@
 | P5 逐栋建筑 · B01-P01 あめまち小学校 | 已完成（真机待验证） | 第三十五栋，阶段 7 唯一的地块（整块 40 × 25，朝 S、S/E 临街）：三层教学翼（28 × 7.2；南侧教室、北侧走廊、东端双跑楼梯间，米白抹灰、鼠尾草绿窗框、砖红立边咬合金属侧山墙屋顶），西侧一层低翼（社区活动室，自带山墙屋顶），两翼之间的院落操场（土操场、场线、球门、旗杆）、自行车棚、校门（步行门开着、东墙车辆口）、围墙、树、北侧设备间与空调水箱、东侧垃圾房；每层教室有黑板课桌椅储物柜，一层有办公室、图书角、门厅鞋柜、厕所；教室灯分区常亮、檐水、窗雨痕、树与旗摆动；**35 个预留地块全部建成** |
 | W0 星球规划与参考包 | 已完成（39/39 参考图已生成并审查） | WORLD_PLAN.md、docs/world/（统一规格、39 张设计卡、生图提示词、check_kit）；与逐栋建筑并行，代码未改动 |
 | W1 星球布局数据与勘探 | 已交付，待用户确认冻结 | `world.js`、`tools/world_check.mjs`（WC1–WC11 全部通过）、`tools/world_survey.mjs`、勘探图 7 张与两份报告（`docs/world/survey/`）、冻结清单 `docs/world/WORLD_LAYOUT_V1.md`；未改 scene.js、layout.js、build.py、index.html、buildings/ |
+| W2 弯曲渲染 | 已完成（真机待验证） | `bend.js`（顶点着色器弯曲、法线旋转、点光源同步、包围球剔除）、`tools/regress.mjs`、`tools/bend_check.mjs`、`tools/bend_shots.mjs`、`docs/world/w2/` 11 张截图；`uBend = 0` 与 `pre-w2` 逐位相同 |
 
 版本控制：直接在 main 上开发，在关键节点（每个阶段完成、每栋新建筑接入）提交一次清晰的 commit。推送 main 会触发 Cloudflare 自动部署，所以只推送检查全部通过的版本。P1–P4 的提交历史已保留在 main 上。
 
@@ -1743,3 +1744,18 @@
 - 预算：默认视角绘制调用在 `uBend = 0` 时必须与基线完全相同；`uBend = 1` 关闭剔除导致的上升要计入，超过 10% 视为阻塞（ROADMAP 第 4 节第 6 条）。
 - 风险与停止条件：`uBend = 0` 无法零差异且原因不是工具；需要改 `layout.js` 或建筑模块的几何/材质创建；关闭剔除后超预算。
 - 裁决：规格写法是改写 `project_vertex` 与 `beginnormal_vertex`；法线的旋转发生在世界空间，而 `transformedNormal` 已在视图空间，所以法线的钩子放在 `defaultnormal_vertex` 之后（先转回世界空间旋转再转回视图空间），数学与规格第 3 节相同。精灵（`SpriteMaterial`，B03-P04 的蒸汽）规格未列但会漂离建筑，一并处理。
+
+## W2 弯曲渲染（2026-10-06，分支 world/W2 已合并 main，未推送）
+
+- 提交：`0ca1f32`（阶段细化）、`e6c8671`（实现）；基线标签 `pre-w2` = `68117a6`。
+- 输出：`bend.js`（`build.py` 嵌入列表中在 `three.min.js` 之后、`layout.js` 之前）；`scene.js` 只加两处挂钩（`BEND.attach(scene)` 与 `window.__scene.bend`）；`tools/regress.mjs`、`tools/bend_check.mjs`、`tools/bend_shots.mjs`；`docs/world/w2/`（`bend1-corner-nw/ne/se/sw.png`、`bend1-intersection.png`、`bend1-building-front.png`、`bend1-wires.png`、`bend1-street-walk-rain.png`、`bend025/050/075-oblique.png`）。
+- 做法：覆盖 `THREE.Material.prototype.onBeforeCompile`（所有材质共用一个程序缓存键，22 个着色器程序），在 `project_vertex` 里把 `modelView` 一步拆成「`modelMatrix` → 弯曲 → `viewMatrix`」，`uBend = 0` 走原来的 `modelViewMatrix` 表达式（精确恒等）；法线在 `defaultnormal_vertex` 之后回到世界空间用（东、上、南）基底旋转，再回视图空间；`SpriteMaterial`（蒸汽）一并弯曲；共享的全局 uniform 对象，一处赋值全场生效。点光源在 CPU 上覆盖 `updateMatrixWorld`，位置取父链世界位置再映射（重复调用不会弯两次）。无射线拾取（`Raycaster` 检索为空），不适用。
+- **WC12**：`node tools/regress.mjs --self`（同一构建两次）与 `node tools/regress.mjs --baseline-ref pre-w2` 都是 8/8 个视角（默认、far、storeCorner、intersection、top、roamStreet、cafeFront、cafeInterior 剖视）最大通道差 0、超差像素 0；绘制调用与三角形与基线完全相同（默认视角 2361 / 237,479）。工具固定了 `Math.random`、`requestAnimationFrame` 时间戳和 `performance.now`，截图取自 WebGL 画布，不存基线图。
+- 其他检查：`python3 build.py`；`measure_samples`（与登记一致，页面无错误）；`layout_check --png`（C1–C12 通过，`docs/layout/` 输出无变化）；`frozen_diff pre-w2`（与基线一致）；`docs/buildings/check_kit.mjs` 通过；`tools/views.mjs` 22/23 通过，唯一失败「漫游 D/→ 向屏幕右侧移动，A 向左」在 `pre-w2` 基线上同样失败，与 W2 无关（C1 相机修复遗留，已入待办池）；无页面错误。
+- `node tools/bend_check.mjs`（全部通过）：点光源 4 盏，`uBend` 0.25/0.5/0.75/1 及重复渲染与解析公式的最大误差 0（双精度逐位相同，要求 < 1e-4），回到 0 后位置逐位还原；GPU 顶点位置与解析点投影一致（≤ 0.86 px，要求 ≤ 1.5 px）；`MeshNormalMaterial` 法线颜色误差 ≤ 0.55/255（要求 ≤ 3）。
+- **剔除与成本（偏离规格并记录）**：规格写的是 `uBend > 0` 时关闭 `frustumCulled`。实测这样做会让默认视角绘制调用 2361 → 10387（+340%），特写视角 +750%，超过 ROADMAP 的 10% 预算，按规格第 8 节本应停下。改为**弯曲包围球剔除**：覆盖 `Frustum.intersectsObject/intersectsSprite`，把世界空间包围球的球心映射、半径按映射的最大局部拉伸（`1 + u·y/R`，数值核对 y ≤ 40 m 时雅可比最大奇异值 1.11–1.42）放大。结果：起始视角 2361 → 2593（**+9.8%**，预算 10%，余量很小）、far −2.0%、intersection +5.0%、storeCorner +9.8%；与关闭剔除的画面逐位相同（uBend 1 与 0.5 各 4 个视角）。关闭剔除模式仍保留为 `BEND.setCullMode('off')`，用于比较。渲染提交耗时（SwiftShader，仅供对比）起始视角 18.3 → 20.3 ms（+11%），关闭剔除 56.5 ms；真机待验证。
+- 截图逐张查看，按视觉缺陷清单检查：`uBend = 1` 四个角、路口、咖啡店正面、电线、街景（雨）与 0.25/0.5/0.75 三档，无接缝裂开、无法线反向的暗面、无新的 z-fighting、墨线与几何一致（线宽未变）、灯光随建筑、文字未镜像、雨与电线随之弯曲、控制台无错误。发现并记录：相机仍以世界 +Y 为上，所以边缘画面是倾斜的（咖啡店处约 20°，且整体下沉约 8.5 m，截图工具用 `BEND.point` 映射相机目标）；这是 W8 相机要处理的，不是弯曲的缺陷。`uBend = 1` 下深度（far = 400）无闪烁。
+- 范围：没有改 `layout.js`、建筑模块、相机控制；没有用户可见的控制，只有测试钩子；月光仍在城镇系固定（W8）。
+- 待办池新增 5 条（views.mjs 漫游 A/D 检查、W8 相机上方向、默认视角弯曲后 +9.8% 的余量、真机帧时间、`worldpos_vertex` 未弯曲）。
+- 真机项：iPad/手机/带 GPU 桌面的帧率与触屏手感仍待验证。
+- 下一步：W 轨道下一阶段仍受 W1 确认挡住（WS 前置 W1 确认，W3 前置 W2、WS）。用户确认 W1 后：`/goal 确认 W1，读取 docs/world/WORLD_AGENT_START.md 并执行下一阶段`（WS）。
