@@ -163,6 +163,12 @@ function make(THREE) {
   T('steelStep', b => b.add(box, PAL.metal, { p: [0, 0, 0], s: [0.26, 0.05, 0.8] }).add(box, PAL.concreteD, { p: [0, -0.04, 0], s: [0.22, 0.03, 0.78] }));
   T('steelPlate', b => b.add(box, PAL.metal, { p: [0, 0, 0], s: [1, 0.06, 1] }).add(box, PAL.concreteD, { p: [0, -0.05, 0], s: [0.96, 0.04, 0.96] }));
   T('steelPost', b => b.add(box, PAL.concreteD, { p: [0, 0.45, 0], s: [0.04, 0.9, 0.04] }));
+  T('rockPillar', b => { const cols = [PAL.rockD, PAL.rock, '#8a7e78', PAL.rockD, '#96887c', PAL.rock]; let y = 0; cols.forEach((c, i) => { const h = 0.16 + 0.04 * (i % 2), w = 0.7 - i * 0.06 + (i % 2) * 0.1; b.add(box, c, { p: [0.02 * i, y + h / 2, -0.015 * i], s: [w, h, w * 0.85], noise: 0.06 }); y += h; }); return b.add(dod(0.3), PAL.rock, { p: [0, y + 0.1, 0], s: [1.0, 0.5, 0.9], top: PAL.rockD }); });
+  T('dryShrub', b => { for (let i = 0; i < 7; i++) { const a = i * 0.9; b.add(blade(0.1, 0.55 + 0.2 * (i % 3)), '#8a7a55', { r: [0.5, a, 0], top: '#6a5c44' }); } return b.add(ico(0.18, 0), '#7a6a4c', { p: [0, 0.14, 0], s: [1.2, 0.5, 1.2] }); });
+  T('iceBlock', b => b.add(ico(0.7, 0), '#cfe4f2', { p: [0, 0.4, 0], s: [1.0, 0.7, 0.9], top: '#e8f2fa', noise: 0.05 }).add(ico(0.4, 0), '#b9d4e6', { p: [0.6, 0.2, 0.2], s: [1, 0.7, 1] }));
+  T('ventCone', b => b.add(cone(0.45, 0.55, 7), '#8a8570', { p: [0, 0, 0], top: '#b8b080', noise: 0.08 }).add(new THREE.CylinderGeometry(0.28, 0.32, 0.04, 8), '#d6cf8a', { p: [0, 0.5, 0] }).add(new THREE.CylinderGeometry(0.7, 0.7, 0.02, 9), '#a89f6a', { p: [0, 0.01, 0], s: [1.4, 1, 1.4] }));
+  T('lichenPatch', b => b.add(new THREE.CylinderGeometry(0.55, 0.55, 0.03, 7), '#6f8a70', { p: [0, 0.015, 0], s: [1.0, 1, 0.8], noise: 0.12 }).add(ico(0.12, 0), '#8aa088', { p: [0.2, 0.06, 0.1] }));
+  T('tubeHole', b => b.add(new THREE.CylinderGeometry(1.5, 1.5, 0.05, 12), '#07090d', { p: [0, 0.03, 0] }).add(tor(1.5, 0.28), '#3a3436', { p: [0, 0.12, 0], r: [Math.PI / 2, 0, 0], s: [1, 1, 1], noise: 0.12 }));
   T('busBench', b => b.add(box, PAL.woodL, { p: [0, 0.45, 0], s: [1.5, 0.08, 0.4] }).add(box, PAL.woodD, { p: [-0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }).add(box, PAL.woodD, { p: [0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }));
 
   return { geometries: G, palette: PAL, builder, hash3 };

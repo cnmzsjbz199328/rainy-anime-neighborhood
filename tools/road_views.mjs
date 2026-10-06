@@ -90,7 +90,7 @@ export const SHOTS = [
 export async function renderShot(page, v, opts = {}) {
   return await page.evaluate(([v, opts]) => {
     const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, B = S.bend, cam = S.camera, SEC = S.section, RD = S.roads;
-    B.set(1); SEC.setMode(true); SEC.ensure(); RD.ensure();
+    B.set(1); SEC.setMode(true); SEC.ensure(); RD.ensure(); S.landmarks.build(); const OC = S.ocean; if (OC) OC.ensure(); const LC = S.cover; if (LC) LC.ensure();
     SEC.set({ rain: v.rain !== false, light: v.light || 'rainy', ink: v.ink || 'auto' });
     const fog0 = S.scene.fog.density, DATA = RD.data();
     const flat = (lon, lat) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];
@@ -98,7 +98,40 @@ export async function renderShot(page, v, opts = {}) {
     // resolve a reference to { lon, lat, alt }: along a route or bridge by distance s (extended past the ends along the end tangent), lateral offset o to the right
     const resolve = ref => {
       if (ref.chain) { const CH = SEC.state.chain, Sm = CH.samples; let i = 0, s = Math.max(0, Math.min(CH.length, ref.s)); while (i + 2 < Sm.length && Sm[i + 1].s < s) i++; const t = (s - Sm[i].s) / Math.max(1e-6, Sm[i + 1].s - Sm[i].s), W = window.WORLD, brg = W.bearing(Sm[i], Sm[i + 1]); let p = { lon: Sm[i].lon + (Sm[i + 1].lon - Sm[i].lon) * t, lat: Sm[i].lat + (Sm[i + 1].lat - Sm[i].lat) * t }; if (ref.o) p = W.destination(p, brg + (ref.o > 0 ? 90 : -90), Math.abs(ref.o)); return { lon: p.lon, lat: p.lat, alt: Sm[i].h + 0.03 + (ref.dy || 0) }; }
-      if (ref.lon !== undefined) return { lon: ref.lon, lat: ref.lat, alt: (ref.surface ? window.WORLD.height(ref.lon, ref.lat) : window.WORLD.height(ref.lon, ref.lat)) + (ref.dy || 0) };
+      if (ref.lm) {                            // a point in a landmark's local frame: { lm: 'LM01', x, y, z } (origin = anchor, +Z towards the first entrance, +X to the left of +Z, y above the anchor altitude)
+        const W = window.WORLD, lm = W.landmarks.find(q => q.id === ref.lm), info = S.landmarks.info[ref.lm], x = ref.x || 0, z = ref.z || 0;
+        const d = Math.hypot(x, z), brg = info.heading + (d < 1e-9 ? 0 : Math.atan2(-x, z) / D); const p = d < 1e-9 ? { lon: lm.lon, lat: lm.lat } : W.destination({ lon: lm.lon, lat: lm.lat }, brg, d);
+        return { lon: p.lon, lat: p.lat, alt: info.height + (ref.y || 0) };
+      }
+      if (ref.cover) {                         // a point in the fields: { cover: { kind: 'water' | 'dry' | 'fallow' | 'terrace' | 'edge', at }, de, dn (metres east / north), dy }
+        const W = window.WORLD, LD = window.LANDCOVER_API.data(); let p;
+        const pickItem = (types, pred) => { const list = LD.items.filter(i => types.includes(i.type) && (!pred || pred(i))); if (!list.length) throw new Error('no item ' + types); return list[Math.floor(list.length * ref.cover.at)]; };
+        if (ref.cover.kind === 'lava') p = W.regions.find(q => q.kind === 'lava').shape.center ? { lon: W.regions.find(q => q.kind === 'lava').shape.center[0], lat: W.regions.find(q => q.kind === 'lava').shape.center[1] } : null;
+        else if (ref.cover.kind === 'ice') p = { lon: ref.cover.lon ?? 40, lat: ref.cover.lat ?? 80 };
+        else if (ref.cover.kind === 'icecliff') { const e = W.regions.find(q => q.id === 'ice-north').shape.edge, lo = ref.cover.lon ?? 100; p = { lon: lo, lat: e(lo) + 1.0 / (R * D) }; }
+        else if (ref.cover.kind === 'peak') { const mp = W.heightField.features.find(q => q.id === (ref.cover.id || 'ameni-dake')); p = W.destination({ lon: mp.lon, lat: mp.lat }, ref.cover.bearing ?? 200, ref.cover.dist ?? 18); }
+        else if (ref.cover.kind === 'grass') { const it = pickItem(['tuft'], i => W.regionAt(i.lon, i.lat).kind === 'grassland' && W.regionAt(i.lon, i.lat).id === 'default-grassland' && W.townPatchDistance(i.lon, i.lat) > 20 && Math.abs(i.lat) < 60 && W.height(i.lon, i.lat) < 4); p = { lon: it.lon, lat: it.lat }; }
+        else if (ref.cover.kind === 'desert') { const it = pickItem(['dryShrub'], i => true); p = { lon: it.lon, lat: it.lat }; }
+        else if (ref.cover.kind === 'desertedge') { const it = pickItem(['weed'], i => W.regionAt(i.lon, i.lat).kind === 'grassland' && W.regionAt(i.lon, i.lat).id === 'default-grassland' && i.lon < -100 && i.lon > -150 && i.lat < -10 && i.lat > -66); p = { lon: it.lon, lat: it.lat }; }
+        else if (ref.cover.kind === 'pillar') { const it = pickItem(['rockPillar'], i => true); p = { lon: it.lon, lat: it.lat }; }
+        else if (ref.cover.kind === 'forest') { const it = pickItem(['cedar', 'treeRound'], i => W.regionAt(i.lon, i.lat).id === (ref.cover.region || 'forest-east')); p = { lon: it.lon, lat: it.lat }; }
+        else if (ref.cover.kind === 'forestedge') { const it = pickItem(['treeRound'], i => i.s[0] < 0.8 && i.s[0] > 0.4 && W.regionAt(i.lon, i.lat).id === (ref.cover.region || 'forest-east')); p = { lon: it.lon, lat: it.lat }; }
+        else if (ref.cover.kind === 'terrace') p = { lon: -4, lat: 50 }; else if (ref.cover.kind === 'edge') p = W.townToLonLat(48 + 2, ref.cover.at * 40 - 20); else { const list = LD.cells.filter(c => c.kind === ref.cover.kind && c.area > 18 && c.group === 'farm' && W.townPatchDistance(c.seed.lon, c.seed.lat) > 6 && W.townPatchDistance(c.seed.lon, c.seed.lat) < 30); if (!list.length) throw new Error('no ' + ref.cover.kind + ' cell'); const c = list[Math.floor(list.length * ref.cover.at)]; p = { lon: c.seed.lon, lat: c.seed.lat }; }
+        if (ref.de) p = W.destination(p, ref.de > 0 ? 90 : 270, Math.abs(ref.de)); if (ref.dn) p = W.destination(p, ref.dn > 0 ? 0 : 180, Math.abs(ref.dn));
+        return { lon: p.lon, lat: p.lat, alt: Math.max(0, W.height(p.lon, p.lat)) + (ref.dy || 0) };
+      }
+      if (ref.coast) {                       // a point on the coast: { coast: { kind: 'beach' | 'rocky' | 'wall', at: 0..1 }, t: metres along, o: metres seaward (+) or inland (-), dy }
+        const W = window.WORLD, OD = window.OCEAN_API.data(); let m;
+        if (ref.coast.kind === 'wall') { const list = OD.instances.filter(q => q.type === 'wallBlock'); const q = list[Math.floor(list.length * ref.coast.at)]; m = OD.mids.reduce((b, c) => { const d = Math.hypot(c.lon - q.lon, c.lat - q.lat); return d < b.d ? { d, c } : b; }, { d: 9, c: null }).c; }
+        else { const rs = [...DATA.routes.flatMap(r => r.samples.filter((_, i) => i % 4 === 0)), ...DATA.bridges.flatMap(b => b.samples.filter((_, i) => i % 4 === 0)), ...DATA.stairs.flatMap(s => s.samples.filter((_, i) => i % 4 === 0))];
+          const farFromRoads = c => rs.every(p => Math.abs(p.lat - c.lat) * R * D > 30 || W.arcDistance(p, c) > 30);
+          const list = OD.mids.filter(c => c.len > 0.8 && farFromRoads(c) && (ref.coast.kind === 'beach' ? W.regionAt(c.lon, c.lat).zone === 'building' : W.regionAt(c.lon, c.lat).zone === 'wild' && W.regionAt(c.lon, c.lat).kind !== 'ice-north' && W.regionAt(c.lon, c.lat).id !== 'island-lm08')); if (!list.length) throw new Error('no coast point for ' + ref.coast.kind); m = list[Math.floor(list.length * ref.coast.at)]; }
+        const tb = Math.atan2(m.tx, -m.tz) / D; let p = ref.t ? W.destination(m, tb, ref.t) : m;
+        const a = W.destination(p, tb + 90, 2), b = W.destination(p, tb - 90, 2), seaB = W.height(a.lon, a.lat) < W.height(b.lon, b.lat) ? tb + 90 : tb - 90;
+        if (ref.o) p = W.destination(p, ref.o > 0 ? seaB : seaB + 180, Math.abs(ref.o));
+        return { lon: p.lon, lat: p.lat, alt: Math.max(0, W.height(p.lon, p.lat)) + (ref.dy || 0) };
+      }
+      if (ref.lon !== undefined) return { lon: ref.lon, lat: ref.lat, alt: (ref.sea ? Math.max(0, window.WORLD.height(ref.lon, ref.lat)) : window.WORLD.height(ref.lon, ref.lat)) + (ref.dy || 0) };
       if (ref.pier !== undefined) ref = { ...ref, s: DATA.bridges.find(b => b.def.id === ref.bridge).piers[ref.pier].s };
       const item = ref.stairs ? DATA.stairs.find(q => q.id === ref.stairs) : ref.route ? DATA.routes.find(r => r.def.id === ref.route) : DATA.bridges.find(b => b.def.id === ref.bridge), Sm = item.samples, alt = ref.stairs ? item.profile : ref.route ? (item.bed || item.samples.map((p, i) => item.surface(i, 0))) : item.alt;
       const L = Sm[Sm.length - 1].s; let s = Math.max(0, Math.min(L, ref.s)), i = 0; while (i + 2 < Sm.length && Sm[i + 1].s < s) i++;
@@ -113,20 +146,30 @@ export async function renderShot(page, v, opts = {}) {
     const place = ref => { const r = resolve(ref), [x, z] = flat(r.lon, r.lat), k = 1 / Math.cos(r.lat * D); return { x, z, p: B.point(x, (r.alt - 1.6) * k, z, 1), b: basis(x, z), r }; };
     if (v.eye && !opts.noStep) { const e0 = place({ ...v.eye, dy: 0 }); S.view.set({ mode: 'section', target: [e0.x, 0.8, e0.z] }); window.__step(3); }
     cam.near = 0.1; cam.far = 700;
-    if (v.sphere) {
+    if (v.glintAt) {                          // the camera placed so that the moon's mirror image falls on the planet at [lon, lat]
+      const [lon, lat] = v.glintAt, cp = Math.cos(lat * D), n = new T.Vector3(cp * Math.sin(lon * D), cp * Math.cos(lon * D), -Math.sin(lat * D)), L = S.ocean.uniforms.uMoon.value.clone().normalize(), Vd = n.clone().multiplyScalar(2 * n.dot(L)).sub(L).normalize();
+      const north = new T.Vector3(-Math.sin(lat * D) * Math.sin(lon * D), -Math.sin(lat * D) * Math.cos(lon * D), -cp), c = new T.Vector3(0, -R, 0);
+      cam.position.copy(c).addScaledVector(Vd, v.d); cam.up.copy(new T.Vector3(0, 1, 0)); cam.lookAt(c);
+    } else if (v.sphere) {
       const [lon, lat] = v.sphere, cp = Math.cos(lat * D), dir = new T.Vector3(cp * Math.sin(lon * D), cp * Math.cos(lon * D), -Math.sin(lat * D));
       const north = new T.Vector3(-Math.sin(lat * D) * Math.sin(lon * D), -Math.sin(lat * D) * Math.cos(lon * D), -cp), c = new T.Vector3(0, -R, 0);
       cam.position.copy(c).addScaledVector(dir, v.d); cam.up.copy(north); cam.lookAt(c);
     } else {
       const e = place(v.eye), l = place(v.look);
-      cam.position.set(...e.p); cam.up.copy(e.b.up); cam.lookAt(new T.Vector3(...l.p));
+      cam.position.set(...e.p); cam.up.copy(e.b.up);
+      if (v.upLocal) { const o = place({ lm: v.eye.lm, x: 0, y: 0, z: 0 }), q = place({ lm: v.eye.lm, x: v.upLocal[0], y: v.upLocal[1], z: v.upLocal[2] }); cam.up.set(q.p[0] - o.p[0], q.p[1] - o.p[1], q.p[2] - o.p[2]).normalize(); }
+      cam.lookAt(new T.Vector3(...l.p));
     }
     cam.fov = v.fov || 36; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     S.scene.fog.density = ['panorama', 'neutral'].includes(v.light) ? 0 : fog0;
     if (v.band) RD.setLightBand({ distance: 300 }); else RD.setLightBand({ auto: true });
-    const t = opts.t ?? 1.2; SEC.tick(t, cam); RD.tick(t, cam); SEC.tick(t, cam); RD.tick(t, cam); SEC.forceLod(cam);
+    const t = opts.t ?? 1.2; SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && LC.tick(t, cam); SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && (LC.tick(t, cam), LC.reload(cam)); SEC.forceLod(cam);
+    const hiddenCut = []; if (v.lmCut) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) g.traverse(o => { if (o.userData && v.lmCut.includes(o.userData.layer) && o.visible) { o.visible = false; hiddenCut.push(o); } });
+    if (opts.noOcean && OC) OC.state.root.visible = false; if (opts.noCover && LC) LC.state.root.visible = false; if (opts.noRoads) RD.state.root.visible = false;     // cost measurement with the same camera
     const t0 = Date.now(); S.renderer.render(S.scene, cam); S.renderer.getContext().finish(); const ms = Date.now() - t0;
     const url = S.renderer.domElement.toDataURL('image/png'), info = { calls: S.renderer.info.render.calls, triangles: S.renderer.info.render.triangles, ms };
+    for (const o of hiddenCut) o.visible = true;
+    if (opts.noOcean && OC) OC.state.root.visible = true; if (opts.noCover && LC) LC.state.root.visible = true; if (opts.noRoads) RD.state.root.visible = true;
     cam.fov = 36; cam.near = 0.25; cam.far = 400; cam.up.set(0, 1, 0); cam.updateProjectionMatrix(); S.scene.fog.density = fog0; SEC.set({ light: 'rainy', ink: 'auto' });
     return { url, info, ink: SEC.get().ink };
   }, [v, opts]);
