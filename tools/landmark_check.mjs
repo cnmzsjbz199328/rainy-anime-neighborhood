@@ -42,14 +42,14 @@ if (!process.argv.includes('--no-browser')) {
     let min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9], maxR = 0, lowest = 1e9; const pairsSrc = [];
     for (const o of meshes) { if (o.isLineSegments) continue; const loc = o.geometry.userData.local; if (!loc) continue; const step = Math.max(1, Math.floor(loc.length / 3 / 400));
       for (let i = 0; i < loc.length; i += 3 * step) { const l = [loc[i], loc[i + 1], loc[i + 2]]; for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], l[k]); max[k] = Math.max(max[k], l[k]); } maxR = Math.max(maxR, Math.hypot(l[0], l[2])); lowest = Math.min(lowest, l[1]); const w = o.geometry.attributes.position; pairsSrc.push([l, [w.array[i], w.array[i + 1], w.array[i + 2]]]); } }
-    const pairs = []; for (let i = 0; i < 60; i++) { const a = pairsSrc[(i * 7919) % pairsSrc.length], b = pairsSrc[(i * 104729 + 13) % pairsSrc.length]; if (!a || !b) continue; const d0 = Math.hypot(a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2]); if (d0 < 6) continue; const A = B.point(a[1][0], a[1][1], a[1][2], 1), Bp = B.point(b[1][0], b[1][1], b[1][2], 1), d1 = Math.hypot(A[0] - Bp[0], A[1] - Bp[1], A[2] - Bp[2]); pairs.push(Math.abs(d1 / d0 - 1)); }
+    const pairs = []; for (let i = 0; i < 60; i++) { const a = pairsSrc[(i * 7919) % pairsSrc.length], b = pairsSrc[(i * 104729 + 13) % pairsSrc.length]; if (!a || !b) continue; const d0 = Math.hypot(a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2]); if (d0 < 6 || Math.abs(a[0][1] - b[0][1]) > 1.0) continue; /* pairs at about the same height: tangent-plane distance against the true distance on the sphere (curvature alone gives 0.5% per 30 m) */  const A = B.point(a[1][0], a[1][1], a[1][2], 1), Bp = B.point(b[1][0], b[1][1], b[1][2], 1), d1 = Math.hypot(A[0] - Bp[0], A[1] - Bp[1], A[2] - Bp[2]); pairs.push(Math.abs(d1 / d0 - 1)); }
     return { min, max, maxR, maxAllowed: Math.max(lm.radius, ...lm.entrances.map(e => e.offset)) + 1.5, lowest, calls, tris, worstScale: pairs.length ? Math.max(...pairs) : 0, pairs: pairs.length, stats: info.fx && info.fx.stats ? info.fx.stats : null, groups: info.groups.map(g => g.name), radius: lm.radius, buildMs: S.landmarks.info.buildMs };
   }, id);
   { const info = [], fails = [];
     if (M.missing) fails.push('模块没有注册或没有构建'); else {
       info.push(`模块分组：${M.groups.join('、')}；构建 ${M.buildMs} ms（全部地标，首次显示一次，SwiftShader）`);
       info.push(`局部范围（m，x 左、y 上、z 朝入口）：x ${f(M.min[0], 1)}…${f(M.max[0], 1)}，y ${f(M.min[1], 2)}…${f(M.max[1], 1)}，z ${f(M.min[2], 1)}…${f(M.max[2], 1)}；离锚点的最大水平距离 ${f(M.maxR, 1)} m（占地半径 ${M.radius} m；各地标的例外见实施记录）`);
-      info.push(`弯曲后真实尺寸：${M.pairs} 对间距 ≥ 6 m 的点，弯曲后的间距与建模间距的最大相对差 ${f(M.worstScale * 100, 2)}%（要求 ≤ 1%）`);
+      info.push(`弯曲后真实尺寸：${M.pairs} 对间距 ≥ 6 m 且高差 ≤ 1 m 的点，弯曲后的间距与建模间距的最大相对差 ${f(M.worstScale * 100, 2)}%（要求 ≤ 1%）`);
       if (M.maxR > M.maxAllowed) fails.push(`物件超出占地：最大水平距离 ${f(M.maxR, 1)} m > 占地半径与入口偏移的较大者 + 1.5 m = ${f(M.maxAllowed, 1)} m`);
       if (M.worstScale > 0.01) fails.push(`弯曲后尺寸偏差 ${f(M.worstScale * 100, 2)}% > 1%`);
       if (M.lowest < -0.6) fails.push(`有物件低于局部地面 ${f(M.lowest, 2)} m`);

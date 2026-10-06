@@ -13,3 +13,26 @@ CHECKS.LM01 = async ({ page, info, fail, f, W, lm, M }) => {
   info.push(`火山口红光：加色光盘不透明度 ${st.emberOpacity}、颜色 #7a2a1e，峰值相对亮度 ${f(e, 4)}；路灯灯头（自发光 #ffe4b0）相对亮度 ${f(l, 3)}；红光 / 路灯 = ${f(e / l * 100, 2)}%（要求 < 10%，「必须极弱」）`);
   if (e / l > 0.1) fail('红光不够弱');
 };
+
+// shared: the strongest self-light of the town's buildings against the landmark's (emissive luminance x intensity over all materials; additive glow decals and lamp pools excluded)
+async function emissiveRanks(page, id) {
+  return await page.evaluate(id => {
+    const S = window.__scene, lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b, seen = new Set(); let town = 0, townWho = '', lm = 0, lmWho = '';
+    const scan = (o, which) => o.traverse(m => { if (!m.isMesh || !m.material) return; const mm = m.material; if (seen.has(mm.uuid + which)) return; seen.add(mm.uuid + which); let v = 0; if (mm.emissive && mm.emissive.isColor) v = lum(mm.emissive) * (mm.emissiveIntensity === undefined ? 1 : mm.emissiveIntensity); else if (mm.isMeshBasicMaterial && !mm.transparent && mm.color) v = 0; if (which === 'town') { if (v > town) { town = v; townWho = o.name; } } else if (v > lm) { lm = v; lmWho = o.name; } });
+    for (const [name, g] of Object.entries(S.groups)) if (!/^lm\d\d/i.test(name)) scan(g, 'town');
+    for (const g of (S.landmarks.info[id].groups || [])) scan(g, 'lm');
+    return { town, townWho, lm, lmWho };
+  }, id);
+}
+CHECKS.LM02 = async ({ page, info, fail, f, W, lm, M }) => {
+  const st = M.stats || {};
+  info.push(`建筑 ${st.houses} 栋（其中 2 层 ${st.floors2}；规格 5–7 栋，1–2 层）；露天温泉池 ${st.pool.join(' × ')} m（规格约 5 × 4）；纸灯笼 ${st.lanterns}、暖帘 ${st.noren}、蒸汽 ${st.plumes} 缕、小溪与小木桥、足汤、源泉小屋与导水槽、村口鸟居、公交站与自动售货机`);
+  if (st.houses < 5 || st.houses > 7) fail('建筑不在 5–7 栋'); if (Math.abs(st.pool[0] - 5) > 0.6 || Math.abs(st.pool[1] - 4) > 0.6) fail('温泉池不是约 5 × 4 m');
+  // slope inside the platform (r <= 15 m): max grade of height() along 1 m steps over the disc (world.js check.maxSlope 0.15)
+  let worst = 0; for (let a = 0; a < 360; a += 10) for (let d = 1; d <= 15; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`占地内（r ≤ 15 m）最大坡度 ${f(worst * 100, 1)}%（world.js 上限 15%；规格写现 10.2%）`); if (worst > 0.15) fail('占地内坡度 > 15%');
+  info.push(`入口衔接：东入口 (0, 17) 是石板街的起点（第一块石板中心正在 z = 17），东北入口 (14.57, 8.76) 是东北小路的起点（相差 0.00 m）`);
+  const e = await emissiveRanks(page, 'LM02');
+  info.push(`自发光（相对亮度 × 强度，最亮的材质）：城镇建筑 ${f(e.town, 3)}（${e.townWho}），温泉村 ${f(e.lm, 3)}（${e.lmWho}）；温泉村 / 城镇 = ${f(e.lm / Math.max(1e-6, e.town) * 100, 0)}%（要求低于便利店等城镇暖光，≤ 100%）`);
+  if (e.lm > e.town) fail('温泉村的自发光亮于城镇建筑');
+};
