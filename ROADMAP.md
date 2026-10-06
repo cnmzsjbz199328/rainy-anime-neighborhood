@@ -48,7 +48,7 @@
 | W7-LM08 | 地标 灯塔岛 | `landmarks/LM08.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6a | 完成 | 2026-10-07 · 提交 `fc26835`（分支 `world/W7-LM08` 已合并 main，未推送）；基线标签 `pre-w7-lm08`；截图 `docs/world/landmarks/LM08/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM08」 |
 | W7-LM05 | 地标 星见石环（隐藏线索） | `landmarks/LM05.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6c | 完成 | 2026-10-07 · 提交 `3972db9`（分支 `world/W7-LM05` 已合并 main，未推送）；基线标签 `pre-w7-lm05`；截图 `docs/world/landmarks/LM05/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM05」 |
 | W7-LM06 | 地标 砂没驿（隐藏线索） | `landmarks/LM06.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6d | 完成 | 2026-10-07 · 提交 `cc3ddec`（分支 `world/W7-LM06` 已合并 main，未推送）；基线标签 `pre-w7-lm06`；截图 `docs/world/landmarks/LM06/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM06」 |
-| W7-LM07 | 地标 冰封轮廓（隐藏线索） | `landmarks/LM07.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6e | 待办 | |
+| W7-LM07 | 地标 冰封轮廓（隐藏线索） | `landmarks/LM07.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6e | 完成 | 2026-10-07 · 提交 `b0d4d6c`（分支 `world/W7-LM07` 已合并 main，未推送）；基线标签 `pre-w7-lm07`；截图 `docs/world/landmarks/LM07/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM07」 |
 | W8 | 全球表现、天气与真机 | 卷曲过渡 ST04、天气 D8/ST05、光带、真机（规格 [W8_SPEC](docs/world/W8_SPEC.md)；必须拆成 W8a–W8d 四行，开工前在本表加行） | W7 | 待办 | |
 | W9b | 星球行人视角（可选） | 扩展漫游到球面 | W8 | 待办 | |
 
