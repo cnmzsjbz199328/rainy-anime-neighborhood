@@ -102,7 +102,47 @@ for(let x of [5.7,8.1]){cyl(x,2.08,1.6,.18,.48,'#d89e87');for(let j=0;j<5;j++)cy
 group('apartment');box(.9,2.59,-6.6,5.7,4.8,3.3,'#a3a5aa');box(.9,5.1,-6.6,6,.2,3.6,'#697a8b');box(.9,5.22,-6.6,5.8,.13,3.4,'#8795a0');
 for(let floor=0;floor<3;floor++)for(let j=0;j<3;j++){let x=-.94+j*1.8,y=1.02+floor*1.45;box(x,y,-4.925,1.19,.97,.04,'#425c73');box(x,y,-4.89,1.05,.83,.018,new THREE.MeshBasicMaterial({color:(floor+j)%3?'#dec3a0':'#617d93'}));box(x,y,-4.86,.034,.86,.025,'#526677');box(x,y+.43,-4.86,1.1,.03,.025,'#526677');for(let k=0;k<2;k++)box(x-.38+k*.76,y,-4.85,.21,.8,.016,'#b1aaa3');if(floor>0){box(x,y-.58,-4.56,1.48,.1,.72,'#8f989f');for(let k=0;k<6;k++)box(x-.64+k*.25,y-.25,-4.24,.02,.58,.025,'#67798c');box(x,y+.05,-4.24,1.46,.028,.025,'#67798c');}}
 box(.9,.96,-4.88,.74,1.45,.04,'#607786');label('こもれび荘',.9,1.88,-4.84,1.1,.24,'#bbc3be','#556c7b',95);for(let i=0;i<4;i++)box(-1.42+i*.27,.9,-4.84,.2,.25,.07,'#8e9699');
-for(let i=0;i<16;i++){box(-2.3,.38+i*.25,-5.05-i*.17,.7,.08,.32,'#768a97');}line([[-2.66,.83,-4.98],[-2.66,4.6,-7.62]],'#556b80',.025);cyl(2.15,5.7,-6.9,.57,.9,'#9eafb2');cyl(2.15,6.17,-6.9,.6,.06,'#748b9b');
+// Exterior switchback stair: two realistic floor-to-floor flights with landings aligned to side doors.
+const apartmentStairFlights=[
+  {x:-2.31,z0:-5.15,z1:-7.39,y0:.3,y1:1.75},
+  {x:-3.02,z0:-7.39,z1:-5.15,y0:1.75,y1:3.2},
+];
+const stairRisers=9,stairTread=.28,stairTreads=stairRisers-1,stairWidth=.6;
+for(const f of apartmentStairFlights){
+  const dir=Math.sign(f.z1-f.z0),rise=(f.y1-f.y0)/stairRisers;
+  for(let i=0;i<stairTreads;i++){
+    const z=f.z0+dir*stairTread*(i+.5),top=f.y0+rise*(i+1);
+    box(f.x,top-.045,z,stairWidth,.09,stairTread-.015,'#768a97');
+  }
+  for(const side of [-1,1]){
+    const x=f.x+side*(stairWidth/2+.035);
+    line([[x,f.y0+.12,f.z0],[x,f.y1+.12,f.z1]],'#526a7d',.045);
+    line([[x,f.y0+.96,f.z0],[x,f.y1+.96,f.z1]],'#526a7d',.035);
+    for(let i=0;i<=stairTreads;i+=2){
+      const z=f.z0+dir*stairTread*(i+.15),y=f.y0+rise*i+.12;
+      cyl(x,y+.39,z,.018,.78,'#61788a');
+    }
+  }
+}
+// Deep steel landings at the second- and third-floor thresholds.
+for(const [level,z] of [[1.75,-7.39],[3.2,-5.15]]){
+  box(-2.655,level-.08,z,1.39,.16,.84,'#73879a');
+  box(-3.31,level/2+.15,z,.07,level-.3,.07,'#586f82');
+  box(-3.31,level/2+.15,z-.31,.07,level-.3,.07,'#586f82');
+  box(-3.31,level/2+.15,z+.31,.07,level-.3,.07,'#586f82');
+  line([[-3.28,level-.16,z-.3],[-2.02,level-.16,z-.3]],'#566d80',.045);
+  line([[-3.28,level-.16,z+.3],[-2.02,level-.16,z+.3]],'#566d80',.045);
+  // Side-entry door leaves and frames meet each landing; the apartment's legacy shell remains intact.
+  box(-1.98,level+.69,z,.045,1.3,.76,'#40576d');
+  box(-2.012,level+.69,z,.025,1.2,.66,'#738894');
+  box(-2.03,level+1.05,z,.018,.36,.42,'#afc1bf',false);
+  for(const dz of [-.39,.39])box(-2.025,level+.69,z+dz,.06,1.4,.055,'#526a7d');
+  box(-2.025,level+1.39,z,.06,.055,.83,'#526a7d');
+  cyl(-2.06,level+.7,z-.25,.024,.05,'#d3c29c');
+}
+// A small ground landing ties the stair foot back to the apartment frontage.
+box(-2.62,.22,-5.02,1.47,.16,.92,'#73879a');
+cyl(2.15,5.7,-6.9,.57,.9,'#9eafb2');cyl(2.15,6.17,-6.9,.6,.06,'#748b9b');
 // Down pipe and planters.
 group('store');line([[4.34,3.3,-2.4],[4.54,3.3,-2.4],[4.54,.45,-2.4]],'#7b8e97',.038);
 for(let i=0;i<7;i++){group(i<4?'ramenPlants':'apartmentPlants');let x=i<4?5.65+i*.7:-1.7+(i-4)*.53,z=i<4?2.25:-4.52;cyl(x,.48,z,.14,.3,'#aa8980');for(let k=0;k<4;k++){mesh(new THREE.SphereGeometry(.13,7,5),mat('#6f9690'),x+(rnd()-.5)*.17,.72+rnd()*.18,z+(rnd()-.5)*.17,false);}}

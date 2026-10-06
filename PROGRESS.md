@@ -1,5 +1,12 @@
 # 进度记录
 
+## B05-P05 现有公寓外楼梯专项（2026-10-06）
+
+- `scene.js` 将原悬空直梯改成两跑折返楼梯，每跑 9 级；二、三层平台设钢柱支撑和扶手，平台落点对齐侧门表现。没有调整冻结布局与主体位置。
+- `layout.js` 仅更新 apartment 的实测包围盒；最外缘仍在可建包络内。`index.html` 由 `python3 build.py` 重建。
+- 检查：`node tools/layout_check.mjs --png` 的 C1–C12 全通过；建筑截图与全城页面无浏览器错误。`node tools/measure_samples.mjs` 中 apartment 包围盒与登记一致，但全局脚本仍报 ramenPlants、apartmentPlants 两个旧组的轻微漂移，本轮未改。
+- 实际截图：[docs/buildings/screenshots/B05-P05/](docs/buildings/screenshots/B05-P05/)。旧样板主体仍是实心壳体，侧门尚无真实门洞；这次只处理楼梯外观、平台和支撑，样板整体仍保持 existing-review-only。
+
 依据 ROAD_NETWORK_PLAN.md 分阶段建设道路、街区与预留用地。每次只推进一个阶段，完成后提交并等待确认。
 
 ## 阶段状态

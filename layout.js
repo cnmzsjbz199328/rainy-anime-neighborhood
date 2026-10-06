@@ -165,7 +165,7 @@ const samples = [
   { id: 'apartment', name: 'こもれび荘', plot: 'B05-P05', transform: { x: -11.4, z: 33, rotY: Math.PI },
     door: { x: 0.9, z: -4.88 }, frontDir: [0, 1],
     parts: [
-      { group: 'apartment', role: 'building', localBounds: { min: [-2.68, 0.18, -8.41], max: [3.91, 6.2, -4.19], ground: [-2.68, -8.26, 3.75, -4.8] } },
+      { group: 'apartment', role: 'building', localBounds: { min: [-3.4, 0.13, -8.4], max: [3.91, 6.2, -4.19], ground: [-3.36, -8.26, 3.76, -4.56] } },
       { group: 'apartmentPlants', role: 'attachment', localBounds: { min: [-1.9, 0.33, -4.68], max: [-0.47, 1.01, -4.32], ground: [-1.9, -4.68, -0.47, -4.32] } },
     ] },
 ];
