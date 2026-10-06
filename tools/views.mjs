@@ -3,8 +3,7 @@
 //   node tools/views.mjs [outDir]        (default docs/layout/views)
 //
 // Shots: far view of the whole plinth, default view, store corner close-up, low intersection
-// close-up (seams / z-fighting), and straight top-down. Look at every image; the exit code only
-// covers errors and input checks.
+// close-up (seams / z-fighting), straight top-down, and the new street-walk camera.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -17,8 +16,9 @@ fs.mkdirSync(outDir, { recursive: true });
 export const VIEWS = {
   far:          { yaw: 2.5,  pitch: 0.82, dist: 140, target: [0, 0, 0] },
   storeCorner:  { yaw: 2.75, pitch: 0.2,  dist: 13,  target: [-9, 1.4, 22] },
-  intersection: { yaw: 0.9,  pitch: 0.2,  dist: 16,  target: [0, 0.3, 15] },
+  intersection: { yaw: 1.57, pitch: 0.2, dist: 16,  target: [0, 0.3, 15] },
   top:          { yaw: 0,    pitch: 1.45, dist: 150, target: [0, 0, 0] },
+  roamStreet:   { mode: 'roam', position: [-8, 15], heading: -Math.PI / 2 },
 };
 
 const browser = await launchChromium();
@@ -55,6 +55,27 @@ results.push(['缩放上限 150', (await view()).dist === 150]);
 await page.evaluate(() => window.__scene.view.set({ dist: 0 }));
 results.push(['缩放下限 9', (await view()).dist === 9]);
 
+// W9a: keyboard toggle and forward movement stay inside layout-derived street corridors.
+const freeBefore = await view();
+await page.keyboard.press('v');
+const r0 = await view();
+await page.keyboard.down('w'); await page.waitForTimeout(180); const rm = await view(); await page.waitForTimeout(520); await page.keyboard.up('w');
+const r1 = await view();
+results.push(['V 键进入漫游', r0.mode === 'roam']);
+results.push([`W 键沿道路移动（输入 ${rm.input.join(',')}，位置 ${r0.roam.position[0].toFixed(2)},${r0.roam.position[2].toFixed(2)} → ${r1.roam.position[0].toFixed(2)},${r1.roam.position[2].toFixed(2)}）`, Math.hypot(r1.roam.position[0] - r0.roam.position[0], r1.roam.position[2] - r0.roam.position[2]) > .3]);
+results.push(['漫游位置留在 layout.js 道路/巷道范围', await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
+results.push(['跟随镜头离地', r1.cameraPosition[1] > .9]);
+await page.mouse.move(640, 400); await page.mouse.down(); await page.mouse.move(680, 390, { steps: 4 }); await page.mouse.up();
+const looked = await view(); await page.waitForTimeout(2500); const returned = await view();
+results.push(['拖动可临时环视并自动回正', Math.abs(looked.roam.lookYaw) > .05 && Math.abs(returned.roam.lookYaw) < Math.abs(looked.roam.lookYaw)]);
+await page.evaluate(() => window.__scene.view.set({ position: [-47.5, 15], heading: -Math.PI / 2 }));
+await page.keyboard.down('w'); await page.waitForTimeout(500); await page.keyboard.up('w');
+const edge = await view();
+results.push(['城镇西侧道路边界限制', edge.roam.position[0] >= -48 && edge.roam.position[0] <= -47.5 && await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
+await page.keyboard.press('v');
+const freeAfter = await view();
+results.push(['V 键退出并恢复原自由视角', freeAfter.mode === 'free' && freeAfter.yaw === freeBefore.yaw && freeAfter.pitch === freeBefore.pitch && freeAfter.dist === freeBefore.dist && freeAfter.target.every((v, i) => v === freeBefore.target[i])]);
+
 // Animation: rain falls, ripples grow, the X01 signals change phase (30 s cycle; sample over ~20 s).
 const anim = () => page.evaluate(() => {
   const { scene, groups } = window.__scene, rain = scene.children.find(c => c.isLineSegments);
@@ -74,6 +95,28 @@ for (const [name, v] of Object.entries(VIEWS)) {
   await page.waitForTimeout(1200);   // SwiftShader: let a few frames render
   await page.screenshot({ path: path.join(outDir, `${name}.png`) });
 }
+
+// Touch emulation: confirm the unobtrusive mode button and on-screen movement stick work.
+const touchPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+await touchPage.goto(pathToFileURL(path.join(root, 'index.html')).href);
+await touchPage.waitForFunction(() => window.__scene && window.__scene.view);
+await touchPage.waitForTimeout(500);
+const toggleBox = await touchPage.locator('#town-view-toggle').boundingBox();
+await touchPage.touchscreen.tap(toggleBox.x + toggleBox.width / 2, toggleBox.y + toggleBox.height / 2);
+const touchMode = await touchPage.evaluate(() => window.__scene.view.get().mode);
+const stickBox = await touchPage.locator('#town-walk-stick').boundingBox();
+results.push(['触屏按钮切换视角', touchMode === 'roam']);
+results.push(['触屏移动摇杆可见', !!stickBox]);
+if (stickBox) {
+  const x = stickBox.x + stickBox.width / 2, y = stickBox.y + stickBox.height / 2;
+  const cdp = await touchPage.context().newCDPSession(touchPage);
+  const touch = (type, px, py) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 1, x: px, y: py, radiusX: 8, radiusY: 8, force: 1 }] });
+  const p0 = await touchPage.evaluate(() => window.__scene.view.get().roam.position);
+  await touch('touchStart', x, y); await touch('touchMove', x + 25, y); await touchPage.waitForTimeout(500); await touch('touchEnd', x + 25, y);
+  const p1 = await touchPage.evaluate(() => window.__scene.view.get().roam.position);
+  results.push(['触屏摇杆可移动', Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > .1]);
+}
+await touchPage.close();
 await browser.close();
 
 for (const [t, ok] of results) console.log(`${ok ? 'PASS' : 'FAIL'}  ${t}`);

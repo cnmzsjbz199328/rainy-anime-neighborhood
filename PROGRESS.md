@@ -7,6 +7,15 @@
 - 检查：`node tools/layout_check.mjs --png` 的 C1–C12 全通过；建筑截图与全城页面无浏览器错误。`node tools/measure_samples.mjs` 中 apartment 包围盒与登记一致，但全局脚本仍报 ramenPlants、apartmentPlants 两个旧组的轻微漂移，本轮未改。
 - 实际截图：[docs/buildings/screenshots/B05-P05/](docs/buildings/screenshots/B05-P05/)。旧样板主体仍是实心壳体，侧门尚无真实门洞；这次只处理楼梯外观、平台和支撑，样板整体仍保持 existing-review-only。
 
+## W9a 城镇街景漫游（2026-10-06）
+
+- 已在 `scene.js` 实现无角色跟随镜头；位置约束由 `layout.js` 的道路节点、车行道宽度和巷道范围派生，不改 `layout.js` 或冻结布局。道路外侧建筑地块不可进入，跟随相机保持在道路/巷道范围内并高于路面。
+- 桌面：`V` 或右上角按钮切换；WASD/方向键移动，拖动画面临时环视，约 1.4 秒后缓慢回正。触屏：按钮切换，左下摇杆移动，拖动画面环视。退出后保留原自由视角的旋转、缩放和平移状态。
+- 漫游仍使用既有雨、涟漪、滴水、信号灯与建筑动画；近裁剪面仅在漫游时调整，退出恢复原值。
+- 操作说明：README.md。W9a 提前到 W2 之前实施；星球上的 W9b 仍在 W8 后可选。
+- 检查：`python3 build.py` 成功；`node tools/measure_samples.mjs` 实测与记录一致；按顺序运行 `node tools/layout_check.mjs --png`，C1–C12 全通过；`node tools/views.mjs` 的自由视角旋转/缩放/平移与状态恢复、漫游切换/W 键移动/西缘边界/跟随镜头离地/拖动环视与自动回正、触屏切换/摇杆移动、雨/涟漪/信号灯动画全部通过，控制台无错误。
+- 截图已逐张查看：`docs/layout/views/roamStreet.png` 展示雨夜街道的跟随镜头；默认、远景、店角、路口和俯视回归图正常。为让路口低视点落在道路上，修正了 `tools/views.mjs` 的审查相机角度；布局俯视图为 `docs/layout/topdown.png`。SwiftShader 结果不能代替真实 GPU、手机或平板实机验证，速度、触屏手感和长时间转弯仍需真机确认。
+
 依据 ROAD_NETWORK_PLAN.md 分阶段建设道路、街区与预留用地。每次只推进一个阶段，完成后提交并等待确认。
 
 ## 阶段状态
