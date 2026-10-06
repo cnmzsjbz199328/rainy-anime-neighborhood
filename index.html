@@ -14644,7 +14644,7 @@ for(let i=0;i<160;i++){pc.strokeStyle='rgba(92,96,107,.035)';pc.beginPath();let 
 const paperTex=new THREE.CanvasTexture(paper);paperTex.wrapS=paperTex.wrapT=THREE.RepeatWrapping;paperTex.colorSpace=THREE.SRGBColorSpace;
 function mat(c){return mats[c]||(mats[c]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map:paperTex}));}
 
-// Named groups let the layout move each existing sample as a whole (translate, rotate, uniform scale only).
+// Named groups let the layout move each building and street fixture as a whole (translate, rotate, uniform scale only).
 const groups={};let root=scene;
 function group(name){let g=groups[name];if(!g){g=groups[name]=new THREE.Group();g.name=name;scene.add(g);}root=g;return g;}
 const ink=new THREE.LineBasicMaterial({color:0x273647,transparent:true,opacity:.68});
@@ -14655,61 +14655,12 @@ function line(points,c='#34465c',r=.025,parent=root){const curve=new THREE.Catmu
 function glow(c,opacity=.2){return new THREE.MeshBasicMaterial({color:c,transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide});}
 function light(x,y,z,c,power,range){const l=new THREE.PointLight(c,power,range,2);l.position.set(x,y,z);root.add(l);return l;}
 function label(text,x,y,z,w,h,bg='#f6e9c5',fg='#254755',size=55){const c=document.createElement('canvas');c.width=1024;c.height=Math.round(1024*h/w);const q=c.getContext('2d');q.fillStyle=bg;q.fillRect(0,0,c.width,c.height);q.fillStyle=fg;q.font=`bold ${size}px sans-serif`;q.textAlign='center';q.textBaseline='middle';q.fillText(text,512,c.height/2);const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;return mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide}),x,y,z,false);}
-group('store');
-// Store walls, tiled floor, and a shallow roof to retain window sightlines.
-box(.85,.3,-1,6.9,.16,5.6,'#e3d1ad');box(.85,1.85,-3.77,6.9,3,.14,'#809da1');box(4.26,1.85,-1,.14,3,5.5,'#739194');
-for(let i=0;i<14;i++)for(let j=0;j<11;j++)box(-2.32+i*.49,.391,-3.5+j*.49,.478,.014,.478,(i+j)%2?'#e9ddbf':'#d9ceb1',false);
-box(.85,3.44,-1.05,7.25,.22,5.85,'#577079');box(.85,3.58,-1.05,6.85,.07,5.45,'#708b91');
-// Pane divisions and glass.
+// Shared by the building kit: window glass and the product/accent palette.
 const glass=new THREE.MeshPhysicalMaterial({color:0xb1e1e4,transparent:true,opacity:.105,roughness:.2,metalness:.1,side:THREE.DoubleSide,depthWrite:false});
-for(const x of [-2.58,-.7,1.23,2.6,4.28])box(x,1.74,1.77,.065,2.55,.09,'#375965');
-box(.85,.48,1.77,6.85,.19,.12,'#416774');box(.85,3.04,1.77,6.9,.12,.12,'#416774');
-for(const [x,w]of[[-1.64,1.78],[.25,1.8],[3.44,1.57]])box(x,1.75,1.77,w,2.43,.015,glass,false);
-for(const z of [-3.7,-1.9,-.1,1.72])box(-2.6,1.75,z,.08,2.65,.07,'#375965');
-for(let i=0;i<3;i++)box(-2.61,1.75,-2.8+i*1.8,.014,2.4,1.7,glass,false);
-box(-2.61,.5,-1,.1,.2,5.45,'#416774');box(-2.61,3.05,-1,.1,.12,5.5,'#416774');
-const doors=[];for(let i=0;i<2;i++){let g=new THREE.Group();root.add(g);g.position.set(1.58+i*.52,0,1.8);box(0,1.65,0,.49,2.3,.024,glass,false,g);for(const x of [-.25,.25])box(x,1.65,0,.035,2.35,.055,'#9cb8b7',true,g);box(0,.5,0,.53,.05,.05,'#9cb8b7',true,g);box(0,2.8,0,.53,.05,.05,'#9cb8b7',true,g);box(0,1.52,.035,.28,.05,.035,'#81a6a4',true,g);doors.push(g);}
-box(1.85,.27,2.06,1.25,.04,.55,'#384c57');label('いらっしゃいませ',1.85,2.89,1.835,1.22,.14,'#cce3c7','#294d49',65);
-// Deep canopy, the fictional neighborhood shop's illuminated sign.
-box(.85,3.02,2.02,7.35,.15,1,'#436b74');box(.85,3.23,2.5,7.35,.52,.15,'#e6e7d4');
-box(.85,3.05,2.588,7.25,.07,.015,'#7fc5bf');box(.85,3.43,2.588,7.25,.065,.015,'#d9988c');
-const sign=label('こもれび  MART',.85,3.25,2.591,5.45,.32,'#f4efdb','#377f7e',73);label('24 OPEN',3.83,3.24,2.592,.7,.28,'#f4efdb','#aa6864',85);
-light(.5,2.7,2.8,0xffd8a1,17,7);light(-1,2.5,-1,0xffe4b0,13,6);light(2.7,2.5,-2,0xffdfb4,12,6);
-for(let i=0;i<3;i++)box(-1.3+i*2.1,3.27,-.9,1.45,.025,.35,new THREE.MeshBasicMaterial({color:'#fff0c4'}),false);
-// Racks: actual individual boxes, tins and bottles, with shelf edging.
 const colors=['#da8b80','#e7c978','#78aaa2','#7e99b5','#bd9abb','#ece2be'];
-function shelf(x,z,w,levels=3){box(x,1.13,z,w,1.5,.51,'#a5b1a4');for(let k=0;k<levels;k++){let y=.63+k*.46;box(x,y,z,w+.08,.045,.61,'#f1dec2');for(let j=0;j<Math.floor(w/.19);j++){let px=x-w/2+.12+j*.19;box(px,y+.14,z+.07,.13,.24,.2,colors[(j+k)%6],false);box(px,y+.14,z+.178,.085,.05,.007,'#f2e8c9',false);}box(x,y-.06,z+.32,w,.08,.015,'#a47164',false);}}
-shelf(-.8,-1.45,1.72);shelf(1.48,-1.45,1.6);shelf(-.8,.14,1.75,2);
-// Beverage cooler against the back wall.
-for(let i=0;i<4;i++){let x=-1.88+i*.78;box(x,1.6,-3.45,.73,2.34,.45,'#b0c3bf');box(x,1.6,-3.205,.65,2.12,.015,'#36505d');for(let k=0;k<4;k++){box(x,.69+k*.46,-3.08,.64,.027,.25,'#a5c5c2');for(let j=0;j<4;j++){cyl(x-.23+j*.15,.81+k*.46,-3.08,.045,.2,colors[(j+k+i)%6]);}}box(x,1.6,-2.94,.66,2.09,.012,glass,false);box(x+.25,1.6,-2.92,.028,.37,.025,'#e0e3cf');}
-label('DRINKS · 冷たい飲み物',-.74,2.91,-3.15,3.02,.18,'#c8e4dd','#447e81',56);
-// Bento cabinet, triangular rice balls and low freezer.
-box(3.62,1,-2.27,.82,1.24,1.7,'#acb9a6');for(let k=0;k<3;k++){box(3.58,.62+k*.38,-2.2,.9,.04,1.65,'#ebdab7');for(let j=0;j<5;j++){box(3.4,.72+k*.38,-2.84+j*.3,.44,.12,.23,'#454b44');box(3.4,.79+k*.38,-2.84+j*.3,.36,.02,.17,colors[(j+k)%6],false);}}
-box(3.3,.85,.5,1.5,.85,.85,'#dae1cc');box(3.3,1.3,.5,1.42,.035,.77,glass);label('ICE CREAM',3.3,1.02,.94,1.25,.19,'#d9e6de','#6c969e',65);
-for(let j=0;j<6;j++){mesh(new THREE.ConeGeometry(.1,.21,3),mat('#f0e8d6'),-1.49+j*.25,1.7,.19,true);box(-1.49+j*.25,1.64,.285,.075,.085,.015,'#294c48',false);}
-label('おにぎり · お弁当',-.8,1.92,.46,1.7,.2,'#e7bd80','#68584a',66);
-// Checkout, coffee, oden, register and magazine display.
-box(2.2,.94,-.15,1.55,1.1,.75,'#729b90');box(2.2,1.52,-.15,1.7,.12,.87,'#ecdfc2');box(2.2,1.77,-.12,.33,.34,.25,'#44545a');box(2.2,1.83,.015,.27,.18,.014,'#9ad5ca');box(2.69,1.73,-.1,.4,.28,.38,'#9b9881');for(let i=0;i<6;i++)cyl(2.57+(i%2)*.17,1.88,-.23+Math.floor(i/2)*.13,.048,.028,'#ebc887');
-box(3.67,1.73,-.85,.45,.65,.4,'#3a5057');box(3.67,1.8,-.634,.28,.22,.025,'#b2c5b6');cyl(3.67,1.51,-.58,.085,.14,'#e8dfc5');
-shelf(-1.98,.99,.77,2);for(let i=0;i<4;i++){let a=box(-2.23+i*.16,1.34,1.29,.14,.34,.035,colors[i]);a.rotation.x=-.22;}
-label('新刊 · MAGAZINE',-1.98,1.68,1.31,.76,.14,'#e8dbc3','#5a7473',53);
-box(3.73,1.66,-3.5,.68,2.25,.065,'#617d7f');box(3.45,1.6,-3.44,.03,.15,.035,'#d2d5c0');label('STAFF',3.73,2.22,-3.455,.5,.16,'#bcc9b8','#3c565b',85);
-label('ほっとひと息 ☕',.72,2.64,-3.65,.84,.57,'#e1b78e','#645d56',95);label('おでん',2.73,2.35,-.48,.49,.43,'#e5b67f','#6b4d43',150);
-for(let i=0;i<3;i++){box(.8,.415,.9-i*.48,.06,.01,.24,'#ca9673',false);}
-group('vending');
-// Outside vending machines with individually stocked illuminated windows.
-function vending(x,z,c){box(x,1.14,z,.79,1.85,.66,c);box(x,1.4,z+.342,.62,1.05,.022,'#273e50');for(let k=0;k<3;k++)for(let j=0;j<4;j++){cyl(x-.23+j*.15,1.08+k*.29,z+.37,.044,.17,colors[(j+k)%6]);box(x-.23+j*.15,.95+k*.29,z+.38,.07,.025,.015,'#d3dbbf',false);}box(x+.23,.67,z+.354,.12,.18,.03,'#90b4bd');box(x-.1,.53,z+.35,.37,.14,.035,'#243f4b');label('つめたい',x,2.02,z+.345,.61,.13,'#d6ece2','#537a81',86);light(x,1,z+.8,0x80dfe5,3,3);}
-vending(-1.75,2.3,'#88bbb6');vending(-.84,2.3,'#bd807e');
-group('bicycles');
-// Bicycles in the side alley.
-function bicycle(z){const g=new THREE.Group();g.position.set(-3.25,.29,z);root.add(g);for(const zz of [-.53,.53]){let t=mesh(new THREE.TorusGeometry(.32,.035,8,24),mat('#253b49'),0,.34,zz,false,g);t.rotation.y=Math.PI/2;let rim=mesh(new THREE.TorusGeometry(.28,.012,6,24),mat('#94b3b4'),0,.34,zz,false,g);rim.rotation.y=Math.PI/2;for(let i=0;i<8;i++){const a=i*Math.PI/4;line([[0,.34,zz],[0,.34+Math.sin(a)*.28,zz+Math.cos(a)*.28]],'#7c969d',.005,g);}}
-line([[0,.34,-.53],[0,.77,-.19],[0,.34,.04],[0,.34,-.53],[0,.68,.39],[0,.34,.53],[0,.34,.04]],'#c4a083',.028,g);line([[0,.34,.53],[0,.87,.4],[-.18,.94,.38]],'#9bb8bc',.024,g);box(0,.8,-.18,.22,.05,.23,'#344352',true,g);box(0,.79,.66,.35,.23,.32,'#69848a',true,g);}
-bicycle(-.3);bicycle(-1.6);
-// Umbrellas, bins, AC grille, posters and guard rails.
-group('storeProps');box(2.7,.52,2.19,.36,.51,.34,'#5e7d85');for(let i=0;i<4;i++){let x=2.58+i*.08;line([[x,.48,2.18],[x,1.24,2.18],[x+.07,1.3,2.18],[x+.09,1.22,2.18]],'#b1c5c1',.014);mesh(new THREE.ConeGeometry(.055,.55,7),mat(colors[i]),x,.82,2.18,true);}
-for(let i=0;i<2;i++){cyl(4.9,.64,.65+i*.65,.23,.72,'#829e9d');cyl(4.9,1.02,.65+i*.65,.24,.07,'#a5bab0');box(4.9,.8,.9+i*.65,.22,.09,.01,'#304e58');}
-box(4.57,.73,-2.7,.51,.83,1.05,'#bcc8b8');for(let i=0;i<9;i++)box(4.84,.4+i*.075,-2.7,.025,.025,.86,'#708989',false);
-group('store');box(4.365,2,-.6,.025,1.02,.81,'#6c8076');for(let i=0;i<4;i++){let a=label(i%2?'SALE':'夏の便り',4.39,1.8+Math.floor(i/2)*.44,-.8+(i%2)*.37,.29,.36,colors[i],'#445c60',120);a.rotation.y=Math.PI/2;}
+// The ink jitter sequence is pinned to the values it had when the retired samples were drawn first, so the
+// remaining fixtures and every building keep their exact line work.
+seed=679665027;
 group('guardRail');for(let i=0;i<3;i++){let x=-2.1+i*1.25;cyl(x,.63,3.13,.045,.8,'#b5c3b6');}line([[-2.1,.91,3.13],[.4,.91,3.13]],'#b5c3b6',.045);
 // Lamp and utility pole: careful silhouette above the small roof.
 group('streetLamp');cyl(-3.7,2.27,2.6,.06,4.4,'#596f80');line([[-3.7,4.45,2.6],[-3.7,4.64,2.6],[-3.3,4.69,2.6],[-2.93,4.64,2.6]],'#597082',.055);box(-2.95,4.59,2.6,.48,.12,.25,'#b7c6bb');box(-2.95,4.515,2.6,.39,.015,.19,new THREE.MeshBasicMaterial({color:'#ffe4b0'}),false);light(-2.95,3.8,2.6,0xffdeaa,16,7);
@@ -14718,68 +14669,9 @@ label('止まれ',-4.71,2.25,-3.72,.57,.5,'#b6797b','#eee1c6',170);
 box(-4.71,3.1,-3.72,.7,.24,.025,'#648b9e');label('小路  KOMOREBI',-4.71,3.1,-3.7,.65,.2,'#648b9e','#e5e7d8',65);
 group('trafficSignal');const signals=[];box(5.1,2.5,-4.75,.07,4.5,.07,'#4e6f7b');box(4.85,4.4,-4.75,.6,.22,.2,'#364d58');for(let i=0;i<3;i++){signals.push(mesh(new THREE.SphereGeometry(.065,12,8),new THREE.MeshBasicMaterial({color:i===0?'#79c8ac':'#455563'}),4.66+i*.18,4.4,-4.635,false));}
 
-// Two distinct new buildings, connected by a quiet service alley.
-// Ramen shop: transparent storefront and visible counter/kitchen.
-group('ramen');box(6.9,.38,-1.2,3.2,.17,4.5,'#cfbda4');box(6.9,1.63,-3.45,3.2,2.5,.14,'#9c9291');box(8.48,1.63,-1.2,.14,2.5,4.5,'#a09b95');box(5.32,1.63,-1.2,.14,2.5,4.5,'#a09b95');
-box(6.9,2.95,-1.2,3.5,.22,4.8,'#616f84');for(let i=0;i<12;i++){box(5.37+i*.28,3.08,-1.2,.035,.07,4.7,'#7d8694',false);}
-for(let x of [5.34,6.32,7.3,8.47])box(x,1.66,1.04,.06,2.43,.09,'#655d65');box(6.9,1.66,1.04,3.07,2.34,.012,glass,false);box(6.9,.5,1.04,3.2,.2,.1,'#656470');
-box(6.9,2.65,1.35,3.6,.17,.8,'#88778a');label('雨音らーめん',6.9,2.84,1.77,3.1,.38,'#e8d0af','#67535a',130);
-for(let i=0;i<5;i++){let x=5.54+i*.55;box(x,2.29,1.09,.49,.5,.025,'#748d96');label(i===2?'麺':'',x,2.29,1.11,.43,.45,'#748d96','#ece2ca',240);}
-box(6.15,1.13,-.65,.65,1.3,3.1,'#967969');box(6.15,1.83,-.65,.91,.1,3.3,'#c5a780');for(let j=0;j<4;j++){let z=.5-j*.79;cyl(7.06,.9,z,.21,.15,'#b3907b');cyl(7.06,.61,z,.035,.53,'#67717d');mesh(new THREE.SphereGeometry(.13,12,8,0,Math.PI*2,0,Math.PI/2),mat('#e6d9bd'),6.24,1.91,z,false);line([[6.44,1.91,z-.06],[6.72,1.91,z-.06]],'#4f5260',.009);}
-box(6.75,1.05,-2.85,2.2,1.2,.55,'#8b9494');box(6.75,1.7,-2.85,2.3,.08,.65,'#c3c3af');for(let i=0;i<3;i++){cyl(6+i*.65,1.83,-2.85,.2,.18,'#b5b8ae');cyl(6+i*.65,1.94,-2.85,.21,.03,'#d1cabc');}
-label('醤油  みそ  塩',7.4,2.17,-3.36,1.55,.47,'#d4b894','#65515b',120);light(6.7,2.2,0,0xffc798,12,5);
-for(let x of [5.7,8.1]){cyl(x,2.08,1.6,.18,.48,'#d89e87');for(let j=0;j<5;j++)cyl(x,1.9+j*.09,1.6,.184,.012,'#9d7472');label('麺',x,2.1,1.79,.19,.27,'#d89e87','#665260',240);}
-// Apartment: staggered warm windows, balconies, stairs, rooftop water tank.
-group('apartment');box(.9,2.59,-6.6,5.7,4.8,3.3,'#a3a5aa');box(.9,5.1,-6.6,6,.2,3.6,'#697a8b');box(.9,5.22,-6.6,5.8,.13,3.4,'#8795a0');
-for(let floor=0;floor<3;floor++)for(let j=0;j<3;j++){let x=-.94+j*1.8,y=1.02+floor*1.45;box(x,y,-4.925,1.19,.97,.04,'#425c73');box(x,y,-4.89,1.05,.83,.018,new THREE.MeshBasicMaterial({color:(floor+j)%3?'#dec3a0':'#617d93'}));box(x,y,-4.86,.034,.86,.025,'#526677');box(x,y+.43,-4.86,1.1,.03,.025,'#526677');for(let k=0;k<2;k++)box(x-.38+k*.76,y,-4.85,.21,.8,.016,'#b1aaa3');if(floor>0){box(x,y-.58,-4.56,1.48,.1,.72,'#8f989f');for(let k=0;k<6;k++)box(x-.64+k*.25,y-.25,-4.24,.02,.58,.025,'#67798c');box(x,y+.05,-4.24,1.46,.028,.025,'#67798c');}}
-box(.9,.96,-4.88,.74,1.45,.04,'#607786');label('こもれび荘',.9,1.88,-4.84,1.1,.24,'#bbc3be','#556c7b',95);for(let i=0;i<4;i++)box(-1.42+i*.27,.9,-4.84,.2,.25,.07,'#8e9699');
-// Exterior switchback stair: two realistic floor-to-floor flights with landings aligned to side doors.
-const apartmentStairFlights=[
-  {x:-2.31,z0:-5.15,z1:-7.39,y0:.3,y1:1.75},
-  {x:-3.02,z0:-7.39,z1:-5.15,y0:1.75,y1:3.2},
-];
-const stairRisers=9,stairTread=.28,stairTreads=stairRisers-1,stairWidth=.6;
-for(const f of apartmentStairFlights){
-  const dir=Math.sign(f.z1-f.z0),rise=(f.y1-f.y0)/stairRisers;
-  for(let i=0;i<stairTreads;i++){
-    const z=f.z0+dir*stairTread*(i+.5),top=f.y0+rise*(i+1);
-    box(f.x,top-.045,z,stairWidth,.09,stairTread-.015,'#768a97');
-  }
-  for(const side of [-1,1]){
-    const x=f.x+side*(stairWidth/2+.035);
-    line([[x,f.y0+.12,f.z0],[x,f.y1+.12,f.z1]],'#526a7d',.045);
-    line([[x,f.y0+.96,f.z0],[x,f.y1+.96,f.z1]],'#526a7d',.035);
-    for(let i=0;i<=stairTreads;i+=2){
-      const z=f.z0+dir*stairTread*(i+.15),y=f.y0+rise*i+.12;
-      cyl(x,y+.39,z,.018,.78,'#61788a');
-    }
-  }
-}
-// Deep steel landings at the second- and third-floor thresholds.
-for(const [level,z] of [[1.75,-7.39],[3.2,-5.15]]){
-  box(-2.655,level-.08,z,1.39,.16,.84,'#73879a');
-  box(-3.31,level/2+.15,z,.07,level-.3,.07,'#586f82');
-  box(-3.31,level/2+.15,z-.31,.07,level-.3,.07,'#586f82');
-  box(-3.31,level/2+.15,z+.31,.07,level-.3,.07,'#586f82');
-  line([[-3.28,level-.16,z-.3],[-2.02,level-.16,z-.3]],'#566d80',.045);
-  line([[-3.28,level-.16,z+.3],[-2.02,level-.16,z+.3]],'#566d80',.045);
-  // Side-entry door leaves and frames meet each landing; the apartment's legacy shell remains intact.
-  box(-1.98,level+.69,z,.045,1.3,.76,'#40576d');
-  box(-2.012,level+.69,z,.025,1.2,.66,'#738894');
-  box(-2.03,level+1.05,z,.018,.36,.42,'#afc1bf',false);
-  for(const dz of [-.39,.39])box(-2.025,level+.69,z+dz,.06,1.4,.055,'#526a7d');
-  box(-2.025,level+1.39,z,.06,.055,.83,'#526a7d');
-  cyl(-2.06,level+.7,z-.25,.024,.05,'#d3c29c');
-}
-// A small ground landing ties the stair foot back to the apartment frontage.
-box(-2.62,.22,-5.02,1.47,.16,.92,'#73879a');
-cyl(2.15,5.7,-6.9,.57,.9,'#9eafb2');cyl(2.15,6.17,-6.9,.6,.06,'#748b9b');
-// Down pipe and planters.
-group('store');line([[4.34,3.3,-2.4],[4.54,3.3,-2.4],[4.54,.45,-2.4]],'#7b8e97',.038);
-for(let i=0;i<7;i++){group(i<4?'ramenPlants':'apartmentPlants');let x=i<4?5.65+i*.7:-1.7+(i-4)*.53,z=i<4?2.25:-4.52;cyl(x,.48,z,.14,.3,'#aa8980');for(let k=0;k<4;k++){mesh(new THREE.SphereGeometry(.13,7,5),mat('#6f9690'),x+(rnd()-.5)*.17,.72+rnd()*.18,z+(rnd()-.5)*.17,false);}}
 // New buildings: buildings/<plot>.js registers BUILDINGS[plot](kit, record) and draws in its own local frame
-// (front +z, as the samples); the groups are placed below with the layout transforms. The kit shares the
-// samples' ink, toon ramp, paper grain and glass. Modules return an update(t, dt) for local animation.
+// (front +z); the groups are placed below with the layout transforms. The kit shares the
+// ink, toon ramp, paper grain and glass. Modules return an update(t, dt) for local animation.
 // The shared random sequence is restored afterwards, so ground and later details never shift.
 const warmMats={},amber=new THREE.Color('#ffb36b');
 // Interior surfaces seen through glass: same toon paper material plus a soft amber self-light instead of extra lamps.
@@ -14812,17 +14704,16 @@ function bake(g){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().inver
     const b=line?new THREE.LineSegments(q,m):new THREE.Mesh(q,m);if(layer)b.userData.layer=layer;g.add(b);}
   for(const o of done)o.removeFromParent();}
 const buildingFx=[];
+seed=1395410823;
 {const s0=seed,kit={THREE,ramp,group,mesh,box,cyl,line,label,mat,warm,glow,glass,wall,panel,canvasTex,tileUV,colors,
     setRoot:r=>{root=r;},rand:k=>()=>((k=(k*1664525+1013904223)>>>0)/4294967296)};
   for(const b of LAYOUT.buildings){const build=(globalThis.BUILDINGS||{})[b.module];if(!build)continue;const beforeModuleSeed=seed;const fx=build(kit,b);if(b.module==='B05-P01')seed=beforeModuleSeed;if(fx&&fx.update)buildingFx.push(fx.update);
     for(const p of b.parts)if(groups[p.group])bake(groups[p.group]);}
-  // S1–S3 retirement: retain legacy sources for rollback; detach all replaced building groups.
-  for(const name of ['ramen','ramenPlants','apartment','apartmentPlants','store','vending','bicycles','storeProps'])groups[name]?.removeFromParent();
   seed=s0;root=scene;}
 // Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
 // curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
 const L=LAYOUT,LV=L.LEVELS,BH=L.BASE.half,R=L.INTERSECTION.curbRadius;
-// Hand-drawn ground textures on the paper grain (own seed, so the samples' random details never shift).
+// Hand-drawn ground textures on the paper grain (own seed, so the building details never shift).
 let tseed=917;const trnd=()=>((tseed=(tseed*1664525+1013904223)>>>0)/4294967296);
 function groundTex(draw){const c=document.createElement('canvas');c.width=c.height=256;const q=c.getContext('2d');q.drawImage(paper,0,0);draw(q);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;}
 const TEX={   // one texture repeat = 4 × 4 units (64 px per unit)
@@ -14952,11 +14843,7 @@ const rings=[],ringMat=()=>new THREE.MeshBasicMaterial({color:'#acd8de',transpar
 L.puddles.forEach((p,i)=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mesh(new THREE.CircleGeometry(1,32),puddleMat,p.x,y,p.z,false);a.rotation.x=-Math.PI/2;a.scale.set(p.rx,p.rz,1);
   const near=lamps.find(l=>Math.hypot(l.x-p.x,l.z-p.z)<5.5);if(near){const r=decal(null,Math.min(p.rx,p.rz)*1.4,Math.max(p.rx,p.rz)*1.6,p.x,y,p.z,p.rx>p.rz?[1,0]:[0,1],glowMat(near.c,.22));}
   for(let k=0;k<(i%3?1:2);k++){const r=mesh(new THREE.RingGeometry(.95,1,32),ringMat(),p.x+(Math.random()-.5)*p.rx,y+.004,p.z+(Math.random()-.5)*p.rz,false);r.rotation.x=-Math.PI/2;rings.push({a:r,phase:Math.random()});}});
-// The store's light spilling on the wet sidewalk in front of it: sign glyphs broken up by water.
-{const s=L.samples.find(s=>s.id==='store');if(s){const t=s.transform,g=new THREE.Group();g.position.set(t.x,LV.pavement+.012,t.z);g.rotation.y=t.rotY;root.add(g);
-  for(let i=0;i<70;i++)box(-2.5+Math.random()*6.8,0,4.1+Math.random()*1.8,.025+Math.random()*.1,.004,.09+Math.random()*.37,glow(i%3?'#efc494':'#8ee1d2',.05+Math.random()*.12),false,g);
-  const ref=label('こもれび MART',.7,.002,5,5,.48,'#2c4354','#93b7ac',80);g.add(ref);ref.rotation.x=-Math.PI/2;ref.material.transparent=true;ref.material.opacity=.2;ref.material.depthWrite=false;}}
-// Existing samples and new buildings move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
+// Buildings move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
 for(const s of L.structures)for(const p of s.parts){const g=groups[p.group],t=s.transform;g.position.set(t.x,0,t.z);g.rotation.y=t.rotY;g.scale.setScalar(t.scale??L.SAMPLE_SCALE);}
 // Original street furniture goes to provisional slots in the facility bands, foot on the band.
 for(const f of L.legacyFurniture){const g=groups[f.group],{x,z,rotY}=f.slot,c=Math.cos(rotY),n=Math.sin(rotY),[ax,az]=f.anchor,y0=new THREE.Box3().setFromObject(g,true).min.y;
@@ -14964,15 +14851,13 @@ for(const f of L.legacyFurniture){const g=groups[f.group],{x,z,rotY}=f.slot,c=Ma
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
 // Rain falls in a box that follows the view target (clamped to the plinth), never under the roofs and
-// awnings of samples (building-part bounds) and new buildings (their registered shelter rects, see layout.js).
+// awnings of buildings (their registered shelter rects, see layout.js).
 const roofs=L.structures.flatMap(s=>s.shelter?s.shelter.map(r=>worldRect(s,r)):s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
 const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6),speeds=[];let rb=[0,0,0,0],roam=null;
 function rainBounds(){const h=rainBox/2,center=roam?roam.position:target;rb=[Math.max(-BH,center.x-h),Math.max(-BH,center.z-h),Math.min(BH,center.x+h),Math.min(BH,center.z+h)];}
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
 const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});scene.add(new THREE.LineSegments(rg,rainMat));
-group('store');const drops=[];for(let i=0;i<40;i++){let x=-2.4+Math.random()*6.5;let a=box(x,.7+Math.random()*2,1.806,.012,.07+Math.random()*.06,.003,glow('#c1e4df',.32),false);drops.push(a);}
-group('store');const drips=[];for(let i=0;i<18;i++){let a=box(-2.7+Math.random()*7.1,Math.random()*3,2.55,.013,.09,.012,glow('#cee7e5',.5),false);drips.push(a);}
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom, right mouse pan.
 // Pan slides the target over the ground at a speed proportional to distance and never leaves the plinth.
@@ -15002,7 +14887,7 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
   if(t-roam.lastLook>1.4){const fade=1-Math.exp(-elapsed*1.5);roam.lookYaw*=1-fade;roam.lookPitch*=1-fade;}
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading+roam.lookYaw,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
 }else{camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}for(const d of drops){d.position.y-=dt*.11;if(d.position.y<.6)d.position.y=2.85;}for(const d of drips){d.position.y-=dt*2.2;if(d.position.y<.25)d.position.y=3.02;}let cycle=t%19,open=cycle>10&&cycle<15?Math.min(1,(cycle-10)*1.5,(15-cycle)*1.5):0;doors[0].position.x=1.58-open*.46;doors[1].position.x=2.1+open*.46;sign.material.color.setScalar(1-.07*Math.pow(Math.sin(t*1.7),24));signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);renderer.render(scene,camera);}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 window.__scene={scene,renderer,camera,groups,view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookYaw:roam.lookYaw}:null}),set(v){if(v.mode)setRoaming(v.mode==='roam');if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
