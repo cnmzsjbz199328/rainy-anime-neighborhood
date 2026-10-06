@@ -2252,6 +2252,7 @@ function make(THREE) {
   T('logMoss', b => b.add(cyl(0.22, 0.17, 3.0, 6), PAL.logD, { r: [0, 0, Math.PI / 2], p: [-1.5, 0.22, 0], noise: 0.1 }).add(box, PAL.moss, { p: [0, 0.4, 0], s: [1.8, 0.1, 0.3] }));
   T('cairn', b => b.add(dod(0.35), PAL.rock, { p: [0, 0.2, 0] }).add(dod(0.28), PAL.rockD, { p: [0.03, 0.55, 0] }).add(dod(0.2), PAL.rock, { p: [-0.02, 0.8, 0.02] }).add(dod(0.14), PAL.rockD, { p: [0, 1.0, 0] }));
   T('lantern', b => b.add(box, PAL.stone, { p: [0, 0.12, 0], s: [0.5, 0.24, 0.5] }).add(cyl(0.11, 0.1, 0.7, 6), PAL.stoneD, { p: [0, 0.24, 0] }).add(box, PAL.stone, { p: [0, 1.0, 0], s: [0.36, 0.1, 0.36] }).add(box, PAL.stoneD, { p: [0, 1.18, 0], s: [0.26, 0.26, 0.26] }).add(cone(0.34, 0.26, 4), PAL.stone, { p: [0, 1.3, 0], r: [0, Math.PI / 4, 0] }).add(box, PAL.stoneD, { p: [0, 1.62, 0], s: [0.1, 0.1, 0.1] }));
+  T('lanternGlowOut', b => b.add(box, PAL.glowWarm, { p: [0, 1.18, 0], s: [0.34, 0.2, 0.34] }));
   T('lanternGlow', b => b.add(box, PAL.glowWarm, { p: [0, 1.18, 0], s: [0.16, 0.18, 0.16] }));
   T('torii', b => b.add(cyl(0.13, 0.11, 2.6, 8), PAL.torii, { p: [-1.0, 0, 0] }).add(cyl(0.13, 0.11, 2.6, 8), PAL.torii, { p: [1.0, 0, 0] }).add(box, PAL.torii, { p: [0, 2.55, 0], s: [2.9, 0.18, 0.26] }).add(box, PAL.toriiD, { p: [0, 2.3, 0], s: [2.2, 0.12, 0.2] }).add(box, PAL.toriiD, { p: [-1.0, 0, 0], s: [0.34, 0.3, 0.34] }).add(box, PAL.toriiD, { p: [1.0, 0, 0], s: [0.34, 0.3, 0.34] }));
   T('mossStep', b => { for (let i = 0; i < 4; i++) b.add(box, PAL.stone, { p: [0, 0.08 + i * 0.17, -i * 0.34], s: [1.5, 0.17, 0.34], top: i % 2 ? PAL.moss : PAL.stoneD, noise: 0.1 }); return b; });
@@ -2309,6 +2310,16 @@ function make(THREE) {
   T('navLightGlow', b => b.add(box, '#ffb870', { p: [0, 0.95, 0], s: [0.14, 0.11, 0.14] }));
   T('lampPool', b => b.add(new THREE.CircleGeometry(3.4, 18).rotateX(-Math.PI / 2), '#ffd9a0', { p: [0, 0.03, 0] }));
   T('pylonTop', b => { for (const x of [-5.9, 5.9]) b.add(box, PAL.concrete, { p: [x, 6.5, 0], s: [1.1, 13, 1.1], noise: 0.04, top: PAL.concreteD }); return b.add(box, PAL.concrete, { p: [0, 12.5, 0], s: [12.9, 1.0, 1.0], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, 7.6, 0], s: [11.8, 0.6, 0.8] }); });
+  // ---- W5b: stone step block (origin at its underside, 1 m cube scaled per step), jizo statue, snow-route pole, orange refuge hut, spiral steel stair, gate post
+  T('stoneStep', b => b.add(box, PAL.stone, { p: [0, 0.5, 0], s: [1, 1, 1], top: PAL.moss, noise: 0.07 }));
+  T('jizo', b => b.add(box, PAL.stoneD, { p: [0, 0.1, 0], s: [0.5, 0.2, 0.5] }).add(cyl(0.18, 0.13, 0.55, 6), PAL.stone, { p: [0, 0.2, 0], noise: 0.06 }).add(ico(0.15, 0), PAL.stone, { p: [0, 0.82, 0] }).add(box, PAL.red, { p: [0, 0.6, 0.12], s: [0.26, 0.12, 0.04] }).add(cone(0.2, 0.14, 6), PAL.stoneD, { p: [0, 0.9, 0] }));
+  T('snowPole', b => { for (let i = 0; i < 4; i++) b.add(cyl(0.045, 0.045, 0.5, 6), i % 2 ? PAL.white : PAL.red, { p: [0, i * 0.5, 0] }); return b.add(box, '#e6f4ff', { p: [0, 1.9, 0.05], s: [0.1, 0.2, 0.03] }); });
+  T('snowPoleGlow', b => b.add(box, '#bfe4ff', { p: [0, 1.9, 0.075], s: [0.08, 0.16, 0.02] }));
+  T('shelterOrange', b => b.add(box, PAL.orange, { p: [0, 0.9, 0], s: [2.6, 1.8, 2.0], noise: 0.05 }).add(box, '#f2f6fa', { p: [0, 1.88, 0], s: [2.8, 0.22, 2.2] }).add(box, PAL.woodD, { p: [0, 0.8, 1.01], s: [0.7, 1.4, 0.05] }).add(box, '#2c3a4c', { p: [0.8, 1.1, 1.01], s: [0.45, 0.4, 0.03] }));
+  T('gatePost', b => b.add(box, PAL.stone, { p: [0, 0.7, 0], s: [0.34, 1.4, 0.34], top: PAL.moss, noise: 0.05 }).add(box, PAL.stoneD, { p: [0, 1.42, 0], s: [0.44, 0.1, 0.44] }));
+  T('steelStep', b => b.add(box, PAL.metal, { p: [0, 0, 0], s: [0.26, 0.05, 0.8] }).add(box, PAL.concreteD, { p: [0, -0.04, 0], s: [0.22, 0.03, 0.78] }));
+  T('steelPlate', b => b.add(box, PAL.metal, { p: [0, 0, 0], s: [1, 0.06, 1] }).add(box, PAL.concreteD, { p: [0, -0.05, 0], s: [0.96, 0.04, 0.96] }));
+  T('steelPost', b => b.add(box, PAL.concreteD, { p: [0, 0.45, 0], s: [0.04, 0.9, 0.04] }));
   T('busBench', b => b.add(box, PAL.woodL, { p: [0, 0.45, 0], s: [1.5, 0.08, 0.4] }).add(box, PAL.woodD, { p: [-0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }).add(box, PAL.woodD, { p: [0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }));
 
   return { geometries: G, palette: PAL, builder, hash3 };
@@ -2514,7 +2525,7 @@ const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math
 
 // Profiles: lateral offset o (true metres, positive to the right of travel), lift l above the ground (or above the deck for the boardwalk), colour.
 const COL = { asphalt: '#2f3645', asphaltL: '#3a4152', gravel: '#6a6458', gravelD: '#585349', grass: '#4f7d5b', grassD: '#3f6a50', ditch: '#27475a', ditchD: '#1f3a48', lip: '#7a7a82',
-  crack: '#4a4e58', line: '#c9cfc4', dash: '#c9cfc4', concreteL: '#7c828c', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c' };
+  crack: '#4a4e58', line: '#c9cfc4', dash: '#c9cfc4', snowTrack: '#bccfe2', snowEdge: '#d4e4f0', concreteL: '#7c828c', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c' };
 const PROFILES = {
   // RD03: single carriageway 4.5 m (card: 4-5 m) with a gravel shoulder, a side ditch on the left and grass beyond
   RD03: { paved: [-2.25, 2.25], pts: [[-4.4, 0, 'grass'], [-3.7, 0, 'grassD'], [-3.55, -0.04, 'lip'], [-3.45, -0.3, 'ditchD'], [-2.95, -0.3, 'ditch'], [-2.85, -0.05, 'lip'], [-2.75, 0.0, 'gravel'], [-2.3, 0.02, 'gravelD'], [-2.25, 0.045, 'asphalt'], [2.25, 0.045, 'asphalt'], [2.3, 0.02, 'gravelD'], [2.75, 0.0, 'gravel'], [3.3, 0, 'grassD'], [4.2, 0, 'grass']] },
@@ -2534,6 +2545,8 @@ const rd01 = town => {
   return { paved: town ? [-4.5, 4.5] : [-3.5, 3.5], bed: true, pts: [...left, ...right] };
 };
 PROFILES.RD01 = rd01(false); PROFILES.RD01T = rd01(true);
+// RD08: no pavement; a compacted snow track about 2 m wide (card), a slightly lighter edge, the snow of the terrain around it (the verge takes the terrain colour)
+PROFILES.RD08 = { paved: [-1.0, 1.0], pts: [[-3.4, 0, 'grass', 0], [-2.4, 0, 'grassD', 0], [-1.4, 0.0, 'snowEdge', 0], [-1.05, -0.04, 'snowTrack', 0], [-0.3, -0.06, 'snowTrack', 0], [0.3, -0.06, 'snowTrack', 0], [1.05, -0.04, 'snowTrack', 0], [1.4, 0.0, 'snowEdge', 0], [2.4, 0, 'grassD', 0], [3.4, 0, 'grass', 0]] };
 const DECK = { half: 1.0, planks: 0.32, pileEvery: 2.5, lampEvery: 10, minAbove: 0.9, followLift: 0.15 };   // boardwalk 2 m wide (card 1.5-2.5), piles 0.5-1.5 m above the water
 
 // Sweep a profile along a polyline of {lon, lat}: triangle strips in flat Mercator coordinates; each profile point follows the terrain at its
@@ -2708,6 +2721,7 @@ function route(W, segs, o = {}) {
     off += len; if (k + 1 < edges.length) joints.push(off);
   });
   if (o.lead) { classes = [o.lead.cls, ...classes]; joints = [o.lead.at, ...joints]; }
+  if (o.trimStart) { while (S.length > 2 && S[0].s < o.trimStart) { S.shift(); edgeOf.shift(); } }      // start beyond the edge of a wider road it branches from
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
@@ -2762,10 +2776,11 @@ function route(W, segs, o = {}) {
   for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
   // weeds and tufts along the paved edge: a deterministic count per 5 m bin that grows with the wear (none at the town edge)
   const instances = {}, add = (type, i, oo, extra = {}) => { const off2 = oo, [lo, la] = lateral(i, oo); (instances[type] = instances[type] || []).push({ type, lon: lo, lat: la, alt: surface(i, off2), yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: [0, 0], tint: extra.tint || [1, 1, 1], station: extra.station }); };
-  if (o.weeds !== false) for (let b0 = 0; b0 < total - 2.4; b0 += 5) {
+  const sBase = S[0].s;
+  if (o.weeds !== false) for (let b0 = sBase; b0 < total - 2.4; b0 += 5) {
     const len = Math.min(5, total - b0), mid = b0 + len / 2, wr = wearMax * smooth(0, wearLen, mid), cnt = Math.round(wr * (o.weedsPerBin || 5) * len / 5);
     for (let k = 0; k < cnt; k++) for (const side of [-1, 1]) {
-      const st = b0 + 0.6 + (len - 1.2) * hash(b0 + k * 3.1, side * 7), i = Math.min(n - 1, Math.round(st / 0.5)); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
+      const st = b0 + 0.6 + (len - 1.2) * hash(b0 + k * 3.1, side * 7), i = Math.min(n - 1, Math.max(0, Math.round((st - sBase) / 0.5))); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
       const oo = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47 + side));
       add(hash(st, 49) < 0.5 ? 'tuft' : 'weed', i, oo, { yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], station: st });
     }
@@ -2819,12 +2834,15 @@ function build(W, ids, o = {}) {
   const lateral = (i, oo) => latRaw(i, oo * cf[i]);
   const ground = (i, oo) => { const [lo, la] = lateral(i, oo); return W.height(lo, la); };
   // ---- vertical alignment: climb at DECK.slope from each abutment to the base height, a hump at the tower (if any), rounded by a 2 m moving average
-  const hS = S[0].h, hE = S[n - 1].h, pylonS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
+  const hS = S[0].h, hE = S[n - 1].h, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
+  // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of T11-02 has room at the node (W5b裁决)
+  const pylonS = humpS === null ? null : humpS + (o.pylonShift || 0);
   const base = o.base || DECK.base;
   let A = S.map(p => Math.min(base, hS + DECK.slope * p.s, hE + DECK.slope * (L - p.s)));
-  if (pylonS !== null) A = A.map((a, i) => a + DECK.hump * (Math.abs(S[i].s - pylonS) < DECK.humpHalf ? 0.5 * (1 + Math.cos(Math.PI * (S[i].s - pylonS) / DECK.humpHalf)) : 0));
+  if (humpS !== null) A = A.map((a, i) => a + DECK.hump * (Math.abs(S[i].s - humpS) < DECK.humpHalf ? 0.5 * (1 + Math.cos(Math.PI * (S[i].s - humpS) / DECK.humpHalf)) : 0));
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
+  const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
   const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
@@ -2865,7 +2883,7 @@ function build(W, ids, o = {}) {
 
   // ---- parapets (concrete barrier pieces every 2 m on both kerbs), lamps (alternating sides every 16 m), expansion joints
   const jointSeg = [];
-  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
+  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
   let lampN = 0;
   for (let s = DECK.lampEvery / 2; s < L; s += DECK.lampEvery) {
     const i = Math.min(n - 1, Math.round(s / 0.5)), side = lampN++ % 2 ? 1 : -1, r = rightOf(i);
@@ -2928,6 +2946,33 @@ function build(W, ids, o = {}) {
     out.lines.stays = stays;
     out.pylon = { s: pylonS, i, lon: S[i].lon, lat: S[i].lat, deck: A[i], top, above: DECK.towerAbove, legs };
   }
+  // ---- T11-02 maintenance stair (LM08 and RD02 cards): a gate in the north parapet, a gangway out to a two-flight steel stair hung on the north face of the girder
+  // (flight A runs away from the gate, a landing, flight B returns to the node), ending on a small wooden landing at LM08-south; riser 0.2 m, tread 0.26 m
+  if (o.access) {
+    const s0 = accessS, i0 = Math.round(s0 / 0.5), top = A[i0], riser = 0.2, treadL = 0.26, nFl = Math.round((top - 0.04) / riser / 2), grd = ground(i0, -5.4), acc = { s: s0, i: i0, top, steps: [], posts: 0, landing: null };
+    const dz = zz => -(5.0 + zz);                               // lateral offset (negative = north side) of a point zz metres outside the girder face
+    const stairAlt = k => top - 0.05 - riser * (k + 1);
+    const yawFwd = Math.atan2(-T[i0][1], T[i0][0]);              // local +x along the bridge
+    const place = (type, xs, zz, alt, ex = {}) => { const ii = Math.min(n - 1, Math.max(0, i0 + Math.round(xs / 0.5))), r = add(type, ii, dz(zz), alt, { yaw: ex.yaw === undefined ? yawFwd : ex.yaw, s: ex.s }); return r; };
+    // gangway from the gate (parapet gap) out to flight A: 1.2 m of plate at deck level
+    place('steelPlate', 0.0 + 0.9, 0.9, top - 0.03, { s: [1.8, 1, 1.8] });
+    // flight A (outer, z = 1.35): from x = 0.9 down to the landing; flight B (inner, z = 0.4): back to x = 0
+    const xA0 = 1.6;
+    for (let k = 0; k < nFl; k++) { const x = xA0 + k * treadL; place('steelStep', x, 1.45, stairAlt(k)); acc.steps.push({ k, x, z: 1.45, alt: stairAlt(k) }); }
+    const xL = xA0 + nFl * treadL, aL = stairAlt(nFl - 1) - riser;
+    place('steelPlate', xL + 0.5, 0.95, aL, { s: [1.0, 1, 2.2] });
+    for (let k = 0; k < nFl; k++) { const x = xL - (k + 1) * treadL + 0.0, alt = aL - riser * (k + 1); place('steelStep', x, 0.45, alt); acc.steps.push({ k: nFl + k, x, z: 0.45, alt }); }
+    // rail posts every 1.3 m on both flights' outer sides and a 1.1 m high rope-less steel rail drawn as lines in the scene
+    out.stairRails = [];
+    for (const [zz, sgn] of [[1.9, 1], [0.0, 1]]) { const line = []; for (let x = xA0 - 0.4; x <= xL + 0.2; x += 1.3) { const k = Math.min(nFl - 1, Math.max(0, Math.round((x - xA0) / treadL))); const alt = zz > 1 ? stairAlt(k) : (aL - riser * (nFl - Math.max(0, Math.round((xL - x) / treadL)))); const ii = Math.min(n - 1, i0 + Math.round(x / 0.5)); place('steelPost', x, zz, alt + 0.03); acc.posts++; const [lo, la] = lateral(ii, dz(zz)); line.push({ lon: lo, lat: la, alt: alt + 0.95 }); } out.stairRails.push(line); void sgn; }
+    // landing at the node: 1.6 x 1.6 m wooden deck at the ground, flush with the beach
+    const node = W.roadNetwork.nodeById[o.access.node], gl = Math.max(W.height(node.lon, node.lat), 0.04) + 0.1;
+    const put = (type, lon, lat, alt, ex = {}) => { (out.instances[type] = out.instances[type] || []).push({ type, lon, lat, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: [0, 0], tint: [1, 1, 1] }); };
+    acc.landing = { lon: node.lon, lat: node.lat, alt: gl, node: o.access.node };
+    put('steelPlate', node.lon, node.lat, gl, { yaw: yawFwd, s: [1.6, 1, 1.6] });
+    { const q = W.destination(node, W.bearing(S[i0], node) + 20, 1.1); put('lampSmall', q.lon, q.lat, gl, {}); }
+    out.access = acc;
+  }
   return out;
 }
 
@@ -2943,6 +2988,100 @@ function tunnel(W, edgeId, bed) {
 const BRIDGE = { build, tunnel, DECK, COL };
 if (typeof module !== 'undefined' && module.exports) module.exports = BRIDGE;
 else global.BRIDGE = BRIDGE;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// RD06 stone stairs (W5b): pure data (no THREE, no DOM), driven by world.js and the ground height function it is given.
+// build(W, edgeId) turns an RD06 edge into stone steps that follow the terrain: the ground profile along the path (the highest of three lateral points, smoothed 3 m,
+// made monotone) is cut at multiples of the riser (0.15-0.18 m, card), so steep ground gets short treads and gentle ground gets long ones that read as platforms; the
+// treads average about 0.77 m (W5_SPEC 3.1). Around the steps: rope handrails on the steep part (posts every third step), a small torii at the start, stone lanterns
+// (at most 10 per stair, W5_SPEC 5.1), jizo statues, wooden benches on platforms and guide pillars. Everything uses the flat Mercator frame of the planet (positions
+// carry 1/cos(lat) in the scene part); instance records give the altitude directly.
+(function (global) {
+'use strict';
+const R = 90, D = Math.PI / 180;
+const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math.imul(Math.round(b * 131), 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+const STAIR = { width: 1.6, riser: 0.17, minTread: 0.3, platform: 1.3, smooth: 6, maxLanterns: 10, ropeBelow: 0.62, baseDepth: 0.55 };
+
+function build(W, edgeId, o = {}) {
+  const NET = W.roadNetwork, edge = NET.edges.find(e => e.id === edgeId), S = NET.samplePath(edge, 0.5), n = S.length, L = NET.edgeLength(edge);
+  const flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
+  const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
+  const brg = S.map((p, i) => W.bearing(S[Math.max(0, i - 1)], S[Math.min(n - 1, i + 1)]));
+  const lateral = (i, off) => { if (!off) return [S[i].lon, S[i].lat]; const q = W.destination(S[i], brg[i] + (off > 0 ? 90 : -90), Math.abs(off)); return [q.lon, q.lat]; };
+  const hAt = (i, off) => { const [lo, la] = lateral(i, off); return W.height(lo, la); };
+  // ground profile: highest of the three lateral points under the stair, smoothed, then monotone (never lower than before) and pinned to the ground at the ends
+  const raw = S.map((p, i) => Math.max(hAt(i, -0.8), hAt(i, 0), hAt(i, 0.8)));
+  const w = STAIR.smooth, sm = raw.map((_, i) => { const a = Math.max(0, i - w), b = Math.min(n - 1, i + w); let t = 0; for (let k = a; k <= b; k++) t += raw[k]; return t / (b - a + 1); });
+  const P = sm.slice(); for (let i = 1; i < n; i++) P[i] = Math.max(P[i], P[i - 1]);
+  const h0 = S[0].h, h1 = S[n - 1].h; P[0] = Math.min(P[0], h0 + 0.0); P[n - 1] = Math.max(P[n - 1], h1);
+  const Hlo = P[0], Hhi = P[n - 1], N = Math.max(1, Math.round((Hhi - Hlo) / STAIR.riser)), riser = (Hhi - Hlo) / N;
+  // step k (1..N): its top is Hlo + k * riser; its front edge is where the profile first reaches that altitude; tread = distance from the previous front edge
+  const cross = [0]; let j = 0;
+  for (let k = 1; k <= N; k++) { const target = Hlo + k * riser - 1e-9; while (j < n - 1 && P[j] < target) j++; const t = j > 0 && P[j] > P[j - 1] ? (target - P[j - 1]) / (P[j] - P[j - 1]) : 1; cross.push(S[j - (j > 0 ? 1 : 0)].s + t * (S[j].s - S[Math.max(0, j - 1)].s)); }
+  cross[N] = Math.min(cross[N], L);
+  const sampleAt = s => { let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return Math.min(n - 1, Math.max(0, Math.round(i + (s - S[i].s) / Math.max(1e-6, S[i + 1].s - S[i].s)))); };
+  const out = { id: edgeId, samples: S, length: L, riser, count: N, steps: [], instances: {}, lines: {}, ropeSegments: [], profile: P, flatOf: F, tangent: T, lateral, lanterns: [], platforms: [] };
+  const add = (type, i, off, alt, ex = {}) => { const [lo, la] = lateral(i, off); const rec = { type, lon: lo, lat: la, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: ex.lean || [0, 0], tint: ex.tint || [1, 1, 1] }; (out.instances[type] = out.instances[type] || []).push(rec); return rec; };
+  const yawAcross = i => Math.atan2(T[i][0], T[i][1]);      // local +z along the path, +x across it
+  const yawFace = (dx, dz) => Math.atan2(dx, dz);
+  const right = i => [-T[i][1], T[i][0]];
+  // steps
+  let minGroundGap = Infinity;
+  for (let k = 1; k <= N; k++) {
+    const sa = cross[k - 1], sb = Math.max(sa + 0.05, cross[k]), mid = (sa + sb) / 2, i = sampleAt(mid), tread = sb - sa, top = Hlo + k * riser;
+    const g = Math.min(hAt(i, -0.8), hAt(i, 0), hAt(i, 0.8)), bottom = Math.min(top - STAIR.baseDepth, g - 0.12), tall = top - bottom;
+    minGroundGap = Math.min(minGroundGap, top - g);
+    // a tread longer than 2.6 m (gentle ground between two steps) is laid as several slabs 0.04 m apart; the rest is one block
+    const pieces = tread > 2.6 ? Math.ceil(tread / 2.2) : 1;
+    for (let q = 0; q < pieces; q++) {
+      const a = sa + tread * q / pieces, b = sa + tread * (q + 1) / pieces - (pieces > 1 ? 0.04 : 0), im = sampleAt((a + b) / 2), gq = Math.min(hAt(im, -0.8), hAt(im, 0), hAt(im, 0.8)), bq = Math.min(top - STAIR.baseDepth, gq - 0.12);
+      add('stoneStep', im, 0, bq, { yaw: yawAcross(im), s: [STAIR.width, top - bq, Math.max(b - a, STAIR.minTread * 0.8)], tint: (() => { const f = 0.85 + 0.3 * hash(k * 7 + q, 3); return [f, f, f]; })() });
+    }
+    out.steps.push({ k, i, s: mid, tread, top, bottom, riser, width: STAIR.width, lon: S[i].lon, lat: S[i].lat });
+    if (tread >= STAIR.platform) out.platforms.push({ k, i, s: mid, tread, top });
+  }
+  // rope handrails on the steep part (tread below ropeBelow): a post on each side every third step, two ropes between
+  const steepIdx = out.steps.filter(st => st.tread < STAIR.ropeBelow);
+  const ropeLines = [[], [], [], []];
+  steepIdx.forEach((st, a) => {
+    for (const side of [-1, 1]) {
+      const off = side * (STAIR.width / 2 + 0.08);
+      if (a % 3 === 0) { add('ropePost', st.i, off, st.top, {}); }
+    }
+  });
+  // ropes: through the posts, two heights per side (lines are made in the scene part from these point lists)
+  const posts = (out.instances.ropePost || []);
+  for (const sideIdx of [0, 1]) {
+    const pts = posts.filter(p => (sideIdx === 0) === (arcSide(p) < 0));
+    function arcSide(p) { let b = 0, bd = 1e9; S.forEach((q, i) => { const d = Math.abs(q.lon - p.lon) + Math.abs(q.lat - p.lat); if (d < bd) { bd = d; b = i; } }); const r = right(b), f = flat(p), dx = f.x - F[b].x, dz = f.z - F[b].z; return dx * r[0] + dz * r[1]; }
+    for (const hh of [0.5, 0.88]) { const line = pts.map(p => ({ lon: p.lon, lat: p.lat, alt: p.alt + hh })); if (line.length > 1) out.ropeSegments.push(line); }
+  }
+  // torii at the start (scaled to fit the 1.6 m stair: 2.9 m wide gate x 0.7), guide pillars beside it
+  const i0 = 0, r0 = right(i0);
+  add('torii', i0, 0, Hlo, { yaw: yawAcross(i0), s: [0.62, 0.7, 0.7] });
+  for (const side of [-1, 1]) add('stonePost', i0, side * 1.7, hAt(i0, side * 1.7), { s: [1.1, 1.3, 1.1] });
+  void r0;
+  // lanterns: every ~12 steps (at most 10), alternating sides; jizo on two platforms; benches on the two longest platforms
+  const every = Math.max(8, Math.ceil(N / STAIR.maxLanterns));
+  let side = 1;
+  for (let k = every; k <= N && out.lanterns.length < STAIR.maxLanterns; k += every) {
+    const st = out.steps[k - 1], r = right(st.i), off = side * (STAIR.width / 2 + 0.9), g = hAt(st.i, off), rec = add('lantern', st.i, off, g, { yaw: yawFace(-side * r[0], -side * r[1]) });
+    out.lanterns.push({ k, i: st.i, s: st.s, lon: rec.lon, lat: rec.lat, alt: g }); side = -side;
+  }
+  const plat = out.platforms.slice().sort((a, b) => b.tread - a.tread).slice(0, 4);
+  plat.forEach((pl, a) => { const r = right(pl.i);
+    if (a < 2) { const off = (a % 2 ? -1 : 1) * (STAIR.width / 2 + 0.7); add('jizo', pl.i, off, hAt(pl.i, off), { yaw: yawFace(-Math.sign(off) * r[0], -Math.sign(off) * r[1]) }); }
+    else { const off = (a % 2 ? -1 : 1) * (STAIR.width / 2 + 0.8); add('busBench', pl.i, off, hAt(pl.i, off), { yaw: yawAcross(pl.i) }); } });
+  out.lines.edgeL = S.map((p, i) => { const [lo, la] = lateral(i, -STAIR.width / 2); return { lon: lo, lat: la, alt: P[i] + 0.03 }; });
+  out.lines.edgeR = S.map((p, i) => { const [lo, la] = lateral(i, STAIR.width / 2); return { lon: lo, lat: la, alt: P[i] + 0.03 }; });
+  out.stats = { riser, count: N, drop: Hhi - Hlo, avgTread: L / N, minTread: Math.min(...out.steps.map(s => s.tread)), maxTread: Math.max(...out.steps.map(s => s.tread)), platforms: out.platforms.length, lanterns: out.lanterns.length, ropePosts: posts.length, minGroundGap };
+  return out;
+}
+
+const STEPS = { build, STAIR };
+if (typeof module !== 'undefined' && module.exports) module.exports = STEPS;
+else global.STEPS = STEPS;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -2977,7 +3116,20 @@ function ribbon(polys, cols, lift, colour) {
   return { pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx) };
 }
 
+// soft round discs (additive): intermittent lights seen from far away (centre alpha 1, rim 0)
+function discs(points, radius, colour, lift) {
+  const pos = [], col = [], idx = [], seg = 10; let base = 0;
+  for (const p of points) {
+    const f = { x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }, y = (p.alt + lift - BASE) * f.k;
+    pos.push(f.x, y, f.z); col.push(colour[0], colour[1], colour[2], 1);
+    for (let a = 0; a < seg; a++) { const th = a / seg * Math.PI * 2; pos.push(f.x + Math.cos(th) * radius * f.k, y, f.z + Math.sin(th) * radius * f.k); col.push(colour[0], colour[1], colour[2], 0); }
+    for (let a = 0; a < seg; a++) idx.push(base, base + 1 + (a + 1) % seg, base + 1 + a);
+    base += seg + 1;
+  }
+  return { pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx) };
+}
 const CORE = [[-3.4, 0], [-1.3, 0.55], [0, 1], [1.3, 0.55], [3.4, 0]];
+const DOT = [[-1.6, 0], [-0.6, 0.6], [0, 1], [0.6, 0.6], [1.6, 0]];
 const SEA = [[-5.0, 0], [-1.8, 0.3], [0, 0.5], [1.8, 0.3], [5.0, 0]];
 const AMBER = lin('#ffae5c'), SEACOL = lin('#ffc890');
 
@@ -2990,9 +3142,11 @@ function make(THREE, root) {
     const m = new THREE.Mesh(g, mat()); m.name = name; m.matrixAutoUpdate = false; m.renderOrder = 6; m.visible = false; root.add(m); st.meshes.push(m); return m;
   };
   // polys: lit road polylines; sea: the same routes' bridge parts (reflections on the sea surface at altitude 0.03)
-  st.build = (polys, sea) => {
+  st.build = (polys, sea, dots = []) => {
     st.core = mesh(ribbon(polys, CORE, 0.2, AMBER), 'lightband:core');
     st.sea = sea.length ? mesh(ribbon(sea, SEA, 0, SEACOL), 'lightband:sea') : null;
+    // dots: short soft ribbons for the intermittent lights (stair lanterns, small boardwalk lamps)
+    if (dots.length) st.dots = mesh(discs(dots, 2.2, AMBER.map(v => v * 0.5), 0.2), 'lightband:dots');
     st.stats = { polylines: polys.length, seaPolylines: sea.length, triangles: st.meshes.reduce((s, m) => s + m.geometry.index.count / 3, 0), drawCalls: st.meshes.length };
     st.built = true;
   };
@@ -3009,7 +3163,7 @@ function make(THREE, root) {
   return st;
 }
 
-const LIGHTBAND = { ribbon, make, CORE, SEA };
+const LIGHTBAND = { ribbon, discs, make, CORE, SEA };
 if (typeof module !== 'undefined' && module.exports) module.exports = LIGHTBAND;
 else global.LIGHTBAND = LIGHTBAND;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -3401,20 +3555,26 @@ const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math
 // into the road class (W5_SPEC 3.0): RD01 9 m asphalt -> 7 m with gravel shoulders within 15 m; RD03 fraying edges, cracks, weeds; RD05 from a 4.5 m asphalt apron.
 const LEAD01 = { cls: 'RD01T', at: 8 };
 const ROUTES = [
-  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { firstLamp: 3, busStop: 10, barrier: ['end'], barrierGap: [{ side: -1, s0: 8.8, s1: 15.8 }] } },
-  { id: 'N01-west', exit: 'N01', segs: [{ id: 'T01-15', rev: true }, { id: 'T01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { firstLamp: 3, busStop: 11, barrier: ['end'] } },
-  { id: 'T01-ridge', segs: [{ id: 'T01-04' }, { id: 'T01-05' }, { id: 'T01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
-  { id: 'T01-west', segs: [{ id: 'T01-10' }, { id: 'T01-11' }, { id: 'T01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { firstLamp: 6, barrier: ['start', 'end'] } },
-  { id: 'N10-T04', exit: 'N10', segs: [{ id: 'T04-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24, trimEnd: 3.6 } },
-  { id: 'N04-T02', exit: 'N04', segs: [{ id: 'T02-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
-  { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
+  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'], barrierGap: [{ side: -1, s0: 8.8, s1: 15.8 }] } },
+  { id: 'N01-west', exit: 'N01', segs: [{ id: 'T01-15', rev: true }, { id: 'T01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 11, barrier: ['end'] } },
+  { id: 'T01-ridge', segs: [{ id: 'T01-04' }, { id: 'T01-05' }, { id: 'T01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
+  { id: 'T01-west', segs: [{ id: 'T01-10' }, { id: 'T01-11' }, { id: 'T01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'] } },
+  { id: 'N10-T04', exit: 'N10', segs: [{ id: 'T04-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24, trimEnd: 3.6 }, furnish: { kind: 'RD03', lamps: [6, 25], poles: [10, 21], sign: [{ s: 15, type: 'signTri' }], mirror: 'end', vending: 23.5 } },
+  { id: 'N04-T02', exit: 'N04', segs: [{ id: 'T02-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 31], poles: [9, 24, 38, 48], sign: [{ s: 13, type: 'signRound' }], mirror: 'bend', busStop: 31 } },
+  { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 30], poles: [11, 24], sign: [{ s: 14, type: 'signRound' }], jizo: 29 } },
   { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
   { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
   { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  // W5b: the RD05 branches off T01 (start beyond the edge of the trunk road), the snow route RD08
+  { id: 'T07-RD05', segs: [{ id: 'T07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20 }, furnish: { kind: 'RD05', post: true } },
+  { id: 'T08-RD05', segs: [{ id: 'T08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40 }, furnish: { kind: 'RD05', post: true } },
+  { id: 'T09-RD05', segs: [{ id: 'T09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20 }, furnish: { kind: 'RD05', stakes: true } },
+  { id: 'T10-RD08', segs: [{ id: 'T10-01' }], opts: { wearMax: 0, weeds: false }, furnish: { kind: 'RD08', poleEvery: 8, shelter: 17.5 } },
 ];
+const STAIRS = ['T02-02', 'T08-02'];
 const BRIDGES = [
   { id: 'T01-03', ids: ['T01-03'] },
-  { id: 'T01-07+08+09', ids: ['T01-07', 'T01-08', 'T01-09'], pylonJoint: 1 },       // J-LM08 is the joint between T01-08 and T01-09
+  { id: 'T01-07+08+09', ids: ['T01-07', 'T01-08', 'T01-09'], pylonJoint: 1, pylonShift: -4.5, access: { atJoint: 1, node: 'LM08-south' } },       // J-LM08 is the joint between T01-08 and T01-09; the tower stands 4.5 m before it, the T11-02 stair at the node
   { id: 'T01-13', ids: ['T01-13'] },
 ];
 const NAV_PERIOD = 6;                                // navigation lights: one slow pulse per 6 s (card: period >= 4 s, no flicker)
@@ -3422,6 +3582,9 @@ const SPACING = { human: 16, wild: 40 };            // RD01 lamps (card): inhabi
 
 // RD01 street furniture on a swept route: lamps by zone, concrete barriers near bridges and portals, milestones, bus stops, the tunnel portal data.
 function furnish(W, rt, cfg) {
+  if (cfg.kind === 'RD03') return furnishRD03(W, rt, cfg);
+  if (cfg.kind === 'RD05') return furnishRD05(W, rt, cfg);
+  if (cfg.kind === 'RD08') return furnishRD08(W, rt, cfg);
   const S = rt.samples, n = S.length, add = (type, i, o, alt, ex = {}) => { const [lo, la] = rt.lateral(i, o); (rt.instances[type] = rt.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: [0, 0], tint: ex.tint || [1, 1, 1] }); };
   const T = rt.tangent, yawAlong = i => Math.atan2(-T[i][1], T[i][0]), yawToward = (dx, dz) => Math.atan2(-dz, dx), yawFace = (dx, dz) => Math.atan2(dx, dz), right = i => [-T[i][1], T[i][0]];
   rt.lamps = [];
@@ -3447,24 +3610,67 @@ function furnish(W, rt, cfg) {
   if (cfg.tunnel) { const idx = []; S.forEach((p, i) => { if (p.span === 'tunnel') idx.push(i); }); rt.tunnel = { idx, s0: S[idx[0]].s, s1: S[idx[idx.length - 1]].s, innerR: 4.7, wallH: 1.0, shell: 0.7 }; }
 }
 
+// generic placing helper for a swept route
+function placer(rt) {
+  const S = rt.samples, n = S.length, T = rt.tangent;
+  const add = (type, i, o, alt, ex = {}) => { const [lo, la] = rt.lateral(i, o); const rec = { type, lon: lo, lat: la, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: ex.lean || [0, 0], tint: ex.tint || [1, 1, 1] }; (rt.instances[type] = rt.instances[type] || []).push(rec); return rec; };
+  const idxAt = s => Math.min(n - 1, Math.max(0, Math.round((s - S[0].s) / 0.5)));
+  return { add, idxAt, S, n, T, yawAlong: i => Math.atan2(-T[i][1], T[i][0]), yawAcross: i => Math.atan2(T[i][0], T[i][1]), yawToward: (dx, dz) => Math.atan2(-dz, dx), yawFace: (dx, dz) => Math.atan2(dx, dz), right: i => [-T[i][1], T[i][0]] };
+}
+
+// RD03 country road (card): lamps about every 25 m (junction and bus stop included), utility poles that are never in a perfect row (jittered along and across, a small
+// lean), convex mirror, signs, a vending machine or a jizo shrine at the junction, a bus stop sign with a bench.
+function furnishRD03(W, rt, cfg) {
+  const P = placer(rt), { add, idxAt, S, n } = P; rt.lamps = []; rt.poles = [];
+  let side = 1;
+  for (const s of cfg.lamps) { const i = idxAt(s), r = P.right(i), o = 3.15 * side; add('lamp', i, o, rt.surface(i, o), { yaw: P.yawToward(-side * r[0], -side * r[1]), s: [0.8, 0.8, 0.8] }); add('lampPool', i, side * 1.3, rt.surface(i, side * 1.3) + 0.02); rt.lamps.push({ i, s: S[i].s, side, zone: 'rd03' }); side = -side; }
+  cfg.poles.forEach((s0, k) => { const s = s0 + (hash(s0, 3) - 0.5) * 3, o = 3.9 + (hash(s0, 5) - 0.5) * 1.0, i = idxAt(s), rec = add('pole', i, o, rt.surface(i, o), { yaw: P.yawAcross(i) + (hash(s0, 7) - 0.5) * 0.25, lean: [(hash(s0, 9) - 0.5) * 0.07, (hash(s0, 11) - 0.5) * 0.07] }); rt.poles.push({ i, s: S[i].s, rec }); });
+  for (const sg of (cfg.sign || [])) { const i = idxAt(sg.s), r = P.right(i), o = 2.9; add(sg.type, i, o, rt.surface(i, o), { yaw: P.yawFace(-r[0], -r[1]) }); }
+  if (cfg.mirror) { let best = 0, bi = n - 2; if (cfg.mirror === 'end') bi = n - 8; else for (let i = 2; i < n - 2; i++) { const a = Math.abs(((rt.brg[i + 1] - rt.brg[i - 1] + 540) % 360) - 180); if (a > best) { best = a; bi = i; } } const r = P.right(bi); add('mirror', bi, -3.0, rt.surface(bi, -3.0), { yaw: P.yawFace(r[0], r[1]) }); }
+  if (cfg.vending) { const i = idxAt(cfg.vending), o = 3.7; add('vending', i, o, rt.surface(i, o), { yaw: P.yawFace(-P.right(i)[0], -P.right(i)[1]) }); }
+  if (cfg.jizo) { const i = idxAt(cfg.jizo), o = 3.0; add('jizo', i, o, rt.surface(i, o), { yaw: P.yawFace(-P.right(i)[0], -P.right(i)[1]) }); add('lantern', i, o + 0.8, rt.surface(i, o + 0.8), { yaw: 0 }); }
+  if (cfg.busStop) { const i = idxAt(cfg.busStop), r = P.right(i); add('signBus', i, 2.9, rt.surface(i, 2.9), { yaw: P.yawFace(-r[0], -r[1]) }); add('busBench', i + 6 < n ? i + 6 : i, 3.1, rt.surface(i + 6 < n ? i + 6 : i, 3.1), { yaw: P.yawAlong(i) }); }
+}
+// RD05 dirt track: a stone post where it leaves the trunk road; the desert one (T09-01) is marked by wooden stakes every 5 m
+function furnishRD05(W, rt, cfg) {
+  const P = placer(rt), { add, idxAt, S } = P;
+  if (cfg.post) { const i = idxAt(S[0].s + 0.8); add('stonePost', i, -1.95, rt.surface(i, -1.95), { s: [0.9, 1, 0.9] }); }
+  if (cfg.stakes) for (let s = S[0].s + 2.5; s < rt.length - 1; s += 5) for (const sd of [-1, 1]) { const i = idxAt(s), o = sd * (1.95 + 0.15 * hash(s, sd)); add('bollard', i, o, rt.surface(i, o) - 0.03, { yaw: hash(s, 3) * 6.28, s: [0.8, 1.1 + 0.4 * hash(s, 5), 0.8], lean: [(hash(s, 7) - 0.5) * 0.12, (hash(s, 9) - 0.5) * 0.12] }); }
+}
+// RD08 snow route (card): red-white poles 2 m high every 8 m on both sides of the 2 m compacted track, an orange refuge hut half buried in the snow half way
+function furnishRD08(W, rt, cfg) {
+  const P = placer(rt), { add, idxAt, S } = P; rt.poles8 = [];
+  for (let s = S[0].s + 3; s < rt.length - 1; s += cfg.poleEvery) for (const sd of [-1, 1]) { const i = idxAt(s), o = sd * 1.9; add('snowPole', i, o, rt.surface(i, o), { yaw: P.yawAcross(i) + (sd > 0 ? Math.PI : 0) }); rt.poles8.push({ s: S[i].s, side: sd, i }); }
+  { const i = idxAt(cfg.shelter), o = 3.6, g = rt.surface(i, o); add('shelterOrange', i, o, g - 0.8, { yaw: P.yawAcross(i) }); rt.shelter = { i, s: S[i].s, alt: g }; }
+}
+
 function plan(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   const routes = ROUTES.map(def => { const rt = RK.route(WS, def.segs, { ...def.opts, terrainColor: tc }); rt.def = def; if (def.furnish) furnish(WS, rt, def.furnish); return rt; });
   const bridges = BRIDGES.map(def => { const b = BR.build(WS, def.ids, def); b.def = def; return b; });
   // lit polylines for the light band: RD01 along the bed (with a gap in the tunnel), RD02 along the deck; the sea parts for the reflections
   const lit = [], sea = [];
-  for (const rt of routes) { if (!rt.def.furnish) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
+  for (const rt of routes) { if (!(rt.lamps && rt.lamps.length)) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
   for (const b of bridges) { lit.push(b.samples.map((p, i) => ({ lon: p.lon, lat: p.lat, alt: b.alt[i] }))); let cur = []; b.samples.forEach((p, i) => { if (p.h < -0.2) cur.push({ lon: p.lon, lat: p.lat, alt: 0.03 }); else { if (cur.length > 1) sea.push(cur); cur = []; } }); if (cur.length > 1) sea.push(cur); }
-  return { routes, bridges, lit, sea, WS };
+  const stairs = STAIRS.map(id => global.STEPS.build(WS, id));
+  // closures at the landmark entrances: two guide posts across the end of the road that reaches the entrance (W5-C7); the entrance of LM04 belongs to the W4 section
+  const markers = [], items = [...routes.map(rt => ({ kind: 'route', rt, hw: rt.def.furnish && rt.def.furnish.kind === 'RD05' ? 1.5 : rt.def.furnish && rt.def.furnish.kind === 'RD08' ? 1.0 : rt.def.furnish && rt.def.furnish.kind === 'RD03' ? 2.25 : 4.5 })), ...stairs.map(st => ({ kind: 'stairs', rt: st, hw: 0.8 }))];
+  for (const nd of W.roadNetwork.nodes.filter(q => q.kind === 'landmark-entrance')) {
+    let best = null; for (const it of items) { const S = it.rt.samples; for (const i of [0, S.length - 1, ...(it.kind === 'route' ? S.map((_, j) => j) : [])]) { const d = global.WORLD ? 0 : 0; void d; const dd = W.arcDistance(S[i], nd); if (dd < 0.4 && (!best || dd < best.d)) best = { d: dd, it, i }; } }
+    if (!best) continue;
+    const { it, i } = best, T = it.rt.tangent, yaw = Math.atan2(T[i][0], T[i][1]);
+    for (const sd of [-1, 1]) { const [lo, la] = it.rt.lateral(i, sd * (it.hw + 0.75)); markers.push({ type: 'gatePost', lon: lo, lat: la, alt: (it.rt.surface ? it.rt.surface(i, sd * (it.hw + 0.75)) : WS.height(lo, la)), yaw, s: [1, 1, 1], lean: [0, 0], tint: [1, 1, 1], node: nd.id }); }
+  }
+  return { routes, bridges, stairs, markers, lit, sea, WS };
 }
 
-const ROADS = { plan, furnish, ROUTES, BRIDGES, SPACING, NAV_PERIOD };
+const ROADS = { plan, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const THREE = global.THREE, W = global.WORLD;
   const S = { built: false, stats: {}, root: null, band: null, nav: [], ink: {} };
-  const objs = { inst: [], hulls: [], glows: [], strips: [], lines: { aerial: [], bridge: [] }, nav: null };
+  const objs = { inst: [], hulls: [], glows: [], strips: [], lines: { aerial: [], bridge: [], near: [] }, nav: null };
   const tintC = new THREE.Color(), qE = new THREE.Euler(), qQ = new THREE.Quaternion(), mP = new THREE.Vector3(), mS = new THREE.Vector3(), mM = new THREE.Matrix4();
   const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
   const matrixOfAlt = it => { const f = flatOf(it.lon, it.lat); qE.set(it.lean[0], it.yaw, it.lean[1], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(f.x, (it.alt - BASE) * f.k, f.z), qQ, mS.set(f.k * it.s[0], f.k * it.s[1], f.k * it.s[2])); return mM.clone(); };
@@ -3504,9 +3710,12 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const all = {};
     for (const rt of DATA.routes) for (const [t, list] of Object.entries(rt.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const b of DATA.bridges) for (const [t, list] of Object.entries(b.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
+    for (const st of DATA.stairs) for (const [t, list] of Object.entries(st.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
+    (all.gatePost = all.gatePost || []).push(...DATA.markers.map(it => ({ ...it, m: matrixOfAlt(it) })));
     S.counts = {};
-    const GLOW = { lamp: ['lampGlow', M.glowMat], navLight: ['navLightGlow', navMat] };
-    const NOHULL = ['tuft', 'weed', 'lampPool'];
+    const lanternMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xb89870 }), poleGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xcfe6ff });     // lanterns glow faintly (card: weak warm light); pole reflectors faintly cool
+    const GLOW = { lamp: ['lampGlow', M.glowMat], navLight: ['navLightGlow', navMat], lantern: ['lanternGlowOut', lanternMat], vending: ['vendingGlow', M.glowMat], snowPole: ['snowPoleGlow', poleGlowMat] };
+    const NOHULL = ['tuft', 'weed', 'lampPool', 'steelStep', 'steelPost'];
     for (const [type, list] of Object.entries(all)) {
       const geo = type === 'lampPool' ? S.poolGeo : K.geometries[type]; if (!geo || !list.length) continue; S.counts[type] = list.length;
       const mat = type === 'lampPool' ? poolMat : M.floraMat;
@@ -3533,8 +3742,20 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     { const segs = [], white = []; for (const b of DATA.bridges) { for (const k of ['edgeL', 'edgeR', 'edgeLU', 'edgeRU']) poly(b.lines[k], segs); for (const j of b.lines.joints) poly(j, segs); for (const st of (b.lines.stays || [])) poly(st, white); }
       addLines('bridge', segs); addLines('bridge', white, 0xe6ebf2); }
 
-    // ---- light band
-    S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea);
+    // ---- near-only lines: rope handrails of the stairs, the steel rails of the T11-02 stair, the wires between the RD03 utility poles
+    { const rope = [], rail = [], wire = [], local = [[-0.8, 7.75, 0], [0, 7.75, 0], [0.8, 7.75, 0]];
+      for (const st of DATA.stairs) for (const line of st.ropeSegments) poly(line, rope);
+      for (const b of DATA.bridges) for (const line of (b.stairRails || [])) poly(line, rail);
+      for (const rt of DATA.routes) { const ps = rt.poles || []; for (let a = 0; a + 1 < ps.length; a++) { const A = ps[a].rec, B = ps[a + 1].rec, MA = matrixOfAlt(A), MB = matrixOfAlt(B), kA = flatOf(A.lon, A.lat).k, sag = 0.5 + 0.5 * hash(a + 1, rt.length); for (let c = 0; c < 3; c++) { const pa = new THREE.Vector3(...local[c]).applyMatrix4(MA), pb = new THREE.Vector3(...local[c]).applyMatrix4(MB); let prev = null; for (let nn = 0; nn <= 10; nn++) { const t = nn / 10, p = [pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t - sag * 4 * t * (1 - t) * kA, pa.z + (pb.z - pa.z) * t]; if (prev) wire.push(...prev, ...p); prev = p; } } } }
+      const addNear = (segs, color, op) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, fog: false })); l.name = 'road:near-line'; l.matrixAutoUpdate = false; root.add(l); objs.lines.near.push(l); };
+      addNear(rope, 0xb59a74, 0.95); addNear(rail, 0xaeb7c4, 0.95); addNear(wire, 0x1f2a38, 0.9); S.stats.wireSegments = wire.length / 6; }
+    { const segs = []; for (const st of DATA.stairs) { poly(st.lines.edgeL, segs); poly(st.lines.edgeR, segs); } addLines('aerial', segs); }
+
+    // ---- light band (RD01, RD02 and RD03 routes), with dots for the lanterns of the stairs and the small lamps of the boardwalk and the maintenance stair
+    const dots = []; for (const st of DATA.stairs) for (const l of st.lanterns) dots.push({ lon: l.lon, lat: l.lat, alt: l.alt + 0.6 });
+    for (const rec of ((SEC.state.roadOut || []).flatMap(r => r.instances.lampSmall || []))) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
+    for (const b of DATA.bridges) for (const rec of (b.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
+    S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea, dots); S.dots = dots.length;
     S.stats.buildMs = Date.now() - t0; S.built = true;
     return root;
   }
@@ -3587,8 +3808,10 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
     // the real lamps, their light pools, the small furniture and the navigation lights exist only near the surface (the light band stands for them from far away)
     const near = ink.distance < 120;
-    for (const m of [...objs.inst, ...objs.glows]) if (/road:(lamp|lampPool|tuft|weed|milestone|signBus|navLight|ripple)/.test(m.name)) m.visible = near && (!/ripple/.test(m.name) || SEC.state.settings.rain);
-    for (const h of objs.hulls) h.visible = g > 0.01 && (near || !/road:(lamp|milestone|signBus|navLight)/.test(h.name));
+    const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
+    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = near && (!/ripple/.test(m.name) || SEC.state.settings.rain);
+    for (const h of objs.hulls) h.visible = g > 0.01 && (near || FAR.test(h.name));
+    for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); l.material.opacity = Math.min(l.material.opacity > 0.95 ? 1 : 0.9, o); l.visible = o > 0.01; }
     if (S.ripples && near && SEC.state.settings.rain) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }

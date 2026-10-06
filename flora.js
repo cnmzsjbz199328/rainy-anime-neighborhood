@@ -95,6 +95,7 @@ function make(THREE) {
   T('logMoss', b => b.add(cyl(0.22, 0.17, 3.0, 6), PAL.logD, { r: [0, 0, Math.PI / 2], p: [-1.5, 0.22, 0], noise: 0.1 }).add(box, PAL.moss, { p: [0, 0.4, 0], s: [1.8, 0.1, 0.3] }));
   T('cairn', b => b.add(dod(0.35), PAL.rock, { p: [0, 0.2, 0] }).add(dod(0.28), PAL.rockD, { p: [0.03, 0.55, 0] }).add(dod(0.2), PAL.rock, { p: [-0.02, 0.8, 0.02] }).add(dod(0.14), PAL.rockD, { p: [0, 1.0, 0] }));
   T('lantern', b => b.add(box, PAL.stone, { p: [0, 0.12, 0], s: [0.5, 0.24, 0.5] }).add(cyl(0.11, 0.1, 0.7, 6), PAL.stoneD, { p: [0, 0.24, 0] }).add(box, PAL.stone, { p: [0, 1.0, 0], s: [0.36, 0.1, 0.36] }).add(box, PAL.stoneD, { p: [0, 1.18, 0], s: [0.26, 0.26, 0.26] }).add(cone(0.34, 0.26, 4), PAL.stone, { p: [0, 1.3, 0], r: [0, Math.PI / 4, 0] }).add(box, PAL.stoneD, { p: [0, 1.62, 0], s: [0.1, 0.1, 0.1] }));
+  T('lanternGlowOut', b => b.add(box, PAL.glowWarm, { p: [0, 1.18, 0], s: [0.34, 0.2, 0.34] }));
   T('lanternGlow', b => b.add(box, PAL.glowWarm, { p: [0, 1.18, 0], s: [0.16, 0.18, 0.16] }));
   T('torii', b => b.add(cyl(0.13, 0.11, 2.6, 8), PAL.torii, { p: [-1.0, 0, 0] }).add(cyl(0.13, 0.11, 2.6, 8), PAL.torii, { p: [1.0, 0, 0] }).add(box, PAL.torii, { p: [0, 2.55, 0], s: [2.9, 0.18, 0.26] }).add(box, PAL.toriiD, { p: [0, 2.3, 0], s: [2.2, 0.12, 0.2] }).add(box, PAL.toriiD, { p: [-1.0, 0, 0], s: [0.34, 0.3, 0.34] }).add(box, PAL.toriiD, { p: [1.0, 0, 0], s: [0.34, 0.3, 0.34] }));
   T('mossStep', b => { for (let i = 0; i < 4; i++) b.add(box, PAL.stone, { p: [0, 0.08 + i * 0.17, -i * 0.34], s: [1.5, 0.17, 0.34], top: i % 2 ? PAL.moss : PAL.stoneD, noise: 0.1 }); return b; });
@@ -152,6 +153,16 @@ function make(THREE) {
   T('navLightGlow', b => b.add(box, '#ffb870', { p: [0, 0.95, 0], s: [0.14, 0.11, 0.14] }));
   T('lampPool', b => b.add(new THREE.CircleGeometry(3.4, 18).rotateX(-Math.PI / 2), '#ffd9a0', { p: [0, 0.03, 0] }));
   T('pylonTop', b => { for (const x of [-5.9, 5.9]) b.add(box, PAL.concrete, { p: [x, 6.5, 0], s: [1.1, 13, 1.1], noise: 0.04, top: PAL.concreteD }); return b.add(box, PAL.concrete, { p: [0, 12.5, 0], s: [12.9, 1.0, 1.0], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, 7.6, 0], s: [11.8, 0.6, 0.8] }); });
+  // ---- W5b: stone step block (origin at its underside, 1 m cube scaled per step), jizo statue, snow-route pole, orange refuge hut, spiral steel stair, gate post
+  T('stoneStep', b => b.add(box, PAL.stone, { p: [0, 0.5, 0], s: [1, 1, 1], top: PAL.moss, noise: 0.07 }));
+  T('jizo', b => b.add(box, PAL.stoneD, { p: [0, 0.1, 0], s: [0.5, 0.2, 0.5] }).add(cyl(0.18, 0.13, 0.55, 6), PAL.stone, { p: [0, 0.2, 0], noise: 0.06 }).add(ico(0.15, 0), PAL.stone, { p: [0, 0.82, 0] }).add(box, PAL.red, { p: [0, 0.6, 0.12], s: [0.26, 0.12, 0.04] }).add(cone(0.2, 0.14, 6), PAL.stoneD, { p: [0, 0.9, 0] }));
+  T('snowPole', b => { for (let i = 0; i < 4; i++) b.add(cyl(0.045, 0.045, 0.5, 6), i % 2 ? PAL.white : PAL.red, { p: [0, i * 0.5, 0] }); return b.add(box, '#e6f4ff', { p: [0, 1.9, 0.05], s: [0.1, 0.2, 0.03] }); });
+  T('snowPoleGlow', b => b.add(box, '#bfe4ff', { p: [0, 1.9, 0.075], s: [0.08, 0.16, 0.02] }));
+  T('shelterOrange', b => b.add(box, PAL.orange, { p: [0, 0.9, 0], s: [2.6, 1.8, 2.0], noise: 0.05 }).add(box, '#f2f6fa', { p: [0, 1.88, 0], s: [2.8, 0.22, 2.2] }).add(box, PAL.woodD, { p: [0, 0.8, 1.01], s: [0.7, 1.4, 0.05] }).add(box, '#2c3a4c', { p: [0.8, 1.1, 1.01], s: [0.45, 0.4, 0.03] }));
+  T('gatePost', b => b.add(box, PAL.stone, { p: [0, 0.7, 0], s: [0.34, 1.4, 0.34], top: PAL.moss, noise: 0.05 }).add(box, PAL.stoneD, { p: [0, 1.42, 0], s: [0.44, 0.1, 0.44] }));
+  T('steelStep', b => b.add(box, PAL.metal, { p: [0, 0, 0], s: [0.26, 0.05, 0.8] }).add(box, PAL.concreteD, { p: [0, -0.04, 0], s: [0.22, 0.03, 0.78] }));
+  T('steelPlate', b => b.add(box, PAL.metal, { p: [0, 0, 0], s: [1, 0.06, 1] }).add(box, PAL.concreteD, { p: [0, -0.05, 0], s: [0.96, 0.04, 0.96] }));
+  T('steelPost', b => b.add(box, PAL.concreteD, { p: [0, 0.45, 0], s: [0.04, 0.9, 0.04] }));
   T('busBench', b => b.add(box, PAL.woodL, { p: [0, 0.45, 0], s: [1.5, 0.08, 0.4] }).add(box, PAL.woodD, { p: [-0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }).add(box, PAL.woodD, { p: [0.6, 0.22, 0], s: [0.08, 0.44, 0.36] }));
 
   return { geometries: G, palette: PAL, builder, hash3 };

@@ -35,12 +35,15 @@ function build(W, ids, o = {}) {
   const lateral = (i, oo) => latRaw(i, oo * cf[i]);
   const ground = (i, oo) => { const [lo, la] = lateral(i, oo); return W.height(lo, la); };
   // ---- vertical alignment: climb at DECK.slope from each abutment to the base height, a hump at the tower (if any), rounded by a 2 m moving average
-  const hS = S[0].h, hE = S[n - 1].h, pylonS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
+  const hS = S[0].h, hE = S[n - 1].h, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
+  // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of T11-02 has room at the node (W5b裁决)
+  const pylonS = humpS === null ? null : humpS + (o.pylonShift || 0);
   const base = o.base || DECK.base;
   let A = S.map(p => Math.min(base, hS + DECK.slope * p.s, hE + DECK.slope * (L - p.s)));
-  if (pylonS !== null) A = A.map((a, i) => a + DECK.hump * (Math.abs(S[i].s - pylonS) < DECK.humpHalf ? 0.5 * (1 + Math.cos(Math.PI * (S[i].s - pylonS) / DECK.humpHalf)) : 0));
+  if (humpS !== null) A = A.map((a, i) => a + DECK.hump * (Math.abs(S[i].s - humpS) < DECK.humpHalf ? 0.5 * (1 + Math.cos(Math.PI * (S[i].s - humpS) / DECK.humpHalf)) : 0));
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
+  const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
   const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
@@ -81,7 +84,7 @@ function build(W, ids, o = {}) {
 
   // ---- parapets (concrete barrier pieces every 2 m on both kerbs), lamps (alternating sides every 16 m), expansion joints
   const jointSeg = [];
-  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
+  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
   let lampN = 0;
   for (let s = DECK.lampEvery / 2; s < L; s += DECK.lampEvery) {
     const i = Math.min(n - 1, Math.round(s / 0.5)), side = lampN++ % 2 ? 1 : -1, r = rightOf(i);
@@ -143,6 +146,33 @@ function build(W, ids, o = {}) {
     }
     out.lines.stays = stays;
     out.pylon = { s: pylonS, i, lon: S[i].lon, lat: S[i].lat, deck: A[i], top, above: DECK.towerAbove, legs };
+  }
+  // ---- T11-02 maintenance stair (LM08 and RD02 cards): a gate in the north parapet, a gangway out to a two-flight steel stair hung on the north face of the girder
+  // (flight A runs away from the gate, a landing, flight B returns to the node), ending on a small wooden landing at LM08-south; riser 0.2 m, tread 0.26 m
+  if (o.access) {
+    const s0 = accessS, i0 = Math.round(s0 / 0.5), top = A[i0], riser = 0.2, treadL = 0.26, nFl = Math.round((top - 0.04) / riser / 2), grd = ground(i0, -5.4), acc = { s: s0, i: i0, top, steps: [], posts: 0, landing: null };
+    const dz = zz => -(5.0 + zz);                               // lateral offset (negative = north side) of a point zz metres outside the girder face
+    const stairAlt = k => top - 0.05 - riser * (k + 1);
+    const yawFwd = Math.atan2(-T[i0][1], T[i0][0]);              // local +x along the bridge
+    const place = (type, xs, zz, alt, ex = {}) => { const ii = Math.min(n - 1, Math.max(0, i0 + Math.round(xs / 0.5))), r = add(type, ii, dz(zz), alt, { yaw: ex.yaw === undefined ? yawFwd : ex.yaw, s: ex.s }); return r; };
+    // gangway from the gate (parapet gap) out to flight A: 1.2 m of plate at deck level
+    place('steelPlate', 0.0 + 0.9, 0.9, top - 0.03, { s: [1.8, 1, 1.8] });
+    // flight A (outer, z = 1.35): from x = 0.9 down to the landing; flight B (inner, z = 0.4): back to x = 0
+    const xA0 = 1.6;
+    for (let k = 0; k < nFl; k++) { const x = xA0 + k * treadL; place('steelStep', x, 1.45, stairAlt(k)); acc.steps.push({ k, x, z: 1.45, alt: stairAlt(k) }); }
+    const xL = xA0 + nFl * treadL, aL = stairAlt(nFl - 1) - riser;
+    place('steelPlate', xL + 0.5, 0.95, aL, { s: [1.0, 1, 2.2] });
+    for (let k = 0; k < nFl; k++) { const x = xL - (k + 1) * treadL + 0.0, alt = aL - riser * (k + 1); place('steelStep', x, 0.45, alt); acc.steps.push({ k: nFl + k, x, z: 0.45, alt }); }
+    // rail posts every 1.3 m on both flights' outer sides and a 1.1 m high rope-less steel rail drawn as lines in the scene
+    out.stairRails = [];
+    for (const [zz, sgn] of [[1.9, 1], [0.0, 1]]) { const line = []; for (let x = xA0 - 0.4; x <= xL + 0.2; x += 1.3) { const k = Math.min(nFl - 1, Math.max(0, Math.round((x - xA0) / treadL))); const alt = zz > 1 ? stairAlt(k) : (aL - riser * (nFl - Math.max(0, Math.round((xL - x) / treadL)))); const ii = Math.min(n - 1, i0 + Math.round(x / 0.5)); place('steelPost', x, zz, alt + 0.03); acc.posts++; const [lo, la] = lateral(ii, dz(zz)); line.push({ lon: lo, lat: la, alt: alt + 0.95 }); } out.stairRails.push(line); void sgn; }
+    // landing at the node: 1.6 x 1.6 m wooden deck at the ground, flush with the beach
+    const node = W.roadNetwork.nodeById[o.access.node], gl = Math.max(W.height(node.lon, node.lat), 0.04) + 0.1;
+    const put = (type, lon, lat, alt, ex = {}) => { (out.instances[type] = out.instances[type] || []).push({ type, lon, lat, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: [0, 0], tint: [1, 1, 1] }); };
+    acc.landing = { lon: node.lon, lat: node.lat, alt: gl, node: o.access.node };
+    put('steelPlate', node.lon, node.lat, gl, { yaw: yawFwd, s: [1.6, 1, 1.6] });
+    { const q = W.destination(node, W.bearing(S[i0], node) + 20, 1.1); put('lampSmall', q.lon, q.lat, gl, {}); }
+    out.access = acc;
   }
   return out;
 }

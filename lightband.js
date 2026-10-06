@@ -29,7 +29,20 @@ function ribbon(polys, cols, lift, colour) {
   return { pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx) };
 }
 
+// soft round discs (additive): intermittent lights seen from far away (centre alpha 1, rim 0)
+function discs(points, radius, colour, lift) {
+  const pos = [], col = [], idx = [], seg = 10; let base = 0;
+  for (const p of points) {
+    const f = { x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }, y = (p.alt + lift - BASE) * f.k;
+    pos.push(f.x, y, f.z); col.push(colour[0], colour[1], colour[2], 1);
+    for (let a = 0; a < seg; a++) { const th = a / seg * Math.PI * 2; pos.push(f.x + Math.cos(th) * radius * f.k, y, f.z + Math.sin(th) * radius * f.k); col.push(colour[0], colour[1], colour[2], 0); }
+    for (let a = 0; a < seg; a++) idx.push(base, base + 1 + (a + 1) % seg, base + 1 + a);
+    base += seg + 1;
+  }
+  return { pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx) };
+}
 const CORE = [[-3.4, 0], [-1.3, 0.55], [0, 1], [1.3, 0.55], [3.4, 0]];
+const DOT = [[-1.6, 0], [-0.6, 0.6], [0, 1], [0.6, 0.6], [1.6, 0]];
 const SEA = [[-5.0, 0], [-1.8, 0.3], [0, 0.5], [1.8, 0.3], [5.0, 0]];
 const AMBER = lin('#ffae5c'), SEACOL = lin('#ffc890');
 
@@ -42,9 +55,11 @@ function make(THREE, root) {
     const m = new THREE.Mesh(g, mat()); m.name = name; m.matrixAutoUpdate = false; m.renderOrder = 6; m.visible = false; root.add(m); st.meshes.push(m); return m;
   };
   // polys: lit road polylines; sea: the same routes' bridge parts (reflections on the sea surface at altitude 0.03)
-  st.build = (polys, sea) => {
+  st.build = (polys, sea, dots = []) => {
     st.core = mesh(ribbon(polys, CORE, 0.2, AMBER), 'lightband:core');
     st.sea = sea.length ? mesh(ribbon(sea, SEA, 0, SEACOL), 'lightband:sea') : null;
+    // dots: short soft ribbons for the intermittent lights (stair lanterns, small boardwalk lamps)
+    if (dots.length) st.dots = mesh(discs(dots, 2.2, AMBER.map(v => v * 0.5), 0.2), 'lightband:dots');
     st.stats = { polylines: polys.length, seaPolylines: sea.length, triangles: st.meshes.reduce((s, m) => s + m.geometry.index.count / 3, 0), drawCalls: st.meshes.length };
     st.built = true;
   };
@@ -61,7 +76,7 @@ function make(THREE, root) {
   return st;
 }
 
-const LIGHTBAND = { ribbon, make, CORE, SEA };
+const LIGHTBAND = { ribbon, discs, make, CORE, SEA };
 if (typeof module !== 'undefined' && module.exports) module.exports = LIGHTBAND;
 else global.LIGHTBAND = LIGHTBAND;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

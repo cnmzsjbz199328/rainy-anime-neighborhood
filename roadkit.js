@@ -11,7 +11,7 @@ const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math
 
 // Profiles: lateral offset o (true metres, positive to the right of travel), lift l above the ground (or above the deck for the boardwalk), colour.
 const COL = { asphalt: '#2f3645', asphaltL: '#3a4152', gravel: '#6a6458', gravelD: '#585349', grass: '#4f7d5b', grassD: '#3f6a50', ditch: '#27475a', ditchD: '#1f3a48', lip: '#7a7a82',
-  crack: '#4a4e58', line: '#c9cfc4', dash: '#c9cfc4', concreteL: '#7c828c', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c' };
+  crack: '#4a4e58', line: '#c9cfc4', dash: '#c9cfc4', snowTrack: '#bccfe2', snowEdge: '#d4e4f0', concreteL: '#7c828c', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c' };
 const PROFILES = {
   // RD03: single carriageway 4.5 m (card: 4-5 m) with a gravel shoulder, a side ditch on the left and grass beyond
   RD03: { paved: [-2.25, 2.25], pts: [[-4.4, 0, 'grass'], [-3.7, 0, 'grassD'], [-3.55, -0.04, 'lip'], [-3.45, -0.3, 'ditchD'], [-2.95, -0.3, 'ditch'], [-2.85, -0.05, 'lip'], [-2.75, 0.0, 'gravel'], [-2.3, 0.02, 'gravelD'], [-2.25, 0.045, 'asphalt'], [2.25, 0.045, 'asphalt'], [2.3, 0.02, 'gravelD'], [2.75, 0.0, 'gravel'], [3.3, 0, 'grassD'], [4.2, 0, 'grass']] },
@@ -31,6 +31,8 @@ const rd01 = town => {
   return { paved: town ? [-4.5, 4.5] : [-3.5, 3.5], bed: true, pts: [...left, ...right] };
 };
 PROFILES.RD01 = rd01(false); PROFILES.RD01T = rd01(true);
+// RD08: no pavement; a compacted snow track about 2 m wide (card), a slightly lighter edge, the snow of the terrain around it (the verge takes the terrain colour)
+PROFILES.RD08 = { paved: [-1.0, 1.0], pts: [[-3.4, 0, 'grass', 0], [-2.4, 0, 'grassD', 0], [-1.4, 0.0, 'snowEdge', 0], [-1.05, -0.04, 'snowTrack', 0], [-0.3, -0.06, 'snowTrack', 0], [0.3, -0.06, 'snowTrack', 0], [1.05, -0.04, 'snowTrack', 0], [1.4, 0.0, 'snowEdge', 0], [2.4, 0, 'grassD', 0], [3.4, 0, 'grass', 0]] };
 const DECK = { half: 1.0, planks: 0.32, pileEvery: 2.5, lampEvery: 10, minAbove: 0.9, followLift: 0.15 };   // boardwalk 2 m wide (card 1.5-2.5), piles 0.5-1.5 m above the water
 
 // Sweep a profile along a polyline of {lon, lat}: triangle strips in flat Mercator coordinates; each profile point follows the terrain at its
@@ -205,6 +207,7 @@ function route(W, segs, o = {}) {
     off += len; if (k + 1 < edges.length) joints.push(off);
   });
   if (o.lead) { classes = [o.lead.cls, ...classes]; joints = [o.lead.at, ...joints]; }
+  if (o.trimStart) { while (S.length > 2 && S[0].s < o.trimStart) { S.shift(); edgeOf.shift(); } }      // start beyond the edge of a wider road it branches from
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
@@ -259,10 +262,11 @@ function route(W, segs, o = {}) {
   for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
   // weeds and tufts along the paved edge: a deterministic count per 5 m bin that grows with the wear (none at the town edge)
   const instances = {}, add = (type, i, oo, extra = {}) => { const off2 = oo, [lo, la] = lateral(i, oo); (instances[type] = instances[type] || []).push({ type, lon: lo, lat: la, alt: surface(i, off2), yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: [0, 0], tint: extra.tint || [1, 1, 1], station: extra.station }); };
-  if (o.weeds !== false) for (let b0 = 0; b0 < total - 2.4; b0 += 5) {
+  const sBase = S[0].s;
+  if (o.weeds !== false) for (let b0 = sBase; b0 < total - 2.4; b0 += 5) {
     const len = Math.min(5, total - b0), mid = b0 + len / 2, wr = wearMax * smooth(0, wearLen, mid), cnt = Math.round(wr * (o.weedsPerBin || 5) * len / 5);
     for (let k = 0; k < cnt; k++) for (const side of [-1, 1]) {
-      const st = b0 + 0.6 + (len - 1.2) * hash(b0 + k * 3.1, side * 7), i = Math.min(n - 1, Math.round(st / 0.5)); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
+      const st = b0 + 0.6 + (len - 1.2) * hash(b0 + k * 3.1, side * 7), i = Math.min(n - 1, Math.max(0, Math.round((st - sBase) / 0.5))); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
       const oo = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47 + side));
       add(hash(st, 49) < 0.5 ? 'tuft' : 'weed', i, oo, { yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], station: st });
     }
