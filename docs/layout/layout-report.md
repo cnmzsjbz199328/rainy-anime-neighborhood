@@ -29,7 +29,7 @@
 - · B04 完整分配：5 块地块
 - · B05 完整分配：8 块地块 + 内巷
 - · B06 完整分配：8 块地块 + 内巷
-- · 地块 38 块：占用 38（B01-P01←school，B02-P01←house，B02-P02←house2，B02-P03←house3，B02-P04←house4，B02-P05←house5，B02-P06←house6，B02-P07←house7，B02-P08←house8，B03-P01←bakery，B03-P02←laundry，B03-P03←bookshop，B03-P04←diner，B03-P05←grocery，B03-P06←hall，B03-P07←post，B03-P08←shrine，B04-P01←koban，B04-P02←clinic，B04-P03←pocketpark，B04-P04←hokora，B04-P05←stationery，B05-P01←store，B05-P02←ramen，B05-P03←cafe，B05-P04←florist，B05-P05←apartment，B05-P06←house9，B05-P07←house10，B05-P08←house11，B06-P01←pharmacy，B06-P02←barber，B06-P03←yamashita，B06-P04←yamada，B06-P05←house12，B06-P06←house13，B06-P07←house14，B06-P08←house15），其余 0 块预留空置
+- · 地块 38 块：占用 38（B01-P01←school，B02-P01←house，B02-P02←house2，B02-P03←house3，B02-P04←house4，B02-P05←house5，B02-P06←house6，B02-P07←house7，B02-P08←house8，B03-P01←bakery，B03-P02←laundry，B03-P03←bookshop，B03-P04←diner，B03-P05←grocery，B03-P06←hall，B03-P07←post，B03-P08←shrine，B04-P01←koban，B04-P02←clinic，B04-P03←pocketpark，B04-P04←hokora，B04-P05←stationery，B05-P01←store，B05-P02←ramenShop，B05-P03←cafe，B05-P04←florist，B05-P05←apartment，B05-P06←house9，B05-P07←house10，B05-P08←house11，B06-P01←pharmacy，B06-P02←barber，B06-P03←yamashita，B06-P04←yamada，B06-P05←house12，B06-P06←house13，B06-P07←house14，B06-P08←house15），其余 0 块预留空置
 
 ## C4 地块尺寸符合参考范围（面宽 × 进深） — PASS
 
@@ -59,9 +59,6 @@
 - · store/bicycles（附属）[-7.43, 24.42, -7.06, 27.48]，距地块边界最小 1.06，高 1.25
 - · store/storeProps（附属）[-15.64, 22.64, -13.01, 28.23]，距地块边界最小 1.36，高 1.31
 - · store 门 (-12.34, 23.2) → 地块入口 (-12.34, 21) 朝 N：净宽 0.7 通行路径 2.2，绕开附属设施
-- · ramen/ramen（建筑）[-25.31, 23.21, -21.69, 28.61]，距可建范围边界最小 0.89，高 3.12
-- · ramen/ramenPlants（附属）[-24.53, 22.55, -22.06, 22.94]，距地块边界最小 1.55，高 1.00
-- · ramen 门 (-23.5, 23.96) → 地块入口 (-23.5, 21) 朝 N：净宽 0.7 通行路径 5.9，绕开附属设施
 - · apartment/apartment（建筑）[-15.31, 37.19, -8, 41.4]，距可建范围边界最小 0.00，高 6.20
 - · apartment/apartmentPlants（附属）[-10.93, 37.32, -9.5, 37.68]，距地块边界最小 3.32，高 1.01
 - · apartment 门 (-12.3, 37.88) → 地块入口 (-12.3, 34) 朝 N：净宽 0.7 通行路径 3.9，绕开附属设施
@@ -95,6 +92,16 @@
 
 ## C12 新建筑实测模型：主体在可建范围、附属在地块内，限高、步行占地、入口路径、遮雨与单文件嵌入一致 — PASS
 
+- · ramenShop/ramenShop（主体）[-27.03, 23.15, -19.97, 29.49]，距可建范围边界最小 0.01，高 0.22–6.85，步行占地 [-26.72, 23.73, -20.28, 29.18]
+- · ramenShop/ramenShopFrontWest（附属）[-27.1, 23.31, -26.17, 23.94]，距地块边界最小 0.90，高 0.30–1.20，步行占地 [-27.1, 23.32, -26.17, 23.94]
+- · ramenShop/ramenShopFrontEast（附属）[-21.1, 23.37, -20.46, 23.54]，距地块边界最小 1.46，高 0.30–1.06，步行占地 [-21.09, 23.38, -20.47, 23.53]
+- · ramenShop/ramenShopService（附属）[-27.29, 24.83, -26.6, 28.96]，距地块边界最小 0.71，高 0.51–2.76，步行占地 [-27.29, 26.22, -26.61, 28.96]
+- · ramenShop/ramenShopRear（附属）[-24.9, 29.04, -22.56, 29.59]，距地块边界最小 0.91，高 0.35–1.15，步行占地 [-24.89, 29.05, -22.57, 29.58]
+- · ramenShop/ramenShopGround（地坪/光斑）[-27.03, 21.25, -19.97, 23.89]，距地块边界最小 0.25，高 0.26–0.31，步行占地 [-26.9, 22.99, -20.1, 23.77]
+- · ramenShop 主体步行占地 6.44 × 5.45，建蔽率 41%
+- · ramenShop 遮雨区（降雨排除）2 块：[-27, 23.54, -20, 29.39]，[-26.45, 23.18, -20.55, 23.91]，共 45.3 平方单位
+- · ramenShop 门 (-23.5, 23.96) → 地块入口 (-23.5, 21) 朝 N：净宽 0.7 通行路径 3.0
+- · ramenShop 地坪 0.3，1 层；源码 buildings/B05-P02.js 已嵌入 index.html
 - · cafe/cafe（主体）[-36.24, 22.03, -29.88, 29.46]，距可建范围边界最小 0.03，高 0.18–4.28，步行占地 [-36.24, 22.76, -30.39, 29.29]
 - · cafe/cafeFrontE（附属）[-31.42, 22.25, -29.84, 23.73]，距地块边界最小 1.25，高 0.18–2.16，步行占地 [-31.42, 22.25, -29.84, 23.73]
 - · cafe/cafeFrontW（附属）[-35.72, 21.38, -33.19, 22.9]，距地块边界最小 0.38，高 0.18–1.25，步行占地 [-35.72, 21.38, -33.19, 22.9]

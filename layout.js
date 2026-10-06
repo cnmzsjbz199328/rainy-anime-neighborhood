@@ -123,9 +123,9 @@ const plots = [
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35, status: 'occupied', building: 'pocketpark' }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'], status: 'occupied', building: 'hokora' }),
   plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'], status: 'occupied', building: 'stationery' }),
-  // B05: existing samples. Store on the X01 corner, ramen beside it, apartment behind on alley A01.
+  // B05: legacy store at the X01 corner, upgraded ramen shop beside it, legacy apartment behind on alley A01.
   plot('B05-P01', [-17, 21, -6, 30.5], 'store', 'N', { frontages: ['N', 'E'], uses: ['便利店'], status: 'occupied', sample: 'store' }),
-  plot('B05-P02', [-28, 21, -19, 30.5], 'shop', 'N', { uses: ['拉面店'], status: 'occupied', sample: 'ramen' }),
+  plot('B05-P02', [-28, 21, -19, 30.5], 'shop', 'N', { uses: ['拉面店'], status: 'occupied', building: 'ramenShop' }),
   plot('B05-P03', [-37, 21, -28, 30.5], 'shop', 'N', { uses: ['小店铺', '咖啡店'], status: 'occupied', building: 'cafe' }),
   plot('B05-P04', [-46, 21, -37, 30.5], 'shop', 'N', { uses: ['小店铺', '花店'], status: 'occupied', building: 'florist' }),
   plot('B05-P05', [-18, 34, -6, 46], 'apartment', 'N', { frontages: ['N', 'E'], uses: ['小公寓'], status: 'occupied', sample: 'apartment' }),
@@ -156,12 +156,6 @@ const samples = [
       { group: 'bicycles', role: 'attachment', localBounds: { min: [-3.44, 0.28, -2.48], max: [-3.07, 1.25, 0.58], ground: [-3.44, -2.48, -3.07, 0.58] } },
       { group: 'storeProps', role: 'attachment', localBounds: { min: [2.51, 0.26, -3.23], max: [5.14, 1.31, 2.36], ground: [2.51, -3.23, 5.14, 2.36] } },
     ] },
-  { id: 'ramen', name: '雨音らーめん', plot: 'B05-P02', transform: { x: -16.6, z: 25, rotY: Math.PI },
-    door: { x: 6.9, z: 1.04 }, frontDir: [0, 1],
-    parts: [
-      { group: 'ramen', role: 'building', localBounds: { min: [5.09, 0.29, -3.61], max: [8.71, 3.12, 1.79], ground: [5.24, -3.53, 8.56, 1.1] } },
-      { group: 'ramenPlants', role: 'attachment', localBounds: { min: [5.46, 0.33, 2.06], max: [7.93, 1, 2.45], ground: [5.46, 2.06, 7.93, 2.45] } },
-    ] },
   { id: 'apartment', name: 'こもれび荘', plot: 'B05-P05', transform: { x: -11.4, z: 33, rotY: Math.PI },
     door: { x: 0.9, z: -4.88 }, frontDir: [0, 1],
     parts: [
@@ -176,6 +170,17 @@ const samples = [
 // service yard, outdoor units (must stay on the plot); ground = paving and light decals on the plot.
 // shelter = local [x0, z0, x1, z1] of the roof and each awning: the rain never falls under them.
 const buildings = [
+  { id: 'ramenShop', name: '雨音らーめん', plot: 'B05-P02', module: 'B05-P02', transform: { x: -23.5, z: 23.96, rotY: Math.PI },
+    door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
+    shelter: [[-3.50, -5.43, 3.50, 0.42], [-2.95, 0.05, 2.95, 0.78]],
+    parts: [
+      { group: 'ramenShop', role: 'building', localBounds: { min: [-3.53, 0.22, -5.53], max: [3.53, 6.85, 0.81], ground: [-3.22, -5.22, 3.22, 0.23] } },
+      { group: 'ramenShopFrontWest', role: 'attachment', localBounds: { min: [2.67, 0.30, 0.02], max: [3.60, 1.20, 0.65], ground: [2.67, 0.02, 3.60, 0.64] } },
+      { group: 'ramenShopFrontEast', role: 'attachment', localBounds: { min: [-3.04, 0.30, 0.42], max: [-2.40, 1.06, 0.59], ground: [-3.03, 0.43, -2.41, 0.58] } },
+      { group: 'ramenShopService', role: 'attachment', localBounds: { min: [3.10, 0.51, -5.00], max: [3.79, 2.76, -0.87], ground: [3.11, -5.00, 3.79, -2.26] } },
+      { group: 'ramenShopRear', role: 'attachment', localBounds: { min: [-0.94, 0.35, -5.63], max: [1.40, 1.15, -5.08], ground: [-0.93, -5.62, 1.39, -5.09] } },
+      { group: 'ramenShopGround', role: 'ground', localBounds: { min: [-3.53, 0.26, 0.07], max: [3.53, 0.31, 2.71], ground: [-3.40, 0.19, 3.40, 0.97] } },
+    ] },
   { id: 'cafe', name: '雨宿り珈琲', plot: 'B05-P03', module: 'B05-P03', transform: { x: -32.5, z: 23, rotY: Math.PI },
     door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
     shelter: [[-2.05, -6.1, 3.55, 0.05], [-1.9, 0, 3.4, 0.97], [-2.5, -3.67, -2, -0.78], [-0.1, -6.45, 1.15, -6.05]],   // roof, street awning, side awning, back-door canopy

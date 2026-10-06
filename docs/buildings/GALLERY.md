@@ -142,13 +142,13 @@
 
 ![B05-P01 当前样板正面实景](screenshots/B05-P01/front.png)
 
-## B05-P02 · 现有拉面店样板
+## B05-P02 · 雨音らーめん（S1 已升级）
 
-[样板任务卡](tasks/B05-P02.md) · [当前实现截图](screenshots/B05-P02/) · 概念板仅供未来升级参考
+[实现任务卡](tasks/B05-P02.md) · [实际模型截图](screenshots/B05-P02/)
 
 ![B05-P02 现有拉面店样板 八视图](references/B05-P02.jpg)
 
-![B05-P02 当前样板正面实景](screenshots/B05-P02/front.png)
+![B05-P02 雨音らーめん正面实景](screenshots/B05-P02/front.png)
 
 ## B05-P03 · 雨宿咖啡店
 
