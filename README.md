@@ -19,6 +19,7 @@
 - `docs/layout/LAYOUT_V1.md`：冻结的首版道路与地块坐标，以及新增建筑时的变更规则。
 - `ROAD_NETWORK_PLAN.md`：道路与用地建设计划。
 - `WORLD_PLAN.md`：星球化建设计划（城镇以外的地形、区域、全球路网和地标）；参考包在 `docs/world/`。
+- `world.js`：星球布局数据（W1）：经纬度区域、高度骨架、河流、地标锚点与全球路网，无 THREE/DOM，不进入页面；`tools/world_check.mjs` 检查 WC1–WC11，`tools/world_survey.mjs` 生成勘探图（`docs/world/survey/`）；冻结清单见 `docs/world/WORLD_LAYOUT_V1.md`。
 - `three.min.js`：Three.js 0.160.1，保留原始版权头。
 - `build.py`：将源码（three.min.js、layout.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
 - `DESIGN.md`：风格约束与扩展路线。
@@ -68,7 +69,7 @@
 
 ## 规划中：星球化
 
-计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。星球全景总是晴朗的月夜，近处保持现在的雨夜，并按时间和位置切换局部天气。目前处于 W0 完成、W1 进行中：总计划、统一规格和 39 张设计卡已就绪，39/39 张参考图已生成并审查（`check_kit.mjs --refs` 通过，ST01 风格已确认），星球代码尚未进入页面。逐栋建筑可以与之并行。
+计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。星球全景总是晴朗的月夜，近处保持现在的雨夜，并按时间和位置切换局部天气。目前 W0 已完成、W1 已交付待确认：总计划、统一规格和 39 张设计卡已就绪，39/39 张参考图已生成并审查（`check_kit.mjs --refs` 通过，ST01 风格已确认）；`world.js` 与勘探图（[星球布局 v1](docs/world/WORLD_LAYOUT_V1.md)）已出，`node tools/world_check.mjs` WC1–WC11 全部通过；星球代码尚未进入页面。逐栋建筑可以与之并行。
 
 - [星球计划](WORLD_PLAN.md)
 - [星球规划参考包](docs/world/README.md)

@@ -10,6 +10,7 @@
 - [生图提示词](IMAGE_PROMPTS.json)
 - [参考图](references/README.md)
 - [参考图审查与裁决](REFERENCE_REVIEW.md)
+- [星球布局 v1（W1 冻结清单）](WORLD_LAYOUT_V1.md)：最终经纬度、路网、检查数值与相对初稿的调整；数据在仓库根目录 `world.js`，勘探图在 [survey/](survey/)
 
 参考图由有图像生成能力的 Agent 生成。ST01 风格已确认；ST02、ST04 于 2026-10-06 完成，全部 39 张参考图齐全。逐卡审查和裁决见 [REFERENCE_REVIEW.md](REFERENCE_REVIEW.md)。
 
