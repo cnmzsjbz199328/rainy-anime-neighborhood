@@ -23,7 +23,8 @@
 - `terrain.js`：星球地形网格（W3）：把 `world.js` 的高度与区域建成平面（墨卡托）坐标的网格，交给 `bend.js` 卷到球面；补丁外 24 m 的渐变带（TR01）与 9 个出口的道路起点在 `uBend = 0` 时可见，其余地形与两极帽在 `uBend > 0` 时出现；`tools/terrain_check.mjs` 检查 W3-C0–C6，`tools/terrain_shots.mjs` 出截图（`docs/world/w3/`）。
 - `world.js`：星球布局数据（W1）：经纬度区域、高度骨架、河流、地标锚点与全球路网，无 THREE/DOM，不进入页面；`tools/world_check.mjs` 检查 WC1–WC11，`tools/world_survey.mjs` 生成勘探图（`docs/world/survey/`）；冻结清单见 `docs/world/WORLD_LAYOUT_V1.md`。
 - `three.min.js`：Three.js 0.160.1，保留原始版权头。
-- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
+- `flora.js`、`section_plan.js`、`roadkit.js`、`water.js`、`section.js`：W4 样板断面（ST03，补丁南缘到南海湾对岸 59.5 m）：实例化物件库、由 `world.js` 驱动的放置计划、沿 `samplePath` 扫出的道路横断面（RD03/04/05/07）、水面涟漪着色器、断面装配与墨线分级；断面在 `uBend > 0` 或 `view.set({ mode: 'section' })` 时才生成并显示（默认画面不构建）。测试钩子 `window.__scene.section.set({ rain, light: 'rainy'|'neutral'|'panorama', ink: 'auto'|'ground'|'aerial'|'panorama' })`；`tools/section_check.mjs`（W4-C1–C8）、`tools/section_shots.mjs`（`docs/world/w4/`）、`tools/section_extrapolate.mjs`（外推表）、`node tools/regress.mjs --views section`（确定性）。
+- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、flora.js、section_plan.js、roadkit.js、water.js、section.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
 - `DESIGN.md`：风格约束与扩展路线。
 - `THIRD_PARTY_NOTICES.md`：第三方许可说明。
 

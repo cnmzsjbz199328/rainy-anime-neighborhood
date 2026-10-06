@@ -123,8 +123,10 @@ const noBend = o => !!(o.material && o.material.userData && o.material.userData.
 FR.intersectsObject = function (object) {
   if (uniform.value > 0 && cullMode === 'bound' && object.geometry && !noBend(object)) {
     const g = object.geometry;
-    if (g.boundingSphere === null) g.computeBoundingSphere();
-    return this.intersectsSphere(bendSphere(tmpSphere.copy(g.boundingSphere).applyMatrix4(object.matrixWorld)));
+    // an InstancedMesh culls on the sphere around all its instances (object.boundingSphere), not on the one instance geometry (W4)
+    let bs = object.isInstancedMesh && object.boundingSphere ? object.boundingSphere : g.boundingSphere;
+    if (bs === null) { g.computeBoundingSphere(); bs = g.boundingSphere; }
+    return this.intersectsSphere(bendSphere(tmpSphere.copy(bs).applyMatrix4(object.matrixWorld)));
   }
   return origObject.call(this, object);
 };
@@ -1899,7 +1901,7 @@ const KIND_COLOR = {
   village: hex('#6f7758'), ruin: hex('#6b6d78'), forest: hex('#2f5a52'), grassland: hex('#55745a'),
   desert: hex('#8a8394'), lava: hex('#3a3436'), island: hex('#6e6a68'), 'ice-north': hex('#cfe0ee'), 'ice-south': hex('#cfe0ee'),
 };
-const SHALLOW = hex('#5f8fa0'), DEEP = hex('#1f3a66');
+const SHALLOW = hex('#5f8fa0'), DEEP = hex('#1f3a66'), SAND = hex('#8a8794');
 const EXIT_CLASS = { RD01: { w: 9, c: hex('#2e3646') }, RD03: { w: 4.5, c: hex('#2e3646') }, RD05: { w: 3, c: hex('#5c5344') } };   // asphalt, asphalt, packed earth
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
@@ -1938,6 +1940,7 @@ function builder(W) {
       c = KIND_COLOR[reg.kind] || KIND_COLOR.grassland;
       const lift = Math.min(0.5, Math.max(0, h - 3) / 40);                                              // mountains read lighter
       c = mix(c, [0.72, 0.78, 0.86], lift);
+      if (h < 0.8 && reg.zone !== 'building') { const cd = W.coastDistance(lon, lat); if (cd < 7) c = mix(SAND, c, Math.min(1, Math.max(0, (cd - 2.5) / 4.5))); }   // TR02: beach 3-8 m wide
     }
     return { x: flatX(lon), y: yt / s, z: flatZ(lat), nx, ny, nz, c, lon, lat, h };
   }
@@ -2052,7 +2055,27 @@ function builder(W) {
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
 const RING_WINDOW = { lonMin: -52, lonMax: 52, latMin: -46, latMax: 46 };
 
-const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder };
+// Height of the rendered mesh (barycentric on the same triangles buildFlat makes) inside a lon/lat window, W.height elsewhere (the town patch is the
+// town's own surface). Objects and ground strips of a section sit on this, not on height(): the two differ by up to the W3-C1 tolerance.
+function sampler(W, win) {
+  const B = builder(W), chunks = B.buildFlat({ ring: true, rest: true, window: win }), cells = new Map(), key = (i, j) => i * 4096 + j;
+  for (const c of chunks) for (const idx of [c.ringIndex, c.restIndex]) if (idx) for (let t = 0; t < idx.length; t += 3) {
+    const v = [0, 1, 2].map(k => { const i = idx[t + k]; return [c.lonlat[i * 2], c.lonlat[i * 2 + 1], c.alt[i]]; });
+    const tri = [].concat(...v), lo0 = Math.min(v[0][0], v[1][0], v[2][0]), lo1 = Math.max(v[0][0], v[1][0], v[2][0]), la0 = Math.min(v[0][1], v[1][1], v[2][1]), la1 = Math.max(v[0][1], v[1][1], v[2][1]);
+    for (let i = Math.floor(lo0); i <= Math.floor(lo1); i++) for (let j = Math.floor(la0); j <= Math.floor(la1); j++) { const k = key(i + 200, j + 100); let l = cells.get(k); if (!l) cells.set(k, l = []); l.push(tri); }
+  }
+  return (lon, lat) => {
+    const l = cells.get(key(Math.floor(lon) + 200, Math.floor(lat) + 100));
+    if (l) for (const [x0, y0, h0, x1, y1, h1, x2, y2, h2] of l) {
+      const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2); if (Math.abs(d) < 1e-12) continue;
+      const w1 = ((y1 - y2) * (lon - x2) + (x2 - x1) * (lat - y2)) / d, w2 = ((y2 - y0) * (lon - x2) + (x0 - x2) * (lat - y2)) / d, w3 = 1 - w1 - w2;
+      if (w1 >= -1e-9 && w2 >= -1e-9 && w3 >= -1e-9) return w1 * h0 + w2 * h1 + w3 * h2;
+    }
+    return W.height(lon, lat);
+  };
+}
+
+const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler };
 
 // ---- scene part (needs THREE); the data builder above never touches it
 // THREE.MathUtils.generateUUID draws from Math.random. The rain of scene.js draws from the same stream every frame, so creating terrain
@@ -2062,6 +2085,8 @@ function withPrivateRandom(fn) {
   Math.random = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   try { return fn(); } finally { Math.random = saved; }
 }
+
+TERRAIN.withPrivateRandom = withPrivateRandom;
 
 TERRAIN.attach = function (scene, makeMaterial, BEND) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
@@ -2120,6 +2145,836 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
 
 if (typeof module !== 'undefined' && module.exports) module.exports = TERRAIN;
 else global.TERRAIN = TERRAIN;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// Object kit and instancing for the planet sections (W4): trees, shrubs, rocks, props, road and boardwalk parts.
+// Every geometry is built once in metres (1 unit = 1 m), flat-shaded with baked vertex colours (night palette of WORLD_SPEC) and a
+// smooth 'hnormal' attribute for the inverted-hull ink outline. All instanced meshes share one toon material, so a type costs one draw
+// call (two with its outline). Placement (section.js) scales every instance by 1/cos(lat) because the terrain is stored in flat
+// Mercator coordinates and bend.js shrinks it back; see docs/world/W3_SPEC.md section 2.
+// Pure geometry code: needs THREE only when `make(THREE)` is called.
+(function (global) {
+'use strict';
+
+// Night palette (sRGB hex): low saturation, blue-leaning greens, lilac-grey stone, warm light only from lamps.
+const PAL = {
+  trunk: '#4a4038', trunkD: '#352f2c', bark: '#5a5048', leafA: '#3f6b5a', leafB: '#335e55', leafC: '#4c7660', cedar: '#27493f', cedarD: '#1f3b36',
+  pine: '#2f5748', pineB: '#3d6a52', bamboo: '#5f8a64', bambooD: '#3e6a55', shrub: '#3a6a58', shrubB: '#4a7a5e', fern: '#4d7f61', grass: '#6c9867', grassD: '#4f7d5b',
+  weed: '#6a8a5a', weedD: '#59704c', dead: '#7a7456', flowerW: '#d9dde6', flowerP: '#a99ccf',
+  rock: '#85807f', rockD: '#6a6666', moss: '#4f7a56', mossD: '#3c6150', sand: '#9a9aa4', log: '#6a5a4c', logD: '#4a3e36',
+  concrete: '#8a8f99', concreteD: '#6c7280', metal: '#7d8794', rust: '#8a5a44', rustD: '#6a4636', red: '#b24a44', white: '#e4e8ee', wood: '#7a5c44', woodD: '#5a4434', woodL: '#9a7a5a',
+  lampHead: '#c9ced6', glowWarm: '#ffd9a0', glowCool: '#dfe9f2', asphalt: '#2f3645', straw: '#b7a56c', strawD: '#8a7a50', cloth: '#7a5a8a', stone: '#8a8d98', stoneD: '#6a6d78',
+  torii: '#9a4b3f', toriiD: '#6a3a34', plank: '#8a6a4c', plankD: '#6c5238', vine: '#4a7655', orange: '#d58a3a',
+};
+
+function make(THREE) {
+  const col = hex => new THREE.Color(hex);
+  const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), S = new THREE.Vector3();
+  const hash3 = (x, y, z) => { let h = Math.imul(Math.round(x * 1000), 374761393) ^ Math.imul(Math.round(y * 1000), 668265263) ^ Math.imul(Math.round(z * 1000), 2147483647); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296 * 2 - 1; };
+
+  // A builder merges transformed primitives into one non-indexed, flat-shaded geometry with vertex colours.
+  function builder() {
+    const P = [], C = [];
+    const api = {
+      add(geo, color, o = {}) {
+        const g = geo.index ? geo.toNonIndexed() : geo.clone();
+        E.set(...(o.r || [0, 0, 0])); Q.setFromEuler(E);
+        M4.compose(V.set(...(o.p || [0, 0, 0])), Q, S.set(...(o.s || [1, 1, 1]))); g.applyMatrix4(M4);
+        const pos = g.attributes.position, c0 = col(color), c1 = o.top ? col(o.top) : null;
+        let ymin = Infinity, ymax = -Infinity; for (let i = 0; i < pos.count; i++) { ymin = Math.min(ymin, pos.getY(i)); ymax = Math.max(ymax, pos.getY(i)); }
+        for (let i = 0; i < pos.count; i++) {
+          P.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+          const t = c1 ? (pos.getY(i) - ymin) / Math.max(1e-6, ymax - ymin) : 0, c = c1 ? c0.clone().lerp(c1, t) : c0;
+          const j = o.noise ? 1 + o.noise * hash3(pos.getX(i), pos.getY(i), pos.getZ(i)) : 1;
+          C.push(c.r * j, c.g * j, c.b * j);
+        }
+        return api;
+      },
+      build() {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+        g.computeVertexNormals();
+        // smooth normals per unique position for the outline hull
+        const pos = g.attributes.position, nor = g.attributes.normal, acc = new Map(), key = i => `${Math.round(pos.getX(i) * 500)},${Math.round(pos.getY(i) * 500)},${Math.round(pos.getZ(i) * 500)}`;
+        for (let i = 0; i < pos.count; i++) { const k = key(i), a = acc.get(k) || [0, 0, 0]; a[0] += nor.getX(i); a[1] += nor.getY(i); a[2] += nor.getZ(i); acc.set(k, a); }
+        const h = new Float32Array(pos.count * 3);
+        for (let i = 0; i < pos.count; i++) { const a = acc.get(key(i)), l = Math.hypot(a[0], a[1], a[2]) || 1; h[i * 3] = a[0] / l; h[i * 3 + 1] = a[1] / l; h[i * 3 + 2] = a[2] / l; }
+        g.setAttribute('hnormal', new THREE.BufferAttribute(h, 3));
+        g.computeBoundingSphere(); g.computeBoundingBox();
+        return g;
+      },
+    };
+    return api;
+  }
+  // primitives (shared, unit sized)
+  const box = new THREE.BoxGeometry(1, 1, 1), cyl = (r0, r1, h, seg = 6) => new THREE.CylinderGeometry(r1, r0, h, seg, 1).translate(0, h / 2, 0), cone = (r, h, seg = 7) => new THREE.ConeGeometry(r, h, seg, 1).translate(0, h / 2, 0);
+  const ico = (r, d = 1) => { const g = new THREE.IcosahedronGeometry(r, d); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const j = 1 + 0.14 * hash3(p.getX(i) * 3, p.getY(i) * 3, p.getZ(i) * 3); p.setXYZ(i, p.getX(i) * j, p.getY(i) * j, p.getZ(i) * j); } return g; };
+  const dod = r => { const g = new THREE.DodecahedronGeometry(r, 0); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const j = 1 + 0.18 * hash3(p.getX(i) * 5, p.getY(i) * 5, p.getZ(i) * 5); p.setXYZ(i, p.getX(i) * j, p.getY(i) * j, p.getZ(i) * j); } return g; };
+  const tor = (r, t) => new THREE.TorusGeometry(r, t, 5, 10);
+  const quad = (w, h) => new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0);
+  // a grass blade: a triangle tapering to a point (a rectangle card reads as a board close up)
+  const blade = (w, h) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([-w / 2, 0, 0, w / 2, 0, 0, 0, h, 0], 3)); return g; };
+
+  const G = {};   // name -> geometry
+  const T = (name, fn) => { G[name] = fn(builder()).build(); };
+
+  // ---- trees (near and far levels)
+  T('treeRound', b => b.add(cyl(0.16, 0.1, 2.4, 5), PAL.trunk, { noise: 0.1 }).add(ico(1.5, 1), PAL.leafA, { p: [0, 3.4, 0], top: PAL.leafC, noise: 0.08 }).add(ico(1.1, 1), PAL.leafB, { p: [0.9, 2.8, 0.3], top: PAL.leafA }).add(ico(1.0, 1), PAL.leafB, { p: [-0.8, 2.9, -0.4], top: PAL.leafA }).add(ico(0.9, 1), PAL.leafC, { p: [0.1, 4.4, 0.2], top: PAL.leafC }));
+  T('treeRound_far', b => b.add(cyl(0.18, 0.1, 2.4, 4), PAL.trunk).add(ico(2.0, 0), PAL.leafA, { p: [0, 3.5, 0], top: PAL.leafC, s: [1, 0.9, 1] }));
+  T('cedar', b => { b.add(cyl(0.2, 0.12, 2.0, 5), PAL.trunkD); for (let i = 0; i < 4; i++) b.add(cone(1.7 - i * 0.32, 2.7, 8), PAL.cedar, { p: [0, 1.6 + i * 1.9, 0], top: PAL.cedarD, noise: 0.07 }); return b; });
+  T('cedar_far', b => b.add(cyl(0.2, 0.12, 2.0, 4), PAL.trunkD).add(cone(1.6, 9.0, 6), PAL.cedar, { p: [0, 1.4, 0], top: PAL.cedarD }));
+  T('pine', b => b.add(cyl(0.2, 0.12, 3.2, 5), PAL.bark, { r: [0, 0, 0.12], noise: 0.1 }).add(ico(1.4, 1), PAL.pine, { p: [0.5, 3.8, 0], s: [1.5, 0.55, 1.2], top: PAL.pineB }).add(ico(1.2, 1), PAL.pine, { p: [-0.8, 3.0, 0.4], s: [1.4, 0.5, 1.1], top: PAL.pineB }).add(ico(1.0, 1), PAL.pineB, { p: [0.2, 4.6, -0.2], s: [1.3, 0.5, 1.0], top: PAL.pine }));
+  T('pine_far', b => b.add(cyl(0.2, 0.12, 3.2, 4), PAL.bark).add(ico(1.9, 0), PAL.pine, { p: [0.1, 3.9, 0], s: [1.5, 0.6, 1.2], top: PAL.pineB }));
+  T('bamboo', b => { for (let i = 0; i < 8; i++) { const a = i * 2.4, r = 0.25 + 0.2 * (i % 3), lean = 0.08 + 0.05 * (i % 2); b.add(cyl(0.06, 0.04, 6.4 + (i % 3) * 0.7, 5), i % 2 ? PAL.bamboo : PAL.bambooD, { p: [Math.cos(a) * r, 0, Math.sin(a) * r], r: [Math.sin(a) * lean, 0, -Math.cos(a) * lean] }); } for (let i = 0; i < 6; i++) { const a = i * 1.1; b.add(cone(0.9, 1.5, 5), PAL.bamboo, { p: [Math.cos(a) * 0.5, 5.2 + (i % 3) * 0.7, Math.sin(a) * 0.5], r: [Math.PI, 0, 0], s: [1, 1, 1], top: PAL.bambooD }); } return b; });
+  T('bamboo_far', b => b.add(cyl(0.5, 0.3, 6.4, 5), PAL.bamboo).add(cone(1.2, 2.0, 5), PAL.bambooD, { p: [0, 5, 0] }));
+  T('shrub', b => b.add(ico(0.7, 1), PAL.shrub, { p: [0, 0.45, 0], s: [1, 0.8, 1], top: PAL.shrubB, noise: 0.1 }).add(ico(0.45, 1), PAL.shrubB, { p: [0.45, 0.3, 0.2], top: PAL.shrub }));
+  T('shrubLow', b => b.add(ico(0.55, 0), PAL.shrub, { p: [0, 0.3, 0], s: [1.2, 0.7, 1.2], top: PAL.shrubB }));
+  T('tuft', b => { for (let i = 0; i < 5; i++) { const a = i * 1.26; b.add(blade(0.16, 0.55 + 0.2 * (i % 2)), PAL.grass, { r: [0.35, a, 0], p: [Math.cos(a) * 0.05, 0, Math.sin(a) * 0.05], top: PAL.grassD }); b.add(blade(0.16, 0.5), PAL.grass, { r: [-0.35, a + 3.14, 0], top: PAL.grassD }); } return b; });
+  T('weed', b => { for (let i = 0; i < 6; i++) { const a = i * 1.05; b.add(blade(0.2, 0.9 + 0.35 * (i % 3)), PAL.weed, { r: [0.3, a, 0], p: [Math.cos(a) * 0.08, 0, Math.sin(a) * 0.08], top: PAL.dead }); } return b; });
+  T('fern', b => { for (let i = 0; i < 7; i++) { const a = i * 0.9; b.add(blade(0.3, 0.9), PAL.fern, { r: [0.9, a, 0], top: PAL.grassD }); } return b; });
+  T('flower', b => { for (let i = 0; i < 4; i++) { const a = i * 1.57; b.add(blade(0.05, 0.4), PAL.grassD, { r: [0.1, a, 0] }); b.add(cone(0.06, 0.12, 4), i % 2 ? PAL.flowerW : PAL.flowerP, { p: [Math.cos(a) * 0.04, 0.4, Math.sin(a) * 0.04] }); } return b; });
+  T('seedling', b => { for (let i = 0; i < 7; i++) { const a = i * 0.9; b.add(blade(0.05, 0.38), PAL.grass, { r: [0.2, a, 0], top: PAL.grassD }); } return b; });
+
+  // ---- rocks, logs, stone
+  T('rock', b => b.add(dod(0.55), PAL.rock, { p: [0, 0.3, 0], s: [1, 0.7, 0.9], top: PAL.rockD }));
+  T('rockBig', b => b.add(dod(1.0), PAL.rock, { p: [0, 0.6, 0], s: [1.1, 0.8, 0.9], top: PAL.rockD, noise: 0.08 }));
+  T('mossRock', b => b.add(dod(0.6), PAL.rockD, { p: [0, 0.3, 0], s: [1, 0.75, 0.9], top: PAL.moss }));
+  T('reefRock', b => b.add(dod(0.8), PAL.rockD, { p: [0, 0.2, 0], s: [1.2, 0.7, 1.0], top: PAL.rock, noise: 0.1 }));
+  T('log', b => b.add(cyl(0.2, 0.16, 3.2, 6), PAL.log, { r: [0, 0, Math.PI / 2], p: [-1.6, 0.22, 0], noise: 0.1 }).add(cyl(0.07, 0.05, 0.9, 4), PAL.logD, { r: [0, 0, 0.9], p: [0.2, 0.3, 0.1] }));
+  T('logMoss', b => b.add(cyl(0.22, 0.17, 3.0, 6), PAL.logD, { r: [0, 0, Math.PI / 2], p: [-1.5, 0.22, 0], noise: 0.1 }).add(box, PAL.moss, { p: [0, 0.4, 0], s: [1.8, 0.1, 0.3] }));
+  T('cairn', b => b.add(dod(0.35), PAL.rock, { p: [0, 0.2, 0] }).add(dod(0.28), PAL.rockD, { p: [0.03, 0.55, 0] }).add(dod(0.2), PAL.rock, { p: [-0.02, 0.8, 0.02] }).add(dod(0.14), PAL.rockD, { p: [0, 1.0, 0] }));
+  T('lantern', b => b.add(box, PAL.stone, { p: [0, 0.12, 0], s: [0.5, 0.24, 0.5] }).add(cyl(0.11, 0.1, 0.7, 6), PAL.stoneD, { p: [0, 0.24, 0] }).add(box, PAL.stone, { p: [0, 1.0, 0], s: [0.36, 0.1, 0.36] }).add(box, PAL.stoneD, { p: [0, 1.18, 0], s: [0.26, 0.26, 0.26] }).add(cone(0.34, 0.26, 4), PAL.stone, { p: [0, 1.3, 0], r: [0, Math.PI / 4, 0] }).add(box, PAL.stoneD, { p: [0, 1.62, 0], s: [0.1, 0.1, 0.1] }));
+  T('lanternGlow', b => b.add(box, PAL.glowWarm, { p: [0, 1.18, 0], s: [0.16, 0.18, 0.16] }));
+  T('torii', b => b.add(cyl(0.13, 0.11, 2.6, 8), PAL.torii, { p: [-1.0, 0, 0] }).add(cyl(0.13, 0.11, 2.6, 8), PAL.torii, { p: [1.0, 0, 0] }).add(box, PAL.torii, { p: [0, 2.55, 0], s: [2.9, 0.18, 0.26] }).add(box, PAL.toriiD, { p: [0, 2.3, 0], s: [2.2, 0.12, 0.2] }).add(box, PAL.toriiD, { p: [-1.0, 0, 0], s: [0.34, 0.3, 0.34] }).add(box, PAL.toriiD, { p: [1.0, 0, 0], s: [0.34, 0.3, 0.34] }));
+  T('mossStep', b => { for (let i = 0; i < 4; i++) b.add(box, PAL.stone, { p: [0, 0.08 + i * 0.17, -i * 0.34], s: [1.5, 0.17, 0.34], top: i % 2 ? PAL.moss : PAL.stoneD, noise: 0.1 }); return b; });
+  T('stonePost', b => b.add(box, PAL.stone, { p: [0, 0.4, 0], s: [0.2, 0.8, 0.2], top: PAL.moss }));
+
+  // ---- farm
+  T('rack', b => { b.add(cyl(0.04, 0.04, 1.6, 4), PAL.woodD, { p: [-1.2, 0, 0], r: [0, 0, 0.05] }).add(cyl(0.04, 0.04, 1.6, 4), PAL.woodD, { p: [1.2, 0, 0], r: [0, 0, -0.05] }); for (let i = 0; i < 3; i++) b.add(cyl(0.025, 0.025, 2.6, 4), PAL.wood, { r: [0, 0, Math.PI / 2], p: [-1.3, 0.55 + i * 0.4, 0] }); for (let i = 0; i < 9; i++) b.add(cone(0.12, 0.45, 5), PAL.straw, { p: [-1.0 + i * 0.25, 0.9, 0], r: [Math.PI, 0, 0], top: PAL.strawD }); return b; });
+  T('rackFallen', b => b.add(cyl(0.04, 0.04, 1.6, 4), PAL.woodD, { r: [0, 0, 1.45], p: [-0.6, 0.05, 0] }).add(cyl(0.025, 0.025, 2.6, 4), PAL.wood, { r: [0.1, 0.3, Math.PI / 2], p: [-1.3, 0.12, 0.3] }).add(cone(0.12, 0.45, 5), PAL.strawD, { p: [0.3, 0.1, 0.2], r: [1.5, 0, 0] }));
+  T('scarecrow', b => b.add(cyl(0.04, 0.04, 1.7, 4), PAL.woodD).add(cyl(0.03, 0.03, 1.3, 4), PAL.wood, { r: [0, 0, Math.PI / 2], p: [-0.65, 1.2, 0] }).add(cone(0.34, 0.2, 8), PAL.straw, { p: [0, 1.62, 0] }).add(box, PAL.cloth, { p: [0, 1.0, 0], s: [0.5, 0.65, 0.12] }).add(ico(0.12, 0), PAL.straw, { p: [0, 1.55, 0] }));
+  const shed = (b, rustc, lean) => b.add(box, rustc, { p: [0, 0.95, 0], s: [2.4, 1.9, 1.8], r: [0, 0, lean], noise: 0.06 }).add(box, PAL.rustD, { p: [0, 2.0, 0], s: [2.7, 0.1, 2.1], r: [0, 0, lean + 0.12] }).add(box, PAL.woodD, { p: [0, 0.8, 0.92], s: [0.8, 1.6, 0.05] });
+  T('hutFarm', b => shed(b, PAL.concreteD, 0));
+  T('hutRusty', b => shed(b, PAL.rust, 0.08).add(ico(0.7, 0), PAL.vine, { p: [0.7, 1.9, 0.2], top: PAL.moss }));
+  T('oldMachine', b => b.add(box, PAL.rust, { p: [0, 0.7, 0], s: [1.8, 0.9, 1.1], noise: 0.08 }).add(cyl(0.45, 0.45, 0.2, 8), PAL.rustD, { r: [Math.PI / 2, 0, 0], p: [0.7, 0.45, 0.6] }).add(cyl(0.45, 0.45, 0.2, 8), PAL.rustD, { r: [Math.PI / 2, 0, 0], p: [0.7, 0.45, -0.8] }).add(ico(0.8, 1), PAL.vine, { p: [-0.2, 1.2, 0], top: PAL.moss, s: [1.6, 0.6, 1.0] }).add(cyl(0.05, 0.05, 0.9, 5), PAL.metal, { p: [-0.7, 1.2, 0.3] }));
+
+  // ---- road furniture
+  T('pole', b => b.add(cyl(0.14, 0.11, 8.5, 6), PAL.concrete, { noise: 0.05 }).add(box, PAL.woodD, { p: [0, 7.7, 0], s: [1.9, 0.1, 0.1] }).add(box, PAL.woodD, { p: [0, 7.0, 0], s: [1.5, 0.08, 0.08] }).add(cyl(0.04, 0.04, 0.2, 4), PAL.white, { p: [-0.8, 7.75, 0] }).add(cyl(0.04, 0.04, 0.2, 4), PAL.white, { p: [0.8, 7.75, 0] }).add(cyl(0.04, 0.04, 0.2, 4), PAL.white, { p: [0, 7.75, 0] }).add(box, PAL.concreteD, { p: [0.14, 3.2, 0], s: [0.1, 0.6, 0.06] }));
+  T('lamp', b => b.add(cyl(0.1, 0.06, 6.2, 6), PAL.metal).add(cyl(0.05, 0.05, 1.6, 5), PAL.metal, { p: [0.45, 5.75, 0], r: [0, 0, -1.2] }).add(box, PAL.lampHead, { p: [1.15, 6.3, 0], s: [0.75, 0.13, 0.28] }));
+  T('lampGlow', b => b.add(box, PAL.glowWarm, { p: [1.15, 6.2, 0], s: [0.62, 0.04, 0.2] }));
+  T('vending', b => b.add(box, PAL.concreteD, { p: [0, 0.9, 0], s: [1.0, 1.8, 0.8] }).add(box, PAL.metal, { p: [0, 1.82, 0], s: [1.06, 0.06, 0.86] }));
+  T('vendingGlow', b => b.add(box, PAL.glowCool, { p: [0, 1.0, 0.41], s: [0.82, 1.4, 0.03] }));
+  T('signRound', b => b.add(cyl(0.035, 0.035, 2.4, 4), PAL.metal).add(cyl(0.3, 0.3, 0.03, 12), PAL.white, { p: [0, 2.2, 0.04], r: [Math.PI / 2, 0, 0] }).add(tor(0.27, 0.035), PAL.red, { p: [0, 2.5, 0.06] }));
+  T('signTri', b => b.add(cyl(0.035, 0.035, 2.2, 4), PAL.metal).add(cone(0.4, 0.04, 3), PAL.white, { p: [0, 2.3, 0.04], r: [Math.PI / 2, 0, 0] }).add(tor(0.3, 0.03), PAL.red, { p: [0, 2.5, 0.07], r: [0, 0, 0] }));
+  T('signBus', b => b.add(cyl(0.035, 0.035, 2.4, 4), PAL.metal).add(box, PAL.white, { p: [0, 2.3, 0], s: [0.5, 0.34, 0.03] }).add(box, PAL.orange, { p: [0, 2.46, 0.02], s: [0.5, 0.06, 0.03] }));
+  T('mirror', b => b.add(cyl(0.04, 0.04, 2.6, 4), PAL.orange).add(cyl(0.34, 0.34, 0.05, 12), PAL.metal, { p: [0.1, 2.55, 0], r: [Math.PI / 2, 0, 0] }).add(cyl(0.3, 0.3, 0.03, 12), PAL.glowCool, { p: [0.1, 2.55, 0.04], r: [Math.PI / 2, 0, 0] }));
+  T('barrier', b => { for (let i = 0; i < 5; i++) b.add(box, i % 2 ? PAL.white : PAL.red, { p: [-0.8 + i * 0.4, 0.75, 0], s: [0.4, 0.14, 0.06] }); return b.add(box, PAL.metal, { p: [-0.85, 0.4, 0], s: [0.06, 0.8, 0.06] }).add(box, PAL.metal, { p: [0.85, 0.4, 0], s: [0.06, 0.8, 0.06] }); });
+  T('signFallen', b => b.add(cyl(0.035, 0.035, 2.2, 4), PAL.rustD, { r: [0, 0, 1.5], p: [-1.0, 0.1, 0] }).add(cyl(0.3, 0.3, 0.03, 12), PAL.concreteD, { r: [0.1, 0, 1.5], p: [0.1, 0.12, 0.1] }));
+  T('guardrail', b => { b.add(box, PAL.rust, { p: [0, 0.65, 0], s: [2.0, 0.28, 0.04], noise: 0.08 }); for (const x of [-0.9, 0.9]) b.add(cyl(0.04, 0.04, 0.9, 5), PAL.rustD, { p: [x, 0, 0] }); return b; });
+  T('guardrailMetal', b => { b.add(box, PAL.metal, { p: [0, 0.65, 0], s: [2.0, 0.26, 0.04] }); for (const x of [-0.9, 0.9]) b.add(cyl(0.04, 0.04, 0.9, 5), PAL.concreteD, { p: [x, 0, 0] }); return b; });
+  T('fenceBamboo', b => { for (const x of [-0.9, 0, 0.9]) b.add(cyl(0.03, 0.03, 1.0, 4), PAL.bamboo, { p: [x, 0, 0] }); for (const y of [0.35, 0.8]) b.add(cyl(0.025, 0.025, 2.0, 4), PAL.bambooD, { r: [0, 0, Math.PI / 2], p: [-1.0, y, 0.03] }); return b; });
+  T('fenceWire', b => { for (const x of [-1.0, 1.0]) b.add(cyl(0.025, 0.025, 1.2, 4), PAL.metal, { p: [x, 0, 0] }); for (const y of [0.4, 0.8, 1.15]) b.add(cyl(0.008, 0.008, 2.0, 3), PAL.concreteD, { r: [0, 0, Math.PI / 2], p: [-1.0, y, 0] }); return b; });
+  T('bollard', b => b.add(cyl(0.11, 0.1, 0.5, 6), PAL.woodD).add(cyl(0.12, 0.12, 0.05, 6), PAL.concreteD, { p: [0, 0.5, 0] }));
+
+  // ---- boardwalk and coast
+  T('plank', b => b.add(box, PAL.plank, { p: [0, 0.04, 0], s: [2.0, 0.08, 0.27], noise: 0.1 }));
+  T('pile', b => b.add(cyl(0.09, 0.08, 1.0, 6), PAL.woodD, { noise: 0.08 }));
+  T('beam', b => b.add(box, PAL.wood, { p: [0, 0, 0], s: [0.12, 0.14, 1.0], noise: 0.06 }));
+  T('ropePost', b => b.add(cyl(0.035, 0.035, 0.95, 5), PAL.woodL));
+  T('lifeRing', b => b.add(tor(0.2, 0.06), PAL.orange, { p: [0, 0.78, 0] }).add(tor(0.2, 0.062), PAL.white, { p: [0, 0.78, 0], r: [0, 0, 0.5], s: [1, 1, 0.5] }));
+  T('lampSmall', b => b.add(cyl(0.05, 0.04, 1.7, 5), PAL.woodD).add(box, PAL.lampHead, { p: [0, 1.75, 0], s: [0.16, 0.14, 0.16] }));
+  T('lampSmallGlow', b => b.add(box, PAL.glowWarm, { p: [0, 1.75, 0], s: [0.1, 0.09, 0.1] }));
+  T('tetra', b => { const dirs = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]; for (const d of dirs) { const v = new THREE.Vector3(...d).normalize(); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v); const e = new THREE.Euler().setFromQuaternion(q); b.add(cyl(0.2, 0.15, 0.8, 5), PAL.concrete, { r: [e.x, e.y, e.z], p: [0, 0.55, 0], noise: 0.05 }); } return b; });
+  T('drift', b => b.add(cyl(0.16, 0.12, 2.4, 5), PAL.log, { r: [0.1, 0.4, Math.PI / 2], p: [-1.2, 0.18, 0], noise: 0.1 }).add(cyl(0.05, 0.03, 0.7, 4), PAL.logD, { r: [0, 0, 0.7], p: [0.1, 0.25, 0.1] }));
+  T('weedShadow', b => b.add(new THREE.CylinderGeometry(0.7, 0.7, 0.02, 7), '#1e3a4a', { p: [0, 0.01, 0], s: [1.3, 1, 0.9] }));
+  T('seaMark', b => b.add(cyl(0.06, 0.05, 2.2, 5), PAL.woodD).add(box, PAL.red, { p: [0, 2.1, 0], s: [0.3, 0.3, 0.05] }));
+  T('wallBlock', b => b.add(box, PAL.concrete, { p: [0, 0.5, 0], s: [1.9, 1.0, 0.8], noise: 0.05 }));
+
+  return { geometries: G, palette: PAL, builder, hash3 };
+}
+
+const FLORA = { PAL, make };
+if (typeof module !== 'undefined' && module.exports) module.exports = FLORA;
+else global.FLORA = FLORA;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// W4 sample section: the pure placement plan (no THREE, no DOM), driven only by world.js and a fixed seed.
+// Corridor coordinates: u = metres east of the meridian lon -0.5 (measured on the local parallel), v = metres south of the town patch's
+// south edge (lat -29.204) along that meridian. The corridor is 24 m wide (u in [-12, 12]) and 62.2 m long (v in [0, 62.2]); roads and
+// the boardwalk follow world.js's roadNetwork and may leave it. See docs/world/W4_SPEC.md.
+(function (global) {
+'use strict';
+const R = 90, D = Math.PI / 180, LON0 = -0.5, SEED = 4004;
+const mulberry = seed => { let s = seed | 0; return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+
+function plan(W) {
+  const LAT0 = -W.TOWN_PATCH.latMax, rnd = mulberry(SEED);
+  const toLL = (u, v) => { const lat = LAT0 - v / (R * D); return [LON0 + u / (R * Math.cos(lat * D)) / D, lat]; };
+  const toUV = (lon, lat) => ({ u: (lon - LON0) * D * R * Math.cos(lat * D), v: (LAT0 - lat) * D * R });
+  const uniform = (a, b) => a + (b - a) * rnd(), pick = arr => arr[Math.floor(rnd() * arr.length)];
+  const zoneAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.regionAt(lon, lat); };
+  const altAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.height(lon, lat); };
+  const coastAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.coastDistance(lon, lat); };
+
+  // ---- the roads of the section: dense centre lines in (u, v)
+  const roadEdges = ['T03-01', 'T03-02', 'T03-03', 'T11-01'];
+  const roads = {};
+  for (const id of roadEdges) {
+    const e = W.roadNetwork.edges.find(q => q.id === id), S = W.roadNetwork.samplePath(e, 0.5);
+    roads[id] = { id, class: e.class, spans: e.spans, length: W.roadNetwork.edgeLength(e), pts: S.map(p => ({ ...p, ...toUV(p.lon, p.lat) })) };
+  }
+  const roadHalf = { RD03: 2.25 + 0.6, RD04: 2.75 + 0.5, RD05: 1.5 + 0.5, RD07: 1.0 + 0.4 };   // paved half width + margin that stays clear of props
+  const roadDist = (u, v) => { let best = Infinity, cls = null; for (const r of Object.values(roads)) for (let i = 0; i < r.pts.length; i += 2) { const p = r.pts[i], d = Math.hypot(p.u - u, p.v - v) - roadHalf[r.class]; if (d < best) { best = d; cls = r.class; } } return { d: best, cls }; };
+  const nearRoad = (u, v, extra = 0) => roadDist(u, v).d < extra;
+  // beside a road: point at arc length s, lateral offset (positive = right when walking along the edge), plus the road tangent yaw
+  const beside = (id, s, off) => {
+    const r = roads[id], i = Math.max(1, Math.min(r.pts.length - 2, Math.round(s / 0.5))), a = r.pts[i - 1], b = r.pts[i + 1];
+    let tu = b.u - a.u, tv = b.v - a.v; const tl = Math.hypot(tu, tv) || 1; tu /= tl; tv /= tl;
+    return { u: r.pts[i].u - tv * off, v: r.pts[i].v + tu * off, yaw: Math.atan2(tu, tv), tu, tv };
+  };
+
+  // ---- placed things
+  const items = {};            // type -> [{ u, v, yaw, s:[sx,sy,sz], tint, extra }]
+  const occupied = [];         // {u, v, r}: objects of 0.5 m or more block everything; smaller ones (tufts, weeds, ferns, flowers) only keep their own spacing
+  const smallOcc = {};
+  const put = (type, u, v, o = {}) => {
+    const [lon, lat] = toLL(u, v);
+    const it = { type, u, v, lon, lat, yaw: o.yaw ?? uniform(0, Math.PI * 2), s: o.s || [1, 1, 1], tint: o.tint || [1, 1, 1], lean: o.lean || [0, 0], dy: o.dy || 0 };
+    (items[type] = items[type] || []).push(it);
+    if (o.r) { if (o.r >= 0.5) occupied.push({ u, v, r: o.r }); else (smallOcc[type] = smallOcc[type] || []).push({ u, v, r: o.r }); }
+    return it;
+  };
+  const free = (u, v, r, type) => occupied.every(o => Math.hypot(o.u - u, o.v - v) >= o.r + r) && (smallOcc[type] || []).every(o => Math.hypot(o.u - u, o.v - v) >= o.r + r);
+  const tint = (a = 0.85, b = 1.12) => { const k = uniform(a, b), j = uniform(-0.04, 0.04); return [k + j, k, k - j]; };
+  // dart-throwing scatter inside a region predicate
+  const scatter = (type, n, box, ok, o = {}) => {
+    let placed = 0, tries = 0;
+    while (placed < n && tries < n * 60) {
+      tries++;
+      const u = uniform(box.u0, box.u1), v = uniform(box.v0, box.v1);
+      if (!ok(u, v)) continue;
+      if (o.r && !free(u, v, o.r, type)) continue;
+      if (nearRoad(u, v, o.road ?? 0.3)) continue;
+      const sc = o.scale ? uniform(o.scale[0], o.scale[1]) : 1;
+      put(type, u, v, { yaw: o.yaw ?? uniform(0, Math.PI * 2), s: o.aspect ? [sc * o.aspect[0], sc * o.aspect[1], sc * o.aspect[2]] : [sc, sc, sc], tint: tint(o.tint?.[0], o.tint?.[1]), r: o.r, dy: o.dy });
+      placed++;
+    }
+    return placed;
+  };
+  const land = (u, v) => altAt(u, v) > 0.35;
+  const kindIs = (...k) => (u, v) => k.includes(zoneAt(u, v).kind) && land(u, v);
+  const inU = (u, lim = 12) => Math.abs(u) <= lim;
+  const U = { u0: -12, u1: 12 };
+
+  // ---- zone boundaries on the meridian lon -1 (the numbers of W4_SPEC section 2)
+  const zones = [];
+  { let prev = null; for (let v = 0; v <= 70; v += 0.05) { const [lon, lat] = toLL(-0.5 + 0, v); const r = W.regionAt(-1, LAT0 - v / (R * D)); if (r.id !== prev) { zones.push({ v: +v.toFixed(2), id: r.id, kind: r.kind, zone: r.zone }); prev = r.id; } } }
+  const coastV = (() => { for (let v = 30; v < 62; v += 0.02) if (W.coastDistance(-1, LAT0 - v / (R * D)) <= 0) return v; return null; })();
+
+  // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
+  const T1 = roads['T03-01'];
+  put('lamp', ...(() => { const b = beside('T03-01', 1.2, 3.4); return [b.u, b.v]; })(), { yaw: Math.PI / 2 - 0.0, r: 0.6, lean: [0, 0] });
+  { const b = beside('T03-01', 5.8, -3.5); put('lamp', b.u, b.v, { yaw: -Math.PI / 2, r: 0.6 }); }   // RD03: a lamp at the junction as well
+  { const b = beside('T03-01', 4.2, -3.4); put('signRound', b.u, b.v, { yaw: b.yaw, r: 0.4 }); }
+  { const b = beside('T03-01', 2.6, -3.4); put('signBus', b.u, b.v, { yaw: b.yaw + Math.PI, r: 0.4 }); }
+  { const b = beside('T03-01', 5.4, 3.5); put('mirror', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.4 }); }
+  { const b = beside('T03-01', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
+  for (let s = 0.8; s <= 5.6; s += 2.0) { const b = beside('T03-01', s, 3.6 + 1.2); put('guardrailMetal', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8 }); }
+  for (const [u0, u1] of [[-12, -4.2], [5.8, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 3.9, { yaw: 0, r: 0.8 });
+  // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
+  const poleA = [[-8.0, 2.4, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[4.3, 1.8, 0.0], [5.0, 12.8, 0.08], [3.6, 21.0, 0.2]];
+  const wires = [];
+  for (const chain of [poleA, poleB]) {
+    const placed = chain.map(([u, v, lean], i) => put('pole', u, v, { yaw: Math.PI / 2 + (i % 2 ? 0.2 : 0), lean: [lean * 0.4, lean], r: 0.5 }));
+    for (let i = 0; i + 1 < placed.length; i++) wires.push({ a: placed[i], b: placed[i + 1], sag: 0.7 + i * 0.7 + (chain === poleA && i === 2 ? 1.4 : 0) });
+  }
+
+  // ---- BI05 paddies (v 4–13) and TR04 fallow fields (v 13–20.7): Voronoi plots on a fine grid
+  const plots = { u0: -12, u1: 12, v0: 3.2, v1: 23.5, step: 0.25, seeds: [] };
+  {
+    const cellN = 3.0 / 1.0;
+    // jittered seeds on a loose grid; cell size 7–9 m
+    for (let u = -10.5; u <= 10.5; u += 7.2) for (let v = 6.0; v <= 22.5; v += 6.2) {
+      const su = u + uniform(-2.2, 2.2), sv = v + uniform(-1.8, 1.8);
+      const kind = sv < 13.3 ? (rnd() < 0.68 ? 'water' : 'dry') : 'fallow';
+      plots.seeds.push({ u: su, v: sv, kind, id: plots.seeds.length });
+    }
+    void cellN;
+  }
+  const cellOf = (u, v) => { let b = 0, bd = Infinity, d2 = Infinity; plots.seeds.forEach((s, i) => { const d = Math.hypot(s.u - u, s.v - v); if (d < bd) { d2 = bd; bd = d; b = i; } else if (d < d2) d2 = d; }); return { id: b, d1: bd, d2 }; };
+  // paddy furniture
+  const inPlot = (u, v, kind) => { const c = cellOf(u, v); return plots.seeds[c.id].kind === kind && c.d2 - c.d1 > 1.0; };
+  scatter('rack', 3, { u0: -11, u1: 11, v0: 5, v1: 12.5 }, (u, v) => land(u, v) && cellOf(u, v).d2 - cellOf(u, v).d1 < 0.6, { r: 1.6, road: 1.5, yaw: 0, scale: [1, 1] });
+  put('scarecrow', 6.5, 8.6, { r: 0.8, yaw: 0.4 });
+  put('hutFarm', -9.5, 8.2, { r: 2.0, yaw: 0.2 });
+  // ridge weeds and a few flowers
+  scatter('tuft', 36, { u0: -12, u1: 12, v0: 4, v1: 13.5 }, (u, v) => land(u, v) && cellOf(u, v).d2 - cellOf(u, v).d1 < 0.7, { r: 0.25, road: 0.4, scale: [0.9, 1.3] });
+  scatter('flower', 14, { u0: -12, u1: 12, v0: 3, v1: 14 }, (u, v) => land(u, v) && cellOf(u, v).d2 - cellOf(u, v).d1 < 0.9, { r: 0.2, road: 0.4, scale: [0.9, 1.3] });
+  // seedlings in the water plots on a loose grid
+  for (let u = -11.7; u <= 11.7; u += 0.62) for (let v = 4.4; v <= 13.2; v += 0.62) {
+    const uu = u + uniform(-0.12, 0.12), vv = v + uniform(-0.12, 0.12);
+    if (!inPlot(uu, vv, 'water') || nearRoad(uu, vv, 0.4) || !land(uu, vv)) continue;
+    put('seedling', uu, vv, { yaw: uniform(0, 6.28), s: [1, uniform(0.8, 1.2), 1], tint: tint(0.9, 1.1), dy: 0.0 });
+  }
+  // TR04: fallow fields gone to weeds, a rusty shed, a vine-covered machine, collapsed racks
+  scatter('weed', 190, { u0: -12, u1: 12, v0: 13, v1: 22.5 }, (u, v) => land(u, v) && zoneAt(u, v).kind !== 'ruin', { r: 0.22, road: 0.5, scale: [0.9, 1.5] });
+  scatter('shrubLow', 22, { u0: -12, u1: 12, v0: 14, v1: 22.5 }, (u, v) => land(u, v), { r: 0.6, road: 0.8, scale: [0.8, 1.4] });
+  put('hutRusty', 7.3, 16.8, { r: 2.0, yaw: 2.6 });
+  put('oldMachine', -6.8, 15.6, { r: 1.4, yaw: 0.9 });
+  put('rackFallen', 4.7, 20.2, { r: 1.2, yaw: 0.5 }); put('rackFallen', -2.4, 19.6, { r: 1.2, yaw: 2.4 });
+  // RD04 stage: faded barrier, fallen sign, rusty guard rail
+  { const b = beside('T03-02', 4.0, -3.2); put('barrier', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
+  { const b = beside('T03-02', 6.4, 3.4); put('signFallen', b.u, b.v, { yaw: b.yaw, r: 0.8 }); }
+  for (let s = 1.0; s <= 8.0; s += 2.0) { const b = beside('T03-02', s, 3.3); put('guardrail', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8, lean: [0, (s % 4) * 0.01] }); }
+
+  // ---- TR03 forest edge (v 17–26): shrubs, saplings, rocks, a log, the torii of LM04's entrance
+  scatter('shrub', 30, { u0: -12, u1: 12, v0: 17, v1: 23.5 }, (u, v) => land(u, v), { r: 0.45, road: 0.7, scale: [0.8, 1.5] });
+  scatter('treeRound', 5, { u0: -12, u1: 12, v0: 19, v1: 25 }, (u, v) => land(u, v) && zoneAt(u, v).kind !== 'forest', { r: 0.8, road: 1.2, scale: [0.45, 0.75] });   // saplings at the edge
+  scatter('rock', 7, { u0: -12, u1: 12, v0: 18, v1: 27 }, land, { r: 0.45, road: 0.6, scale: [0.7, 1.4], aspect: [1, 1, 1] });
+  put('logMoss', -5.0, 24.2, { r: 1.2, yaw: 0.6 });
+  const ent = W.roadNetwork.nodeById['LM04-southeast'], eu = toUV(ent.lon, ent.lat);
+  put('torii', eu.u - 2.4, eu.v - 0.5, { yaw: Math.PI / 2 + 0.2, r: 1.3 }); put('torii', eu.u - 5.0, eu.v - 1.1, { yaw: Math.PI / 2 + 0.25, r: 1.3, lean: [0, 0.05] });
+  put('lantern', eu.u - 3.7, eu.v + 1.4, { yaw: 0.3, r: 0.4 }); put('lantern', eu.u - 3.7, eu.v - 2.2, { yaw: -0.3, r: 0.4 });
+  put('mossStep', eu.u - 7.2, eu.v - 1.6, { yaw: Math.PI / 2 + 0.2, r: 1.0 });   // beyond the second torii, into the forest: off the road and the boardwalk
+  put('stonePost', eu.u - 2.0, eu.v + 1.7, { r: 0.3 }); put('stonePost', eu.u - 2.0, eu.v - 2.2, { r: 0.3 });
+
+  // ---- BI02 forest (v 20.7–30.9): four tree shapes, understory, logs and moss rocks; at most 0.27 trees per m2 (BI02 budget derivation)
+  const forestOk = (u, v) => { const k = zoneAt(u, v).kind; return (k === 'forest' || (k === 'ruin' && v > 19)) && land(u, v); };   // LM04's ruin cap lies on the forest
+  const treeMix = [['bamboo', 5, 0.9], ['pine', 6, 1.1], ['cedar', 10, 1.0], ['treeRound', 12, 1.0]];   // placed in this order so the rarer shapes are not crowded out
+  let forestTrees = 0;
+  for (const [type, count, r] of treeMix) forestTrees += scatter(type, count, { u0: -12, u1: 12, v0: 19.5, v1: 31.5 }, forestOk, { r, road: 1.4, scale: type === 'bamboo' ? [0.85, 1.15] : [0.8, 1.2] });
+  scatter('shrub', 70, { u0: -12, u1: 12, v0: 20, v1: 31.5 }, forestOk, { r: 0.45, road: 0.8, scale: [0.7, 1.4] });
+  scatter('fern', 95, { u0: -12, u1: 12, v0: 20, v1: 31.5 }, forestOk, { r: 0.3, road: 0.5, scale: [0.8, 1.4] });
+  scatter('mossRock', 12, { u0: -12, u1: 12, v0: 20, v1: 31.5 }, forestOk, { r: 0.45, road: 0.7, scale: [0.7, 1.5] });
+  scatter('logMoss', 2, { u0: -12, u1: 12, v0: 21, v1: 30 }, forestOk, { r: 1.4, road: 1.0 });
+  scatter('stonePost', 2, { u0: -12, u1: 12, v0: 21, v1: 30 }, forestOk, { r: 0.3, road: 0.8, scale: [0.9, 1.3] });
+  put('lantern', 4.6, 27.6, { r: 0.4, yaw: 0.6 });
+
+  // ---- BI03 grass (v 30.9–40.8): tufts, flowers, rocks, a lone tree, a cairn, the windbreak pines at the coast
+  const grassOk = (u, v) => zoneAt(u, v).kind === 'grassland' && altAt(u, v) > 0.5 && coastAt(u, v) > 3;
+  scatter('tuft', 150, { u0: -12, u1: 12, v0: 30, v1: 41 }, grassOk, { r: 0.22, road: 0.5, scale: [0.9, 1.4] });
+  scatter('flower', 26, { u0: -12, u1: 12, v0: 30, v1: 41 }, grassOk, { r: 0.2, road: 0.5, scale: [0.9, 1.3] });
+  scatter('rock', 12, { u0: -12, u1: 12, v0: 31, v1: 41 }, (u, v) => land(u, v) && coastAt(u, v) > 1.5, { r: 0.45, road: 0.7, scale: [0.7, 1.6] });
+  scatter('rockBig', 2, { u0: -12, u1: 12, v0: 33, v1: 40 }, (u, v) => land(u, v) && coastAt(u, v) > 3, { r: 1.0, road: 1.0, scale: [0.9, 1.3] });
+  put('treeRound', -7.5, 34.5, { r: 1.5, yaw: 1.0, s: [1.1, 1.1, 1.1] });
+  put('cairn', 3.4, 36.0, { r: 0.5 });
+  scatter('pine', 4, { u0: -12, u1: 12, v0: 35, v1: 40 }, (u, v) => land(u, v) && coastAt(u, v) > 2 && coastAt(u, v) < 9, { r: 1.8, road: 1.6, scale: [0.9, 1.15] });
+
+  // ---- TR02 coast: sand (terrain colour), driftwood, rocks, tetrapods, a sea mark; reef rocks and weed shadows in the shallows
+  scatter('drift', 4, { u0: -12, u1: 12, v0: 38, v1: 42 }, (u, v) => coastAt(u, v) > 0.2 && coastAt(u, v) < 4, { r: 1.3, road: 1.0, scale: [0.8, 1.2] });
+  scatter('rock', 12, { u0: -12, u1: 12, v0: 38, v1: 42.5 }, (u, v) => coastAt(u, v) > -0.2 && coastAt(u, v) < 5, { r: 0.45, road: 0.8, scale: [0.7, 1.7] });
+  for (let i = 0; i < 7; i++) { const a = i * 0.9, ring = i % 2 ? 0.7 : 0.0; put('tetra', 8.0 + Math.cos(a) * 0.8 + ring, 40.8 + Math.sin(a) * 0.6 - 0.5 * (i % 3), { r: 0.55, yaw: a * 1.7, tint: tint(0.9, 1.05) }); }
+  scatter('reefRock', 9, { u0: -12, u1: 12, v0: 41, v1: 52 }, (u, v) => coastAt(u, v) < -1.5 && altAt(u, v) < -0.05, { r: 1.0, road: 1.2, scale: [0.7, 1.5], dy: -0.15 });
+  scatter('weedShadow', 12, { u0: -12, u1: 12, v0: 41, v1: 56 }, (u, v) => coastAt(u, v) < -1 && altAt(u, v) < -0.05, { r: 1.0, road: 1.0, scale: [0.8, 1.6], dy: 0 });
+  put('seaMark', -2.0, 52.5, { r: 0.4 });
+
+  // spacing check helper for the trees: reported to the checks
+  const trees = ['treeRound', 'cedar', 'pine', 'bamboo'].reduce((s, t) => s + (items[t] || []).length, 0);
+  return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, plots, cellOf, wires, treeCount: trees, forestTrees, seed: SEED };
+}
+
+const PLAN = { plan, SEED };
+if (typeof module !== 'undefined' && module.exports) module.exports = PLAN;
+else global.SECTION_PLAN = PLAN;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// Road cross-sections swept along world.js edges (W4): RD03 rural road, RD04 abandoned road, RD05 dirt road, RD07 boardwalk.
+// Pure data (no THREE): the builder returns triangle strips in flat Mercator coordinates (see W3_SPEC section 2), instance records for the
+// small parts (planks, piles, rope posts, lamps, weeds) and the edge lines used by the ink layer. section.js turns it into meshes.
+// Every width and height below comes from the design cards (RD03, RD04, RD05, RD07) and world.js (the centre line is samplePath).
+(function (global) {
+'use strict';
+const R = 90, D = Math.PI / 180, BASE = 1.6;
+const srgb = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const lin = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255].map(srgb);
+const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math.imul(Math.round(b * 131), 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+
+// Profiles: lateral offset o (true metres, positive to the right of travel), lift l above the ground (or above the deck for the boardwalk), colour.
+const COL = { asphalt: '#2f3645', asphaltL: '#3a4152', gravel: '#6a6458', gravelD: '#585349', grass: '#4f7d5b', grassD: '#3f6a50', ditch: '#27475a', ditchD: '#1f3a48', lip: '#7a7a82',
+  crack: '#4a4e58', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c' };
+const PROFILES = {
+  // RD03: single carriageway 4.5 m (card: 4-5 m) with a gravel shoulder, a side ditch on the left and grass beyond
+  RD03: { paved: [-2.25, 2.25], pts: [[-4.4, 0, 'grass'], [-3.7, 0, 'grassD'], [-3.55, -0.04, 'lip'], [-3.45, -0.3, 'ditchD'], [-2.95, -0.3, 'ditch'], [-2.85, -0.05, 'lip'], [-2.75, 0.0, 'gravel'], [-2.3, 0.02, 'gravelD'], [-2.25, 0.045, 'asphalt'], [2.25, 0.045, 'asphalt'], [2.3, 0.02, 'gravelD'], [2.75, 0.0, 'gravel'], [3.3, 0, 'grassD'], [4.2, 0, 'grass']] },
+  // RD04: original width 5.5 m (card: 5-6 m), only 2.5 m (card: 2-3 m) still passable: cracked asphalt off-centre, weeds and gravel take the rest
+  RD04: { paved: [-1.4, 1.1], pts: [[-3.6, 0, 'grass'], [-2.9, 0.0, 'weed'], [-2.75, 0.01, 'gravelD'], [-1.5, 0.02, 'weed'], [-1.4, 0.04, 'asphalt'], [1.1, 0.04, 'asphalt'], [1.2, 0.02, 'weed'], [2.75, 0.01, 'gravelD'], [2.9, 0.0, 'weed'], [3.6, 0, 'grass']] },
+  // RD05: dirt track 3 m (card: 2.5-3.5 m), two ruts and a grass strip between them, grass verges
+  RD05: { paved: [-1.5, 1.5], pts: [[-2.8, 0, 'grassD'], [-1.9, 0, 'grass'], [-1.55, 0.0, 'dirtD'], [-1.5, 0.01, 'dirt'], [-1.1, 0.0, 'rut'], [-0.7, 0.0, 'rut'], [-0.55, 0.02, 'dirt'], [-0.38, 0.06, 'grass'], [0.38, 0.06, 'grass'], [0.55, 0.02, 'dirt'], [0.7, 0.0, 'rut'], [1.1, 0.0, 'rut'], [1.5, 0.01, 'dirt'], [1.55, 0.0, 'dirtD'], [1.9, 0, 'grass'], [2.8, 0, 'grassD']] },
+};
+const DECK = { half: 1.0, planks: 0.32, pileEvery: 2.5, lampEvery: 10, minAbove: 0.9, followLift: 0.15 };   // boardwalk 2 m wide (card 1.5-2.5), piles 0.5-1.5 m above the water
+
+// Sweep a profile along a polyline of {lon, lat}: triangle strips in flat Mercator coordinates; each profile point follows the terrain at its
+// own lateral position (height() there) plus its lift. profile = [[offset (true m, + = right of travel), lift, colourKey], ...].
+function sweep(W, pts, profile, name, jitter) {
+  const n = pts.length, m = profile.length;
+  const flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
+  const F = pts.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
+  const pos = [], col = [], idx = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], br = W.bearing(a, b);
+    for (let j = 0; j < m; j++) {
+      const [o, l, c] = profile[j], q = o ? W.destination(pts[i], br + (o > 0 ? 90 : -90), Math.abs(o)) : pts[i], k = F[i].k, h = W.height(q.lon, q.lat);
+      pos.push(F[i].x + (-T[i][1]) * o * k, (h + l - BASE) * k, F[i].z + T[i][0] * o * k);
+      let cc = lin(COL[c]); if (jitter) cc = jitter(cc, o, pts[i].s || i);
+      col.push(cc[0], cc[1], cc[2]);
+    }
+  }
+  for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; idx.push(a, c, b, b, c, d); }
+  for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+  return { name, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m };
+}
+
+function build(W, edgeId, opts = {}) {
+  const NET = W.roadNetwork, edge = NET.edges.find(e => e.id === edgeId), S = NET.samplePath(edge, 0.5), n = S.length;
+  const cls = edge.class, out = { id: edgeId, class: cls, strips: [], instances: {}, lines: {}, centre: S.map(p => ({ lon: p.lon, lat: p.lat, alt: p.h, s: p.s })), widths: {}, length: NET.edgeLength(edge) };
+  const flat = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
+  const F = S.map(p => flat(p.lon, p.lat));
+  // tangent / right vectors in the flat plane (x east, z south): right of travel = (-tz, tx)
+  const T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
+  const add = (type, lon, lat, alt, o = {}) => { (out.instances[type] = out.instances[type] || []).push({ type, lon, lat, alt, yaw: o.yaw || 0, s: o.s || [1, 1, 1], lean: o.lean || [0, 0], tint: o.tint || [1, 1, 1] }); };
+  // lateral point on the ground: lon/lat at `o` metres to the right of sample i
+  const lateral = (i, o) => { if (!o) return [S[i].lon, S[i].lat]; const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], br = W.bearing(a, b), p = W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)); return [p.lon, p.lat]; };
+
+  if (PROFILES[cls]) {
+    const prof = PROFILES[cls], m = prof.pts.length;
+    const jitter = cls === 'RD04' ? (c, o, sPos) => (Math.abs(o) < 1.5 ? c.map(v => v * (0.75 + 0.5 * hash(sPos * 2, o * 5))) : c)
+      : cls === 'RD05' ? (c, o, sPos) => (Math.abs(o) > 1.0 && Math.abs(o) < 1.5 ? c.map(v => v * (0.85 + 0.3 * hash(sPos * 3, o * 7))) : c) : null;
+    out.strips.push(sweep(W, S.map(p => ({ lon: p.lon, lat: p.lat, s: p.s })), prof.pts, cls + ' surface', jitter));
+    out.widths = { paved: prof.paved[1] - prof.paved[0], total: prof.pts[m - 1][0] - prof.pts[0][0], pavedRange: prof.paved };
+    // paved edge lines for the ink layer
+    out.lines.edgeL = S.map((p, i) => { const [lo, la] = lateral(i, prof.paved[0]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; });
+    out.lines.edgeR = S.map((p, i) => { const [lo, la] = lateral(i, prof.paved[1]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; });
+    // small parts along the road
+    if (cls === 'RD04') for (let s = 0.6; s < out.length; s += 0.9) { const i = Math.round(s / 0.5), side = hash(s, 3) < 0.5 ? -1 : 1, o = side * (0.3 + 1.0 * hash(s, 5)); const [lo, la] = lateral(i, o); add('weed', lo, la, W.height(lo, la), { yaw: hash(s, 9) * 6.28, s: [0.8, 0.6 + 0.6 * hash(s, 11), 0.8] }); }
+    if (cls === 'RD05') for (let s = 0.4; s < out.length; s += 0.8) for (const side of [-1, 1]) { const i = Math.round(s / 0.5), o = side * (1.65 + 0.5 * hash(s, side * 7)); const [lo, la] = lateral(i, o); add(hash(s, 2) < 0.4 ? 'shrubLow' : 'tuft', lo, la, W.height(lo, la), { yaw: hash(s, 13) * 6.28, s: [1.0, 0.9 + 0.5 * hash(s, 13 + side), 1.0] }); }
+    if (cls === 'RD05') for (const s of [3.0, 10.5]) { const i = Math.round(s / 0.5), [lo, la] = lateral(i, -1.9); add('stonePost', lo, la, W.height(lo, la), { s: [0.9, 1.0, 0.9] }); }
+    return out;
+  }
+
+  if (cls === 'RD07') {
+    // boardwalk: deck height above the sea (altitude 0): follows the terrain +0.15 m on land, never lower than 0.9 m (piles 0.5-1.5 m above water)
+    const deck = h => Math.max(DECK.minAbove, h + DECK.followLift);
+    const planks = [], pos = [], col = [], idx = [];
+    // continuous side beams as a thin strip under the deck edge
+    for (let i = 0; i < n; i++) for (const o of [-DECK.half, -DECK.half + 0.14, DECK.half - 0.14, DECK.half]) {
+      const [lo, la] = lateral(i, o), k = F[i].k, h = W.height(lo, la), dk = deck(S[i].h);
+      pos.push(F[i].x + (-T[i][1]) * o * k, (dk - 0.1 - BASE) * k, F[i].z + T[i][0] * o * k); const c = lin(COL.beam); col.push(...c);
+      void h;
+    }
+    for (let i = 0; i + 1 < n; i++) { for (const j of [0, 2]) { const a = i * 4 + j, b = a + 1, c = a + 4, d = c + 1; idx.push(a, c, b, b, c, d); } }
+    for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+    out.strips.push({ name: 'RD07 beams', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * 4 });
+    out.widths = { paved: 2 * DECK.half, deckAbove: [], pileAbove: [] };
+    // planks across the deck, every 0.32 m
+    for (let s = 0.15; s < out.length - 0.1; s += DECK.planks) {
+      const i = Math.min(n - 1, Math.round(s / 0.5)), dk = deck(S[i].h), yaw = Math.atan2(T[i][0], T[i][1]) + Math.PI / 2;
+      add('plank', S[i].lon, S[i].lat, dk - 0.08, { yaw, s: [1, 1, 1], tint: (() => { const k = 0.85 + 0.3 * hash(s, 19); return [k, k, k]; })() });
+    }
+    // piles under both edges every 2.5 m, from the sea bed (or ground) up to the deck
+    let pileMin = Infinity, pileMax = 0;
+    for (let s = 0.0; s <= out.length + 1e-6; s += DECK.pileEvery) for (const o of [-DECK.half + 0.08, DECK.half - 0.08]) {
+      const i = Math.min(n - 1, Math.round(s / 0.5)), [lo, la] = lateral(i, o), ground = W.height(lo, la), dk = deck(S[i].h), top = dk - 0.1, len = Math.max(0.3, top - ground);
+      add('pile', lo, la, ground, { s: [1, len, 1], yaw: hash(s, o) * 6.28 });
+      const water = Math.max(ground, 0); if (ground < 0.02) { pileMin = Math.min(pileMin, dk); pileMax = Math.max(pileMax, dk); }
+      void water;
+    }
+    out.widths.pileAboveWater = pileMax ? [pileMin, pileMax] : null;      // the deck altitude over open water = the pile height above the sea surface
+    // rope rails: a post every 2.5 m on both sides, two ropes between them (lines)
+    const ropes = { L: [], R: [] };
+    for (let s = 0.0; s <= out.length + 1e-6; s += DECK.pileEvery) for (const side of [-1, 1]) {
+      const i = Math.min(n - 1, Math.round(s / 0.5)), [lo, la] = lateral(i, side * (DECK.half - 0.04)); add('ropePost', lo, la, deck(S[i].h), { yaw: 0 });
+    }
+    for (const side of [-1, 1]) for (const hh of [0.5, 0.85]) {
+      const line = []; for (let i = 0; i < n; i += 2) { const [lo, la] = lateral(i, side * (DECK.half - 0.04)); line.push({ lon: lo, lat: la, alt: deck(S[i].h) + hh }); }
+      (ropes[side < 0 ? 'L' : 'R']).push(line);
+    }
+    out.lines.ropes = [...ropes.L, ...ropes.R];
+    // small lamps every 10 m on the right side, a life ring at 15 m, mooring bollards and a landing at the end
+    for (let s = 5.0; s < out.length; s += DECK.lampEvery) { const i = Math.round(s / 0.5), [lo, la] = lateral(i, DECK.half + 0.12); add('lampSmall', lo, la, deck(S[i].h) - 0.1, { yaw: 0 }); }
+    { const i = Math.round(15 / 0.5), [lo, la] = lateral(i, -(DECK.half - 0.04)); add('lifeRing', lo, la, deck(S[i].h), { yaw: Math.atan2(T[i][0], T[i][1]) }); }
+    const iE = n - 1, endYaw = Math.atan2(T[iE][0], T[iE][1]), dkE = deck(S[iE].h);
+    // landing platform 3 x 3 m beyond the last sample
+    const brg = W.bearing(S[n - 2], S[n - 1]);
+    for (let b = 0; b < 10; b++) { const c = W.destination(S[iE], brg, 0.2 + b * DECK.planks); add('plank', c.lon, c.lat, dkE - 0.08, { yaw: endYaw + Math.PI / 2, s: [1.5, 1, 1] }); }
+    for (const sd of [-1.2, 1.2]) { const c = W.destination(S[iE], brg, 3.0), c2 = W.destination(c, brg + 90, sd); add('bollard', c2.lon, c2.lat, dkE, {}); }
+    for (const sd of [-1.2, 1.2]) for (const f of [0.3, 3.2]) { const c = W.destination(S[iE], brg, f), c2 = W.destination(c, brg + 90, sd); add('pile', c2.lon, c2.lat, W.height(c2.lon, c2.lat), { s: [1, Math.max(0.3, dkE - 0.1 - W.height(c2.lon, c2.lat)), 1] }); }
+    out.landing = { lon: S[iE].lon, lat: S[iE].lat, brg, deck: dkE };
+    return out;
+  }
+  throw new Error('roadkit: no profile for ' + cls);
+}
+
+const ROADKIT = { build, sweep, PROFILES, DECK, COL, lin };
+if (typeof module !== 'undefined' && module.exports) module.exports = ROADKIT;
+else global.ROADKIT = ROADKIT;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// Water surfaces for the planet sections (W4): the rain-ripple shader shared by the paddies and the sea.
+// Large areas of rain ripples are procedural rings on a hashed grid (BORROWING_NOTES: the per-puddle RingGeometry of the town does not scale);
+// the look matches the town's puddle ripples, the implementation differs. The foam line breathes along the shore (aShore = water depth).
+// The materials are built-in MeshBasicMaterial with an injected onBeforeCompile, so bend.js still bends them (its patch chains after ours).
+(function (global) {
+'use strict';
+
+function make(THREE) {
+  const uniforms = { uTime: { value: 0 }, uRain: { value: 1 } };
+  // one ring per hashed cell with a random centre; the 3 x 3 neighbouring cells are summed so rings cross cell borders
+  const RIPPLE2 = `
+    float wh(vec2 p){ p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
+    float rippleRings(vec2 q, float t, float cell, float speed) {
+      vec2 id = floor(q / cell); float total = 0.0;
+      for (int a = -1; a <= 1; a++) for (int b = -1; b <= 1; b++) {
+        vec2 cid = id + vec2(float(a), float(b));
+        vec2 centre = (cid + vec2(wh(cid), wh(cid + 17.0))) * cell;
+        float ph = fract(t * speed + wh(cid + 41.0)), r = ph * cell * 0.45, d = length(q - centre);
+        total += smoothstep(0.05, 0.0, abs(d - r)) * (1.0 - ph) * step(wh(cid + 7.0), 0.75);
+      }
+      return total;
+    }`;
+  const compile = (foam, cell) => shader => {
+    shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
+      .replace('#include <opaque_fragment>', `
+        float cph = 1.0 / cosh(vWP.z / 90.0);
+        vec2 q = vec2(vWP.x, vWP.z) * cph;
+        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain;
+        outgoingLight += vec3(0.50, 0.62, 0.78) * rg * 0.55;
+        diffuseColor.a = max(diffuseColor.a, rg * 0.55);
+        ${foam ? `float fz = 0.05 + 0.025 * sin(uTime * 0.9 + vWP.x * cph * 0.6);
+        float fo = (1.0 - smoothstep(0.01, fz, vShore)) * (0.75 + 0.25 * sin(uTime * 1.3 + vWP.x * cph));
+        outgoingLight = mix(outgoingLight, vec3(0.42, 0.52, 0.62), fo * 0.85);
+        diffuseColor.a = max(diffuseColor.a, fo * 0.9);` : ''}
+        #include <opaque_fragment>`);
+  };
+  // the two closures print the same text and bend.js keys programs by function text, so each material gets its own key
+  const mk = (foam, cell) => { const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }); m.onBeforeCompile = compile(foam, cell); m.customProgramCacheKey = () => `bend|water|${foam}|${cell}`; m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1; return m; };
+  return { uniforms, sea: mk(true, 0.9), paddy: mk(false, 0.7) };
+}
+
+const WATER = { make };
+if (typeof module !== 'undefined' && module.exports) module.exports = WATER;
+else global.WATER = WATER;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// W4 sample section (ST03): town edge -> paddies -> fallow fields -> forest edge -> forest -> grass -> coast -> shallow sea, built from
+// world.js through section_plan.js, with the road kit (roadkit.js), the object kit (flora.js) and the water shader (water.js).
+// All geometry is stored in flat Mercator coordinates and rolled onto the sphere by bend.js (see docs/world/W3_SPEC.md section 2): every
+// instance is scaled by 1/cos(lat) so that bend.js shrinks it back to its true size. The section is built lazily the first time it is
+// shown (uBend > 0 or the 'section' view mode), so the default town costs nothing. Test hooks: window.__scene.section.
+(function (global) {
+'use strict';
+const R = 90, D = Math.PI / 180, BASE = 1.6;
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+const SECTION = {};
+SECTION.attach = function (scene, ctx, BEND, TERR) {
+  const THREE = global.THREE, W = global.WORLD;
+  const S = { built: false, mode: false, settings: { rain: true, light: 'rainy', ink: 'auto' }, stats: {}, root: null, ink: { ground: 1, aerial: 0, panorama: 0, width: 0.03, distance: 0 } };
+  const light0 = { hemi: ctx.lights.hemi.intensity, moon: ctx.lights.moon.intensity, fog: scene.fog.density };
+  let K = null, WATERK = null, PLAN = null, H = null, WS = null;   // H: height of the rendered terrain mesh; WS: world.js with height() replaced by it (for roadkit)
+  const objs = { inst: [], trees: [], hulls: [], glows: [], lines: { aerial: [], coast: [], panorama: [], ground: [] }, strips: [], water: [], wires: null };
+
+  // ---------------------------------------------------------------- helpers
+  const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
+  const groundAt = (lon, lat, dy = 0) => { const f = flatOf(lon, lat), h = H(lon, lat) + dy; return { x: f.x, y: (h - BASE) * f.k, z: f.z, k: f.k, h }; };
+  const tintC = new THREE.Color(), qE = new THREE.Euler(), qQ = new THREE.Quaternion(), mP = new THREE.Vector3(), mS = new THREE.Vector3(), mM = new THREE.Matrix4();
+  const matrixOf = it => {
+    const g = groundAt(it.lon, it.lat, it.dy ?? it.alt0 ?? 0);
+    qE.set(it.lean[0], it.yaw, it.lean[1], 'YXZ'); qQ.setFromEuler(qE);
+    mM.compose(mP.set(g.x, g.y, g.z), qQ, mS.set(g.k * it.s[0], g.k * it.s[1], g.k * it.s[2]));
+    return mM.clone();
+  };
+  // roadkit records give the altitude directly
+  const matrixOfAlt = it => {
+    const f = flatOf(it.lon, it.lat); qE.set(it.lean[0], it.yaw, it.lean[1], 'YXZ'); qQ.setFromEuler(qE);
+    mM.compose(mP.set(f.x, (it.alt - BASE) * f.k, f.z), qQ, mS.set(f.k * it.s[0], f.k * it.s[1], f.k * it.s[2]));
+    return mM.clone();
+  };
+
+  function build() {
+    const t0 = Date.now();
+    K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
+    H = global.TERRAIN.sampler(W, { lonMin: -16, lonMax: 40, latMin: -72, latMax: -27 }); WS = Object.assign(Object.create(W), { height: H });
+    const root = new THREE.Group(); root.name = 'section'; scene.add(root); S.root = root;
+    const inkColor = 0x273647;
+    // ---- materials
+    const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
+    const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const groundMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const inkW = { value: 0.03 }, T = WATERK.uniforms;
+    // canopy sway (one of the three slow motions of the section): the upper part of a tree leans a few centimetres with a slow phase per instance
+    const SWAY = `float sw = smoothstep(1.2, 7.0, position.y); transformed.x += sin(uTime * 0.9 + instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.21) * 0.1 * sw; transformed.z += cos(uTime * 0.7 + instanceMatrix[3].z * 0.3) * 0.07 * sw;`;
+    const treeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
+    treeMat.onBeforeCompile = shader => { shader.uniforms.uTime = T.uTime; shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY); };
+    treeMat.customProgramCacheKey = () => 'bend|treeSway';
+    const mkHull = sway => {
+      const m = new THREE.MeshBasicMaterial({ color: inkColor, side: THREE.BackSide, transparent: true, opacity: 1 });
+      m.onBeforeCompile = shader => { shader.uniforms.uInkW = inkW; shader.uniforms.uTime = T.uTime; shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 hnormal;\nuniform float uInkW;\nuniform float uTime;').replace('#include <begin_vertex>', 'vec3 transformed = vec3(position) + hnormal * uInkW;' + (sway ? SWAY : '')); };
+      m.customProgramCacheKey = () => 'bend|hull|' + sway; return m;
+    };
+    const hullMat = mkHull(false), treeHullMat = mkHull(true);
+    const lineMat = k => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, fog: false });
+    S.materials = { floraMat, treeMat, glowMat, groundMat, hullMat, treeHullMat, inkW };
+
+    // ---- instanced objects: one InstancedMesh (plus outline hull) per type
+    const GLOW = { lamp: 'lampGlow', lantern: 'lanternGlow', vending: 'vendingGlow', lampSmall: 'lampSmallGlow' };
+    const TREES = ['treeRound', 'cedar', 'pine', 'bamboo'];
+    const all = {};
+    for (const [t, list] of Object.entries(PLAN.items)) all[t] = list.map(it => ({ ...it, m: matrixOf(it) }));
+    // roads: strips and instances
+    const roadOut = ['T03-01', 'T03-02', 'T03-03', 'T11-01'].map(id => global.ROADKIT.build(WS, id));
+    for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
+    S.roadOut = roadOut;
+    const mkInst = (name, list, geoName, withHull, mat = floraMat, hmat = hullMat) => {
+      const geo = K.geometries[geoName || name]; if (!geo || !list.length) return null;
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length); mesh.name = 'sec:' + name;
+      list.forEach((it, i) => { mesh.setMatrixAt(i, it.m); mesh.setColorAt(i, tintC.setRGB(it.tint[0], it.tint[1], it.tint[2])); });   // every instance gets a colour: the buffer starts black
+      mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; mesh.computeBoundingSphere();
+      root.add(mesh); objs.inst.push(mesh);
+      let hull = null;
+      if (withHull !== false) { hull = new THREE.InstancedMesh(geo, hmat, list.length); hull.instanceMatrix = mesh.instanceMatrix; hull.count = list.length; hull.computeBoundingSphere(); hull.name = 'sec:' + name + ':ink'; root.add(hull); objs.hulls.push(hull); }
+      const gname = GLOW[name];
+      if (gname) { const g = new THREE.InstancedMesh(K.geometries[gname], glowMat, list.length); g.instanceMatrix = mesh.instanceMatrix; g.computeBoundingSphere(); g.name = 'sec:' + name + ':glow'; root.add(g); objs.glows.push(g); }
+      return { mesh, hull };
+    };
+    S.counts = {};
+    for (const [t, list] of Object.entries(all)) {
+      S.counts[t] = list.length;
+      if (TREES.includes(t)) {
+        // two levels of detail: near (full) and far (simple); the assignment follows the camera (see tick)
+        const near = mkInst(t, list, t, true, treeMat, treeHullMat), far = mkInst(t + '_far', list, t + '_far', false, treeMat);
+        objs.trees.push({ type: t, list, near, far, last: null });
+      } else if (t === 'plank' || t === 'pile' || t === 'ropePost' || t === 'lampSmall' || t === 'lifeRing' || t === 'bollard' || t === 'beam') mkInst(t, list, t, t !== 'plank' && t !== 'pile');
+      else mkInst(t, list, t, !['weedShadow', 'seedling', 'tuft', 'weed', 'fern', 'flower'].includes(t));
+    }
+    // seedlings, tufts, weeds, ferns and flowers get no outline hull (too small / too many); everything else does
+
+    // ---- strips: roads, town edge strips
+    const stripMesh = (st, mat) => {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(st.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(st.col, 3));
+      const nrm = new Float32Array(st.pos.length); for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(st.index, 1)); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, mat); m.name = 'sec:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
+    };
+    for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
+    // TR01 town edge: gravel shoulder and grass band along the patch's south edge, in the corridor
+    { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
+      stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }
+
+    // ---- paddies and fallow fields: Voronoi plots on a fine grid, ridges 0.36 m wide and 0.2 m high
+    { const P = PLAN.plots, nu = Math.round((P.u1 - P.u0) / P.step), nv = Math.round((P.v1 - P.v0) / P.step);
+      const pos = [], col = [], idx = [], wpos = [], wcol = [], widx = [], vinfo = [];
+      const cDry = new THREE.Color('#5d6b46'), cDry2 = new THREE.Color('#6b7650'), cFall = new THREE.Color('#66744a'), cFall2 = new THREE.Color('#7a7456'), cWater = new THREE.Color('#25414f'), cRidge = new THREE.Color('#6a604e'), cRidgeTop = new THREE.Color('#7b7260');
+      for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+        const u = P.u0 + i * P.step, v = P.v0 + j * P.step, [lon, lat] = PLAN.toLL(u, v), c = PLAN.cellOf(u, v), seed = P.seeds[c.id], ridge = c.d2 - c.d1 < 0.18;
+        const zk = W.regionAt(lon, lat).kind, h = H(lon, lat), rd = PLAN.roadDist(u, v);
+        const farm = (zk === 'farmland' || (zk === 'ruin' && v < 23)) && h > 0.5 && rd.d > 1.0;
+        const f = flatOf(lon, lat); const off = ridge ? 0.2 : seed.kind === 'water' ? -0.07 : 0.0;
+        pos.push(f.x, (h + off + 0.03 - BASE) * f.k, f.z);
+        let c3 = ridge ? cRidge.clone().lerp(cRidgeTop, 0.5 + 0.5 * Math.sin(u * 7 + v * 5)) : seed.kind === 'water' ? cWater : seed.kind === 'dry' ? (Math.sin(u * 5.2) > 0 ? cDry : cDry2) : (Math.sin(u * 3 + v * 4) > 0.2 ? cFall : cFall2);
+        if (!ridge && seed.kind === 'fallow') c3 = c3.clone().multiplyScalar(0.85 + 0.3 * (0.5 + 0.5 * Math.sin(u * 11 + v * 7)));
+        col.push(c3.r, c3.g, c3.b);
+        vinfo.push({ farm, water: seed.kind === 'water' && !ridge, id: c.id, h });
+        const hw = h - 0.02 - 0.0; wpos.push(f.x, (hw - BASE) * f.k, f.z);
+      }
+      const nrm = new Float32Array(pos.length); for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1;
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+        const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1, va = vinfo[a], vb = vinfo[b], vc = vinfo[c], vd = vinfo[d];
+        if (va.farm && vb.farm && vc.farm && vd.farm) idx.push(a, c, b, b, c, d);
+        if (va.water && vb.water && vc.water && vd.water && va.id === vb.id && va.id === vc.id && va.id === vd.id) widx.push(a, c, b, b, c, d);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(idx); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, groundMat); m.name = 'sec:plots'; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); S.stats.plotTriangles = idx.length / 3;
+      // water in the paddy plots (same grid, ripple material)
+      const wc = new Float32Array((wpos.length / 3) * 4), ws = new Float32Array(wpos.length / 3);
+      for (let i = 0; i < wc.length; i += 4) { wc[i] = 0.12; wc[i + 1] = 0.26; wc[i + 2] = 0.34; wc[i + 3] = 0.55; }
+      ws.fill(9);
+      const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3)); wg.setAttribute('color', new THREE.BufferAttribute(wc, 4)); wg.setAttribute('aShore', new THREE.BufferAttribute(ws, 1)); wg.setIndex(widx); wg.computeBoundingSphere();
+      const wm = new THREE.Mesh(wg, WATERK.paddy); wm.name = 'sec:paddy-water'; wm.matrixAutoUpdate = false; wm.renderOrder = 2; root.add(wm); objs.water.push(wm); S.stats.paddyWaterTriangles = widx.length / 3;
+    }
+
+    // ---- sea water: grid over the gulf, fading to transparent at the shoreline; the foam line breathes along it
+    { const u0 = -16, u1 = 42, v0 = 36, v1 = 63.5, st = 0.5, nu = Math.round((u1 - u0) / st), nv = Math.round((v1 - v0) / st);
+      const pos = [], col = [], shore = [], idx = [], hh = [];
+      for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+        const u = u0 + i * st, v = v0 + j * st, [lon, lat] = PLAN.toLL(u, v), f = flatOf(lon, lat), h = W.height(lon, lat), reg = W.regionAt(lon, lat), depth = Math.max(0, -h);
+        pos.push(f.x, (0.0 - BASE + 0.01) * f.k, f.z); hh.push(reg.zone === 'ocean' ? h : 1);
+        const t = Math.min(1, depth / 0.7), a = reg.zone === 'ocean' ? smooth(0.0, 0.18, depth) * (0.78 - 0.2 * t) : 0;
+        const c = new THREE.Color('#44687c').lerp(new THREE.Color('#1a2f58'), t); col.push(c.r, c.g, c.b, a); shore.push(reg.zone === 'ocean' ? depth : 9);
+      }
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1; if (hh[a] < 0 || hh[b] < 0 || hh[c] < 0 || hh[d] < 0) idx.push(a, c, b, b, c, d); }
+      const nrm = new Float32Array(pos.length); for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1;
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setAttribute('aShore', new THREE.Float32BufferAttribute(shore, 1)); g.setIndex(idx); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, WATERK.sea); m.name = 'sec:sea'; m.matrixAutoUpdate = false; m.renderOrder = 3; root.add(m); objs.water.push(m); S.stats.seaTriangles = idx.length / 3;
+    }
+
+    // ---- wires between the poles (catenary), rope rails of the boardwalk
+    { const seg = [], poleLocal = [[-0.8, 7.75, 0], [0, 7.75, 0], [0.8, 7.75, 0]];
+      const attach = it => { const M = matrixOf(it), p = poleLocal.map(l => new THREE.Vector3(...l).applyMatrix4(M)); return { p, k: groundAt(it.lon, it.lat).k }; };
+      for (const w of PLAN.wires) {
+        const A = attach(w.a), B = attach(w.b);
+        for (let c = 0; c < 3; c++) { let prev = null; for (let n = 0; n <= 10; n++) { const t = n / 10, x = A.p[c].x + (B.p[c].x - A.p[c].x) * t, z = A.p[c].z + (B.p[c].z - A.p[c].z) * t, y = A.p[c].y + (B.p[c].y - A.p[c].y) * t - w.sag * 4 * t * (1 - t) * A.k; const p = [x, y, z]; if (prev) seg.push(...prev, ...p); prev = p; } }
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)); g.computeBoundingSphere();
+      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f2a38, transparent: true, opacity: 0.9 })); l.name = 'sec:wires'; l.matrixAutoUpdate = false; root.add(l); objs.wires = l; S.stats.wireSegments = seg.length / 6;
+      const rope = []; for (const r of roadOut) for (const line of (r.lines.ropes || [])) { let prev = null; for (const q of line) { const f = flatOf(q.lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) rope.push(...prev, ...p); prev = p; } }
+      if (rope.length) { const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rope, 3)); rg.computeBoundingSphere(); const rl = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xb59a74, transparent: true, opacity: 0.9 })); rl.name = 'sec:ropes'; rl.matrixAutoUpdate = false; root.add(rl); }
+    }
+
+    // ---- ink lines: forest edge, plot ridges, road edges, coast (aerial); coast, ridge and ice outlines (panorama)
+    const addLines = (layer, segs) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, lineMat()); l.name = 'sec:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; };
+    const poly = (pts, altOff, out) => { let prev = null; for (const q of pts) { const f = flatOf(q.lon, q.lat), a = (q.alt !== undefined ? q.alt : H(q.lon, q.lat)) + altOff, p = [f.x, (a - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
+    { const segs = [];
+      // forest edge: the forest-south polygon boundary inside the corridor
+      const reg = W.regions.find(r => r.id === 'forest-south'), ring = reg.shape.ring; const edge = [];
+      for (let i = 0; i < ring.length; i++) for (const p of W.greatCirclePoints(ring[i], ring[(i + 1) % ring.length], 0.5)) { const uv = PLAN.toUV(p[0], p[1]); if (Math.abs(uv.u) < 16 && uv.v > 14 && uv.v < 36) edge.push({ lon: p[0], lat: p[1], u: uv.u, v: uv.v }); }
+      // polylines per consecutive run
+      let run = []; const flush = () => { if (run.length > 1) poly(run, 0.12, segs); run = []; };
+      for (let i = 0; i < edge.length; i++) { if (run.length && Math.hypot(edge[i].u - run[run.length - 1].u, edge[i].v - run[run.length - 1].v) > 2) flush(); run.push(edge[i]); } flush();
+      // plot ridges: boundaries between neighbouring cells on the fine grid
+      const P = PLAN.plots, nu = Math.round((P.u1 - P.u0) / P.step), nv = Math.round((P.v1 - P.v0) / P.step), cellId = [];
+      for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) cellId.push(PLAN.cellOf(P.u0 + i * P.step, P.v0 + j * P.step).id);
+      const farmAt = (u, v) => { const [lon, lat] = PLAN.toLL(u, v), k = W.regionAt(lon, lat).kind; return (k === 'farmland' || (k === 'ruin' && v < 23)) && PLAN.roadDist(u, v).d > 1.0; };
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+        const a = cellId[j * (nu + 1) + i], u = P.u0 + i * P.step, v = P.v0 + j * P.step;
+        if (!farmAt(u + P.step / 2, v + P.step / 2)) continue;
+        if (cellId[j * (nu + 1) + i + 1] !== a && i + 1 < nu) { const [lo, la] = PLAN.toLL(u + P.step, v), [lo2, la2] = PLAN.toLL(u + P.step, v + P.step); poly([{ lon: lo, lat: la }, { lon: lo2, lat: la2 }], 0.26, segs); }
+        if (cellId[(j + 1) * (nu + 1) + i] !== a && j + 1 < nv) { const [lo, la] = PLAN.toLL(u, v + P.step), [lo2, la2] = PLAN.toLL(u + P.step, v + P.step); poly([{ lon: lo, lat: la }, { lon: lo2, lat: la2 }], 0.26, segs); }
+      }
+      // road edges
+      for (const r of roadOut) { if (r.lines.edgeL) poly(r.lines.edgeL, 0, segs); if (r.lines.edgeR) poly(r.lines.edgeR, 0, segs); }
+      addLines('aerial', segs);
+      // corridor coast: bisect coastDistance = 0 along each parallel
+      const coast = []; for (let u = -16; u <= 42; u += 0.5) { let lo = 34, hi = 50; const f = v => { const [lon, lat] = PLAN.toLL(u, v); return W.coastDistance(lon, lat); }; if (f(lo) <= 0 || f(hi) > 0) continue; for (let n = 0; n < 24; n++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; } const [lon, lat] = PLAN.toLL(u, (lo + hi) / 2); coast.push({ lon, lat, alt: 0.03 }); }
+      const csegs = []; poly(coast, 0, csegs); addLines('coast', csegs);
+    }
+    S.stats.buildMs = Date.now() - t0;
+    S.built = true;
+    return root;
+  }
+
+  // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
+  function buildGlobalInk() {
+    if (S.globalInk) return; S.globalInk = true;
+    const t0 = Date.now(), root = S.root, step = 1;
+    const nx = 360 / step, ny = 170 / step;
+    const sample = (fn) => { const g = new Float32Array((nx + 1) * (ny + 1)); for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) g[j * (nx + 1) + i] = fn(-180 + i * step, -85 + j * step); return g; };
+    const contour = (grid, level, altOff) => {
+      const out = [];
+      const at = (i, j) => grid[j * (nx + 1) + (i % (nx + 1))];
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const a = at(i, j) - level, b = at(i + 1, j) - level, c = at(i + 1, j + 1) - level, d = at(i, j + 1) - level;
+        const lon = -180 + i * step, lat = -85 + j * step, pts = [];
+        const cross = (p, q, x0, y0, x1, y1) => { if ((p > 0) !== (q > 0)) { const t = p / (p - q); pts.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]); } };
+        cross(a, b, lon, lat, lon + step, lat); cross(b, c, lon + step, lat, lon + step, lat + step); cross(c, d, lon + step, lat + step, lon, lat + step); cross(d, a, lon, lat + step, lon, lat);
+        if (pts.length === 2) { const f0 = flatOf(pts[0][0], pts[0][1]), f1 = flatOf(pts[1][0], pts[1][1]); out.push(f0.x, (altOff - BASE) * f0.k, f0.z, f1.x, (altOff - BASE) * f1.k, f1.z); }
+      }
+      return out;
+    };
+    const addG = segs => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.matrixAutoUpdate = false; l.name = 'sec:ink:global'; root.add(l); objs.lines.panorama.push(l); S.stats.ink_panorama = (S.stats.ink_panorama || 0) + segs.length / 6; };
+    addG(contour(sample((lo, la) => W.coastDistance(lo, la)), 0, 0.2));            // coasts
+    addG(contour(sample((lo, la) => W.height(lo, la)), 10, 10.2));                 // ridge and peak outlines at 10 m (drawn at height: flat y = (h - 1.6)/cos)
+    const ice = []; for (const r of W.regions.filter(q => q.zone === 'ice')) { for (let lon = -180; lon < 180; lon += 1) { const a = r.shape.edge(lon), b = r.shape.edge(lon + 1), fa = flatOf(lon, a), fb = flatOf(lon + 1, b); ice.push(fa.x, (2.6 - BASE) * fa.k, fa.z, fb.x, (2.6 - BASE) * fb.k, fb.z); } }
+    addG(ice);
+    S.stats.globalInkMs = Date.now() - t0;
+  }
+
+  // ---------------------------------------------------------------- visibility, hooks, per-frame update
+  const lerp3 = (v, a, b) => a + (b - a) * v;
+  function ensure() { if (!S.built) global.TERRAIN.withPrivateRandom(build); return S.root; }
+  function visibility() {
+    const show = BEND.get() > 0 || S.mode;
+    if (show) ensure();
+    if (S.root) S.root.visible = show;
+    for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
+    if (show && BEND.get() >= 0.5 && S.built) global.TERRAIN.withPrivateRandom(buildGlobalInk);
+  }
+  BEND.onChange(visibility);
+
+  // ink layer by the camera's altitude above the surface (not by the distance to the section: a person standing in it is 'ground' everywhere)
+  function distance(camera) {
+    const u = BEND.get(), flatAlt = camera.position.y, sphereAlt = Math.hypot(camera.position.x, camera.position.y + R, camera.position.z) - R;
+    return Math.max(0.5, flatAlt + (sphereAlt - flatAlt) * u);
+  }
+  const camLast = new THREE.Vector3(), tmpV = new THREE.Vector3(), fwd = new THREE.Vector3(), oc = new THREE.Vector3();
+  function updateLod(camera, force) {
+    if (!objs.trees.length) return;
+    if (!force && camLast.distanceTo(camera.position) < 1.2 && S.lodBend === BEND.get()) return;
+    camLast.copy(camera.position); S.lodBend = BEND.get(); const u = BEND.get();
+    for (const T of objs.trees) {
+      const nearM = T.near.mesh, farM = T.far.mesh; let ni = 0, fi = 0;
+      T.list.forEach(it => {
+        const p = BEND.point(it.m.elements[12], it.m.elements[13], it.m.elements[14], u); tmpV.set(p[0], p[1], p[2]);
+        if (tmpV.distanceTo(camera.position) < 26) { nearM.setMatrixAt(ni, it.m); nearM.setColorAt(ni, tintC.setRGB(it.tint[0], it.tint[1], it.tint[2])); ni++; }
+        else { farM.setMatrixAt(fi, it.m); farM.setColorAt(fi, tintC.setRGB(it.tint[0], it.tint[1], it.tint[2])); fi++; }
+      });
+      nearM.count = ni; farM.count = fi; T.near.hull.count = ni;
+      nearM.instanceMatrix.needsUpdate = true; farM.instanceMatrix.needsUpdate = true; if (nearM.instanceColor) nearM.instanceColor.needsUpdate = true; if (farM.instanceColor) farM.instanceColor.needsUpdate = true;
+      T.counts = { near: ni, far: fi };
+    }
+  }
+  function applyLight() {
+    const L = S.settings.light, h = ctx.lights.hemi, m = ctx.lights.moon;
+    if (L === 'panorama') { h.intensity = light0.hemi * 1.5; m.intensity = light0.moon * 1.5; scene.fog.density = 0; }
+    else if (L === 'neutral') { h.intensity = light0.hemi * 2.8; m.intensity = light0.moon * 1.6; scene.fog.density = 0; }   // material and form study (not a daytime state, D9)
+    else { h.intensity = light0.hemi; m.intensity = light0.moon; scene.fog.density = light0.fog; }
+  }
+  function tick(t, camera) {
+    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = S.settings.rain ? 1 : 0);
+    if (!S.root || !S.root.visible) return;
+    const d = distance(camera); S.ink.distance = d;
+    const mode = S.settings.ink;
+    let g, a, p;
+    if (mode === 'ground') { g = 1; a = 0; p = 0; } else if (mode === 'aerial') { g = 0; a = 1; p = 0; } else if (mode === 'panorama') { g = 0; a = 0; p = 1; }
+    else { g = 1 - smooth(8, 22, d); p = smooth(70, 150, d); a = Math.max(0, smooth(8, 22, d) * (1 - p)); }
+    S.ink.ground = g; S.ink.aerial = a; S.ink.panorama = p;
+    { // the distance to where the camera looks (ray against the planet sphere, flat plane at uBend 0; 25 m when it misses): outlines keep a constant pixel width there
+      camera.getWorldDirection(fwd); const bu = BEND.get(); let t = 25;
+      if (bu > 0) { oc.set(camera.position.x, camera.position.y + R, camera.position.z); const b = oc.dot(fwd), c = oc.lengthSq() - R * R, disc = b * b - c; if (disc > 0) { const t1 = -b - Math.sqrt(disc); if (t1 > 0) t = t1; } }
+      else if (fwd.y < -0.02) t = -camera.position.y / fwd.y;
+      S.focus = Math.max(4, Math.min(300, t));
+    }
+    // constant pixel width: world units per pixel at the distance of the section, 1.5 px
+    const wpp = 2 * Math.max(3, S.focus || d) * Math.tan(camera.fov * D / 2) / ctx.renderer.domElement.height;
+    S.ink.width = Math.max(0.008, Math.min(0.2, 1.5 * wpp)); S.materials.inkW.value = S.ink.width;
+    for (const h of objs.hulls) { h.visible = g > 0.01; }
+    S.materials.hullMat.opacity = g; S.materials.treeHullMat.opacity = g;
+    for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
+    for (const l of objs.lines.coast) { l.material.opacity = Math.max(a, p, 0); l.visible = (a > 0.01 || p > 0.01); }
+    for (const l of objs.lines.panorama) { l.material.opacity = p; l.visible = p > 0.01; }
+    updateLod(camera, false);
+  }
+
+  const api = {
+    ensure, tick, state: S,
+    setMode(on) { S.mode = !!on; visibility(); },
+    set(v) {
+      if (v.rain !== undefined) { S.settings.rain = !!v.rain; if (ctx.rainObj) ctx.rainObj.visible = S.settings.rain; }
+      if (v.light) { S.settings.light = v.light; applyLight(); }
+      if (v.ink) S.settings.ink = v.ink;
+      return { ...S.settings };
+    },
+    get() { return { ...S.settings, ink: { ...S.ink }, mode: S.mode, built: S.built }; },
+    forceLod(camera) { updateLod(camera, true); },
+    stats() {
+      let calls = 0; const tri = [];
+      return { counts: S.counts, trees: objs.trees.map(T => ({ type: T.type, ...(T.counts || {}) })), ...S.stats, plan: { seed: PLAN && PLAN.seed } };
+    },
+    objects: objs, plan: () => PLAN, kit: () => K,
+  };
+  global.SECTION_API = api;
+  return api;
+};
+
+if (typeof module !== 'undefined' && module.exports) module.exports = SECTION;
+else global.SECTION = SECTION;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -15700,7 +16555,7 @@ const scene=new THREE.Scene();scene.background=new THREE.Color('#252e43');scene.
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.22;document.body.appendChild(renderer.domElement);
 // Default view: from the north-east of the store corner, looking across X01 at the shop front.
 const camera=new THREE.PerspectiveCamera(36,innerWidth/innerHeight,.25,400);let yaw=2.5,pitch=.5,dist=34;const target=new THREE.Vector3(-7,1.2,20);
-scene.add(new THREE.HemisphereLight(0x8fb6ed,0x252438,2.0));const moon=new THREE.DirectionalLight(0x9dbbff,2.3);moon.position.set(-6,9,4);scene.add(moon);
+const hemi=new THREE.HemisphereLight(0x8fb6ed,0x252438,2.0);scene.add(hemi);const moon=new THREE.DirectionalLight(0x9dbbff,2.3);moon.position.set(-6,9,4);scene.add(moon);
 const ramp=new THREE.DataTexture(new Uint8Array([110,170,220,255]),4,1,THREE.RedFormat);ramp.needsUpdate=true;ramp.minFilter=ramp.magFilter=THREE.NearestFilter;
 const mats={};
 let seed=3187;function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}
@@ -15920,10 +16775,10 @@ groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.
 // awnings of buildings (their registered shelter rects, see layout.js).
 const roofs=L.structures.flatMap(s=>s.shelter?s.shelter.map(r=>worldRect(s,r)):s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
 const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6),speeds=[];let rb=[0,0,0,0],roam=null;
-function rainBounds(){const h=rainBox/2,center=roam?roam.position:target;rb=[Math.max(-BH,center.x-h),Math.max(-BH,center.z-h),Math.min(BH,center.x+h),Math.min(BH,center.z+h)];}
+function rainBounds(){const h=rainBox/2,center=roam?roam.position:target,free=window.SECTION_API&&window.SECTION_API.state.mode;rb=free?[center.x-h,center.z-h,center.x+h,center.z+h]:[Math.max(-BH,center.x-h),Math.max(-BH,center.z-h),Math.min(BH,center.x+h),Math.min(BH,center.z+h)];}
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
-const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});scene.add(new THREE.LineSegments(rg,rainMat));
+const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});const rainObj=new THREE.LineSegments(rg,rainMat);scene.add(rainObj);
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // Pan slides the target over the ground at a speed proportional to distance and never leaves the plinth.
@@ -15952,11 +16807,12 @@ addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updat
 if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.heading),rX=-Math.cos(roam.heading),rZ=Math.sin(roam.heading),moveX=fX*mz+rX*mx,moveZ=fZ*mz+rZ*mx,speed=1.5,[wx,wz]=constrainWalk(roam.position.x+moveX*speed*elapsed,roam.position.z+moveZ*speed*elapsed);roam.position.x=wx;roam.position.z=wz;
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
 }else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);renderer.render(scene,camera);}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
 BEND.attach(scene);
-window.__scene={scene,renderer,camera,groups,bend:BEND,terrain,view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode)setRoaming(v.mode==='roam');if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj},BEND,terrain);
+window.__scene={scene,renderer,camera,groups,bend:BEND,terrain,section,view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>

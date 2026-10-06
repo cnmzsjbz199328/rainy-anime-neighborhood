@@ -113,8 +113,10 @@ const noBend = o => !!(o.material && o.material.userData && o.material.userData.
 FR.intersectsObject = function (object) {
   if (uniform.value > 0 && cullMode === 'bound' && object.geometry && !noBend(object)) {
     const g = object.geometry;
-    if (g.boundingSphere === null) g.computeBoundingSphere();
-    return this.intersectsSphere(bendSphere(tmpSphere.copy(g.boundingSphere).applyMatrix4(object.matrixWorld)));
+    // an InstancedMesh culls on the sphere around all its instances (object.boundingSphere), not on the one instance geometry (W4)
+    let bs = object.isInstancedMesh && object.boundingSphere ? object.boundingSphere : g.boundingSphere;
+    if (bs === null) { g.computeBoundingSphere(); bs = g.boundingSphere; }
+    return this.intersectsSphere(bendSphere(tmpSphere.copy(bs).applyMatrix4(object.matrixWorld)));
   }
   return origObject.call(this, object);
 };

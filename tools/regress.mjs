@@ -50,7 +50,7 @@ const ALL_VIEWS = {
   cafeInterior: { yaw: front + 0.35, pitch: 1.0, dist: d * 1.05, target: [cx, 0.8, cz], cutaway: ['roof'] },
 };
 const onlyViews = arg('--views', null);
-export const VIEWS = onlyViews ? Object.fromEntries(Object.entries(ALL_VIEWS).filter(([k]) => onlyViews.split(',').includes(k))) : ALL_VIEWS;
+export const VIEWS = onlyViews && onlyViews !== 'section' ? Object.fromEntries(Object.entries(ALL_VIEWS).filter(([k]) => onlyViews.split(',').includes(k))) : ALL_VIEWS;
 
 const INIT = `(() => {
   let s = 0x2f6e2b1;
@@ -135,7 +135,28 @@ async function compare(browser, dirA, dirB, masked) {
   return out;
 }
 
+// --views section: the W4 sample section has no baseline; render its review shots in two fresh pages (same seeded start) and require identical pixels
+async function sectionDeterminism(browser) {
+  const { SHOTS, INIT: SINIT, renderShot } = await import('./section_views.mjs');
+  const pick = ['ground-paddies-rain', 'aerial-corridor-rain', 'panorama-section', 'ground-coast-neutral'];
+  const runs = [];
+  for (let k = 0; k < 2; k++) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 }), errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(SINIT);
+    await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForFunction(() => window.__scene && window.__scene.section, null, { timeout: 90000 });
+    const r = {}; for (const name of pick) r[name] = (await renderShot(page, SHOTS.find(x => x[0] === name)[1])).url;
+    runs.push({ r, errors }); await page.close();
+  }
+  let bad = 0;
+  for (const name of pick) { const same = runs[0].r[name] === runs[1].r[name]; if (!same) bad++; console.log(`${same ? 'PASS' : 'FAIL'} ${name.padEnd(24)} two fresh runs ${same ? 'identical' : 'differ'}`); }
+  for (const e of runs.flatMap(x => x.errors)) { console.log('page error:', e); bad++; }
+  console.log(bad ? 'FAIL regress section' : 'PASS regress section'); return bad ? 1 : 0;
+}
+
 const browser = await launchChromium();
+if (onlyViews === 'section') { const code = await sectionDeterminism(browser); await browser.close(); process.exit(code); }
 let exit = 0, cleanup = () => {};
 try {
   const tmp = keepDir ? path.resolve(keepDir) : fs.mkdtempSync(path.join(os.tmpdir(), 'regress-shots-'));
