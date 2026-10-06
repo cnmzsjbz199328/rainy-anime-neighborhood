@@ -90,3 +90,22 @@ CHECKS.LM10 = async ({ page, info, fail, f, W, lm, M, renderShot, shots }) => {
   const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM10.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
   info.push(`夜间：渔港最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}（${f(e.lm / e.town * 100, 0)}%）：东洲上最主要的暖光点，从城镇街道看不会盖过便利店`); if (e.lm > e.town) fail('渔港亮于城镇');
 };
+
+CHECKS.LM08 = async ({ page, info, fail, f, W, lm, M }) => {
+  const st = M.stats || {};
+  // the lighthouse height from the geometry: the highest vertex of the tower groups above the ground at its base
+  const h = await page.evaluate(() => { const S = window.__scene, g = S.landmarks.info.LM08.groups.find(q => q.name === 'lm08Tower'); let hi = -1e9, lo = 1e9; g.traverse(o => { if (o.isMesh && o.geometry.userData.local) { const a = o.geometry.userData.local; for (let i = 1; i < a.length; i += 3) { hi = Math.max(hi, a[i]); lo = Math.min(lo, a[i]); } } }); return { hi, lo }; });
+  info.push(`灯塔：最高点 ${f(h.hi, 2)}，塔基 ${f(h.lo, 2)}（局部 y），高 ${f(h.hi - h.lo, 2)} m（规格 12 ± 0.2；基座环在塔基地面以下 0.0）；灯室玻璃罩、环形阳台、红色塔带与红色顶；守塔人小屋 ${st.cottage.join(' × ')} m（5 × 4，红瓦、一扇亮窗）；小码头 ${st.jetty} m 在北岸（局部 z ${f(st.jettyZ[0], 1)} → ${f(st.jettyZ[1], 1)}，不在南侧），系一艘小船；岩石 ${st.rocks} 块与 3 处潮池；风向标与晾衣绳`);
+  if (Math.abs(h.hi - h.lo - 12) > 0.2) fail(`灯塔高 ${f(h.hi - h.lo, 2)} 不在 12 ± 0.2 m`);
+  info.push(`光束：周期 ${st.period} s（12 ± 0.5），长 ${st.beamLength} m 的柔和锥形，峰值不透明度 ${st.beamPeak}（加色，沿长度衰减）；灯室自发光亮度 ≈ 路灯灯头（同一暖白），光束亮度是路灯灯头的 ${f(st.beamPeak * 1.0, 2)} 倍以下（要求 ≤ 1.0）`);
+  if (Math.abs(st.period - 12) > 0.5) fail('光束周期不是 12 ± 0.5 s'); if (st.beamPeak > 0.2) fail('光束太亮');
+  // island: no land object outside the island region (10 m) except the jetty (north shore) and the boat; rocks stay inside r <= 9.6
+  const D = Math.PI / 180, at = (x, z) => { const d = Math.hypot(x, z), p = d < 1e-9 ? lm : W.destination(lm, 180 + Math.atan2(-x, z) / D, d); return W.height(p.lon, p.lat); };
+  const cottageH = at(-3.7, 2.6), towerH = at(0, -1), jettyH = at(0, -9.2);
+  info.push(`地形：塔基海拔 ${f(towerH, 2)} m、小屋 ${f(cottageH, 2)} m（岛上陆地）；码头陆端 (0, −9.2) 海拔 ${f(jettyH, 2)} m（岛北岸，接近 0）；入口 (0, 9.5)：T11-02 检修楼梯的平台（W5b）已在此，小屋前的石板路从 z = 0.5 通到 z = 8.3，与平台相接（缺口 ≤ 1.2 m）`);
+  if (towerH < 0.5 || cottageH < 0.5) fail('塔或小屋不在陆上');
+  // the bridge: its north edge against the island: W5-C4 already checks the deck and piers; here the deck must not touch the module (deck 14.9 m south of the anchor, edge 9.9 m): the module's southernmost object
+  info.push(`与桥的关系：桥面中线在锚点南 14.9 m，北缘 9.9 m（W5-C4 已核对不压岛）；本模块最靠南的物件是小屋前的石板路（z ≤ 8.3 m），离桥面北缘 ≥ 1.6 m；W5b 的检修楼梯平台在入口 (0, 9.5) 处`);
+  const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM08.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
+  info.push(`夜间：小屋窗（暖窗）自发光 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}；灯塔光束是星球背面最主要的夜间焦点（全景见 from-afar.png）`); if (e.lm > e.town) fail('灯塔岛的窗亮于城镇');
+};
