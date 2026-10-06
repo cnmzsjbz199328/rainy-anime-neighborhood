@@ -16,9 +16,9 @@
 
 |阶段|地块|设计对象|用途/状态|任务卡|八视图|
 |---|---|---|---|---|---|
-|0|B05-P01|现有便利店样板|已有样板，审查保留|[规格](tasks/B05-P01.md)|[参考图](references/B05-P01.jpg)|
-|0|B05-P02|现有拉面店样板|已有样板，审查保留|[规格](tasks/B05-P02.md)|[参考图](references/B05-P02.jpg)|
-|0|B05-P05|现有公寓样板|已有样板，审查保留|[规格](tasks/B05-P05.md)|[参考图](references/B05-P05.jpg)|
+|0|B05-P01|现有便利店样板|已有样板，审查保留|[规格](tasks/B05-P01.md)|[升级概念图](references/B05-P01.jpg) · [当前截图](screenshots/B05-P01/)|
+|0|B05-P02|现有拉面店样板|已有样板，审查保留|[规格](tasks/B05-P02.md)|[升级概念图](references/B05-P02.jpg) · [当前截图](screenshots/B05-P02/)|
+|0|B05-P05|现有公寓样板|已有样板，审查保留|[规格](tasks/B05-P05.md)|[升级概念图](references/B05-P05.jpg) · [当前截图](screenshots/B05-P05/)|
 |1|B05-P03|雨宿咖啡店|已实现（[截图](screenshots/B05-P03/)）|[规格](tasks/B05-P03.md)|[参考图](references/B05-P03.jpg)|
 |2|B05-P04|邻里花店|已实现（[截图](screenshots/B05-P04/)）|[规格](tasks/B05-P04.md)|[参考图](references/B05-P04.jpg)|
 |3|B03-P01|转角面包店|已实现（[截图](screenshots/B03-P01/)）|[规格](tasks/B03-P01.md)|[参考图](references/B03-P01.jpg)|
@@ -57,4 +57,3 @@
 
 ## 状态规则
 “规格就绪/参考图生成”不等于“代码已实现”。catalog.json 的 imageStatus 只表示图片交付。implementationStatus 记录未开始、实现中、已实现待验收、验收完成；只有代码/截图/检查都具备才能置完成。
-

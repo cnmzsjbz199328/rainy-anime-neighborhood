@@ -1,4 +1,4 @@
-// Real-model review shots and render cost of one new building (layout.js `buildings`).
+// Real-model review shots and render cost of one building or legacy sample (layout.js).
 //
 //   node tools/building_views.mjs <plot or building id> [outDir]     (default docs/buildings/screenshots/<plot>)
 //
@@ -16,8 +16,9 @@ import { launchChromium } from './browser.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const L = createRequire(import.meta.url)(path.join(root, 'layout.js'));
 const key = process.argv[2] || L.buildings[0]?.plot;
-const b = L.buildings.find(b => b.plot === key || b.id === key);
+const b = [...L.buildings, ...L.samples].find(b => b.plot === key || b.id === key);
 if (!b) { console.log(`no building registered for ${key}`); process.exit(1); }
+const isNewBuilding = L.buildings.includes(b);
 const outDir = path.resolve(process.argv[3] || path.join(root, 'docs', 'buildings', 'screenshots', b.plot));
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -42,6 +43,12 @@ const VIEWS = {
   frontRight:   { yaw: front + Math.PI / 4,   pitch: 0.32, dist: d * 1.15, target: tgt },
   rearLeft:     { yaw: front + Math.PI * 1.25, pitch: REAR_LEFT_PITCH, dist: d * 1.15, target: tgt },
   frontNear:    { yaw: front + 0.25,          pitch: 0.12, dist: 9,        target: [cx + fx * 2, 1.4, cz + fz * 2] },   // eye-level look through the glass
+};
+// Legacy samples have no tagged roof/cutaway layers. Use a close, front-facing interior-through-glass
+// view instead of an overhead camera that would only show the intact roof and mislabel it as a cutaway.
+if (!isNewBuilding) VIEWS.interior = {
+  yaw: front + 0.12, pitch: 0.2, dist: Math.max(8, size * 1.15),
+  target: [cx, 1.2, cz],
 };
 // Multi-storey buildings: a second cutaway also lifts the module's 'f2' layer (upper storey) to show the ground floor.
 if (b.floors > 1) VIEWS.interiorGround = { yaw: front + 0.35, pitch: 1.0, dist: d * 1.05, target: [cx, 0.8, cz], cutaway: b.floors > 2 ? ['roof', 'f3', 'f2'] : ['roof', 'f2'] };
@@ -97,9 +104,9 @@ await page.waitForTimeout(1200);
 await page.screenshot({ path: path.join(outDir, 'town.png') });
 await browser.close();
 
-console.log(`${b.plot} ${b.name}: views in ${path.relative(root, outDir)}`);
+console.log(`${b.plot} ${b.name} (${isNewBuilding ? 'new building' : 'legacy sample'}): views in ${path.relative(root, outDir)}`);
 for (const c of cost) console.log(`render ${c.view.padEnd(7)} with/without: calls ${c.on.calls}/${c.off.calls} (+${c.on.calls - c.off.calls}), triangles ${c.on.triangles}/${c.off.triangles} (+${c.on.triangles - c.off.triangles}), lines ${c.on.lines}/${c.off.lines}; geometries ${c.on.geometries}, textures ${c.on.textures}`);
 for (const [name, [on, off]] of Object.entries(ms)) console.log(`frame time at ${name} view (SwiftShader, this machine only): ${on.toFixed(1)} ms with, ${off.toFixed(1)} ms without`);
 console.log(`local animation: ${moving}/${p0.length} effect objects (drip/run batches, steam, light decals) changed in 0.8 s`);
 console.log(errors.length ? `page errors: ${errors.join(' | ')}` : 'page errors: none');
-process.exit(errors.length || !moving ? 1 : 0);
+process.exit(errors.length || (isNewBuilding && !moving) ? 1 : 0);
