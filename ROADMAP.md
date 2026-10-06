@@ -20,7 +20,7 @@
 
 | 序号 | 阶段 | 内容 | 前置 | 状态 | 完成记录 |
 | --- | --- | --- | --- | --- | --- |
-| W1 | 星球布局数据与勘探 | `world.js`、`tools/world_check.mjs`、勘探图、面积报告、冻结「星球布局 v1」（规格 [W1_SPEC](docs/world/W1_SPEC.md)） | — | 待办 | |
+| W1 | 星球布局数据与勘探 | `world.js`、`tools/world_check.mjs`、勘探图、面积报告、冻结「星球布局 v1」（规格 [W1_SPEC](docs/world/W1_SPEC.md)） | — | 待确认 | 2026-10-06 · `342816e`（在 main，未推送）；冻结清单 [WORLD_LAYOUT_V1](docs/world/WORLD_LAYOUT_V1.md) |
 | WS | 细化 W3–W8 规格（仅文档） | 依据冻结的 `world.js` 补写 W3_SPEC…W8_SPEC | W1 确认 | 待办 | |
 | S0 | 样板升级：基线与工具 | 打标签、`tools/frozen_diff.mjs`、基线记录、工具兼容空 `samples` | — | 完成 | 2026-10-06 · `05e4b5e`, `6927e2b`, `dd60d15` |
 | S1 | 升级拉面店 B05-P02 | 见 SAMPLE_UPGRADE_PLAN | S0 | 完成 | 2026-10-06 · `4233716`（已合并 main） |
