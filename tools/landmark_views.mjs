@@ -7,7 +7,7 @@ export { INIT, renderShot } from './road_views.mjs';
 export const FRAME = {
   LM01: { d: 24, h: 2.5, ty: 3, top: 36, cut: ['roof'], far: [-25, 56] }, LM02: { d: 34, h: 2.2, ty: 3, top: 55, cut: ['roof'], far: [-50, 36] },
   LM03: { d: 22, h: 2.0, ty: 2, top: 36, cut: ['roof'], far: [86, -27] }, LM04: { d: 30, h: 2.2, ty: 3, top: 50, cut: ['roof'], far: [-15, -42], rainy: { eye: [-2.5, 2.0, 15.5], look: [0, 1.8, -3] }, front: { eye: [0, 1.8, 14.5], look: [0, 2.2, -6], fov: 56 } },
-  LM05: { d: 22, h: 2.0, ty: 2, top: 34, cut: ['roof'], far: [-126.9, 33] }, LM06: { d: 36, h: 2.2, ty: 2, top: 60, cut: ['roof'], far: [-115, -32] },
+  LM05: { d: 15, h: 2.4, ty: 1.8, top: 30, cut: ['roof'], far: [-126.9, 33], front: { eye: [0, 2.4, 14.5], look: [0, 1.8, 0], fov: 58 }, rainy: { eye: [-7.5, 2.0, 11.5], look: [1, 1.8, 0], fov: 58 } }, LM06: { d: 36, h: 2.2, ty: 2, top: 60, cut: ['roof'], far: [-115, -32] },
   LM07: { d: 20, h: 1.8, ty: 1.5, top: 32, cut: ['roof'], far: [100, 76] }, LM08: { d: 24, h: 2.5, ty: 5, top: 30, cut: ['roof'], far: [190, -8], front: { eye: [0, 2.2, 8.2], look: [0, 5.5, -1], fov: 60 }, rainy: { eye: [-6.5, 2.3, 8.0], look: [-1, 4.5, -1], fov: 58 } },
   LM09: { d: 22, h: 1.8, ty: 1.5, top: 34, cut: ['roof'], far: [-40, -18], front: { eye: [0, 1.7, 9.5], look: [0, 1.6, -4], fov: 58 }, rainy: { eye: [-4.5, 1.9, 8.5], look: [-1, 1.3, -4], fov: 55 } }, LM10: { d: 22, h: 2.4, ty: 1.5, top: 50, cut: ['roof'], far: [106, 5], front: { eye: [-2, 2.2, 15], look: [10, 1.6, -3], fov: 58 }, rainy: { eye: [10.5, 2.2, -11], look: [24, 0.4, -2], fov: 58 }, right: { eye: [-13, 4.2, 0], look: [4, 1.5, 0], fov: 55 } },
 };

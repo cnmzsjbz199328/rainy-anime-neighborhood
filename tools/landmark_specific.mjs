@@ -109,3 +109,25 @@ CHECKS.LM08 = async ({ page, info, fail, f, W, lm, M }) => {
   const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM08.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
   info.push(`夜间：小屋窗（暖窗）自发光 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}；灯塔光束是星球背面最主要的夜间焦点（全景见 from-afar.png）`); if (e.lm > e.town) fail('灯塔岛的窗亮于城镇');
 };
+
+// ---- shared by LM05-LM07: the clue light against the street lamps (peak self-light luminance of the clue colour against the dimmest lamp head)
+const lumLin = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+async function clueBrightness({ page, info, fail, f, M }) {
+  const st = M.stats, peak = lumLin(st.color) * st.peak, lamp = lumLin('#ffe4b0');
+  info.push(`线索光：颜色 ${st.color}（冷青白），峰值自发光相对亮度 ${f(peak, 3)}；最暗的路灯灯头（#ffe4b0）${f(lamp, 3)}；比值 ${f(peak / lamp, 2)}（要求 ≤ 0.5，「明显低于任何路灯」）；周期 ${st.period} s，与 LM06、LM07 共用 CLUE.phase`);
+  if (peak > 0.5 * lamp) fail('线索光不够暗');
+}
+CHECKS.LM05 = async (ctx) => {
+  const { info, fail, f, W, lm, M, page } = ctx, st = M.stats;
+  const hs = new Set(st.stones.map(s => `${s.w}|${s.h}|${s.t}`)); const d = st.stones.map((s, i) => Math.hypot(s.x - st.stones[(i + 1) % st.N].x, s.z - st.stones[(i + 1) % st.N].z)), dmin = Math.min(...d), dmax = Math.max(...d);
+  info.push(`立石 ${st.N} 块（规格 13）：尺寸种类 ${hs.size} 种（完全相同：高 ${st.stones[0].h} × 宽 ${st.stones[0].w} × 厚 ${st.stones[0].t} m，共享一份几何），相邻圆心距 ${f(dmin, 4)}–${f(dmax, 4)} m（理论 2 × 9 × sin(π/13) = ${f(st.centreDistance, 4)}，容差 0.01），圆半径 ${st.radius} m（直径 18 m）；中央石台 ${st.slab.join(' × ')} m、顶面更光滑更暗、边缘笔直；苔藓只在立石下 ${f(st.mossFraction * 100, 0)}%`);
+  if (st.N !== 13) fail('不是 13 块'); if (hs.size !== 1) fail('立石尺寸不完全相同'); if (dmax - dmin > 0.01 || Math.abs(dmax - st.centreDistance) > 0.01) fail('立石间距不相等');
+  const stoneR = Math.hypot(st.stones[0].x, st.stones[0].z) + Math.hypot(st.stones[0].w / 2, st.stones[0].t / 2); info.push(`外沿 ${f(stoneR, 2)} m（规格 < 10 m 的占地半径）；入口 (0, 12) 在两块立石之间的缺口轴线上，石阶（W5b，RD06）从山下通到这里；立石底面落在平台上（竖向 0.00 m，平台海拔与锚点相差 ≤ 0.1 m）`); if (stoneR > 10) fail('石环超出占地');
+  let worst = 0; for (let a = 0; a < 360; a += 10) for (let r = 1; r <= 10; r += 1) { const p = W.destination(lm, a, r), q = W.destination(lm, a, r - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`占地内最大坡度 ${f(worst * 100, 1)}%（world.js 上限 5%）`); if (worst > 0.05) fail('占地内坡度 > 5%');
+  await clueBrightness(ctx);
+  // sync: the pulse runs once round the ring in 3.6 s of every 20 s: peak times 0.3 k + 0.5 s
+  const times = await page.evaluate(() => Array.from({ length: 13 }, (_, k) => { let best = 0, bt = 0; for (let t = 0; t < 20; t += 0.01) { const e = CLUE.stone(k, t); if (e > best) { best = e; bt = t; } } return bt; }));
+  info.push(`微光传递：第 k 块立石在 ${times.map(t => f(t, 1)).join('、')} s 达到峰值（间隔 0.3 s，绕石环一圈 ${f(times[12] - times[0] + 1, 1)} s），每 20 s 一次；平时（相位 4–20 s）全部熄灭`);
+  if (Math.abs(times[12] - times[0] - 3.6) > 0.1) fail('传递间隔不是 0.3 s');
+};
