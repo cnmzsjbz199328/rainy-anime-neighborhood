@@ -5,7 +5,7 @@
 - 新增 `buildings/B05-P05.js`，三层外廊公寓有真实墙洞、房间隔墙、家具、楼板和屋顶层；`f2`、`f3` 与 `roof` 可分层剖视。外楼梯改为每层两跑折返，平台直接接东侧真实门洞；门厅灯有轻微位置脉动，无新增实时光源。
 - `layout.js` 将样板迁入 `buildings`，门原点放在 `(-12.3,37.88)`、`rotY:π`，门世界坐标不变；主体实测 localBounds `[-3.71,0.22,-6.28]` 至 `[3.71,9.30,1.08]`，最高 9.30 m；外梯在地块内。冻结地块与道路数据不变。
 - 旧门相对地块正面中点锚有 -0.30 m 偏移。登记 `doorOffset:-0.3`；C12 按登记值验证偏移，并继续单独验证 0.7 m 净宽门口路线，保留街道设施锚点与旧门位置。
-- 检查：构建、`measure_samples` 登记一致、C1–C12 全 PASS、`frozen_diff pre-sample-upgrade` 仅允许的 `buildings/plots/samples/structures` 变化、`views.mjs` 19 项全 PASS、`building_views B05-P05` 页面无错误且动画探针 1/16 变化。真机待验证。
+- 检查：构建、`measure_samples` 登记一致、C1–C12 全 PASS、`frozen_diff pre-sample-upgrade` 仅允许的 `buildings/plots/samples/structures` 变化、`views.mjs` 19 项全 PASS、`building_views B05-P05` 页面无错误且动画探针 1/7 变化。真机待验证。
 - 性能差值：默认视角 +96 draw calls / +5,422 triangles；正面 +97 / +5,470；远景 +98 / +5,518。低于本栋 +150 draw-call 预算；SwiftShader 帧时间不代表真实设备。
 - 截图：`docs/buildings/screenshots/B05-P05/`（四立面、屋顶、两种剖视、斜视、默认与全城）。正立面窗内家具已可辨；真实 GPU、手机/iPad 的色温与亮度待验证。
 
