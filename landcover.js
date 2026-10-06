@@ -258,7 +258,7 @@ function dunes(W, H, ctx) {
   const avoid = ctx.avoid || [], reg = W.regions.find(q => q.kind === 'desert'), ring = reg.shape.ring, step = 0.7;
   let lon0 = 1e9, lon1 = -1e9, lat0 = 1e9, lat1 = -1e9; for (const p of ring) { lon0 = Math.min(lon0, p[0]); lon1 = Math.max(lon1, p[0]); lat0 = Math.min(lat0, p[1]); lat1 = Math.max(lat1, p[1]); }
   const out = { pos: [], col: [], idx: [] }, vid = new Map(); let maxH = 0, minH = 0, cells = 0;
-  const mesa = W.heightField.features.find(q => q.id === 'mesa-desert'), lm6 = W.landmarks.find(q => q.id === 'LM06');
+  const mesa = W.heightField.features.find(q => q.id === 'mesa-desert'), lm6 = W.landmarks.find(q => q.id === 'LM06'), monoP = lm6 ? W.destination({ lon: lm6.lon, lat: lm6.lat }, lm6.entrances[0].heading + 180, 25) : null;
   const SAND = lin('#8a8394'), SAND2 = lin('#9a8f98'), WET = lin('#6a6470');
   const maskAt = (lon, lat) => {
     const r = W.regionAt(lon, lat); if (!isDesertKind(r)) return 0;
@@ -267,6 +267,7 @@ function dunes(W, H, ctx) {
     for (const a of avoid) { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D, d = Math.hypot(dl, dt) - a.r; if (d < 5) m *= Math.max(0, d / 5); if (m <= 0) return 0; }
     if (lm6) { const d = R * W.angleBetween(W.vec(lon, lat), W.vec(lm6.lon, lm6.lat)) - lm6.radius; if (d < 5) m *= Math.max(0, d / 5); }
     if (mesa) { const d = R * W.angleBetween(W.vec(lon, lat), W.vec(mesa.lon, mesa.lat)) - mesa.radiusMeters; if (d < 6) m *= Math.max(0, d / 6); }
+    if (monoP) { const d = R * W.angleBetween(W.vec(lon, lat), W.vec(monoP.lon, monoP.lat)) - 6; if (d < 5) m *= Math.max(0, d / 5); }       // the LM06 monolith stands on its own flat disc of sand (W7)
     return m;
   };
   function isDesertKind(r) { return r.kind === 'desert'; }

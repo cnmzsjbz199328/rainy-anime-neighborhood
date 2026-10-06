@@ -131,3 +131,17 @@ CHECKS.LM05 = async (ctx) => {
   info.push(`微光传递：第 k 块立石在 ${times.map(t => f(t, 1)).join('、')} s 达到峰值（间隔 0.3 s，绕石环一圈 ${f(times[12] - times[0] + 1, 1)} s），每 20 s 一次；平时（相位 4–20 s）全部熄灭`);
   if (Math.abs(times[12] - times[0] - 3.6) > 0.1) fail('传递间隔不是 0.3 s');
 };
+
+CHECKS.LM06 = async (ctx) => {
+  const { info, fail, f, W, lm, M, page } = ctx, st = M.stats, mo = st.monolith;
+  info.push(`车站：站台长 ${st.platformLength} m（只露边缘）、候车小屋 ${st.shed.join(' × ')} m（屋顶塌了一半）、褪色站名牌（无字）、锈红单节车厢 ${st.car} m、半埋的铁轨（东端没入沙丘、西端截断，不连接任何铁路）、倒下的信号灯、车厢顶流下的沙（6 片）`);
+  info.push(`巨碑：露出沙面 ${mo.exposed} m × 宽 ${mo.width} × 厚 ${mo.thickness} m（规格 7 × 2.5 × 0.8，容差 0.05），斜插 ${f(mo.tilt * 57.3, 1)}°，离车站（锚点）${st.distance} m（25 ± 1，沿局部 −Z），周围平整圆形沙面半径 ${mo.disc} m（规格 2–5 m）；近黑（#17181d）、表面平涂光滑，只有一圈干净笔直的描线，没有任何纹路、文字或装饰`);
+  if (Math.abs(mo.exposed - 7) > 0.05 || Math.abs(mo.width - 2.5) > 0.05 || Math.abs(mo.thickness - 0.8) > 0.05) fail('巨碑尺寸偏差 > 0.05'); if (Math.abs(st.distance - 25) > 1) fail('巨碑距车站不是 25 ± 1 m');
+  // not on T09-01: the road comes from +Z; the monolith is on -Z beyond the site: horizontal distance to the road centre line
+  const e = W.roadNetwork.edges.find(q => q.id === 'T09-01'), S = W.roadNetwork.samplePath(e, 0.5), D = Math.PI / 180, mp = W.destination(lm, 180, 25); let dmin = 1e9; for (const p of S) dmin = Math.min(dmin, W.arcDistance(p, mp));
+  info.push(`巨碑到 T09-01 中线的最近距离 ${f(dmin, 1)} m（要求 ≥ 道路半宽 1.5 + 物件半径 1.5 = 3 m）；车站物件都在 T09-01 的南侧（−Z），不压路`); if (dmin < 3) fail('巨碑压路');
+  let worst = 0; for (let a = 0; a < 360; a += 10) for (let r = 1; r <= 15; r += 1) { const p = W.destination(lm, a, r), q = W.destination(lm, a, r - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`占地内最大坡度 ${f(worst * 100, 1)}%（world.js 上限 15%）；沙丘覆盖网格（W6d）在巨碑圆盘周围 6–11 m 内归零（landcover.js 的 dunes），所以圆盘是「不自然的平整」`); if (worst > 0.15) fail('占地内坡度 > 15%');
+  await clueBrightness(ctx);
+  info.push(`与 LM05、LM07 同步：巨碑描线与光卡在相位 0–4 s 淡入淡出（CLUE.slab，升正弦平方），其余 16 s 全暗；平时巨碑在月光下几乎不反光（材质 #17181d、轮廓线 0.9 不透明度的近黑）`);
+};

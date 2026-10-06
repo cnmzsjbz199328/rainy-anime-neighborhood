@@ -164,6 +164,7 @@ export async function renderShot(page, v, opts = {}) {
     S.scene.fog.density = ['panorama', 'neutral'].includes(v.light) ? 0 : fog0;
     if (v.band) RD.setLightBand({ distance: 300 }); else RD.setLightBand({ auto: true });
     const t = opts.t ?? 1.2; SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && LC.tick(t, cam); SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && (LC.tick(t, cam), LC.reload(cam)); SEC.forceLod(cam);
+    if (v.lmT != null) for (const q of S.landmarks.fx) q.update(v.lmT);                  // freeze the landmark clue light at a phase (W7)
     const hiddenCut = []; if (v.lmCut) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) g.traverse(o => { if (o.userData && v.lmCut.includes(o.userData.layer) && o.visible) { o.visible = false; hiddenCut.push(o); } });
     if (opts.noOcean && OC) OC.state.root.visible = false; if (opts.noCover && LC) LC.state.root.visible = false; if (opts.noLandmarks) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) { g.userData._v = g.visible; g.visible = false; } if (opts.noRoads) RD.state.root.visible = false;     // cost measurement with the same camera
     const t0 = Date.now(); S.renderer.render(S.scene, cam); S.renderer.getContext().finish(); const ms = Date.now() - t0;
