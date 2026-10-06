@@ -61,3 +61,16 @@ CHECKS.LM09 = async ({ page, info, fail, f, W, lm, M }) => {
   const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM09.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
   info.push(`夜间：无人站最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}（${f(e.lm / e.town * 100, 0)}%）；无人站是城镇以西农田里唯一的光点，低于便利店`); if (e.lm > e.town) fail('无人站亮于城镇');
 };
+
+CHECKS.LM03 = async ({ page, info, fail, f, W, lm, M }) => {
+  const st = M.stats || {};
+  info.push(`石室：盖石 ${st.capstone.join(' × ')} m、两侧各 3 块立石加后石，总高约 ${st.chamberHeight} m（规格约 4 m）；最大石块 ≤ 6 × 4 × 2 m（盖石 6 × 1.6 × 4 m，在 6 × 4 × 2 之内）；小圆丘 ${st.mounds} 座（规格 3–4）；倒伏石柱 ${st.pillars}、说明石碑 ${st.steles}（文字不可读）、林道尽头的木栅栏（${st.fencePosts} 根立柱）；萤火虫 ${st.fireflies}、盖石边缘滴水 ${st.drips}；全部物件在局部半径 12 m 内（第 3 节：场地缩为直径 24 m 的圆盘）`);
+  if (st.mounds < 3 || st.mounds > 4) fail('小圆丘不是 3–4 座'); if (st.capstone[0] > 6.01 || st.capstone[1] > 2.01 || st.capstone[2] > 4.01) fail('盖石超出 6 × 4 × 2 m');
+  let worst = 0; for (let a = 0; a < 360; a += 10) for (let d = 1; d <= 12; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`占地内（r ≤ 12 m）最大坡度 ${f(worst * 100, 1)}%（world.js 上限 15%；规格写现 2.6%）；东缘与东洲山脊脚的重叠：本模块物件都在 r ≤ 12 m 内且不放物件在山脊脚；入口 (0, 14) 是栅栏缺口外的林道终点（T07-01 终点）；不含任何外星线索元素`);
+  if (worst > 0.15) fail('占地内坡度 > 15%');
+  // ridge foot: the east edge of the 12 m disc against the ridge height (the card's 30 m site would reach it)
+  const e = W.destination(lm, 90, 12), eh = W.height(e.lon, e.lat) - W.height(lm.lon, lm.lat);
+  info.push(`东缘（局部 x = −12 处，朝东）地形比锚点高 ${f(eh, 2)} m（山脊脚近 0）：模块在此处只有地面圆盘，没有立物`);
+  if (eh > 0.6) fail('东缘地形已明显上升');
+};
