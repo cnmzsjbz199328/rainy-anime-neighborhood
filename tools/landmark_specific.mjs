@@ -49,3 +49,15 @@ CHECKS.LM04 = async ({ page, info, fail, f, W, lm, M, shots, renderShot }) => {
   const e = await page.evaluate(() => { const S = window.__scene; let town = 0; for (const [name, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(name)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) { const c = m.material.emissive, v = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) * (m.material.emissiveIntensity === undefined ? 1 : m.material.emissiveIntensity); if (v > town) town = v; } }); } let lm = 0; for (const g of S.landmarks.info.LM04.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) { const c = m.material.emissive, v = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) * (m.material.emissiveIntensity === undefined ? 1 : m.material.emissiveIntensity); if (v > lm) lm = v; } }); return { town, lm }; });
   info.push(`夜间：神社最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}；神社 / 城镇 = ${f(e.lm / Math.max(1e-6, e.town) * 100, 0)}%（一两盏石灯笼微弱的暖光，其余全暗）`); if (e.lm > e.town * 0.5) fail('神社的光不够弱');
 };
+
+CHECKS.LM09 = async ({ page, info, fail, f, W, lm, M }) => {
+  const st = M.stats || {};
+  info.push(`站台长 ${st.platformLength} m（规格约 20 m，黄色盲道沿轨道侧）；候车小屋 ${st.shed.join(' × ')} m（4 × 2.5）；回车场直径 ${st.circle} m（约 12）；柴油车 ${st.cars} 节（静止）；铁轨 ${st.tracks} 条，两端都在占地附近终止（东端车挡、西端道砟渐隐入水田）：没有第二处铁轨模块，不连接任何铁路网（D6）；道口警报灯 ${st.lights} 个（周期 6 s 的升余弦交替，不闪烁）；亮着的光：候车小屋灯 + 小屋窗 + 自动售货机 + 公交站路灯`);
+  if (st.tracks !== 1) fail('铁轨不是一条');
+  let worst = 0; for (let a = 0; a < 360; a += 10) for (let d = 1; d <= 10; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`占地内（r ≤ 10 m）最大坡度 ${f(worst * 100, 1)}%（world.js 上限 10%；规格写现 1.9%）；入口 (0, 13.35) 在 T01 干线上，站前小路 (3.35 m) 从干线边缘（z = 4.5 + ...）接到回车场，路口无台阶（小路与路面同一高度）`);
+  if (worst > 0.10) fail('占地内坡度 > 10%');
+  // the lane must meet the trunk road surface: T01-14 ends at the entrance: its swept bed there against the lane top (0.06 m above the platform ground)
+  const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM09.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
+  info.push(`夜间：无人站最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}（${f(e.lm / e.town * 100, 0)}%）；无人站是城镇以西农田里唯一的光点，低于便利店`); if (e.lm > e.town) fail('无人站亮于城镇');
+};
