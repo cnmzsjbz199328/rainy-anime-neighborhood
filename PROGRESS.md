@@ -1,5 +1,13 @@
 # 进度记录
 
+## C1 相机控制修复（2026-10-06，插队，分支 fix/camera-controls）
+
+- 问题：① 漫游里 D/→ 向左、A/← 向右（`scene.js` 的右向量符号写反，实测与相机右方点积为负）；漫游拖动是「视线跟手」，与自由视角的抓取式相反；② 自由视角只能用鼠标右键平移，触屏和触控板几乎无法移动旋转中心；漫游偏转限 ±1.35 rad、松手 1.4 秒自动回正，无法自由观察。
+- 改动（仅 `scene.js` 相机段、`tools/views.mjs`、文档）：漫游右向量改正，移动相对镜头方向；`roam.heading` 现为镜头绝对朝向，拖动 360° 环视、俯仰 −0.45…0.7，不再自动回正，移除 `lookYaw`/`lastLook`（`view.get().roam` 改为 `heading`/`lookPitch`）；自由视角新增 Shift/Ctrl + 左键拖动、触屏双指拖动（平移与缩放可同时进行）、WASD/方向键平移（速度与距离成正比、受 ±46 限制）；带 Meta/Ctrl/Alt 的组合键不再触发移动。未使用射线拾取，避免与 W2 弯曲冲突。
+- 未改 `layout.js`、冻结布局、建筑与默认视角；`view.get/set`、`pan` 接口保持。
+- 检查：`python3 build.py`；`node tools/measure_samples.mjs` 与记录一致；`node tools/layout_check.mjs --png` C1–C12 全 PASS；`node tools/views.mjs` 全 PASS（新增：漫游 D/→/A 方向、拖动环视 >90° 且不回正、拖动方向抓取式、Shift 拖动平移、自由视角键盘平移、触屏双指平移；移除「自动回正」旧检查），无页面错误。`roamStreet.png` 视觉查看正常。
+- 未验证：真机触屏双指手感、触控板、漫游长时间转向手感；SwiftShader 不能代替。后续星球相机需重做，见 docs/BACKLOG.md。
+
 ## S2 B05-P05 こもれび荘（三层公寓，2026-10-06）
 
 - 新增 `buildings/B05-P05.js`，三层外廊公寓有真实墙洞、房间隔墙、家具、楼板和屋顶层；`f2`、`f3` 与 `roof` 可分层剖视。外楼梯改为每层两跑折返，平台直接接东侧真实门洞；门厅灯有轻微位置脉动，无新增实时光源。
