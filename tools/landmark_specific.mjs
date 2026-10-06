@@ -36,3 +36,16 @@ CHECKS.LM02 = async ({ page, info, fail, f, W, lm, M }) => {
   info.push(`自发光（相对亮度 × 强度，最亮的材质）：城镇建筑 ${f(e.town, 3)}（${e.townWho}），温泉村 ${f(e.lm, 3)}（${e.lmWho}）；温泉村 / 城镇 = ${f(e.lm / Math.max(1e-6, e.town) * 100, 0)}%（要求低于便利店等城镇暖光，≤ 100%）`);
   if (e.lm > e.town) fail('温泉村的自发光亮于城镇建筑');
 };
+
+CHECKS.LM04 = async ({ page, info, fail, f, W, lm, M, shots, renderShot }) => {
+  const st = M.stats || {};
+  info.push(`鸟居 ${st.torii} 座（规格 8–12），高 ${f(st.toriiH[0], 1)}–${f(st.toriiH[1], 1)} m（2.5–3），状态 ${st.toriiStates.join('、')}（完好、倾斜、倒下、只剩柱子各有）；参道长 ${f(st.sandoLength, 1)} m（规格约 25 m，从入口 z = 17 沿 −Z 到本殿台阶）；本殿 ${st.hallSize.join(' × ')} m（4 × 5 × 5），在 z = ${st.hallZ}，r ≤ 15 m 内；石灯笼 ${st.lanterns} 盏（亮着 ${st.litLanterns} 盏，规格「一两盏」）；萤火虫 ${st.fireflies}、檐下水滴 ${st.drips}`);
+  if (st.torii < 8 || st.torii > 12) fail('鸟居不在 8–12 座'); if (st.toriiH[0] < 2.5 - 0.01 || st.toriiH[1] > 3.0 + 0.01) fail('鸟居高度不在 2.5–3 m'); if (Math.abs(st.sandoLength - 25) > 1) fail('参道长度不是 25 ± 1 m'); if (st.litLanterns < 1 || st.litLanterns > 2) fail('亮着的石灯笼不是一两盏');
+  for (const s of ['ok', 'lean', 'down', 'posts']) if (!st.toriiStates.includes(s)) fail('缺少鸟居状态 ' + s);
+  let worst = 0; for (let a = 0; a < 360; a += 10) for (let d = 1; d <= 15; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
+  info.push(`占地内（r ≤ 15 m）最大坡度 ${f(worst * 100, 1)}%（world.js 上限 15%）；入口 (0, 17) 是参道石板的起点（T03-03 与 T11-01 在此相接）；W4 断面的 TR03 入口小鸟居在 z ≈ 14.6 与 12，本模块第一座在 z = 9.6，不重复`);
+  if (worst > 0.15) fail('占地内坡度 > 15%');
+  // night: only lit lanterns are warm (self-lit 0.22 glow factor), none of them reaches the street lamps; ranking against the town
+  const e = await page.evaluate(() => { const S = window.__scene; let town = 0; for (const [name, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(name)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) { const c = m.material.emissive, v = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) * (m.material.emissiveIntensity === undefined ? 1 : m.material.emissiveIntensity); if (v > town) town = v; } }); } let lm = 0; for (const g of S.landmarks.info.LM04.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) { const c = m.material.emissive, v = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) * (m.material.emissiveIntensity === undefined ? 1 : m.material.emissiveIntensity); if (v > lm) lm = v; } }); return { town, lm }; });
+  info.push(`夜间：神社最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}；神社 / 城镇 = ${f(e.lm / Math.max(1e-6, e.town) * 100, 0)}%（一两盏石灯笼微弱的暖光，其余全暗）`); if (e.lm > e.town * 0.5) fail('神社的光不够弱');
+};
