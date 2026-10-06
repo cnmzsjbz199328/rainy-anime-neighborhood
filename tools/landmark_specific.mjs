@@ -145,3 +145,28 @@ CHECKS.LM06 = async (ctx) => {
   await clueBrightness(ctx);
   info.push(`与 LM05、LM07 同步：巨碑描线与光卡在相位 0–4 s 淡入淡出（CLUE.slab，升正弦平方），其余 16 s 全暗；平时巨碑在月光下几乎不反光（材质 #17181d、轮廓线 0.9 不透明度的近黑）`);
 };
+
+CHECKS.LM07 = async (ctx) => {
+  const { info, fail, f, W, lm, M, page, shots, renderShot } = ctx, st = M.stats, hx = st.hexagon;
+  info.push(`冰面以上：半埋橙色观测小屋 ${st.hut.join(' × ')} m（天线倒伏、窗户结霜）、测量标杆、三脚架与仪器、雪堆、低空雪雾（10 片）；全部在 r ≤ 8 m 内（W7-C2）；没有任何别的人造物；RD08 的终点标杆在入口，由 W5b 提供`);
+  info.push(`冰下六边形：外接圆半径 ${hx.circumradius} m、边长 ${f(hx.side, 3)} m（规格 15 m，容差 0.1）、顶点 ${hx.vertices} 个、深度 ${hx.depth} m（规格 2–4 m，容差 0.1）；冰原材质上的一层贴图（${st.patch} m 见方的深青色透明冰区 + 六边形暗影，暗影的不透明度只有 ${st.ringAlpha}）+ 一个半透明六边形环网格（y = −${hx.depth}）；无尺寸字样、不描线`);
+  if (Math.abs(hx.side - 15) > 0.1 || Math.abs(hx.circumradius - 15) > 0.1) fail('六边形边长或外接圆半径不是 15 m'); if (hx.depth < 2 - 0.1 || hx.depth > 4 + 0.1) fail('六边形深度不在 2–4 m');
+  await clueBrightness(ctx);
+  // visibility: top-down view over the site (60 m up), the clue time frozen off (t = 10 s) and at peak (t = 2 s); the mean luminance of small windows on the six edge midpoints of the hexagon (apothem 12.99 m)
+  // against the mean of the windows 3 m inside and 3 m outside; a control ring at the six vertex directions (where there is no ring) gives the unevenness of the ice itself
+  const base = shots['site-plan'], k = 60 / 32, eye = { ...base.eye, y: base.eye.y * k }, S = 400 / (60 * Math.tan(Math.PI / 8));
+  const grab = async (t) => (await renderShot(page, { ...base, eye, lmT: t, light: 'panorama' })).url;
+  const ring = v => page.evaluate(v => { const q = window.__scene.landmarks.info.LM07.fx.parts; q.patch.material.map = v ? q.patchTex : q.fillTex; }, v);
+  const A = await grab(10); await ring(false); const B = await grab(10); await ring(true); const C = await grab(2);
+  const L = await page.evaluate(async ([urls, S]) => {
+    const load = async u => { const i = new Image(); i.src = u; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const q = c.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, c.width, c.height); };
+    const ims = []; for (const u of urls) ims.push(await load(u));
+    const win = (im, x, z) => { const cx = Math.round(640 - x * S), cy = Math.round(400 + z * S), r = Math.round(0.6 * S); let t = 0, n = 0; for (let dy = -r; dy <= r; dy += 2) for (let dx = -r; dx <= r; dx += 2) { const X = cx + dx, Y = cy + dy; if (X < 0 || Y < 0 || X >= im.width || Y >= im.height) continue; const o = (Y * im.width + X) * 4; t += 0.2126 * im.data[o] + 0.7152 * im.data[o + 1] + 0.0722 * im.data[o + 2]; n++; } return n ? t / n : NaN; };
+    // contrast of the ring in the difference of two renders: the difference at the ring windows minus the mean difference 3 m inside and 3 m outside
+    const ringDiff = (p, q) => { const out = []; for (let j = 0; j < 6; j++) { const a = j * Math.PI / 3, ap = 15 * Math.cos(Math.PI / 6), d = r => win(p, Math.sin(a) * (ap + r), Math.cos(a) * (ap + r)) - win(q, Math.sin(a) * (ap + r), Math.cos(a) * (ap + r)); out.push(Math.abs(d(0) - 0.5 * (d(-3) + d(3)))); } out.sort((x, y) => x - y); return (out[2] + out[3]) / 2; };
+    let md = 0; for (let i = 0; i < ims[0].data.length; i += 4) md += Math.abs(ims[0].data[i + 1] - ims[1].data[i + 1]); return { shadow: ringDiff(ims[0], ims[1]), glow: ringDiff(ims[2], ims[0]), fill: md / (ims[0].data.length / 4) };
+  }, [[A, B, C], S]);
+  info.push(`可见度（正上方 60 m、晴朗月夜；六条边中点的 1.2 m 窗口，取两次渲染之差在环上的值减去环两侧 3 m 处之差的均值，色阶 0–255，六处中位数）：非同步时六边形暗影（贴图有 / 无六边形）${f(L.shadow, 1)}（阈值 ≤ 4，约 1.6%：与冰面自身起伏相比辨认不出），同步峰值时的光环（t = 2 s 对 t = 10 s）${f(L.glow, 1)}（要求 ≥ 8）；作对照：去掉六边形暗影时整幅画面绿通道平均差 ${f(L.fill, 2)}`);
+  if (L.shadow > 4) fail('非同步时六边形暗影太明显'); if (L.glow < 8) fail('同步时光环不够明显');
+  info.push(`与 LM05、LM06 同步：六边形光环在相位 0–4 s 淡入淡出（CLUE.slab），峰值为线索峰值的 0.22（不是 1：同样的线性值落在亮冰上会很刺眼）；其余 16 s 全暗`);
+};
