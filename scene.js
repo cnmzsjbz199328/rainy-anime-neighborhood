@@ -320,9 +320,9 @@ L.puddles.forEach((p,i)=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mes
   const near=lamps.find(l=>Math.hypot(l.x-p.x,l.z-p.z)<5.5);if(near){const r=decal(null,Math.min(p.rx,p.rz)*1.4,Math.max(p.rx,p.rz)*1.6,p.x,y,p.z,p.rx>p.rz?[1,0]:[0,1],glowMat(near.c,.22));}
   for(let k=0;k<(i%3?1:2);k++){const r=mesh(new THREE.RingGeometry(.95,1,32),ringMat(),p.x+(Math.random()-.5)*p.rx,y+.004,p.z+(Math.random()-.5)*p.rz,false);r.rotation.x=-Math.PI/2;rings.push({a:r,phase:Math.random()});}});
 // The store's light spilling on the wet sidewalk in front of it: sign glyphs broken up by water.
-{const s=L.samples.find(s=>s.id==='store'),t=s.transform,g=new THREE.Group();g.position.set(t.x,LV.pavement+.012,t.z);g.rotation.y=t.rotY;root.add(g);
+{const s=L.samples.find(s=>s.id==='store');if(s){const t=s.transform,g=new THREE.Group();g.position.set(t.x,LV.pavement+.012,t.z);g.rotation.y=t.rotY;root.add(g);
   for(let i=0;i<70;i++)box(-2.5+Math.random()*6.8,0,4.1+Math.random()*1.8,.025+Math.random()*.1,.004,.09+Math.random()*.37,glow(i%3?'#efc494':'#8ee1d2',.05+Math.random()*.12),false,g);
-  const ref=label('こもれび MART',.7,.002,5,5,.48,'#2c4354','#93b7ac',80);g.add(ref);ref.rotation.x=-Math.PI/2;ref.material.transparent=true;ref.material.opacity=.2;ref.material.depthWrite=false;}
+  const ref=label('こもれび MART',.7,.002,5,5,.48,'#2c4354','#93b7ac',80);g.add(ref);ref.rotation.x=-Math.PI/2;ref.material.transparent=true;ref.material.opacity=.2;ref.material.depthWrite=false;}}
 // Existing samples and new buildings move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
 for(const s of L.structures)for(const p of s.parts){const g=groups[p.group],t=s.transform;g.position.set(t.x,0,t.z);g.rotation.y=t.rotY;g.scale.setScalar(t.scale??L.SAMPLE_SCALE);}
 // Original street furniture goes to provisional slots in the facility bands, foot on the band.
