@@ -42,7 +42,7 @@
 | W7-LM01 | 地标 雨见岳 | `landmarks/LM01.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6e | 完成 | 2026-10-07 · 提交 `ff203a1`（分支 `world/W7-LM01` 已合并 main，未推送）；基线标签 `pre-w7-lm01`；截图 `docs/world/landmarks/LM01/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM01」 |
 | W7-LM02 | 地标 湯けむり温泉村 | `landmarks/LM02.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6b、W6e | 完成 | 2026-10-07 · 提交 `940c1b1`（分支 `world/W7-LM02` 已合并 main，未推送）；基线标签 `pre-w7-lm02`；截图 `docs/world/landmarks/LM02/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM02」 |
 | W7-LM04 | 地标 森中废神社 | `landmarks/LM04.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6c | 完成 | 2026-10-07 · 提交 `303e607`（分支 `world/W7-LM04` 已合并 main，未推送）；基线标签 `pre-w7-lm04`；截图 `docs/world/landmarks/LM04/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM04」 |
-| W7-LM09 | 地标 乡间无人站 | `landmarks/LM09.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6b | 待办 | |
+| W7-LM09 | 地标 乡间无人站 | `landmarks/LM09.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6b | 完成 | 2026-10-07 · 提交 `add58f5`（分支 `world/W7-LM09` 已合并 main，未推送）；基线标签 `pre-w7-lm09`；截图 `docs/world/landmarks/LM09/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM09」 |
 | W7-LM03 | 地标 苔石古坟群 | `landmarks/LM03.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6c | 待办 | |
 | W7-LM10 | 地标 小渔港 | `landmarks/LM10.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6a、W6b | 待办 | |
 | W7-LM08 | 地标 灯塔岛 | `landmarks/LM08.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6a | 待办 | |
