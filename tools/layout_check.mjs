@@ -448,11 +448,19 @@ check('C12', '新建筑实测模型：主体在可建范围、附属在地块内
     const boxes = sampleBoxes.filter(b => b.sample === s.id);
     if (!boxes.some(b => b.role === 'building')) fail(`${s.id} 没有登记主体（role building）`);
     for (const b of boxes) {
-      const limit = b.role === 'building' ? p.buildable : p.rect, where = b.role === 'building' ? '可建范围' : '地块';
+      const part = s.parts.find(q => q.group === b.group);
+      // Only the inherited store reflection may occupy its original public-sidewalk area.
+      // World envelope from the old local light ranges (x -2.5..4.3, z 4.1..5.9), including half-size.
+      const spill = part.legacyStoreReflection === true;
+      if (spill && !(s.id === 'mart' && s.plot === 'B05-P01' && b.group === 'martReflection' && b.role === 'ground' && !b.ground && measured?.[b.group]?.lightOnly))
+        fail(`${s.id}/${b.group} 既有倒影必须是实测无实体的透明光斑`);
+      const limit = spill ? [-14.8625,18.87,-7.9375,21.13] : b.role === 'building' ? p.buildable : p.rect;
+      const where = spill ? '旧便利店人行道倒影范围' : b.role === 'building' ? '可建范围' : '地块';
+      if (spill && (b.minY < L.LEVELS.pavement || b.height > L.LEVELS.pavement + .02)) fail(`${s.id}/${b.group} 倒影未贴合人行道`);
       if (!contains(limit, b.rect)) fail(`${s.id}/${b.group} 实测 ${fmt(b.rect)} 越出${where} ${fmt(limit)}`);
       if (b.ground && !contains(limit, b.ground)) fail(`${s.id}/${b.group} 步行高度占地 ${fmt(b.ground)} 越出${where}`);
       if (b.height > p.maxHeight) fail(`${s.id}/${b.group} 最高点 ${b.height.toFixed(2)} 超过限高 ${p.maxHeight}`);
-      if (b.minY < L.LEVELS.plot - 0.02) fail(`${s.id}/${b.group} 最低点 ${b.minY.toFixed(2)} 低于地块面 ${L.LEVELS.plot}（穿地）`);
+      if (!spill && b.minY < L.LEVELS.plot - 0.02) fail(`${s.id}/${b.group} 最低点 ${b.minY.toFixed(2)} 低于地块面 ${L.LEVELS.plot}（穿地）`);
       const margin = Math.min(b.rect[0] - limit[0], b.rect[1] - limit[1], limit[2] - b.rect[2], limit[3] - b.rect[3]);
       info(`${s.id}/${b.group}（${{ building: '主体', attachment: '附属', ground: '地坪/光斑' }[b.role] || b.role}）${fmt(b.rect)}，距${where}边界最小 ${margin.toFixed(2)}，高 ${b.minY.toFixed(2)}–${b.height.toFixed(2)}${b.ground ? `，步行占地 ${fmt(b.ground)}` : ''}`);
       const m = measured && measured[b.group], rec = s.parts.find(q => q.group === b.group).localBounds;

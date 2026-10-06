@@ -1,0 +1,3 @@
+page errors: none
+recorded bounds match measurement
+Other 37 buildings: all 311 measured groups exactly match pre-S3 snapshot unchanged-groups.json.

@@ -48,6 +48,12 @@ const result = await page.evaluate(({ sets, ppu }) => {
     const f = new THREE.Box3(), m = new THREE.Box3();
     g.traverse(o => { if (!o.isMesh || (o.material.isMeshBasicMaterial && o.material.depthWrite === false)) return; m.setFromObject(o, true); if (m.max.y > 0.3 && m.min.y < 1.8) f.union(m); });
     bounds[name].ground = f.isEmpty() ? null : [r2(f.min.x), r2(f.min.z), r2(f.max.x), r2(f.max.z)];
+    // S3 retains the old public-sidewalk reflection. Verify it contains only non-solid light decals.
+    if (name === 'martReflection') {
+      let meshes = 0, lightOnly = true;
+      g.traverse(o => { if (o.isMesh) { meshes++; const m=o.material; lightOnly &&= !!(m.isMeshBasicMaterial && m.transparent && !m.depthWrite); } });
+      bounds[name].lightOnly = meshes > 0 && lightOnly;
+    }
   }
   // Top-down sprites: only the set's groups visible, no fog, transparent background.
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });

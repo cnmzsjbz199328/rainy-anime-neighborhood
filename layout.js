@@ -123,8 +123,8 @@ const plots = [
   plot('B04-P03', [26, -9, 46, 7.5], 'park', 'S', { frontages: ['S', 'N'], uses: ['口袋公园', '绿地'], entrance: 35, status: 'occupied', building: 'pocketpark' }),
   plot('B04-P04', [6, -9, 16, 0], 'civic', 'N', { frontages: ['N', 'W'], uses: ['小神社', '公共设施'], status: 'occupied', building: 'hokora' }),
   plot('B04-P05', [16, -9, 26, 0], 'mixed', 'N', { uses: ['商住'], status: 'occupied', building: 'stationery' }),
-  // B05: legacy store at the X01 corner, upgraded ramen shop beside it, legacy apartment behind on alley A01.
-  plot('B05-P01', [-17, 21, -6, 30.5], 'store', 'N', { frontages: ['N', 'E'], uses: ['便利店'], status: 'occupied', sample: 'store' }),
+  // B05: upgraded store at X01, ramen beside it, and apartment behind on alley A01.
+  plot('B05-P01', [-17, 21, -6, 30.5], 'store', 'N', { frontages: ['N', 'E'], uses: ['便利店'], status: 'occupied', sample: null, building: 'mart' }),
   plot('B05-P02', [-28, 21, -19, 30.5], 'shop', 'N', { uses: ['拉面店'], status: 'occupied', building: 'ramenShop' }),
   plot('B05-P03', [-37, 21, -28, 30.5], 'shop', 'N', { uses: ['小店铺', '咖啡店'], status: 'occupied', building: 'cafe' }),
   plot('B05-P04', [-46, 21, -37, 30.5], 'shop', 'N', { uses: ['小店铺', '花店'], status: 'occupied', building: 'florist' }),
@@ -147,17 +147,7 @@ const plots = [
 // world = (x, z) + R_y(rotY) · (scale · local). localBounds are measured in Chromium by
 // tools/measure_samples.mjs (ground = walking-height footprint [x0, z0, x1, z1], y 0.3–1.8);
 // door is the local entrance point, frontDir the local facing (+z).
-const samples = [
-  { id: 'store', name: 'こもれび MART', plot: 'B05-P01', transform: { x: -10.5, z: 25, rotY: Math.PI },
-    door: { x: 1.84, z: 1.8 }, frontDir: [0, 1],
-    parts: [
-      { group: 'store', role: 'building', localBounds: { min: [-2.83, 0.21, -3.98], max: [4.66, 3.62, 2.6], ground: [-2.67, -3.84, 4.66, 1.86] } },
-      { group: 'vending', role: 'attachment', localBounds: { min: [-2.15, 0.21, 1.96], max: [-0.44, 2.08, 2.71], ground: [-2.15, 1.96, -0.44, 2.71] } },
-      { group: 'bicycles', role: 'attachment', localBounds: { min: [-3.44, 0.28, -2.48], max: [-3.07, 1.25, 0.58], ground: [-3.44, -2.48, -3.07, 0.58] } },
-      { group: 'storeProps', role: 'attachment', localBounds: { min: [2.51, 0.26, -3.23], max: [5.14, 1.31, 2.36], ground: [2.51, -3.23, 5.14, 2.36] } },
-    ] },
-
-];
+const samples = [];
 
 // New buildings (P5 on), one per plot, modelled in buildings/<plot>.js. Same placement rule and measured
 // bounds as the samples, kept in their own list so the old samples stay review-only. parts: building =
@@ -165,6 +155,18 @@ const samples = [
 // service yard, outdoor units (must stay on the plot); ground = paving and light decals on the plot.
 // shelter = local [x0, z0, x1, z1] of the roof and each awning: the rain never falls under them.
 const buildings = [
+  { id: 'mart', name: 'こもれび MART', plot: 'B05-P01', module: 'B05-P01', transform: { x: -12.34, z: 23.2, rotY: Math.PI },
+    door: { x: 0, z: 0 }, doorOffset: -.84, frontDir: [0, 1], floor: .3, floors: 1,
+    shelter: [[-4.59,-5.7,2.69,.2],[-4.59,-.07,2.69,.78]],
+    parts: [
+      { group: 'mart', role: 'building', localBounds: {"min":[-4.6,0.21,-5.71],"max":[2.87,4.19,0.78],"ground":[-4.46,-5.57,2.87,0.08]} },
+      { group: 'martVending', role: 'attachment', localBounds: {"min":[-4,0.3,0.04],"max":[-2.29,2.16,0.79],"ground":[-4,0.05,-2.3,0.79]} },
+      { group: 'martBikes', role: 'attachment', localBounds: {"min":[-5.27,0.29,-4.18],"max":[-4.96,1.26,-1.02],"ground":[-5.27,-4.18,-4.97,-1.02]} },
+      { group: 'martService', role: 'attachment', localBounds: {"min":[0.95,0.29,-5.23],"max":[3.44,1.32,0.56],"ground":[0.96,-5.22,3.44,0.55]} },
+      { group: 'martRear', role: 'attachment', localBounds: {"min":[-2.51,0.29,-6.06],"max":[-1.12,0.71,-5.64],"ground":[-2.5,-6.05,-1.12,-5.65]} },
+      { group: 'martReflection', role: 'ground', legacyStoreReflection: true, localBounds: {"min":[-4.36,0.16,2.13],"max":[2.38,0.16,4.18],"ground":null} },
+      { group: 'martGround', role: 'ground', localBounds: {"min":[-0.63,0.26,0.02],"max":[0.63,0.29,0.54],"ground":null} },
+    ] },
   { id: 'ramenShop', name: '雨音らーめん', plot: 'B05-P02', module: 'B05-P02', transform: { x: -23.5, z: 23.96, rotY: Math.PI },
     door: { x: 0, z: 0 }, frontDir: [0, 1], floor: 0.3, floors: 1,
     shelter: [[-3.50, -5.43, 3.50, 0.42], [-2.95, 0.05, 2.95, 0.78]],

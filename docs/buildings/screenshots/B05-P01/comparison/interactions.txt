@@ -1,0 +1,21 @@
+PASS  左键拖动旋转
+PASS  滚轮缩放
+PASS  右键平移（目标点在地面上移动，高度不变）
+PASS  平移边界（目标点限制在 ±46）：(46.0, -46.0)
+PASS  缩放上限 150
+PASS  缩放下限 9
+PASS  V 键进入漫游
+PASS  W 键沿道路移动（输入 0,1，位置 -8.00,15.00 → -8.18,15.00）
+PASS  漫游位置留在 layout.js 道路/巷道范围
+PASS  跟随镜头离地
+PASS  拖动可临时环视并自动回正
+PASS  城镇西侧道路边界限制
+PASS  V 键退出并恢复原自由视角
+PASS  降雨动画（雨滴高度变化）
+PASS  水洼涟漪动画
+PASS  X01 信号灯相位切换
+PASS  触屏按钮切换视角
+PASS  触屏移动摇杆可见
+PASS  触屏摇杆可移动
+page errors: none
+screenshots in docs/layout/views

@@ -1,0 +1,8 @@
+B05-P01 こもれび MART (new building): views in docs/buildings/screenshots/B05-P01
+render default with/without: calls 2361/2230 (+131), triangles 237479/202833 (+34646), lines 88275/82317; geometries 2295, textures 104
+render front   with/without: calls 711/580 (+131), triangles 64322/29676 (+34646), lines 33621/27663; geometries 2313, textures 104
+render far     with/without: calls 9989/9858 (+131), triangles 737053/702407 (+34646), lines 328141/322183; geometries 9754, textures 358
+frame time at default view (SwiftShader, this machine only): 323.3 ms with, 232.8 ms without
+frame time at front view (SwiftShader, this machine only): 158.9 ms with, 128.9 ms without
+local animation: 2/8 effect objects (drip/run batches, steam, light decals) changed in 0.8 s
+page errors: none

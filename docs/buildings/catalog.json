@@ -1426,10 +1426,10 @@
   },
   {
     "id": "B05-P01",
-    "name": "现有便利店样板",
+    "name": "こもれび MART",
     "archetype": "store",
     "phase": 0,
-    "status": "existing-review-only",
+    "status": "implemented",
     "plotType": "store",
     "front": "N",
     "frontages": [
@@ -1462,7 +1462,7 @@
     ],
     "maxHeight": 9,
     "floors": 1,
-    "dimensions": "已有样板实测主体约7.49×6.58；保持既有变换与尺度",
+    "dimensions": "S3 独立单层模块；主体 6.9×5.5，门世界坐标 (-12.34,23.2)，统一尺度 1",
     "style": "淡奶油墙、青绿与柔和珊瑚色灯带、深灰平屋顶；手绘墨线与赛璐璐明暗",
     "exterior": "发光招牌、大玻璃窗、自动双门、雨棚、入口垫、售货机、自行车、伞架、垃圾桶、后勤空调、公告柜",
     "interior": "整齐货架、饮料冷柜、便当区、饭团零食架、收银柜、咖啡机、杂志架、促销海报、室内灯箱、冰柜、关东煮柜、地面箭头、储物柜或后门",
@@ -1482,7 +1482,7 @@
       "rear-left"
     ],
     "imageStatus": "generated-reviewed-concept",
-    "implementationStatus": "existing-review-only",
+    "implementationStatus": "implemented",
     "imageSize": [
       1536,
       1024
