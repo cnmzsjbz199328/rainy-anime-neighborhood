@@ -1608,3 +1608,9 @@
 - 真机帧率与构图未测。
 - 参考图的外挂铁楼梯、教学翼屋顶设备（水箱、更多空调）、院落里的花坛细节、校门柱的灯箱字样没做；教室桌椅是简化方块；每层教室都是同一布置（只有灯亮暗的区别）；三层楼板只在楼梯洞处有栏杆，走廊外侧没有栏杆（因为是封闭走廊）；低翼内只有一个房间。
 - 教学翼的前立面窗户很多（约 40 扇），雨夜中窗光主要来自教室内部发光材质，没有做室外窗光斑。
+## S0 旧样板升级基线与工具（2026-10-06）
+
+- 基线：`pre-sample-upgrade` 指向 `14680c2`；详细分组实测、显示/隐藏绘制成本与检查记录见 [docs/buildings/sample-upgrade-baseline.md](docs/buildings/sample-upgrade-baseline.md)，视图截图在 `docs/buildings/sample-upgrade-baseline-views/`。
+- 新增 `tools/frozen_diff.mjs`，可核对布局导出并保护道路、路灯、电杆、水洼等冻结数据；便利店湿路面倒影在 `samples` 不含 `store` 时跳过。
+- 验证：自比较与 `pre-sample-upgrade` 比对通过；C1–C12、19 项交互检查、建筑工具包检查通过。临时空 `samples` 副本中的测量、布局、B05-P03 视图与 live top-down 均通过且无页面错误。
+- 现状：`measure_samples` 仅报告已知 `ramenPlants`、`apartmentPlants` 两处 0.03 以内旧漂移；登记未改。SwiftShader 性能仅作本机参考；真机待验证。
