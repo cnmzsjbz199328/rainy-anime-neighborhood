@@ -76,10 +76,11 @@ const proto = THREE.Material.prototype;
 const baseKey = proto.customProgramCacheKey;
 function bendCompile(shader, renderer) {
   if (this._bendUserCompile) this._bendUserCompile.call(this, shader, renderer);
+  if (this.userData && this.userData.noBend) return;   // meshes built directly in sphere coordinates (polar caps) opt out
   patch(shader);
 }
 Object.defineProperty(proto, 'onBeforeCompile', { configurable: true, get() { return bendCompile; }, set(fn) { this._bendUserCompile = fn; } });
-proto.customProgramCacheKey = function () { return 'bend|' + (this._bendUserCompile ? this._bendUserCompile.toString() : ''); };
+proto.customProgramCacheKey = function () { return 'bend|' + (this.userData && this.userData.noBend ? 'nobend|' : '') + (this._bendUserCompile ? this._bendUserCompile.toString() : ''); };
 void baseKey;
 
 // ---- CPU mirror of the shader (checks, lights)
@@ -108,8 +109,9 @@ function bendSphere(sph) {
   const p = pointAt(sph.center.x, sph.center.y, sph.center.z, u);
   sph.center.set(p[0], p[1], p[2]); sph.radius *= k; return sph;
 }
+const noBend = o => !!(o.material && o.material.userData && o.material.userData.noBend);
 FR.intersectsObject = function (object) {
-  if (uniform.value > 0 && cullMode === 'bound' && object.geometry) {
+  if (uniform.value > 0 && cullMode === 'bound' && object.geometry && !noBend(object)) {
     const g = object.geometry;
     if (g.boundingSphere === null) g.computeBoundingSphere();
     return this.intersectsSphere(bendSphere(tmpSphere.copy(g.boundingSphere).applyMatrix4(object.matrixWorld)));
@@ -125,6 +127,7 @@ FR.intersectsSprite = function (sprite) {
 };
 
 let scene = null;
+const listeners = [];
 const culled = new WeakMap(), patchedLights = new WeakSet(), lights = [];
 function patchLight(l) {
   if (patchedLights.has(l)) return;
@@ -147,7 +150,7 @@ function sync() {
   const on = uniform.value > 0 && cullMode === 'off';
   scene.traverse(o => {
     if (o.isPointLight) { patchLight(o); o.matrixWorldNeedsUpdate = true; }
-    if (!(o.isMesh || o.isLine || o.isPoints || o.isSprite)) return;
+    if (!(o.isMesh || o.isLine || o.isPoints || o.isSprite) || noBend(o)) return;
     if (on) { if (!culled.has(o)) { culled.set(o, o.frustumCulled); o.frustumCulled = false; } }
     else if (culled.has(o)) { o.frustumCulled = culled.get(o); culled.delete(o); }
   });
@@ -156,7 +159,8 @@ function sync() {
 const BEND = {
   R, uniform, stats,
   get: () => uniform.value,
-  set(v) { uniform.value = Math.max(0, Math.min(1, +v || 0)); sync(); return uniform.value; },
+  set(v) { uniform.value = Math.max(0, Math.min(1, +v || 0)); sync(); for (const f of listeners) f(uniform.value); return uniform.value; },
+  onChange(f) { listeners.push(f); },
   attach(s) { scene = s; sync(); },
   cullMode: () => cullMode,
   setCullMode(m) { cullMode = m === 'off' ? 'off' : 'bound'; sync(); return cullMode; },

@@ -20,9 +20,10 @@
 - `ROAD_NETWORK_PLAN.md`：道路与用地建设计划。
 - `WORLD_PLAN.md`：星球化建设计划（城镇以外的地形、区域、全球路网和地标）；参考包在 `docs/world/`。
 - `bend.js`：弯曲渲染（W2）：把平面城镇按墨卡托映射卷到半径 90 的球面，只在顶点着色器里发生；`uBend` 为 0 时与原来逐位相同，当前没有用户可见的控制，仅通过测试钩子 `window.__scene.bend.set(0..1)` 使用；`tools/regress.mjs` 做确定性像素回归，`tools/bend_check.mjs` 检查点光源、顶点与法线，`tools/bend_shots.mjs` 出弯曲截图（`docs/world/w2/`）。
+- `terrain.js`：星球地形网格（W3）：把 `world.js` 的高度与区域建成平面（墨卡托）坐标的网格，交给 `bend.js` 卷到球面；补丁外 24 m 的渐变带（TR01）与 9 个出口的道路起点在 `uBend = 0` 时可见，其余地形与两极帽在 `uBend > 0` 时出现；`tools/terrain_check.mjs` 检查 W3-C0–C6，`tools/terrain_shots.mjs` 出截图（`docs/world/w3/`）。
 - `world.js`：星球布局数据（W1）：经纬度区域、高度骨架、河流、地标锚点与全球路网，无 THREE/DOM，不进入页面；`tools/world_check.mjs` 检查 WC1–WC11，`tools/world_survey.mjs` 生成勘探图（`docs/world/survey/`）；冻结清单见 `docs/world/WORLD_LAYOUT_V1.md`。
 - `three.min.js`：Three.js 0.160.1，保留原始版权头。
-- `build.py`：将源码（three.min.js、bend.js、layout.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
+- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
 - `DESIGN.md`：风格约束与扩展路线。
 - `THIRD_PARTY_NOTICES.md`：第三方许可说明。
 
