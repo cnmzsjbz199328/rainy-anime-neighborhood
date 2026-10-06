@@ -10,6 +10,7 @@
 - [生图提示词](IMAGE_PROMPTS.json)
 - [参考图](references/README.md)
 - [参考图审查与裁决](REFERENCE_REVIEW.md)
+- 阶段规格：[W1](W1_SPEC.md) · [W2](W2_SPEC.md) · [W3](W3_SPEC.md) · [W4](W4_SPEC.md) · [W5](W5_SPEC.md) · [W6](W6_SPEC.md) · [W7](W7_SPEC.md) · [W8](W8_SPEC.md)（W3–W8 由 WS 在 2026-10-06 依据冻结的 world.js 补写）
 - [星球布局 v1（W1 冻结清单）](WORLD_LAYOUT_V1.md)：最终经纬度、路网、检查数值与相对初稿的调整；数据在仓库根目录 `world.js`，勘探图在 [survey/](survey/)
 
 参考图由有图像生成能力的 Agent 生成。ST01 风格已确认；ST02、ST04 于 2026-10-06 完成，全部 39 张参考图齐全。逐卡审查和裁决见 [REFERENCE_REVIEW.md](REFERENCE_REVIEW.md)。
