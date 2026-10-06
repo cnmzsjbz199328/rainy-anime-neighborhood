@@ -14,7 +14,7 @@ const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math
 // into the road class (W5_SPEC 3.0): RD01 9 m asphalt -> 7 m with gravel shoulders within 15 m; RD03 fraying edges, cracks, weeds; RD05 from a 4.5 m asphalt apron.
 const LEAD01 = { cls: 'RD01T', at: 8 };
 const ROUTES = [
-  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { firstLamp: 3, busStop: 10, barrier: ['end'] } },
+  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { firstLamp: 3, busStop: 10, barrier: ['end'], barrierGap: [{ side: -1, s0: 8.8, s1: 15.8 }] } },
   { id: 'N01-west', exit: 'N01', segs: [{ id: 'T01-15', rev: true }, { id: 'T01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { firstLamp: 3, busStop: 11, barrier: ['end'] } },
   { id: 'T01-ridge', segs: [{ id: 'T01-04' }, { id: 'T01-05' }, { id: 'T01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
   { id: 'T01-west', segs: [{ id: 'T01-10' }, { id: 'T01-11' }, { id: 'T01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { firstLamp: 6, barrier: ['start', 'end'] } },
@@ -52,7 +52,7 @@ function furnish(W, rt, cfg) {
   if ((cfg.barrier || []).includes('start')) near.push([0, 14]);
   if ((cfg.barrier || []).includes('end')) near.push([rt.length - 14, rt.length]);
   if (cfg.tunnel) { const tun = S.filter(p => p.span === 'tunnel'); if (tun.length) near.push([tun[0].s - 10, tun[0].s], [tun[tun.length - 1].s, tun[tun.length - 1].s + 10]); }
-  for (const [a, b] of near) for (let s = Math.max(1, a); s < Math.min(rt.length - 0.5, b); s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); if (S[i].span === 'tunnel') continue; for (const sd of [-1, 1]) add('barrierConcrete', i, sd * 4.62, rt.surface(i, sd * 4.62), { yaw: yawAlong(i) }); }
+  for (const [a, b] of near) for (let s = Math.max(1, a); s < Math.min(rt.length - 0.5, b); s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); if (S[i].span === 'tunnel') continue; for (const sd of [-1, 1]) if (!(cfg.barrierGap || []).some(g => g.side === sd && s > g.s0 && s < g.s1)) add('barrierConcrete', i, sd * 4.62, rt.surface(i, sd * 4.62), { yaw: yawAlong(i), lean: [0, Math.atan((rt.bed[Math.min(n - 1, i + 2)] - rt.bed[Math.max(0, i - 2)]) / Math.max(1e-6, S[Math.min(n - 1, i + 2)].s - S[Math.max(0, i - 2)].s))] }); }
   // milestones every 25 m on the right shoulder (not inside the barrier zones), a bus stop sign
   for (let s = 12; s < rt.length - 4; s += 25) { const i = Math.round(s / 0.5); if (S[i].span === 'tunnel' || near.some(([a, b]) => s > a - 1 && s < b + 1)) continue; add('milestone', i, 4.1, rt.surface(i, 4.1), { yaw: yawAlong(i) + Math.PI / 2 }); }
   if (cfg.busStop) { const i = Math.round(cfg.busStop / 0.5), r = right(i); add('signBus', i, 4.2, rt.surface(i, 4.2), { yaw: yawFace(-r[0], -r[1]) }); }
@@ -129,6 +129,13 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
       if (!NOHULL.includes(type)) { const hull = new THREE.InstancedMesh(geo, M.hullMat, list.length); hull.instanceMatrix = mesh.instanceMatrix; hull.count = list.length; hull.computeBoundingSphere(); hull.name = 'road:' + type + ':ink'; root.add(hull); objs.hulls.push(hull); }
       if (GLOW[type]) { const g = new THREE.InstancedMesh(K.geometries[GLOW[type][0]], GLOW[type][1], list.length); g.instanceMatrix = mesh.instanceMatrix; g.computeBoundingSphere(); g.name = 'road:' + type + ':glow'; if (type === 'navLight') { list.forEach((it, i) => g.setColorAt(i, tintC.setRGB(1, 1, 1))); g.instanceColor.needsUpdate = true; objs.nav = g; } root.add(g); objs.glows.push(g); }
     }
+    // road puddle ripples (RD01 card, same look as the town's puddles): two rings near each lamp pool, scaled and faded by hand each frame (instanced, additive)
+    { const spots = []; for (const rt of DATA.routes) for (const l of (rt.lamps || [])) for (let k = 0; k < 2; k++) { const it = (rt.instances.lamp || [])[0]; void it; const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(rt.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = rt.lateral(i, o); spots.push({ lon: lo, lat: la, alt: rt.surface(i, o) + 0.012, phase: hash(l.s, k + 5) }); }
+      for (const b of DATA.bridges) for (const l of b.lamps) for (let k = 0; k < 2; k++) { const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(b.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = b.lateral(i, o); spots.push({ lon: lo, lat: la, alt: b.alt[i] + 0.05, phase: hash(l.s, k + 5) }); }
+      const rg = new THREE.RingGeometry(0.93, 1, 24); rg.rotateX(-Math.PI / 2);
+      const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
+      const mesh = new THREE.InstancedMesh(rg, rm, spots.length); mesh.name = 'road:ripple'; mesh.frustumCulled = false; for (let i = 0; i < spots.length; i++) { mesh.setMatrixAt(i, new THREE.Matrix4()); mesh.setColorAt(i, tintC.setRGB(0, 0, 0)); }
+      root.add(mesh); S.ripples = { mesh, spots, mats: spots.map(sp => { const f = flatOf(sp.lon, sp.lat); return { x: f.x, y: (sp.alt - BASE) * f.k, z: f.z, k: f.k }; }) }; objs.inst.push(mesh); S.counts.ripple = spots.length; }
     // navigation lights pulse slowly (period 6 s, phase per pier, never below 28 % of full): updated in tick
     S.nav = DATA.bridges.flatMap(b => b.navLights.map(n => n.phase));
 
@@ -161,19 +168,19 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     };
     mk('lining', 1, '#3b4250', true);
     mk('shell', 1 + tn.shell / tn.innerR, '#7c828c', false);
-    // portal rings: a flat annulus between the inner arch and a 1.2 m wider outer arch, 1.4 m deep, with moss on the upper half; a black half-disc fills the opening
+    // portal rings: a flat band between the inner profile (walls and arch) and a 1.2 m wider outer profile, 1.4 m deep, with moss on the upper half; a black fan fills the opening
     for (const [i0, dirSign] of [[idx[0], -1], [idx[n - 1], 1]]) {
-      const k = F[i0].k, tx = T[i0][0], tz = T[i0][1], bx = -tz, bz = tx, base = rt.bed[i0], depth = 1.4;
-      const outerR = tn.innerR + 1.2, N = 24, ringPos = [], ringCol = [], ringIdx = [];
-      const ptAt = (r, th, back) => { const o = r * Math.cos(th), dy = tn.wallH + r * Math.sin(th), dz = back * -dirSign; return [F[i0].x + bx * o * k + tx * dz * k, (base + dy - BASE) * k, F[i0].z + bz * o * k + tz * dz * k]; };
-      const c0 = new THREE.Color('#8a8f99'), moss = new THREE.Color('#4f7a56'), dark = new THREE.Color('#5f6672');
-      for (let a = 0; a <= N; a++) { const th = Math.PI * a / N; for (const [r, b, kind] of [[tn.innerR, 0, 0], [outerR, 0, 1], [outerR, depth, 2], [tn.innerR, depth, 3]]) { ringPos.push(...ptAt(r, th, b)); const mv = th > 0.5 && th < 2.64 ? 0.25 + 0.3 * hash(a, kind) : 0; const c = (kind === 3 ? dark : c0).clone().lerp(moss, mv); ringCol.push(c.r, c.g, c.b); } }
-      const m = 4; for (let a = 0; a < N; a++) for (let j = 0; j < m; j++) { const j2 = (j + 1) % m, a0 = a * m + j, b0 = a * m + j2, c0i = (a + 1) * m + j, d0 = (a + 1) * m + j2; ringIdx.push(a0, c0i, b0, b0, c0i, d0); }
-      stripMesh({ name: 'tunnel portal ring', pos: Float32Array.from(ringPos), col: Float32Array.from(ringCol), index: Uint32Array.from(ringIdx), vertexCount: ringPos.length / 3, normals: true }, mat);
-      // void disc: a fan from the road-level centre of the opening, recessed 0.2 m behind the ring face
-      const vp = [...ptAt(0.001, Math.PI / 2, 0.2)], vc = [0.03, 0.04, 0.06], vi = []; vp[1] = (base + 0.05 - BASE) * k;
-      for (let a = 0; a <= N; a++) { const th = Math.PI * a / N; vp.push(...ptAt(tn.innerR, th, 0.2)); vc.push(0.02, 0.025, 0.04); }
-      for (let a = 1; a <= N; a++) vi.push(0, a, a + 1);
+      const k = F[i0].k, tx = T[i0][0], tz = T[i0][1], bx = -tz, bz = tx, base = rt.bed[i0], depth = 1.4, outerR = tn.innerR + 1.2;
+      const at = (o, dy, back) => { const dz = back * -dirSign; return [F[i0].x + bx * o * k + tx * dz * k, (base + dy - BASE) * k, F[i0].z + bz * o * k + tz * dz * k]; };
+      const outerOf = ([o, dy]) => { if (dy <= tn.wallH + 1e-6 && Math.abs(Math.abs(o) - tn.innerR) < 1e-6) return [Math.sign(o) * outerR, dy]; const vx = o, vy = dy - tn.wallH, l = Math.hypot(vx, vy); return [vx / l * outerR, tn.wallH + vy / l * outerR]; };
+      const c0 = new THREE.Color('#8a8f99'), moss = new THREE.Color('#4f7a56'), dark = new THREE.Color('#5f6672'), ringPos = [], ringCol = [], ringIdx = [];
+      prof.forEach((p, a) => { const q = outerOf(p), up = p[1] > tn.wallH + 0.2 ? 1 : 0; for (const [pt, back, kind] of [[p, 0, 0], [q, 0, 1], [q, depth, 2], [p, depth, 3]]) { ringPos.push(...at(pt[0], pt[1], back)); const mv = up ? 0.25 + 0.3 * hash(a, kind) : 0.08 * hash(a, kind); const c = (kind === 3 ? dark : c0).clone().lerp(moss, mv); ringCol.push(c.r, c.g, c.b); } });
+      const m = 4, N = prof.length; for (let a = 0; a + 1 < N; a++) for (let j = 0; j < m; j++) { const j2 = (j + 1) % m, a0 = a * m + j, b0 = a * m + j2, c1 = (a + 1) * m + j, d0 = (a + 1) * m + j2; ringIdx.push(a0, c1, b0, b0, c1, d0); }
+      stripMesh({ name: 'tunnel portal ring', pos: Float32Array.from(ringPos), col: Float32Array.from(ringCol), index: Uint32Array.from(ringIdx), vertexCount: ringPos.length / 3, normals: true }, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide }));
+      // void: a fan from the road-level centre of the opening over the whole inner profile, recessed 0.2 m behind the ring face
+      const vp = [...at(0, 0.05, 0.2)], vc = [0.03, 0.04, 0.06], vi = [];
+      prof.forEach(p => { vp.push(...at(p[0], p[1], 0.2)); vc.push(0.02, 0.025, 0.04); });
+      for (let a = 1; a < prof.length; a++) vi.push(0, a, a + 1);
       stripMesh({ name: 'tunnel void', pos: Float32Array.from(vp), col: Float32Array.from(vc), index: Uint32Array.from(vi), vertexCount: vp.length / 3, normals: true }, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     }
   }
@@ -193,12 +200,14 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
     // the real lamps, their light pools, the small furniture and the navigation lights exist only near the surface (the light band stands for them from far away)
     const near = ink.distance < 120;
-    for (const m of [...objs.inst, ...objs.glows]) if (/road:(lamp|lampPool|tuft|weed|milestone|signBus|navLight)/.test(m.name)) m.visible = near;
+    for (const m of [...objs.inst, ...objs.glows]) if (/road:(lamp|lampPool|tuft|weed|milestone|signBus|navLight|ripple)/.test(m.name)) m.visible = near && (!/ripple/.test(m.name) || SEC.state.settings.rain);
     for (const h of objs.hulls) h.visible = g > 0.01 && (near || !/road:(lamp|milestone|signBus|navLight)/.test(h.name));
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); l.material.opacity = Math.min(l.material.opacity > 0.95 ? 1 : 0.9, o); l.visible = o > 0.01; }
+    if (S.ripples && near && SEC.state.settings.rain) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
     if (!S.bandManual) S.band.set({ distance: ink.distance });
+    S.band.breathe(t);
   }
 
   const api = {

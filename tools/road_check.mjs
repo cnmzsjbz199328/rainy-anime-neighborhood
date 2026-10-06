@@ -236,6 +236,13 @@ if (!process.argv.includes('--no-browser')) {
       info.push(`${label}（${name}）：整帧 ${on.info.calls} 次调用 / ${on.info.triangles} 三角形；不含道路 ${hidden.calls} / ${hidden.tri}；道路新增 ${on.info.calls - hidden.calls} 次调用 / ${on.info.triangles - hidden.tri} 三角形（SwiftShader，真机待验证）`);
       if (label === '全景' && on.info.calls - hidden.calls > 60) fails.push('全景道路绘制调用超过预期');
     }
+    // dynamics at the three distances: ripples and navigation lights (ground, aerial, rain on), the light band's slow breathing (panorama)
+    const diff = async (a, b) => page.evaluate(async ([a, b]) => { const load = async u => { const i = new Image(); i.src = u; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const q = c.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, c.width, c.height).data; }; const A = await load(a), B = await load(b); let n = 0; for (let k = 0; k < A.length; k += 4) if (Math.abs(A[k] - B[k]) + Math.abs(A[k + 1] - B[k + 1]) + Math.abs(A[k + 2] - B[k + 2]) > 6) n++; return n; }, [a, b]);
+    for (const [label, name, t1, t2] of [['ground', 'rd01-exit-ground', 2.0, 2.4], ['aerial', 'bridge-east-strait-aerial', 2.0, 3.1], ['panorama', 'panorama-back-east', 1.75, 5.25]]) {
+      const v = shots[name];
+      const a = await renderShot(page, v, { t: t1 }), b = await renderShot(page, v, { t: t2 }), n = await diff(a.url, b.url);
+      info.push(`动态 ${label}（${name}，t = ${t1} 与 ${t2} s）：差异像素 ${n}`); if (n <= 0) fails.push(`${label} 距离下道路没有任何动态`);
+    }
     const st = await page.evaluate(() => window.__scene.roads.stats());
     info.push(`实例数（W5a）：${Object.entries(st.counts).map(([k, v]) => `${k} ${v}`).join('、')}；光带 ${st.band.drawCalls} 次绘制 / ${st.band.triangles} 三角形（要求 ≤ 20 次）；首次构建 ${st.buildMs} ms`);
     if (st.band.drawCalls > 20) fails.push('光带绘制调用 > 20');

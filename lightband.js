@@ -56,6 +56,8 @@ function make(THREE, root) {
     for (const m of st.meshes) { m.material.opacity = m.name.endsWith('sea') ? st.opacity * 0.9 : st.opacity; m.visible = st.opacity > 0.01; }
     return { distance: st.distance, opacity: st.opacity };
   };
+  // slow breathing of the band at panorama distance (period 7 s, +-8 %), the one motion of the band
+  st.breathe = t => { if (!st.meshes.length || st.opacity <= 0.01) return; const k = 1 + 0.08 * Math.sin(2 * Math.PI * t / 7); st.meshes.forEach(m => { m.material.opacity = Math.min(1, (m.name.endsWith('sea') ? st.opacity * 0.9 : st.opacity) * k); }); };
   return st;
 }
 

@@ -259,10 +259,10 @@ function route(W, segs, o = {}) {
   for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
   // weeds and tufts along the paved edge: a deterministic count per 5 m bin that grows with the wear (none at the town edge)
   const instances = {}, add = (type, i, oo, extra = {}) => { const off2 = oo, [lo, la] = lateral(i, oo); (instances[type] = instances[type] || []).push({ type, lon: lo, lat: la, alt: surface(i, off2), yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: [0, 0], tint: extra.tint || [1, 1, 1], station: extra.station }); };
-  if (o.weeds !== false) for (let b0 = 0; b0 < total; b0 += 5) {
-    const mid = Math.min(total, b0 + 2.5), wr = wearMax * smooth(0, wearLen, mid), cnt = Math.round(wr * (o.weedsPerBin || 5));
+  if (o.weeds !== false) for (let b0 = 0; b0 < total - 2.4; b0 += 5) {
+    const len = Math.min(5, total - b0), mid = b0 + len / 2, wr = wearMax * smooth(0, wearLen, mid), cnt = Math.round(wr * (o.weedsPerBin || 5) * len / 5);
     for (let k = 0; k < cnt; k++) for (const side of [-1, 1]) {
-      const st = Math.min(total - 0.3, b0 + 0.6 + 3.8 * hash(b0 + k * 3.1, side * 7)), i = Math.min(n - 1, Math.round(st / 0.5)); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
+      const st = b0 + 0.6 + (len - 1.2) * hash(b0 + k * 3.1, side * 7), i = Math.min(n - 1, Math.round(st / 0.5)); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
       const oo = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47 + side));
       add(hash(st, 49) < 0.5 ? 'tuft' : 'weed', i, oo, { yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], station: st });
     }

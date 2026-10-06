@@ -24,7 +24,8 @@
 - `world.js`：星球布局数据（W1）：经纬度区域、高度骨架、河流、地标锚点与全球路网，无 THREE/DOM，不进入页面；`tools/world_check.mjs` 检查 WC1–WC11，`tools/world_survey.mjs` 生成勘探图（`docs/world/survey/`）；冻结清单见 `docs/world/WORLD_LAYOUT_V1.md`。
 - `three.min.js`：Three.js 0.160.1，保留原始版权头。
 - `flora.js`、`section_plan.js`、`roadkit.js`、`water.js`、`section.js`：W4 样板断面（ST03，补丁南缘到南海湾对岸 59.5 m）：实例化物件库、由 `world.js` 驱动的放置计划、沿 `samplePath` 扫出的道路横断面（RD03/04/05/07）、水面涟漪着色器、断面装配与墨线分级；断面在 `uBend > 0` 或 `view.set({ mode: 'section' })` 时才生成并显示（默认画面不构建）。测试钩子 `window.__scene.section.set({ rain, light: 'rainy'|'neutral'|'panorama', ink: 'auto'|'ground'|'aerial'|'panorama' })`；`tools/section_check.mjs`（W4-C1–C8）、`tools/section_shots.mjs`（`docs/world/w4/`）、`tools/section_extrapolate.mjs`（外推表）、`node tools/regress.mjs --views section`（确定性）。
-- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、flora.js、section_plan.js、roadkit.js、water.js、section.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
+- `roads.js`、`bridge.js`、`lightband.js`：W5a 全球路网（W5_SPEC）：`roadkit.js` 的 `route()` 把任意一串边扫成一条连续的路面（相邻等级渐变、城镇出口的磨损、RD01 的路基与路灯），`bridge.js` 做 RD02 箱梁桥（桥墩、斜拉塔、航道灯），`roads.js` 装配全部 RD01/RD02、隧道口、6 个 RD03/RD05 出口与路灯、涟漪，`lightband.js` 是夜间全景的光带；在 `uBend > 0` 或 `view.set({ mode: 'section' })` 时才构建（默认画面不构建）。测试钩子 `window.__scene.roads`（`setLightBand({ distance })`、`stats()`、`data()`）；`tools/road_check.mjs`（W5-C1–C6、C9 与预算、动态）、`tools/road_shots.mjs`（`docs/world/w5/`）。
+- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、flora.js、section_plan.js、roadkit.js、bridge.js、lightband.js、water.js、section.js、roads.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
 - `DESIGN.md`：风格约束与扩展路线。
 - `THIRD_PARTY_NOTICES.md`：第三方许可说明。
 
@@ -72,7 +73,7 @@
 
 ## 规划中：星球化
 
-计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。星球全景总是晴朗的月夜，近处保持现在的雨夜，并按时间和位置切换局部天气。目前 W0、W1（星球布局 v1 已冻结）、W2（弯曲渲染）、WS（W3–W8 规格）已完成：W3–W8 的精确规格在 [docs/world/](docs/world/README.md)；总计划、统一规格和 39 张设计卡已就绪，39/39 张参考图已生成并审查（`check_kit.mjs --refs` 通过，ST01 风格已确认）；`world.js` 与勘探图（[星球布局 v1](docs/world/WORLD_LAYOUT_V1.md)）已出，`node tools/world_check.mjs` WC1–WC11 全部通过；星球代码尚未进入页面。逐栋建筑可以与之并行。
+计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。星球全景总是晴朗的月夜，近处保持现在的雨夜，并按时间和位置切换局部天气。目前 W0、W1（星球布局 v1 已冻结）、W2（弯曲渲染）、WS（W3–W8 规格）、W3（地形网格）、W4（样板断面，已确认）、W5a（RD01/RD02 全球主干道与桥、光带）已完成：W3–W8 的精确规格在 [docs/world/](docs/world/README.md)；总计划、统一规格和 39 张设计卡已就绪，39/39 张参考图已生成并审查（`check_kit.mjs --refs` 通过，ST01 风格已确认）；`world.js` 与勘探图（[星球布局 v1](docs/world/WORLD_LAYOUT_V1.md)）已出，`node tools/world_check.mjs` WC1–WC11 全部通过；星球代码尚未进入页面。逐栋建筑可以与之并行。
 
 - [星球计划](WORLD_PLAN.md)
 - [星球规划参考包](docs/world/README.md)

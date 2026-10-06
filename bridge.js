@@ -42,9 +42,10 @@ function build(W, ids, o = {}) {
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg };
-  const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
+  const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
+  const pitchAt = i => { const a = Math.max(0, i - 2), c = Math.min(n - 1, i + 2); return Math.atan((A[c] - A[a]) / Math.max(1e-6, S[c].s - S[a].s)); };   // the deck rises up to 14 %: rigid barrier pieces follow it
   const yawToward = (dx, dz) => Math.atan2(-dz, dx);
   const rightOf = i => [-T[i][1], T[i][0]];
 
@@ -80,7 +81,7 @@ function build(W, ids, o = {}) {
 
   // ---- parapets (concrete barrier pieces every 2 m on both kerbs), lamps (alternating sides every 16 m), expansion joints
   const jointSeg = [];
-  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i) }); }
+  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
   let lampN = 0;
   for (let s = DECK.lampEvery / 2; s < L; s += DECK.lampEvery) {
     const i = Math.min(n - 1, Math.round(s / 0.5)), side = lampN++ % 2 ? 1 : -1, r = rightOf(i);
@@ -120,7 +121,7 @@ function build(W, ids, o = {}) {
     }
     out.piers.push(pier);
     // navigation light on a deep-water pier: on the column's outer face 1.4 m above the sea, pulsing with a period of 6 s (phase per pier)
-    if (seabed < -1.2) { for (const sd2 of [-1, 1]) { const oo = sd2 * (2.6 + 0.78), it = add('navLight', i, oo, 1.4, { yaw: 0 }); out.navLights.push({ i, s: S[i].s, o: oo, alt: 1.4, phase: hash(S[i].s, sd2) }); void it; } }
+    if (seabed < -1.2) { for (const sd2 of [-1, 1]) { const oo = sd2 * (2.6 + 0.78), it = add('navLight', i, oo, 1.4, { yaw: 0, s: [1.6, 1.6, 1.6] }); out.navLights.push({ i, s: S[i].s, o: oo, alt: 1.4, phase: hash(S[i].s, sd2) }); void it; } }
   }
 
   // ---- cable-stayed tower at the junction of the two ocean spans

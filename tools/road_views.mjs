@@ -14,6 +14,7 @@ export const INIT = `(() => {
 const rt = (route, s, o = 0, dy = 1.6) => ({ route, s, o, dy });
 const ch = (s, o = 0, dy = 1.6) => ({ chain: true, s, o, dy });      // the T03 chain of the W4 section (exit N08)
 const br = (bridge, s, o = 0, dy = 1.6) => ({ bridge, s, o, dy });
+const pr = (bridge, pier, o = 0, dy = 1.6) => ({ bridge, pier, s: 0, o, dy });
 const BR1 = 'T01-03', BR2 = 'T01-07+08+09', BR3 = 'T01-13';
 // the nine town exits, ground view (eye 1.6 m in the left lane at the exit, looking out along the road) and a collage of all nine
 export const EXITS = [['N01', rt('N01-west', 0.6, -1.4), rt('N01-west', 22, 0, 1.3)], ['N03', rt('N03-east', 0.6, -1.4), rt('N03-east', 19, 0, 1.3)], ['N04', rt('N04-T02', 0.6, -1.2), rt('N04-T02', 22, 0, 1.0)],
@@ -35,6 +36,24 @@ export const SHOTS = [
   // ---- RD02
   ['bridge-east-strait-ground', { eye: br(BR1, 6, -1.7, 1.7), look: br(BR1, 40, 0, 2.2), fov: 62 }],
   ['bridge-east-strait-aerial', { eye: br(BR1, 20, 26, 18), look: br(BR1, 27, 0, 0), fov: 50 }],
+  ['bridge-pylon-ground', { eye: br(BR2, 100, -1.7, 1.7), look: br(BR2, 125, 0, 9), fov: 62 }],
+  ['bridge-pylon-aerial', { eye: br(BR2, 128, 34, 22), look: br(BR2, 112, 0, 6), fov: 50 }],
+  ['bridge-dateline-seam', { eye: br(BR2, 90, 14, 6), look: br(BR2, 99, 0, 3), fov: 55 }],
+  ['bridge-pylon-sea', { eye: br(BR2, 96, 22, 1.2), look: br(BR2, 112, 0, 8), fov: 55 }],
+  ['bridge-navlight-close', { eye: pr(BR2, 5, 9, 1.6), look: pr(BR2, 5, 3.38, 1.4), fov: 45 }],
+  ['bridge-navlight-night', { eye: pr(BR2, 5, 14, 2.0), look: pr(BR2, 6, 0, 3.0), fov: 55, rain: false }],
+  ['junction-abutment-J-E1', { eye: rt('N03-east', 6, 8, 4), look: br(BR1, 8, 0, 1.0), fov: 62 }],
+  ['junction-abutment-aerial', { eye: rt('N03-east', 8, 20, 16), look: br(BR1, 6, 0, 2), fov: 50 }],
+  ['tunnel-portal-east', { eye: rt('T01-ridge', 0.5, -1.7, 1.6), look: rt('T01-ridge', 12, 0, 2.5), fov: 62 }],
+  ['tunnel-portal-aerial', { eye: rt('T01-ridge', -2, 16, 14), look: rt('T01-ridge', 11, 0, 3), fov: 50 }],
+  ['tunnel-portal-west-ground', { eye: rt('T01-ridge', 43, -1.7, 1.6), look: rt('T01-ridge', 30, 0, 2.5), fov: 62 }],
+  ['rd01-west-ground', { eye: rt('T01-west', 2, -1.7, 1.6), look: rt('T01-west', 30, 0, 1.2), fov: 62 }],
+  ['rd01-west-aerial', { eye: rt('T01-west', 6, 16, 16), look: rt('T01-west', 22, 0, 0), fov: 50 }],
+  ['junction-T04-aerial', { eye: rt('N10-T04', 22, 14, 14), look: rt('N10-T04', 30, 0, 0), fov: 50 }],
+  // other local weather (clear night) and the neutral-light material study (not a daytime state, D9)
+  ['bridge-clear-night', { eye: br(BR1, 6, -1.7, 1.7), look: br(BR1, 40, 0, 2.2), fov: 62, rain: false }],
+  ['rd01-clear-night-aerial', { eye: rt('T01-west', 6, 16, 16), look: rt('T01-west', 22, 0, 0), fov: 50, rain: false }],
+  ['bridge-neutral-aerial', { eye: br(BR1, 20, 26, 18), look: br(BR1, 27, 0, 0), fov: 50, light: 'neutral', rain: false }],
   ['bridge-piers-close', { eye: br(BR1, 30, 16, 1.5), look: br(BR1, 28, 0, -1.2), fov: 55 }],
 ];
 
@@ -51,6 +70,7 @@ export async function renderShot(page, v, opts = {}) {
     const resolve = ref => {
       if (ref.chain) { const CH = SEC.state.chain, Sm = CH.samples; let i = 0, s = Math.max(0, Math.min(CH.length, ref.s)); while (i + 2 < Sm.length && Sm[i + 1].s < s) i++; const t = (s - Sm[i].s) / Math.max(1e-6, Sm[i + 1].s - Sm[i].s), W = window.WORLD, brg = W.bearing(Sm[i], Sm[i + 1]); let p = { lon: Sm[i].lon + (Sm[i + 1].lon - Sm[i].lon) * t, lat: Sm[i].lat + (Sm[i + 1].lat - Sm[i].lat) * t }; if (ref.o) p = W.destination(p, brg + (ref.o > 0 ? 90 : -90), Math.abs(ref.o)); return { lon: p.lon, lat: p.lat, alt: Sm[i].h + 0.03 + (ref.dy || 0) }; }
       if (ref.lon !== undefined) return { lon: ref.lon, lat: ref.lat, alt: (ref.surface ? window.WORLD.height(ref.lon, ref.lat) : window.WORLD.height(ref.lon, ref.lat)) + (ref.dy || 0) };
+      if (ref.pier !== undefined) ref = { ...ref, s: DATA.bridges.find(b => b.def.id === ref.bridge).piers[ref.pier].s };
       const item = ref.route ? DATA.routes.find(r => r.def.id === ref.route) : DATA.bridges.find(b => b.def.id === ref.bridge), Sm = item.samples, alt = ref.route ? item.bed : item.alt;
       const L = Sm[Sm.length - 1].s; let s = Math.max(0, Math.min(L, ref.s)), i = 0; while (i + 2 < Sm.length && Sm[i + 1].s < s) i++;
       const t = (s - Sm[i].s) / Math.max(1e-6, Sm[i + 1].s - Sm[i].s), lon = Sm[i].lon + (Sm[i + 1].lon - Sm[i].lon) * t, lat = Sm[i].lat + (Sm[i + 1].lat - Sm[i].lat) * t, a0 = alt[i] + (alt[i + 1] - alt[i]) * t;
