@@ -271,6 +271,10 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
   const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
   const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const exploreListeners = [];
+  state.explore = false;
+  state.onExplore = fn => exploreListeners.push(fn);
+  state.setExplore = on => { if (on === state.explore) return; state.explore = on; for (const fn of exploreListeners) fn(); };
   state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
   function apply() {
     const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;

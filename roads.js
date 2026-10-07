@@ -255,12 +255,13 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   // ---------------------------------------------------------------- visibility, per-frame update, hooks
   function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build); } return S.root; }
   function visibility() {
-    const show = BEND.get() > 0 || SEC.state.mode;
+    const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
     if (S.built) for (const m of TERR.stubs) if (ROADS.ROUTES.some(r => r.exit === m.userData.terrain.exit)) m.visible = !show;     // the exit starts are replaced by the swept roads
   }
   BEND.onChange(visibility);
+  TERR.onExplore(visibility);
 
   function tick(t, camera) {
     if (!S.built || !S.root.visible) return;
@@ -277,7 +278,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
     for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
-    for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); l.material.opacity = Math.min(l.material.opacity > 0.95 ? 1 : 0.9, o); l.visible = o > 0.01; }
+    for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); if (l.userData.baseOpacity === undefined) l.userData.baseOpacity = l.material.opacity > 0.95 ? 1 : 0.9; l.material.opacity = Math.min(l.userData.baseOpacity, o); l.visible = o > 0.01; }
     if (S.ripples && near && SEC.state.settings.rain) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
     if (!S.bandManual) S.band.set(N ? { opacity: S.band.max * N.band } : { distance: ink.distance });

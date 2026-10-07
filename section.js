@@ -228,7 +228,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   const lerp3 = (v, a, b) => a + (b - a) * v;
   function ensure() { if (!S.built) global.TERRAIN.withPrivateRandom(build); return S.root; }
   function visibility() {
-    const show = BEND.get() > 0 || S.mode;
+    const show = BEND.get() > 0 || TERR.explore || S.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
     for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
@@ -236,6 +236,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }
   BEND.onChange(visibility);
+  TERR.onExplore(visibility);
 
   // ink layer by the camera's altitude above the surface (not by the distance to the section: a person standing in it is 'ground' everywhere)
   function distance(camera) {
@@ -245,7 +246,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   const camLast = new THREE.Vector3(), tmpV = new THREE.Vector3(), fwd = new THREE.Vector3(), oc = new THREE.Vector3();
   function updateLod(camera, force) {
     if (!objs.trees.length) return;
-    if (!force && camLast.distanceTo(camera.position) < 1.2 && S.lodBend === BEND.get()) return;
+    if (!force && camLast.distanceTo(camera.position) < 1e-9 && S.lodBend === BEND.get()) return;
     camLast.copy(camera.position); S.lodBend = BEND.get(); const u = BEND.get();
     for (const T of objs.trees) {
       const nearM = T.near.mesh, farM = T.far.mesh; let ni = 0, fi = 0;
@@ -256,6 +257,8 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       });
       nearM.count = ni; farM.count = fi; T.near.hull.count = ni;
       nearM.instanceMatrix.needsUpdate = true; farM.instanceMatrix.needsUpdate = true; if (nearM.instanceColor) nearM.instanceColor.needsUpdate = true; if (farM.instanceColor) farM.instanceColor.needsUpdate = true;
+      // Instance populations change with the view: update sort/cull bounds together with matrices.
+      nearM.computeBoundingSphere(); farM.computeBoundingSphere(); T.near.hull.computeBoundingSphere();
       T.counts = { near: ni, far: fi };
     }
   }
@@ -293,7 +296,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
 
   const api = {
     ensure, tick, state: S,
-    setMode(on) { S.mode = !!on; visibility(); },
+    setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; visibility(); },
     set(v) {
       if (v.rain !== undefined) { S.settings.rain = !!v.rain; if (ctx.rainObj) ctx.rainObj.visible = S.settings.rain; }
       if (v.light) { S.settings.light = v.light; applyLight(); }

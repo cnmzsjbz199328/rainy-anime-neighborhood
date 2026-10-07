@@ -452,7 +452,10 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     return { f, types, typeId, tiles, bandDeg, type: items.map(it => typeId[it.type]) };
   }
   function camLL(camera) {
-    const u = BEND.get(); if (u < 0.5) return null;
+    const u = BEND.get(); if (u < 0.5) {
+      const ll = W.townToLonLat(camera.position.x, camera.position.z);
+      return { ...ll, alt: Math.max(0, camera.position.y - Math.max(0, ((TERR.sampler()(ll.lon,ll.lat) ?? BASE)-BASE)/Math.cos(ll.lat*D))) };
+    }
     const dx = camera.position.x, dy = camera.position.y + R, dz = camera.position.z, l = Math.hypot(dx, dy, dz);
     return { lon: Math.atan2(dx, dy) / D, lat: -Math.asin(dz / l) / D, alt: l - R };
   }
@@ -515,8 +518,8 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   function teaGeo(K) { const b = K.builder(); b.add(new THREE.BoxGeometry(1, 1, 1), '#3f6a4e', { p: [0, 0.4, 0], s: [1.0, 0.8, 2.0], top: '#4c7a58', noise: 0.08 }); K.geometries.teaRow = b.build(); return K.geometries.teaRow; }
   const TREE_SET = new Set(['treeRound', 'cedar', 'pine', 'bamboo']);
   function load(camera, force) {
-    const ll = camLL(camera); if (!ll || ll.alt > 110) { for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; return; }
-    if (!force && S.last && Math.abs(S.last.lon - ll.lon) * Math.cos(ll.lat * D) * R * D < 4 && Math.abs(S.last.lat - ll.lat) * R * D < 4 && Math.abs(S.last.alt - ll.alt) < 4 && S.last.bend === BEND.get()) return;
+    const ll = camLL(camera); if (!ll || ll.alt > 110) { for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; S.last = null; return; }
+    if (!force && S.last && Math.abs(S.last.lon - ll.lon) * Math.cos(ll.lat * D) * R * D < 1e-9 && Math.abs(S.last.lat - ll.lat) * R * D < 1e-9 && Math.abs(S.last.alt - ll.alt) < 1e-9 && S.last.bend === BEND.get()) return;
     S.last = { ...ll, bend: BEND.get() };
     const radius = Math.min(80, Math.max(30, 20 + ll.alt * 1.2)), band = INDEX.bandDeg, b0 = Math.floor((ll.lat - radius / (R * D)) / band), b1 = Math.floor((ll.lat + radius / (R * D)) / band);
     const counts = {}; for (const key of Object.keys(objs.inst)) counts[key] = 0; let total = 0;
@@ -531,7 +534,8 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
           const n = counts[type]++; inst.mesh.setMatrixAt(n, mM); inst.mesh.setColorAt(n, tintC.setRGB(INDEX.f[o + 7], INDEX.f[o + 8], INDEX.f[o + 9])); total++;
         } }
     }
-    for (const [type, o] of Object.entries(objs.inst)) { o.mesh.count = counts[type]; if (o.hull) o.hull.count = counts[type]; o.mesh.instanceMatrix.needsUpdate = true; if (o.mesh.instanceColor) o.mesh.instanceColor.needsUpdate = true; }
+    // Transparent hull sorting also uses these bounds; stale centres made identical views path-dependent.
+    for (const [type, o] of Object.entries(objs.inst)) { o.mesh.count = counts[type]; if (o.hull) o.hull.count = counts[type]; o.mesh.instanceMatrix.needsUpdate = true; if (o.mesh.instanceColor) o.mesh.instanceColor.needsUpdate = true; o.mesh.computeBoundingSphere(); if (o.hull) o.hull.computeBoundingSphere(); }
     S.loaded = total; S.counts = counts;
   }
   function buildLines() {
@@ -560,8 +564,9 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     S.built = true; return S.root;
   }
   function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build_); } return S.root; }
-  function visibility() { const show = BEND.get() > 0 || SEC.state.mode; if (show) ensure(); if (S.root) S.root.visible = show; }
+  function visibility() { const show = BEND.get() > 0 || TERR.explore || SEC.state.mode; if (show) ensure(); if (S.root) S.root.visible = show; }
   BEND.onChange(visibility);
+  TERR.onExplore(visibility);
   function tick(t, camera) {
     TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = SEC.state.settings.rain ? 1 : 0; }
     if (!S.built || !S.root.visible) return;
