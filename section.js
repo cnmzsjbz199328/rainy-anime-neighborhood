@@ -269,7 +269,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     else { h.intensity = light0.hemi; m.intensity = light0.moon; scene.fog.density = light0.fog; }
   }
   function tick(t, camera) {
-    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = S.settings.rain ? 1 : 0);
+    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = (S.settings.rain ? 1 : 0) * (1 - BEND.get()));   // W8e-c: no ripples on the sphere
     if (!S.root || !S.root.visible) return;
     const d = distance(camera); S.ink.distance = d;
     const mode = S.settings.ink;

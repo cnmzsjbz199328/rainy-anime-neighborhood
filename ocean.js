@@ -89,7 +89,7 @@ const OCEAN = { build, SHALLOW, DEEP };
 OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   const THREE = global.THREE, W = global.WORLD;
   const S = { built: false, stats: {}, root: null };
-  const uniforms = { uTime: { value: 0 }, uRain: { value: 1 }, uMoon: { value: new THREE.Vector3(-6, 9, 4).normalize() } };
+  const uniforms = { uTime: { value: 0 }, uRain: { value: 1 }, uMoon: { value: new THREE.Vector3(-6, 9, 4).normalize() }, uGlint: { value: new THREE.Vector3(0.78, 0.86, 1.0) } };   // uGlint: the glint colour (daylight.js turns it warm on the sphere)
   if (ctx.lights && ctx.lights.moon) uniforms.uMoon.value.copy(ctx.lights.moon.position).normalize();       // the moon is a fixed world direction (it does not bend with the surface)
   const objs = { water: null, coast: null, inst: [], hulls: [] };
   const tintC = new THREE.Color(), qE = new THREE.Euler(), qQ = new THREE.Quaternion(), mP = new THREE.Vector3(), mS = new THREE.Vector3(), mM = new THREE.Matrix4();
@@ -112,12 +112,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   const makeMat = () => {
     const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
     m.onBeforeCompile = shader => {
-      shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon;
+      shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon; shader.uniforms.uGlint = uniforms.uGlint;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;\nvBP = bendPosition(bendWrap(vWP));\nvUp = bendNormal(vWP, vec3(0.0, 1.0, 0.0));\nvEast = bendNormal(vWP, vec3(1.0, 0.0, 0.0));\nvSouth = bendNormal(vWP, vec3(0.0, 0.0, 1.0));');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
+        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nuniform vec3 uGlint;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
         .replace('#include <opaque_fragment>', `
           float cph = 1.0 / cosh(vWP.z / 90.0);
           vec2 q = vec2(vWP.x, vWP.z) * cph;
@@ -134,7 +134,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
           vec3 n = normalize(normalize(vUp) + normalize(vEast) * 0.07 * sw + normalize(vSouth) * 0.07 * sin(dot(q, vec2(0.27, -0.31)) * 2.0 + uTime * 0.37));
           vec3 V = normalize(cameraPosition - vBP), Hh = normalize(V + normalize(uMoon));
           float gl = max(dot(n, Hh), 0.0), glint = (pow(gl, 120.0) * 0.85 + pow(gl, 18.0) * 0.10) * smoothstep(0.05, 0.5, vShore);
-          outgoingLight += vec3(0.78, 0.86, 1.0) * glint;
+          outgoingLight += uGlint * glint;
           diffuseColor.a = max(diffuseColor.a, glint * 0.75);
           // foam: the water side of the coast line, breathing slowly
           float fz = 0.024 + 0.014 * sin(uTime * 0.9 + vWP.x * cph * 0.6);
@@ -188,7 +188,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   TERR.onExplore(visibility);
 
   function tick(t, camera) {
-    uniforms.uTime.value = t; uniforms.uRain.value = SEC.state.settings.rain ? 1 : 0;
+    uniforms.uTime.value = t; uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get());     // W8e-c: no ripples in the clear daytime of the sphere
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial, near = ink.distance < 120;
     objs.coast.material.opacity = a; objs.coast.visible = a > 0.01;

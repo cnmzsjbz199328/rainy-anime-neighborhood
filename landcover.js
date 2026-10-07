@@ -568,10 +568,10 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   BEND.onChange(visibility);
   TERR.onExplore(visibility);
   function tick(t, camera) {
-    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = SEC.state.settings.rain ? 1 : 0; }
+    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
     if (!S.built || !S.root.visible) return;
     load(camera, false);
-    if (objs.mist) { objs.mist.material.opacity = 0.5 + 0.12 * Math.sin(t * 0.35); objs.mist.visible = SEC.state.ink.distance > 8; }
+    if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
   }
   const api = { ensure, tick, state: S, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };

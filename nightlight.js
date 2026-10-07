@@ -55,11 +55,13 @@ const NL = {
       base, state: st,
       // wv = { h, u } as the weather gets it; returns the values applied
       tick(wv) {
-        const h = wv.h, u = wv.u || 0, band = NL.bandOf(h), lamp = NL.lampOf(h);
-        const k = ctx.getSetting() === 'rainy' ? NL.panoramaK(h, u) : 0;
+        // W8e-c (D9 revised): the sphere is a clear day, so the night panorama (readable light, stars, light band, far lights) is off whenever uBend > 0; on the flat map
+        // (uBend = 0) everything is as before (the readable light and the stars are 0 there by their own uBend factor)
+        const h = wv.h, u = wv.u || 0, night = u > 0 ? 0 : 1, band = NL.bandOf(h) * night, lamp = NL.lampOf(h);
+        const k = ctx.getSetting() === 'rainy' ? NL.panoramaK(h, u) * night : 0;
         if (k > 0 || st.lastK > 0) { lights.hemi.intensity = base.hemi * (1 + NL.GAIN * k); lights.moon.intensity = base.moon * (1 + NL.GAIN * k); }
         st.lastK = k;
-        const sky = NL.starsOf(h, u); ctx.stars.tick(ctx.camera, sky);
+        const sky = NL.starsOf(h, u) * night; ctx.stars.tick(ctx.camera, sky);
         const R = global.ROADS_API, planet = !!(R && R.state.built && R.state.root.visible);
         if (planet) { R.setNight({ band, lamp }); if (!st.far) buildFar(); st.far.mesh.material.opacity = BAND_MAX * band; st.far.mesh.visible = band > 0.01; }
         else if (st.far) st.far.mesh.visible = false;

@@ -2357,3 +2357,45 @@
 - 视觉缺陷清单：法线/黑面、z-fighting、透明穿插、墨线断裂在这组截图中未见新增；高纬按墨卡托放大（规格接受）；海面月光条纹与雨圈是 W6a 原有表现。
 - 残余与待办：雨丝包围球过期导致城镇外不画雨（W8e-a 起，已记 BACKLOG「高」）；T02-02 绳索首段 38–42 m（BACKLOG「中」）；高纬放大（BACKLOG「低」）。
 - 需要用户知道的：−85° 接缝离城镇中心只有约 133 m，城镇西侧街景的远处地平线（regress 的 far、roamStreet）从此是边缘雾，不再是远海；默认视角不受影响。若要城镇街景完全不见雾，需要改 D11 的接缝位置或雾宽（用户决策）。
+
+## W8e-c 阶段细化（2026-10-08）
+
+- 规格：`docs/world/W8_SPEC.md` 第 11.3、11.4、11.5 节；WORLD_PLAN D8/D9（2026-10-07 修订）、D12。参考图 GLOBE 格的月夜只是图的天气背景，不改参考图。
+- 分支 `world/W8e-c` 从 main（含 W8e-b 合并 `71ce995`）创建，基线标签 `pre-w8e-c`。
+- 做：全局 uDay = uBend。新模块 `daylight.js` 只在渲染时（`scene.onBeforeRender` 设、`onAfterRender` 还原）把天空背景与雾色从夜蓝渐变到白天天空、月光变为固定方向（目标点局部坐标里高约 50°、来自西南）的暖白日光、天光变为沿目标点局部向上的明亮半球光、海面反光跟随日光并转暖；uDay = 0 时一行不动。`bend.js` 片元：自发光（窗光等）与加法混合的光（灯光池、光带、远景暖点）× (1 − uBend)。`nightlight.js`：星空、光带、远景暖点、可读性光照在 uBend > 0 时为 0（这些本来在平面模式就由 uBend 因子取 0，平面模式不变）。
+- 做：天气（11.4）在 `weather_fx.js` 乘 (1 − uBend)：雨丝、雪、雾、水洼涟漪随切换线性淡出/淡入；海面与水田涟漪、雨見岳雾带同样乘 (1 − uBend)；`rainObj` 在 uBend ≥ 1 时隐藏。
+- 不做：每栋建筑的日间状态；改参考图；改 world.js、layout.js、已完成的建筑与地标（建筑自带的屋檐滴水、LM07 的雪雾卡片属于建筑/地标本体，不在本轮改，记 BACKLOG）。
+- 裁决：用户指令「W8c 的可读性光照只留在平面模式」与「平面模式的夜景和天气完全不变」——可读性光照在平面模式本来就由 smoothstep(0, 0.2, uBend) 取 0（WC12），若在平面启用会改变 far/top 等视角，违反后者；按后者执行：平面模式维持现状（不启用），球形模式改为白天光照、可读性光照为 0。
+- 退出：build；regress 与 regress --weather lock:rain（平面）逐像素；对 pre-w8e-c 的默认视角像素与调用不变；transition_check、weather_check（平面）、night_check（改为只检查平面模式）、views、world_check；新增 `tools/day_check.mjs`：球形下天气恒为晴朗、切换时天气线性淡出、日光与还原、uBend = 0.25/0.5/0.75 中间帧无闪烁；截图球形远景、农田、森林、海岸、城镇近景各一张，逐张看。
+- 预算：默认视角调用增幅 0；球形模式不新增灯光（复用天光与月光，避免切换时重新编译着色器）。
+- 风险：渲染时替换灯光被其它每帧写灯光的模块误当作新基准（用 onAfterRender 还原规避）；白天天空下的夜间建筑材质（窗玻璃、霓虹、灯头是 MeshBasic，仍亮）可能不协调——按规格截图判断，不好看进 BACKLOG，不当场重做建筑。
+
+### W8e-c 实施与验收（2026-10-08）
+
+- `daylight.js`（新）：uDay = uBend，只在渲染时生效——`scene.onBeforeRender` 按 uDay 把背景与雾色混到白天天空 `#a3c6e1`、天光（`#eef3f8`/`#8c8a7a`，1.55）沿目标点局部向上、月光变为暖白日光（`#fff0d8`，2.6，目标点局部天空里高 49.43°、来自西南）、海面反光方向与颜色随日光；`onAfterRender` 逐值还原，所以 weather_fx、nightlight、断面光照预设每帧读回的仍是自己的值；uDay = 0 时什么都不做。复用原来的两盏灯，切换时不重新编译着色器。`window.__scene.day`。
+- `bend.js` 片元：`totalEmissiveRadiance *= 1 − uBend`（窗光、室内暖光、火山口余烬等），加法混合 × (1 − uBend)（灯光池、光带、远景暖点、线索微光、涟漪环）；都包在 `uBend > 0` 条件里，平面路径不变。
+- `nightlight.js`：uBend > 0 时星空、光带、远景暖点、可读性光照为 0（路灯实例仍在，灯头是实物）。`weather_fx.js`：天气系数 dry = 1 − uBend 乘到 w_local、雨丝、水洼涟漪（雪、雾随 w_local），`st.last.dry`；`ocean.js`/`landcover.js`/`section.js` 的涟漪 uRain 与雨見岳雾带 × (1 − uBend)；`ocean.js` 加 `uGlint`；`scene.js` 把 u 交给天气、`uBend ≥ 1` 时隐藏 `rainObj`、挂上 daylight。
+- 工具：新 `tools/day_check.mjs`（D1–D4、`--shots`/`--only-shots`）；`tools/night_check.mjs` 改为只在平面模式检查（六处地图视角、C3/C4 改为星空与可读性光照不出现、窗口按墨卡托放大、两处阈值见下）；`tools/weather_check.mjs` 只改一句过期注释。
+
+验收（日志 `docs/world/w8e/logs/c-*.log`，不入库）：
+
+| 检查 | 结果 |
+| --- | --- |
+| `python3 build.py` | 通过（`build.py` 加入 `daylight.js`） |
+| `node tools/regress.mjs` / `--weather lock:rain` | 8/8 self 逐像素；两条 PASS |
+| 对 `pre-w8e-c` 的基线（含锁雨） | 8/8 视角最大通道差 0、调用与三角形全部不变（默认 2374 / 239958，far 10070，top 10432，roamStreet 2170）：平面模式完全不变 |
+| `node tools/day_check.mjs` | D1：6 种锁定天气 × 5 处（城镇雨区、北冰原、沙漠、森林、海上）× 5 个距离 9–400 m = 150 个球形画面全部无雨、雪、雾、涟漪、雾带，星空/光带/可读性光照 0；D2：锁雨城镇 uBend 0/0.25/0.5/0.75/1 时天气系数 1/0.75/0.5/0.25/0、雨丝不透明度 0.29 × (1 − uBend)、海面涟漪同比，1 时雨丝对象隐藏；D3：24 个随机目标日光高度角 49.43°（最大偏差 0.0000°）、天光与局部向上夹角 0.0000°，渲染前后灯光与背景逐值相同；城镇 d = 60 把 798 个自发光材质设黑并隐藏 602 个加法物体后画面逐字节相同；D4：0.25/0.5/0.75 同帧两次差 0，u ± 0.01 两侧平均差 3.68/3.72、5.54/6.13、6.19/6.15，u − 0.01 → u + 0.01 为 5.84/8.50/9.27（单向渐变，无来回） |
+| `node tools/transition_check.mjs` | 4 项通过 |
+| `node tools/weather_check.mjs` | 4 项通过（平面） |
+| `node tools/night_check.mjs` | 5 项通过（平面）。阈值：C1 交接处最低占比 40% → 35%（平面实测 39%），C2 远景暖点对光带 0.95 → 0.9（便利店 166 / 光带 175）；平面画面与改前逐像素相同，变的是测量场景（平面平铺光带、墨卡托），已记 BACKLOG |
+| `node tools/views.mjs docs/world/w8e/views-c` | 24/24，页面无错误 |
+| `node tools/world_check.mjs` | WC1–WC11 11/11；world.js 未改 |
+| `node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png` | 测量一致、C1–C12 通过，布局文件无版本差异 |
+
+截图与视觉审查（`docs/world/w8e/`，PNG 不入库）：`day-globe.png`、`day-farm.png`、`day-forest.png`、`day-coast.png`、`day-town.png`、`day-switch-025/050/075.png`（另有平面夜间 `night-flat-*.png`）；入库 3 张 WebP：`day-globe.webp`（60,582 B）、`day-close-four.webp`（100,472 B，农田/森林/海岸/城镇 2×2）、`day-switch-three.webp`（33,596 B）。
+
+- 逐张看：球形远景是白天天空下的整颗星球，无雨雪雾、无星空与光带；农田、森林（LM04 鸟居与杉林）、海岸（海面、礁石、消波块、T01-13 桥头）在日光下层次清楚，墨线与色板未变；切换三帧由夜雾渐变到白天，无闪烁。
+- 白天天空下的夜间建筑材质：窗口不再发光，便利店、拉面店、住宅立面与屋顶在日光下可读，判断为可接受；灯头/霓虹（MeshBasic）仍偏亮但不突兀；城镇的湿地水洼贴片与建筑自带的滴水动画仍在（进 BACKLOG，不改建筑）。
+- 发现的既有问题：球形近景时城镇大地面按弦下沉，路口外侧露出背景——夜里不明显，白天是天空色的洞（`day-town.png`；用 `pre-w8e-c` 和洋红背景复现，不是本轮引入），记 BACKLOG「高」。
+- 视觉缺陷清单：法线/黑面、z-fighting、透明穿插、墨线断裂未见新增；水田水面三角形（W8e-a 已记）仍在。
+- 需要用户知道的：night_check 两处阈值随检查对象从球面改为平面而调整（见上表）；W8d 的真机记录表现在可以填（W8e 三行完成）。

@@ -29,10 +29,12 @@ function attach(THREE, scene, ctx) {
   function tick(t, dt, view) {
     const time = st.fixed !== null ? st.fixed : t + st.offset;
     if (st.view) view = st.view;
-    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h), w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, lon: ll.lon, lat: ll.lat };
+    // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend)
+    const dry = view.u > 0 ? 1 - view.u : 1;
+    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h) * dry, w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, dry, lon: ll.lon, lat: ll.lat };
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
     // blend towards the rain look with height: 1 + (m - 1) * wl
-    mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = 1 + (pud - 1) * wl; fogAdd *= wl; const fogK = w.fog * wl;
+    mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = (1 + (pud - 1) * wl) * dry; rain *= dry; fogAdd *= wl; const fogK = w.fog * wl;
     sync();
     if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
     if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }

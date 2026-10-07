@@ -79,7 +79,7 @@ const p1 = await open();
   for (const q of r.out) { const wl = 1 - (x => { const t = Math.max(0, Math.min(1, (x - 40) / 80)); return t * t * (3 - 2 * t); })(q.h), m = MULT[q.st], eh = 1 + (m[0] - 1) * wl, em = 1 + (m[1] - 1) * wl, ef = m[2] * wl;
     const good = Math.abs(q.wl - wl) <= 0.02 && Math.abs(q.hemiK - eh) <= 0.02 && Math.abs(q.moonK - em) <= 0.02 && Math.abs(q.fogAdd - ef) <= 0.002; if (!good) ok = false;
     L.push(`${q.st}${q.st === 'fog' ? '（森林/岸线地点）' : '（城镇）'} h = ${q.h}：w_local ${f(q.wl)}（应为 ${f(wl)}），天光 ×${f(q.hemiK, 3)}（${f(eh, 3)}），月光 ×${f(q.moonK, 3)}（${f(em, 3)}），雾 +${f(q.fogAdd, 4)}（${f(ef, 4)}）`); }
-  // h >= 120: every state renders the same picture (panorama distance, uBend = 1)
+  // h >= 120: every state renders the same picture (flat map since W8e-a, camera 274 m above the town; the sphere is always clear since W8e-c: tools/day_check.mjs)
   const pp = await open(640, 400); await pp.evaluate(() => { const S = window.__scene; S.view.set({ dist: 350, pitch: 0.9 }); S.transition.pending = true; window.__step(30); });
   const urls = {}; for (const st of ['rain', 'after', 'overcast', 'clear', 'snow', 'fog']) { await pp.evaluate(s => { const Wx = window.__scene.weather, g = Wx.get(); Wx.lock(s); Wx.tick(g.time, 0, { lonLat: { lon: g.lon, lat: g.lat }, h: g.h, target: [0, 1.2, 0] }); }, st); urls[st] = await shot(pp); }
   const hView = await pp.evaluate(() => window.__scene.weather.get().h);
