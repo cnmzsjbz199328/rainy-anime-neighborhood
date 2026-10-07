@@ -3117,7 +3117,7 @@ else global.STEPS = STEPS;
 // Night light band (W5, RD01/RD02 cards): the lit road routes seen from far away. A planet has only a few dozen street lamps, 9 degrees of arc
 // apart at worst, so at panorama distance the lamps are not loaded; a soft amber ribbon along each lit route stands for them, and a paler
 // reflection ribbon on the sea surface under the bridges. Both are single additive meshes (2 draw calls for the whole planet). The fade with the
-// camera distance is set by setLightBand({ distance }) (W8 connects it to the camera; roads.js feeds it the section's ink distance for now).
+// camera distance is set by setLightBand({ distance }) (W8c: nightlight.js drives it from the camera's height above the ground through roads.setNight; tools can still call setLightBand by hand).
 // The geometry is stored in flat Mercator coordinates like everything else of the planet (positions carry the 1/cos(lat) factor).
 (function (global) {
 'use strict';
@@ -3149,8 +3149,8 @@ function ribbon(polys, cols, lift, colour) {
 function discs(points, radius, colour, lift) {
   const pos = [], col = [], idx = [], seg = 10; let base = 0;
   for (const p of points) {
-    const f = { x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }, y = (p.alt + lift - BASE) * f.k;
-    pos.push(f.x, y, f.z); col.push(colour[0], colour[1], colour[2], 1);
+    const f = { x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }, y = (p.alt + lift - BASE) * f.k, w = p.w === undefined ? 1 : p.w;
+    pos.push(f.x, y, f.z); col.push(colour[0] * w, colour[1] * w, colour[2] * w, 1);
     for (let a = 0; a < seg; a++) { const th = a / seg * Math.PI * 2; pos.push(f.x + Math.cos(th) * radius * f.k, y, f.z + Math.sin(th) * radius * f.k); col.push(colour[0], colour[1], colour[2], 0); }
     for (let a = 0; a < seg; a++) idx.push(base, base + 1 + (a + 1) % seg, base + 1 + a);
     base += seg + 1;
@@ -3162,14 +3162,17 @@ const DOT = [[-1.6, 0], [-0.6, 0.6], [0, 1], [0.6, 0.6], [1.6, 0]];
 const SEA = [[-5.0, 0], [-1.8, 0.3], [0, 0.5], [1.8, 0.3], [5.0, 0]];
 const AMBER = lin('#ffae5c'), SEACOL = lin('#ffc890');
 
+// one additive mesh from ribbon() / discs() data (flat Mercator frame, bent by bend.js like everything else); hidden until set
+function glowMesh(THREE, d, name) {
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12, side: THREE.DoubleSide });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(d.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(d.col, 4));
+  const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
+  const m = new THREE.Mesh(g, mat); m.name = name; m.matrixAutoUpdate = false; m.renderOrder = 6; m.visible = false; return m;
+}
+
 function make(THREE, root) {
   const st = { built: false, distance: 0, opacity: 0, max: 0.75, meshes: [], stats: {} };
-  const mat = () => new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12, side: THREE.DoubleSide });
-  const mesh = (d, name) => {
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(d.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(d.col, 4));
-    const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, mat()); m.name = name; m.matrixAutoUpdate = false; m.renderOrder = 6; m.visible = false; root.add(m); st.meshes.push(m); return m;
-  };
+  const mesh = (d, name) => { const m = glowMesh(THREE, d, name); root.add(m); st.meshes.push(m); return m; };
   // polys: lit road polylines; sea: the same routes' bridge parts (reflections on the sea surface at altitude 0.03)
   st.build = (polys, sea, dots = []) => {
     st.core = mesh(ribbon(polys, CORE, 0.2, AMBER), 'lightband:core');
@@ -3192,7 +3195,7 @@ function make(THREE, root) {
   return st;
 }
 
-const LIGHTBAND = { ribbon, discs, make, CORE, SEA };
+const LIGHTBAND = { ribbon, discs, glowMesh, make, CORE, SEA };
 if (typeof module !== 'undefined' && module.exports) module.exports = LIGHTBAND;
 else global.LIGHTBAND = LIGHTBAND;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -3838,20 +3841,26 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
     // the real lamps, their light pools, the small furniture and the navigation lights exist only near the surface (the light band stands for them from far away)
     const near = ink.distance < 120;
+    // W8c: the lamps (heads, glows, light pools) hand over to the light band between 40 and 60 m of camera height (NIGHTLIGHT.lampOf); scene.js gives the numbers once per frame
+    // through setNight(), so a tool that calls tick() by hand keeps the 120 m rule. The pools fade with it; the heads and glows are sub-pixel by then and go with it at 60 m.
+    const N = S.night; S.night = null;
+    const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:(lamp|lampSmall|lampPool)(:glow|:ink)?$/;
+    S.materials.poolMat.opacity = lampK;
     const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
-    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = near && (!/ripple/.test(m.name) || SEC.state.settings.rain);
-    for (const h of objs.hulls) h.visible = g > 0.01 && (near || FAR.test(h.name));
+    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || SEC.state.settings.rain);
+    for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
     for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); l.material.opacity = Math.min(l.material.opacity > 0.95 ? 1 : 0.9, o); l.visible = o > 0.01; }
     if (S.ripples && near && SEC.state.settings.rain) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
-    if (!S.bandManual) S.band.set({ distance: ink.distance });
+    if (!S.bandManual) S.band.set(N ? { opacity: S.band.max * N.band } : { distance: ink.distance });
     S.band.breathe(t);
   }
 
   const api = {
     ensure, tick, state: S,
+    setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
     setLightBand(v) { ensure(); S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
     data: () => DATA, objects: objs,
@@ -4834,6 +4843,118 @@ function attach(THREE, scene, ctx) {
   return api;
 }
 global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// Night light of the planet by the camera's height (W8c, W8_SPEC section 5). Pure curves first (no DOM, no THREE), then attach(), which every frame drives the parts that
+// already exist from h = the camera's height above the ground at the target (the same h as the weather: scene.js weatherView) and uBend:
+//   lampOf(h)   = 1 - smoothstep(40, 60, h)      the real lamps of the roads, their light pools: instances load within 60 m (W4); roads.js applies it
+//   bandOf(h)   = smoothstep(40, 120, h)         the light band (lightband.js, W5) that stands for the lamps from far away; full from 120 m; crosses the lamps between 40 and 60 m
+//   far lights  = bandOf(h)                      warm dots for the places that "can become the focus of the panorama" (WORLD_SPEC): the convenience store (the anchor of the
+//                                                town), the onsen village LM02, the harbour LM10 and the lighthouse lamp LM08. They stand for windows, lanterns and the light post, which are
+//                                                sub-pixel from far away; their cores are a little brighter than the band's core (one layer) and wider than it. The volcano's ember (LM01) and the
+//                                                hidden clues keep their own very weak lights.
+//   panoramaK(h, u) = (1 - w_local(h)) * smoothstep(0, 0.2, u)
+//                 the share of the readable 'panorama' light (the W4 preset: sky light and moon x 1.5, cold, still night) that is blended in; 1 on the planet from h = 120 m.
+//   starsOf(h, u) = smoothstep(0.5, 1, 1 - w_local(h)) * smoothstep(0, 0.2, u)     invisible while w_local > 0.5 (h < 80 m), full at the panorama (stars.js)
+// The factor in uBend (smoothstep(0, 0.2, u)) is the one departure from "by w_local alone": the flat town (uBend = 0) must not change at all (WC12 / WC13), and the old views reach
+// camera heights over 40 m (the 'far' and 'top' views reach 100 and 150 m). On the rolled-up planet (u >= 0.2) the blend is by w_local exactly as in the spec.
+(function (global) {
+'use strict';
+const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const wLocal = h => 1 - sm(40, 120, h);
+const D = Math.PI / 180, BAND_MAX = 0.75;
+const srgb = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const lin = hex => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255].map(srgb);
+
+// the far lights: [{ id, lon, lat, alt, w }]; positions are true metres (alt = metres above the sea) on the planet; local = in a landmark's frame (origin the anchor, +Z towards
+// the first entrance, +X to the left of +Z: W7_SPEC section 2), the same mapping scene.js uses to place the landmark's own parts
+function farLights(W, town) {
+  const out = [], at = (id, lon, lat, w, lift = 3) => out.push({ id, lon, lat, alt: Math.max(0, W.height(lon, lat)) + lift, w });
+  const local = (lm, x, z) => { const d = Math.hypot(x, z); if (d < 1e-9) return { lon: lm.lon, lat: lm.lat }; const head = lm.entrances[0] ? lm.entrances[0].heading : 0, q = W.destination({ lon: lm.lon, lat: lm.lat }, head + Math.atan2(-x, z) / D, d); return { lon: lm.lon + (((q.lon - lm.lon + 540) % 360) - 180), lat: q.lat }; };
+  const lm = id => W.landmarks.find(q => q.id === id);
+  { const p = W.townToLonLat(town.store[0], town.store[1]); at('store', p.lon, p.lat, 1.0, 3.2); }
+  for (const [x, z] of [[0, 0], [8, 6], [-8, -5]]) { const p = local(lm('LM02'), x, z); at('LM02', p.lon, p.lat, x === 0 ? 1.0 : 0.9); }          // the village: square, inn and the onsen
+  { const p = local(lm('LM10'), 31.2, 3.2); at('LM10', p.lon, p.lat, 1.0, 4.3); }                                                    // the red-and-white light post at the end of the breakwater
+  { const p = local(lm('LM10'), 6.7, -1.2); at('LM10', p.lon, p.lat, 0.9); }                                                         // the warehouse door lamp
+  at('LM08', lm('LM08').lon, lm('LM08').lat, 1.0, 11);                                                                              // the lamp room of the lighthouse (12 m tower on the island's anchor)
+  return out;
+}
+
+const NL = {
+  BAND_MAX, GAIN: 0.5, FAR_COLOR: '#ffcf8f', FAR_RADIUS: 4.0, FAR_GAIN: 1.5,
+  smoothstep: sm, wLocal, farLights,
+  bandOf: h => sm(40, 120, h),
+  lampOf: h => 1 - sm(40, 60, h),
+  panoramaK: (h, u) => (1 - wLocal(h)) * sm(0, 0.2, u),
+  starsOf: (h, u) => sm(0.5, 1, 1 - wLocal(h)) * sm(0, 0.2, u),
+  // ctx = { THREE, scene, camera, hemi, moon, getSetting, stars, town: { store: [x, z] } }; the light blend only runs under the default 'rainy' setting (tools that ask for 'panorama'
+  // or 'neutral' keep them). It writes absolute values from the base, and once the exact base when the blend returns to 0, so the flat town is untouched.
+  attach(ctx) {
+    const lights = { hemi: ctx.hemi, moon: ctx.moon }, base = { hemi: ctx.hemi.intensity, moon: ctx.moon.intensity }, st = { lastK: 0, far: null, last: null };
+    // built on first use (the planet only), inside the terrain's private random stream: three.js draws object ids from Math.random and the town's rain must keep its sequence (WC12)
+    function buildFar() {
+      const THREE = ctx.THREE, LB = global.LIGHTBAND, pts = farLights(global.WORLD, ctx.town);
+      const make = () => { const m = LB.glowMesh(THREE, LB.discs(pts.map(p => ({ ...p, w: p.w * NL.FAR_GAIN })), NL.FAR_RADIUS, lin(NL.FAR_COLOR), 0), 'night:far'); ctx.scene.add(m); return m; };
+      const mesh = global.TERRAIN && global.TERRAIN.withPrivateRandom ? (() => { let m; global.TERRAIN.withPrivateRandom(() => { m = make(); }); return m; })() : make();
+      st.far = { mesh, points: pts };
+    }
+    return {
+      base, state: st,
+      // wv = { h, u } as the weather gets it; returns the values applied
+      tick(wv) {
+        const h = wv.h, u = wv.u || 0, band = NL.bandOf(h), lamp = NL.lampOf(h);
+        const k = ctx.getSetting() === 'rainy' ? NL.panoramaK(h, u) : 0;
+        if (k > 0 || st.lastK > 0) { lights.hemi.intensity = base.hemi * (1 + NL.GAIN * k); lights.moon.intensity = base.moon * (1 + NL.GAIN * k); }
+        st.lastK = k;
+        const sky = NL.starsOf(h, u); ctx.stars.tick(ctx.camera, sky);
+        const R = global.ROADS_API, planet = !!(R && R.state.built && R.state.root.visible);
+        if (planet) { R.setNight({ band, lamp }); if (!st.far) buildFar(); st.far.mesh.material.opacity = BAND_MAX * band; st.far.mesh.visible = band > 0.01; }
+        else if (st.far) st.far.mesh.visible = false;
+        return (st.last = { h, u, wLocal: wLocal(h), band, lamp, stars: sky, k });
+      },
+      k: () => st.lastK, get: () => st.last, far: () => st.far,
+    };
+  },
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = NL;
+else global.NIGHTLIGHT = NL;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// Stars (W8c, W8_SPEC 5.2): a sky sphere of points that follows the camera, only on the clear panorama (NIGHTLIGHT.starsOf). The points come from a hash of a
+// fixed grid on the sphere (one candidate per cell, kept when the hash is above a threshold, jittered inside its cell, brightness from a second hash): the idea of the
+// usual "hash a grid in the shader" star field, done once on the CPU. They are not bent (userData.noBend) and ignore the fog.
+(function (global) {
+'use strict';
+const hash = (i, j, s) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(s, 1274126177); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+function attach(THREE, scene) {
+  // built on first use, inside the terrain's private random stream: three.js draws object ids from Math.random, and the town's rain must keep its sequence (WC12)
+  let o = null, m = null, count = 0;
+  function build() {
+    const pos = [], col = [], NLAT = 90, NLON = 180, RAD = 560;          // beyond the far side of the planet's visible disc (camera far plane 600 m on the planet)
+    for (let j = 0; j < NLAT; j++) for (let i = 0; i < NLON; i++) {
+      if (hash(i, j, 11) < 0.90) continue;                                   // about 10 % of the 16200 cells hold a star
+      const lat = -Math.PI / 2 + (j + hash(i, j, 12)) * Math.PI / NLAT, lon = (i + hash(i, j, 13)) * 2 * Math.PI / NLON, c = Math.cos(lat);
+      pos.push(RAD * c * Math.cos(lon), RAD * Math.sin(lat), RAD * c * Math.sin(lon));
+      const b = 0.35 + 0.65 * Math.pow(hash(i, j, 14), 3), tint = hash(i, j, 15); col.push(b * (0.85 + 0.1 * tint), b * 0.92, b);   // mostly white, a little blue
+    }
+    const make = () => {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      m = new THREE.PointsMaterial({ size: 2.0, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false });
+      m.userData = { noBend: true };
+      o = new THREE.Points(g, m); o.name = 'stars'; o.frustumCulled = false; o.visible = false; o.renderOrder = -1; scene.add(o);
+    };
+    if (global.TERRAIN && global.TERRAIN.withPrivateRandom) global.TERRAIN.withPrivateRandom(make); else make();
+    count = pos.length / 3; api.object = o; api.count = count;
+  }
+  const api = {
+    object: { visible: false, material: { opacity: 0 } }, count: 0,
+    tick(camera, v) { if (!o) { if (!(v > 0.002)) return; build(); } o.visible = v > 0.002; if (!o.visible) return; m.opacity = v; o.position.copy(camera.position); },
+  };
+  return api;
+}
+global.STARS = { attach };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -19412,6 +19533,8 @@ function lookTarget(u){if(!(u>0))return[target.x,target.y,target.z];const ll=WOR
 // W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height)
 function weatherView(){if(roam){const ll=WORLD.townToLonLat(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,target:[roam.position.x,0,roam.position.z]};}
   const u=BEND.get(),ll=WORLD.townToLonLat(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-target.y;return{lonLat:ll,h,target:[target.x,target.y,target.z]};}
+// W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
+function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
 function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),h=terrain.sampler()(lam/(Math.PI/180),phi/(Math.PI/180));if(h==null)return;const want=R+Math.max(0,h)+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
@@ -19419,15 +19542,17 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
 }else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(dt);const u=BEND.get(),fr=TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(dist,u);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(target);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}weatherFx.tick(t,dt,weatherView());signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
+const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
+nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
 BEND.attach(scene);
 const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj},BEND,terrain);
 const roads=ROADS.attach(scene,{ramp,renderer},BEND,terrain,section);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
-window.__scene={scene,renderer,camera,groups,weather:weatherFx,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>

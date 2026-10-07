@@ -27,7 +27,10 @@
 - `roads.js`、`bridge.js`、`steps.js`、`lightband.js`：W5 全球路网（W5a + W5b，W5_SPEC）：`steps.js` 是 RD06 石阶（踏步沿地形等高切出，绳索扶手、鸟居、灯笼、地藏、长凳）；`roadkit.js` 的 `route()` 把任意一串边扫成一条连续的路面（相邻等级渐变、城镇出口的磨损、RD01 的路基与路灯），`bridge.js` 做 RD02 箱梁桥（桥墩、斜拉塔、航道灯），`roads.js` 装配全部 RD01/RD02/RD03/RD05/RD06/RD08、隧道口、9 个出口的渐变、路灯、电杆电线、检修楼梯、地标入口导引柱与涟漪，`lightband.js` 是夜间全景的光带；在 `uBend > 0` 或 `view.set({ mode: 'section' })` 时才构建（默认画面不构建）。测试钩子 `window.__scene.roads`（`setLightBand({ distance })`、`stats()`、`data()`）；`tools/road_check.mjs`（W5-C1–C7、C9 与预算、动态）、`tools/road_shots.mjs`（`docs/world/w5/`）。
 - `ocean.js`：W6a 海洋与海岸（BI01、TR02）：全球水面网格（由 W3 地形网格的顶点高度生成，带符号水深）、水面着色器（雨点涟漪、低涌浪、月光反光带、浪花线）、海岸线墨线、礁石、海藻暗影、有路靠岸处的海堤与消波块；在 `uBend > 0` 或 `view.set({ mode: 'section' })` 时才构建；测试钩子 `window.__scene.ocean`；`tools/ocean_check.mjs`（W6-C1–C4）、`tools/ocean_shots.mjs`（`docs/world/w6a/`）。
 - `landcover.js`：W6b–W6e 地表覆盖：农田（BI05、BI06、TR04、TR01：Voronoi 田块、梯田与茶树、城镇四边的路肩草带与竹篱）、森林与林缘（BI02、TR03）、草原与沙漠（BI03、BI04、TR07：草丛、岩柱、沙丘覆盖网格）、冰原、熔岩原、山地碎石与雨见岳雾带（BI07、BI08、BI09），全部小物件建成全球实例表、按相机周围 16 m 瓦片加载（离地 > 110 m 不加载）；地形顶点色（terrain.js）负责雪线、岩色与区域边界软化（TR05–TR07）；测试钩子 `window.__scene.cover`；`tools/cover_check.mjs`（W6-C1–C3，含 W6c–W6e 各项）、`tools/cover_shots.mjs`、`tools/forest_shots.mjs`、`tools/grass_shots.mjs`、`tools/highland_shots.mjs`（`docs/world/w6b/` … `w6e/`）。
-- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、flora.js、section_plan.js、roadkit.js、bridge.js、steps.js、lightband.js、water.js、section.js、roads.js、ocean.js、landcover.js、buildings/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
+- `transition.js`：W8a 卷曲过渡（ST04）：相机到目标点的距离 d 决定 `uBend = smoothstep(150, 300, d)`（d ≤ 150 恒为平面城镇）、地形淡入、雾与极帽淡入、沿局部上方向的相机框架；缩放上限 400 m；`tools/transition_check.mjs`、ST04 截图 `docs/world/w8/st04-*.png`。
+- `weather.js`、`weather_fx.js`：W8b 天气（D8 / ST05）：按位置与时间确定性地给出雨、雨后、阴、晴夜、雪、雾六种状态（渐变 ≥ 40 s，雨最久，无 `Math.random`），表现只用已有的雨丝、涟漪、天光月光、雾与一层雪粒子，按相机离地高度 `w_local(h)` 淡出，全景永远是晴夜；`window.__scene.weather`（`lock`、`setTime`、`get`、`at`）；`tools/weather_check.mjs`、`node tools/regress.mjs --weather lock:rain`；截图 `docs/world/w8/st05-*.png`。
+- `nightlight.js`、`stars.js`：W8c 夜间表现：路灯（40–60 m 淡出）与光带（40–120 m 淡入）按相机高度交接、全景可读光照（天光与月光按 `1 − w_local(h)` 混到 ×1.5，只在 `uBend > 0` 时）、便利店 / 温泉村 / 渔港 / 灯塔的远景暖光点、星空；`window.__scene.night`；`tools/night_check.mjs`（C1–C4，`--shots` 出 `docs/world/w8/night-*.png`）。
+- `build.py`：将源码（three.min.js、bend.js、layout.js、world.js、terrain.js、flora.js、section_plan.js、roadkit.js、bridge.js、steps.js、lightband.js、water.js、section.js、roads.js、ocean.js、landcover.js、transition.js、weather.js、weather_fx.js、nightlight.js、stars.js、buildings/*.js、landmarks/*.js、scene.js）按依赖顺序内嵌到单文件 HTML。
 - `DESIGN.md`：风格约束与扩展路线。
 - `THIRD_PARTY_NOTICES.md`：第三方许可说明。
 
@@ -75,7 +78,7 @@
 
 ## 规划中：星球化
 
-计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。星球全景总是晴朗的月夜，近处保持现在的雨夜，并按时间和位置切换局部天气。目前 W0、W1（星球布局 v1 已冻结）、W2（弯曲渲染）、WS（W3–W8 规格）、W3（地形网格）、W4（样板断面，已确认）、W5a（RD01/RD02 全球主干道与桥、光带）与 W5b（石阶、雪道标杆、RD03 设施、检修楼梯、地标入口）已完成：W3–W8 的精确规格在 [docs/world/](docs/world/README.md)；总计划、统一规格和 39 张设计卡已就绪，39/39 张参考图已生成并审查（`check_kit.mjs --refs` 通过，ST01 风格已确认）；`world.js` 与勘探图（[星球布局 v1](docs/world/WORLD_LAYOUT_V1.md)）已出，`node tools/world_check.mjs` WC1–WC11 全部通过；星球代码尚未进入页面。逐栋建筑可以与之并行。
+计划把城镇放到一颗可旋转的手绘小星球上，城镇以外有农田、森林、山脉、火山、海洋、冰盖、遗迹，由全球路网连接。星球全景总是晴朗的月夜，近处保持现在的雨夜，并按时间和位置切换局部天气。目前 W0、W1（星球布局 v1 已冻结）、W2（弯曲渲染）、WS（W3–W8 规格）、W3（地形网格）、W4（样板断面，已确认）、W5a（RD01/RD02 全球主干道与桥、光带）与 W5b（石阶、雪道标杆、RD03 设施、检修楼梯、地标入口）已完成：W3–W8 的精确规格在 [docs/world/](docs/world/README.md)；总计划、统一规格和 39 张设计卡已就绪，39/39 张参考图已生成并审查（`check_kit.mjs --refs` 通过，ST01 风格已确认）；`world.js` 与勘探图（[星球布局 v1](docs/world/WORLD_LAYOUT_V1.md)）已出，`node tools/world_check.mjs` WC1–WC11 全部通过；地形、道路、地貌与 10 个地标（W6、W7）、卷曲过渡（W8a）、天气（W8b）与夜间表现（W8c）已进入页面，放大相机距离即可从城镇看到晴朗月夜的星球。W8d（收尾与真机）待做。
 
 - [星球计划](WORLD_PLAN.md)
 - [星球规划参考包](docs/world/README.md)

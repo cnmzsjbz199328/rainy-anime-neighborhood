@@ -1,7 +1,7 @@
 // Night light band (W5, RD01/RD02 cards): the lit road routes seen from far away. A planet has only a few dozen street lamps, 9 degrees of arc
 // apart at worst, so at panorama distance the lamps are not loaded; a soft amber ribbon along each lit route stands for them, and a paler
 // reflection ribbon on the sea surface under the bridges. Both are single additive meshes (2 draw calls for the whole planet). The fade with the
-// camera distance is set by setLightBand({ distance }) (W8 connects it to the camera; roads.js feeds it the section's ink distance for now).
+// camera distance is set by setLightBand({ distance }) (W8c: nightlight.js drives it from the camera's height above the ground through roads.setNight; tools can still call setLightBand by hand).
 // The geometry is stored in flat Mercator coordinates like everything else of the planet (positions carry the 1/cos(lat) factor).
 (function (global) {
 'use strict';
@@ -33,8 +33,8 @@ function ribbon(polys, cols, lift, colour) {
 function discs(points, radius, colour, lift) {
   const pos = [], col = [], idx = [], seg = 10; let base = 0;
   for (const p of points) {
-    const f = { x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }, y = (p.alt + lift - BASE) * f.k;
-    pos.push(f.x, y, f.z); col.push(colour[0], colour[1], colour[2], 1);
+    const f = { x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }, y = (p.alt + lift - BASE) * f.k, w = p.w === undefined ? 1 : p.w;
+    pos.push(f.x, y, f.z); col.push(colour[0] * w, colour[1] * w, colour[2] * w, 1);
     for (let a = 0; a < seg; a++) { const th = a / seg * Math.PI * 2; pos.push(f.x + Math.cos(th) * radius * f.k, y, f.z + Math.sin(th) * radius * f.k); col.push(colour[0], colour[1], colour[2], 0); }
     for (let a = 0; a < seg; a++) idx.push(base, base + 1 + (a + 1) % seg, base + 1 + a);
     base += seg + 1;
@@ -46,14 +46,17 @@ const DOT = [[-1.6, 0], [-0.6, 0.6], [0, 1], [0.6, 0.6], [1.6, 0]];
 const SEA = [[-5.0, 0], [-1.8, 0.3], [0, 0.5], [1.8, 0.3], [5.0, 0]];
 const AMBER = lin('#ffae5c'), SEACOL = lin('#ffc890');
 
+// one additive mesh from ribbon() / discs() data (flat Mercator frame, bent by bend.js like everything else); hidden until set
+function glowMesh(THREE, d, name) {
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12, side: THREE.DoubleSide });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(d.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(d.col, 4));
+  const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
+  const m = new THREE.Mesh(g, mat); m.name = name; m.matrixAutoUpdate = false; m.renderOrder = 6; m.visible = false; return m;
+}
+
 function make(THREE, root) {
   const st = { built: false, distance: 0, opacity: 0, max: 0.75, meshes: [], stats: {} };
-  const mat = () => new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12, side: THREE.DoubleSide });
-  const mesh = (d, name) => {
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(d.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(d.col, 4));
-    const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, mat()); m.name = name; m.matrixAutoUpdate = false; m.renderOrder = 6; m.visible = false; root.add(m); st.meshes.push(m); return m;
-  };
+  const mesh = (d, name) => { const m = glowMesh(THREE, d, name); root.add(m); st.meshes.push(m); return m; };
   // polys: lit road polylines; sea: the same routes' bridge parts (reflections on the sea surface at altitude 0.03)
   st.build = (polys, sea, dots = []) => {
     st.core = mesh(ribbon(polys, CORE, 0.2, AMBER), 'lightband:core');
@@ -76,7 +79,7 @@ function make(THREE, root) {
   return st;
 }
 
-const LIGHTBAND = { ribbon, discs, make, CORE, SEA };
+const LIGHTBAND = { ribbon, discs, glowMesh, make, CORE, SEA };
 if (typeof module !== 'undefined' && module.exports) module.exports = LIGHTBAND;
 else global.LIGHTBAND = LIGHTBAND;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
