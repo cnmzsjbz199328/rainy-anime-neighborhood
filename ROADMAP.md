@@ -51,7 +51,7 @@
 | W7-LM07 | 地标 冰封轮廓（隐藏线索） | `landmarks/LM07.js`、八视图截图、W7-C1–C6（规格 [W7_SPEC](docs/world/W7_SPEC.md) 第 4 节该地标一行） | W6e | 完成 | 2026-10-07 · 提交 `b0d4d6c`（分支 `world/W7-LM07` 已合并 main，未推送）；基线标签 `pre-w7-lm07`；截图 `docs/world/landmarks/LM07/`；结果见 [PROGRESS](PROGRESS.md) 的「W7-LM07」 |
 | W8 | 全球表现、天气与真机 | 卷曲过渡 ST04、天气 D8/ST05、光带、真机（规格 [W8_SPEC](docs/world/W8_SPEC.md)；必须拆成 W8a–W8d 四行，开工前在本表加行） | W7 | 进行中 | 拆成下面 4 行（W8a–W8d，规格 W8_SPEC 第 2 节） |
 | W8a | 卷曲过渡 ST04 | `transition.js`；`uBend` 随相机距离 `smoothstep(150, 300, d)`；相机沿局部上方向与球面平移/缩放；地形·雾·极帽淡入；缩放上限 400 m；`tools/transition_check.mjs`；ST04 八格截图（规格 [W8_SPEC](docs/world/W8_SPEC.md) 第 3 节） | W7 | 完成 | 2026-10-07 · 提交 `6abeae2`（分支 `world/W8a` 已合并 main，未推送）；基线标签 `pre-w8a`；截图 `docs/world/w8/st04-*.png`；结果见 [PROGRESS](PROGRESS.md) 的「W8a」 |
-| W8b | 天气 D8/ST05 | `weather.js`、`weather_fx.js`；状态与位置规则、确定性时间函数、锁定与复现、六种状态、随距离淡出；`tools/weather_check.mjs`；`regress.mjs --weather lock:rain`（规格 W8_SPEC 第 4 节） | W8a | 待办 | |
+| W8b | 天气 D8/ST05 | `weather.js`、`weather_fx.js`；状态与位置规则、确定性时间函数、锁定与复现、六种状态、随距离淡出；`tools/weather_check.mjs`；`regress.mjs --weather lock:rain`（规格 W8_SPEC 第 4 节） | W8a | 完成 | 2026-10-07 · 提交 `16cf60e`（分支 `world/W8b` 已合并 main，未推送）；基线标签 `pre-w8b`；截图 `docs/world/w8/st05-*.png`；结果见 [PROGRESS](PROGRESS.md) 的「W8b」 |
 | W8c | 夜间表现 | `nightlight.js`、`stars.js`；光带与路灯接替、全景可读光照混合、星空、隐藏线索全景可见性；`tools/night_check.mjs`（规格 W8_SPEC 第 5 节） | W8b | 待办 | |
 | W8d | 收尾与真机 | WC12–WC14 复核、交互回归、性能总表、待办池清理、真机记录表（缺项写「待验证」）（规格 W8_SPEC 第 6 节） | W8c，用户提供真机数据 | 待办 | |
 | W9b | 星球行人视角（可选） | 扩展漫游到球面 | W8 | 待办 | |
