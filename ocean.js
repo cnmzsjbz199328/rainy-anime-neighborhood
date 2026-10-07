@@ -176,7 +176,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
 
   function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build_); } return S.root; }
   function visibility() {
-    const show = BEND.get() > 0 || SEC.state.mode;
+    const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
     // the section's own corridor sea and its corridor coast line give way to the global water (one layer, one line)
@@ -184,6 +184,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     else if (S.built) for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = true;
   }
   BEND.onChange(visibility);
+  TERR.onExplore(visibility);
 
   function tick(t, camera) {
     uniforms.uTime.value = t; uniforms.uRain.value = SEC.state.settings.rain ? 1 : 0;

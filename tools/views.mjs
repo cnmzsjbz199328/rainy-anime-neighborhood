@@ -48,10 +48,10 @@ const v3 = await view();
 results.push(['右键平移（目标点在地面上移动，高度不变）', (!near(v2.target[0], v3.target[0]) || !near(v2.target[2], v3.target[2])) && near(v2.target[1], v3.target[1])]);
 await page.evaluate(() => { for (let i = 0; i < 400; i++) window.__scene.view.pan(-200, -200); });
 const v4 = await view();
-const lim = 46;
-results.push([`平移边界（目标点限制在 ±${lim}）：(${v4.target[0].toFixed(1)}, ${v4.target[2].toFixed(1)})`, Math.abs(v4.target[0]) <= lim + 1e-6 && Math.abs(v4.target[2]) <= lim + 1e-6 && (Math.abs(v4.target[0]) > lim - 1e-3 || Math.abs(v4.target[2]) > lim - 1e-3)]);
+const lim = await page.evaluate(()=>({x:window.__scene.transition.span,z:window.__scene.transition.limitZ}));
+results.push([`平面全图临时边界：(${v4.target[0].toFixed(1)}, ${v4.target[2].toFixed(1)})`, Math.abs(v4.target[0])<=lim.x+1e-6 && Math.abs(v4.target[2])<=lim.z+1e-6 && (Math.abs(v4.target[0])>lim.x-1e-3 || Math.abs(v4.target[2])>lim.z-1e-3)]);
 await page.evaluate(() => window.__scene.view.set({ dist: 1e4 }));
-results.push(['缩放上限 400（W8a：ST04 全景约 300–400 m；d ≤ 150 仍是平面城镇）', (await view()).dist === 400]);
+results.push(['缩放上限 400（缩放不切换地图模式）', (await view()).dist === 400]);
 await page.evaluate(() => window.__scene.view.set({ dist: 0 }));
 results.push(['缩放下限 9', (await view()).dist === 9]);
 // Pan without a right button: Shift + drag, and WASD / arrows relative to the view direction.
@@ -87,7 +87,10 @@ results.push(['跟随镜头离地', r1.cameraPosition[1] > .9]);
 const side = async key => {
   await page.evaluate(() => window.__scene.view.set({ position: [-8, 15], heading: -Math.PI / 2 })); await page.waitForTimeout(150);
   const s0 = await page.evaluate(() => { const s = window.__scene, r = new s.camera.position.constructor(1, 0, 0).applyQuaternion(s.camera.quaternion); return { p: s.view.get().roam.position, r: [r.x, r.z] }; });
-  await page.keyboard.down(key); await page.waitForTimeout(300); await page.keyboard.up(key);
+  await page.keyboard.down(key);
+  // Wait for movement to be rendered: software WebGL may not produce a frame within a 300 ms tap.
+  await page.waitForFunction(p=>{const q=window.__scene.view.get().roam.position;return Math.hypot(q[0]-p[0],q[2]-p[2])>.12;},s0.p,{timeout:10000});
+  await page.keyboard.up(key);
   const p1 = (await view()).roam.position; return (p1[0] - s0.p[0]) * s0.r[0] + (p1[2] - s0.p[2]) * s0.r[1];
 };
 const dRight = await side('d'), aLeft = await side('a'), arrowRight = await side('ArrowRight');
