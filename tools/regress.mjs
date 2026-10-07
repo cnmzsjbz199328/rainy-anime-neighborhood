@@ -77,6 +77,8 @@ async function shoot(browser, html, outDir, bend, withMask) {
   await page.addInitScript(INIT);
   await page.goto(pathToFileURL(html).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.__scene && window.__scene.view);
+  // --weather lock:<state> (W8b, WC13): lock the weather before the frames (builds older than W8b have no weather: nothing to lock, they always rain)
+  const wl = arg('--weather', null); if (wl && wl.startsWith('lock:')) await page.evaluate(s => { if (window.__scene.weather) window.__scene.weather.lock(s); }, wl.slice(5));
   const info = {};
   for (const [name, v] of Object.entries(VIEWS)) {
     const r = await page.evaluate(async ([name, v, frames, bend, withMask]) => {

@@ -4690,6 +4690,153 @@ else global.TRANSITION = TR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
+// Weather of the planet (W8b, D8 / ST05): a pure, deterministic function of place and time. No THREE, no DOM, no Math.random.
+//   at(lon, lat, t) -> { weights: { rain, after, overcast, clear, snow, fog }, state, category }   (weights sum to 1; state = the heaviest)
+// Time is cut into slots of SLOT seconds. Each place follows a fixed cyclic pattern of states for its category (the share of rain is the share of R in the
+// pattern, spread evenly so that rain is always the longest state); a smooth value noise on the sphere (spatial scale about 100 m, so the 96 m town is in one
+// weather) shifts the pattern's phase from place to place. At the start of every slot the previous state cross-fades into the new one over FADE seconds
+// (rate 1 / 48 per second, under the 1 / 40 of W8_SPEC 4.3). Slot 0 (the first five minutes after loading) is the category's base state everywhere: rain in the
+// town, so every existing check and review shot sees the town as it always was.
+// Categories (W8_SPEC 4.2, from world.js): ice (snow instead of rain, never rain), desert (rain under 5 %), lava, foggy (forest, coast within 24 m, river
+// valleys within 10 m: rain-after turns into fog), mountain (height >= 18 m, 20 m round ameni-dake: rain turns into snow above the snow line, sleet in a band
+// across it), and the rest (town, farmland, village, ruin, grassland, island: rain, after-rain, overcast, clear; never snow).
+(function (global) {
+'use strict';
+const SLOT = 300, FADE = 48, SEED = 0x5eed8b, R = 90, D = Math.PI / 180;
+const STATES = ['rain', 'after', 'overcast', 'clear', 'snow', 'fog'];
+// patterns: one letter per slot; R rain, A after-rain, O overcast, C clear, S snow, F fog
+const PATTERN = {
+  default:  'RARORRCRARRORCRRARCR',             // 12 R of 20 = 60 % (any 12 or more slots in a row: >= 54 %)
+  foggy:    'RFRORRCRFRRARCRRFRAR',             // 12 R, 3 F, 2 A, 2 C, 1 O (R 60 %)
+  mountain: 'RARORRCRARRORCRRARCR',             // as default; R above the snow line becomes S
+  lava:     'RARORRCRARRORCRRARCR',
+  desert:   'CCOCCACCOCCCRCCOCCACCCOCC',        // 1 R of 25 = 4 %
+  ice:      'SCSCSSCSCSSCSSCSCSSC',             // 12 S, 8 C
+};
+const LETTER = { R: 'rain', A: 'after', O: 'overcast', C: 'clear', S: 'snow', F: 'fog' };
+const BASE = { default: 'rain', foggy: 'rain', mountain: 'rain', lava: 'rain', desert: 'clear', ice: 'snow' };
+const hash = (i, j, k, s) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 2147483647) ^ Math.imul(s, 1274126177); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+function vnoise3(x, y, z, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), fx = x - xi, fy = y - yi, fz = z - zi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+  const c = (a, b, d) => hash(xi + a, yi + b, zi + d, s), L = (a, b, t) => a + (b - a) * t;
+  return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v), L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w);
+}
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function make(W) {
+  const cache = new Map();
+  // the place: category, the phase of its pattern, the snow fraction (mountains: 0 below the snow line, 1 above, sleet in between)
+  function place(lon, lat) {
+    const key = Math.round(lon * 20) + ',' + Math.round(lat * 20); let p = cache.get(key); if (p) return p;
+    const reg = W.regionAt(lon, lat), h = W.height(lon, lat);
+    let cat = 'default';
+    if (reg.kind === 'ice-north' || reg.kind === 'ice-south') cat = 'ice';
+    else if (reg.kind === 'desert') cat = 'desert';
+    else if (reg.kind === 'lava') cat = 'lava';
+    else if (reg.kind === 'town') cat = 'default';
+    else { const peak = W.arcDistance({ lon, lat }, { lon: -25, lat: 56 }) < 30, line = peak ? 20 : 18;
+      if (h >= line - 1.5) cat = 'mountain';
+      else if (reg.kind === 'forest' || (W.coastDistance(lon, lat) <= 24 && reg.zone !== 'building') || W.riverCrossing(lon, lat) <= 10) cat = 'foggy'; }
+    let snowFrac = 0;
+    if (cat === 'mountain') { const peak = W.arcDistance({ lon, lat }, { lon: -25, lat: 56 }) < 30, line = peak ? 20 : 18; snowFrac = smooth(line - 0.8, line + 0.8, h); }   // sleet band: +-0.8 m of height (about 10 m across on the usual 8-16 % slopes)
+    const cl = Math.cos(lat * D), sx = R * cl * Math.sin(lon * D) / 100, sy = R * cl * Math.cos(lon * D) / 100, sz = R * Math.sin(lat * D) / 100;
+    const pat = PATTERN[cat], phase = Math.floor(vnoise3(sx * 1.0, sy * 1.0, sz * 1.0, SEED) * pat.length * 0.999);
+    p = { cat, pat, phase, snowFrac, kind: reg.kind }; if (cache.size > 20000) cache.clear(); cache.set(key, p); return p;
+  }
+  const stateOf = (p, slot) => { if (slot <= 0) return BASE[p.cat]; const s = LETTER[p.pat[(slot - 1 + p.phase) % p.pat.length]]; return s; };
+  // a state at a place as weights (rain on a mountain splits into rain and snow by the snow fraction)
+  const asWeights = (p, s, k, out) => { if (s === 'rain' && p.snowFrac > 0) { out.rain += k * (1 - p.snowFrac); out.snow += k * p.snowFrac; } else out[s] += k; };
+  let locked = null;
+  // nearest allowed state for a locked state at a place (lock('rain') on the ice gives snow; fog only in foggy places; never snow in the town)
+  function allowed(p, s) {
+    if (p.cat === 'ice') return s === 'rain' || s === 'snow' ? 'snow' : 'clear';
+    if (s === 'snow' && p.cat !== 'mountain') return 'rain';
+    if (s === 'fog' && p.cat !== 'foggy') return 'after';
+    return s;
+  }
+  function at(lon, lat, t) {
+    const p = place(lon, lat), w = { rain: 0, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 };
+    if (locked) { asWeights(p, allowed(p, locked), 1, w); }
+    else {
+      const tt = Math.max(0, t), slot = Math.floor(tt / SLOT), into = tt - slot * SLOT, cur = stateOf(p, slot);
+      if (slot > 0 && into < FADE) { const prev = stateOf(p, slot - 1), k = into / FADE; asWeights(p, prev, 1 - k, w); asWeights(p, cur, k, w); }
+      else asWeights(p, cur, 1, w);
+    }
+    let state = 'rain', best = -1; for (const s of STATES) if (w[s] > best) { best = w[s]; state = s; }
+    return { weights: w, state, category: p.cat };
+  }
+  return { at, place, lock(s) { locked = s && STATES.includes(s) ? s : null; return locked; }, locked: () => locked };
+}
+// distance blend: 1 near (camera height h <= 40 m), 0 at the panorama (h >= 120 m)
+const wLocal = h => 1 - smooth(40, 120, h);
+const WEATHER = { SLOT, FADE, SEED, STATES, PATTERN, make, wLocal, smooth };
+if (typeof module !== 'undefined' && module.exports) module.exports = WEATHER;
+else global.WEATHER = WEATHER;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// What the weather looks like (W8b, ST05), driven by weather.js at the camera's target. Only existing means: the rain lines, the puddle ripples, the two lights,
+// the exponential fog, and one new particle layer for snow. Every effect is a multiplier or an addition that is exactly 1 / 0 for rain, so the town under
+// rain (the default, and weather.lock('rain')) renders as it always did. Effects fade with the camera's height above the ground: w_local(h) = 1 - smoothstep(40, 120, h);
+// at the panorama (h >= 120 m) every weather looks the same (the clear moonlit night of the panorama belongs to the light presets, W8c).
+//   rain      the existing rain, ripples, drips (unchanged)
+//   after     no rain lines; ripples stay (puddles brightest), a thin ground mist (fog density +), drips go on
+//   overcast  no rain; moon 0.55, sky light 0.75
+//   clear     no rain, ripples stop; moon 1.25, sky light 1.1
+//   snow      fine snow falling (slower, larger, sparser than rain), sky light 1.1 bluish
+//   fog       grey-violet fog (density + 0.03), no rain
+(function (global) {
+'use strict';
+const MULT = { rain: [1, 1], after: [1.05, 1], overcast: [0.75, 0.55], clear: [1.1, 1.25], snow: [1.1, 1], fog: [0.9, 0.8] };          // [sky light, moon]
+const RAIN = { rain: 1, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 }, PUDDLE = { rain: 1, after: 1, overcast: 0.6, clear: 0, snow: 0, fog: 0.6 };
+const FOG_ADD = { rain: 0, after: 0.006, overcast: 0, clear: 0, snow: 0.004, fog: 0.03 };
+function attach(THREE, scene, ctx) {
+  const W = global.WEATHER.make(global.WORLD), st = { t0: null, offset: 0, fixed: null, last: null, snow: null };
+  const own = { hemi: null, moon: null, fog: null, fogColor: null }, base = { hemi: 0, moon: 0, fog: 0, fogColor: new THREE.Color() }, fogTint = new THREE.Color('#5a5870');
+  // the lights and the fog are also written by the light presets (section.js) and the transition: whatever changed them since our last write is the new base
+  const sync = () => { const h = ctx.hemi.intensity, m = ctx.moon.intensity, f = scene.fog.density; if (h !== own.hemi) base.hemi = h; if (m !== own.moon) base.moon = m; if (f !== own.fog) base.fog = f;  };
+  // snow: 900 flakes in a box round the target, own random stream (the page's Math.random is never touched)
+  function snowLayer() {
+    if (st.snow) return st.snow; let s = 0x51f0; const rnd = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const N = 900, pos = new Float32Array(N * 3), sp = new Float32Array(N); for (let i = 0; i < N; i++) { pos[i * 3] = (rnd() - 0.5) * 40; pos[i * 3 + 1] = rnd() * 9; pos[i * 3 + 2] = (rnd() - 0.5) * 40; sp[i] = 0.5 + rnd() * 0.4; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.PointsMaterial({ color: '#eef4fb', size: 0.09, transparent: true, opacity: 0, depthWrite: false });
+    const o = new THREE.Points(g, m); o.frustumCulled = false; o.visible = false; scene.add(o); return (st.snow = { o, m, pos, sp, N, rnd });
+  }
+  function tick(t, dt, view) {
+    const time = st.fixed !== null ? st.fixed : t + st.offset;
+    if (st.view) view = st.view;
+    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h), w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, lon: ll.lon, lat: ll.lat };
+    let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
+    // blend towards the rain look with height: 1 + (m - 1) * wl
+    mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = 1 + (pud - 1) * wl; fogAdd *= wl; const fogK = w.fog * wl;
+    sync();
+    if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
+    if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }
+    if (fogAdd !== 0 || own.fog !== null) { scene.fog.density = own.fog = base.fog + fogAdd; }
+    if (fogK > 0) { if (own.fogColor === null) base.fogColor.copy(scene.fog.color); scene.fog.color.copy(base.fogColor).lerp(fogTint, Math.min(1, fogK)); if (scene.background && scene.background.isColor) scene.background.copy(scene.fog.color); own.fogColor = scene.fog.color.clone(); }
+    else if (own.fogColor !== null) { scene.fog.color.copy(base.fogColor); if (scene.background && scene.background.isColor) scene.background.copy(base.fogColor); own.fogColor = null; }
+    if (rain !== 1) ctx.rainMat.opacity *= rain;
+    if (pud !== 1) for (const g of ctx.rings) g.a.material.opacity *= pud;
+    // snow: falls round the target, opacity by the snow weight and the height blend
+    const sw = w.snow * wl;
+    if (sw > 0.001) { const S = snowLayer(), c = view.target; S.o.visible = true; S.m.opacity = 0.85 * sw; S.o.position.set(c[0], 0, c[2]);
+      for (let i = 0; i < S.N; i++) { const k = i * 3; S.pos[k + 1] -= dt * S.sp[i]; S.pos[k] += Math.sin(time * 0.7 + i) * dt * 0.15; if (S.pos[k + 1] < 0.1) { S.pos[k + 1] = 9; S.pos[k] = (S.rnd() - 0.5) * 40; S.pos[k + 2] = (S.rnd() - 0.5) * 40; } }
+      S.o.geometry.attributes.position.needsUpdate = true; }
+    else if (st.snow) st.snow.o.visible = false;
+  }
+  const api = {
+    at: (lon, lat, t) => W.at(lon, lat, t), lock: s => W.lock(s), locked: () => W.locked(),
+    setTime(t) { st.fixed = t === null || t === undefined ? null : +t; return st.fixed; },
+    get: () => st.last,
+    setView(v) { st.view = v || null; },                                    // tools: weather of a given place and height instead of the camera's
+    place: (lon, lat) => W.place(lon, lat), tick,
+  };
+  return api;
+}
+global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
 // B01-P01 あめまち小学校 (courtyard primary school): a three-storey cream-plaster teaching wing with sage-green window frames under a brick-red standing-seam side-gable roof (classrooms along the
 // south, an inner corridor along the north, a stair room with two side-by-side flights at the east end), a one-storey low wing on the west side (community activity room) with its own gable roof, and
 // a courtyard between them with a dirt playground, a bicycle shed, a flag pole, benches and trees, closed to the street by a block wall with a green railing, a pedestrian gate (open) opposite the
@@ -19192,6 +19339,7 @@ function rainBounds(){const h=rainBox/2,center=roam?roam.position:target,free=wi
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
 const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});const rainObj=new THREE.LineSegments(rg,rainMat);scene.add(rainObj);
+const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat,rings});
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // Pan slides the target over the ground at a speed proportional to distance and never leaves the plinth.
@@ -19261,6 +19409,9 @@ function transitionStep(dt){const free=!window.SECTION_API||!window.SECTION_API.
   if(u===0&&(Math.abs(target.x)>PAN_LIMIT||Math.abs(target.z)>PAN_LIMIT)&&free&&!roam){const cx=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.x)),cz=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.z)),k=1-Math.exp(-dt*3);target.x+=(cx-target.x)*k;target.z+=(cz-target.z)*k;if(Math.abs(cx-target.x)<1e-3&&Math.abs(cz-target.z)<1e-3){target.x=cx;target.z=cz;}}}
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
 function lookTarget(u){if(!(u>0))return[target.x,target.y,target.z];const ll=WORLD.townToLonLat(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);return[target.x,target.y+u*Math.max(0,h==null?0:h),target.z];}
+// W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height)
+function weatherView(){if(roam){const ll=WORLD.townToLonLat(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,target:[roam.position.x,0,roam.position.z]};}
+  const u=BEND.get(),ll=WORLD.townToLonLat(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-target.y;return{lonLat:ll,h,target:[target.x,target.y,target.z]};}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
 function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),h=terrain.sampler()(lam/(Math.PI/180),phi/(Math.PI/180));if(h==null)return;const want=R+Math.max(0,h)+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
@@ -19268,7 +19419,7 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
 }else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(dt);const u=BEND.get(),fr=TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(dist,u);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(target);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}weatherFx.tick(t,dt,weatherView());signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
 BEND.attach(scene);
@@ -19276,7 +19427,7 @@ const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj},BE
 const roads=ROADS.attach(scene,{ramp,renderer},BEND,terrain,section);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
-window.__scene={scene,renderer,camera,groups,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,groups,weather:weatherFx,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>
