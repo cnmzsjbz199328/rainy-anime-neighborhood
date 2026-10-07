@@ -27,3 +27,9 @@
 - Scene/layout changes: rebuild, then run relevant checks documented in README, including `node tools/measure_samples.mjs` before `node tools/layout_check.mjs --png`; use building and browser screenshots for visual changes.
 - Keep unrelated work intact. Stage explicit task files. Follow the selected workflow's commit/push instructions; never treat a local commit as proof of a successful push.
 - Write concise Chinese progress and handoff notes, with exact output paths, validation results, and remaining visual issues.
+
+## Evidence and repo size
+- Regenerable review screenshots (`docs/world/w*/`, `docs/buildings/screenshots/`) are git-ignored by default. Keep them locally for visual inspection; do not stage them.
+- Commit only a few key images per stage (3–5), compressed (WebP or lossy, ≤1280 px wide, ideally ≤200 KB each), with `git add -f`. Reference/design images (`docs/world/references`, `landmarks`, `docs/buildings/references`) and frozen layout figures stay tracked.
+- Record evidence as text instead of images: check output, measured numbers, and screenshot file names/paths in PROGRESS or the handoff note.
+- Already-tracked images stay as they are; do not rewrite history or delete them without explicit user approval. Check `git status` before committing and restore (`git checkout -- <path>`) tracked screenshots that a re-run regenerated unintentionally.
