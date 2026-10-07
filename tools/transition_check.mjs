@@ -32,9 +32,13 @@ if (want('c2')) {
       T.setMode(mode);T.step(2);
       for(const d of [9,25,150,400]){S.view.set({dist:d});T.step(.1);check(`${mode} d=${d} 不改变弯曲`,S.bend.get()===(mode==='flat'?0:1));}
     }
-    S.view.set({target:[T.span-1,1.2,0],yaw:0,dist:25});S.view.pan(-100,0);check('球形经度环绕',S.view.get().target[0]<0);
+    S.view.set({target:[T.xMax-1,1.2,0],yaw:0,dist:25});S.view.pan(-100,0);check('球形经度环绕（接缝 −85° 处回到西端）',S.view.get().target[0]<T.xMin+5);
+    S.view.set({target:[0,1.2,0]});for(let i=0;i<300;i++)S.view.pan(0,-200);check('纬度上限 80°',Math.abs(Math.abs(S.view.get().target[2])-T.limitZ)<1e-9&&Math.abs(T.limitZ-Math.abs(window.WORLD.lonLatToTown(0,80).z))<1e-9);
     const target=S.view.get().target;T.setMode('flat');T.step(.7);const u=S.bend.get();T.setMode('sphere');T.step(.1);check('动画中途反向连续',S.bend.get()>u&&S.bend.get()<1);T.step(2);
     check('切换不丢目标',JSON.stringify(target)===JSON.stringify(S.view.get().target));
+    T.setMode('flat');T.step(3);S.view.set({target:[T.xMax-1,1.2,0],yaw:0,dist:25});S.view.pan(-100,0);check('平面在东接缝夹紧',S.view.get().target[0]===T.xMax);S.view.set({target:[T.xMin+1,1.2,0]});S.view.pan(100,0);check('平面在西接缝夹紧',S.view.get().target[0]===T.xMin);
+    S.view.set({target:[window.WORLD.lonLatToTown(-126.9,0).x,1.2,0]});check('规范经度目标（接缝以西）显示在东段',Math.abs(S.view.get().target[0]-(window.WORLD.lonLatToTown(-126.9,0).x+S.bend.PERIOD))<1e-4);
+    T.setMode('sphere');T.step(3);
     T.auto=false;S.bend.set(.37);S.view.set({dist:9});T.step(2);check('手工测试钩子',S.bend.get()===.37);T.auto=true;T.setMode('flat');T.step(2);
     S.view.set({target:[20,1.2,65],dist:25});T.step(2);check('农田 d=25 保留目标',S.view.get().target[0]===20&&S.view.get().target[2]===65&&S.view.get().dist===25&&S.terrain.fade.rest>0);
     S.view.set({mode:'roam'});check('农田禁漫游',S.view.get().mode==='free');S.section.setMode(true);check('农田禁剖视',!S.section.state.mode);

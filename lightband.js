@@ -15,7 +15,8 @@ function ribbon(polys, cols, lift, colour) {
   const pos = [], col = [], idx = []; let base = 0;
   for (const pts of polys) {
     const n = pts.length; if (n < 2) continue;
-    const F = pts.map(p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }));
+    let lon0 = null;                                       // continuous longitudes along the line (no 360 degree jump at the date line, W8e-b)
+    const F = pts.map(p => { const lon = lon0 === null ? p.lon : lon0 + (((p.lon - lon0) % 360 + 540) % 360 - 180); lon0 = lon; return { x: R * lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) }; });
     for (let i = 0; i < n; i++) {
       const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
       for (const [o, al] of cols) { pos.push(F[i].x + (-tz) * o * F[i].k, (pts[i].alt + lift - BASE) * F[i].k, F[i].z + tx * o * F[i].k); col.push(colour[0], colour[1], colour[2], al); }

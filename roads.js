@@ -195,7 +195,8 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     S.nav = DATA.bridges.flatMap(b => b.navLights.map(n => n.phase));
 
     // ---- ink lines: route paved edges (aerial), bridge girder edges, joints and stays (ground and aerial)
-    const poly = (pts, out) => { let prev = null; for (const q of pts) { const f = flatOf(q.lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
+    // a line keeps its longitudes continuous (no 360 degree jump where it crosses the date line, W8e-b): bend.js then moves each segment as a whole at the seam
+    const poly = (pts, out) => { let prev = null, lon0 = null; for (const q of pts) { const lon = lon0 === null ? q.lon : lon0 + (((q.lon - lon0) % 360 + 540) % 360 - 180); lon0 = lon; const f = flatOf(lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
     const addLines = (layer, segs, color) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, color ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, fog: false }) : lineMat()); l.name = 'road:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; return l; };
     { const segs = []; for (const rt of DATA.routes) { const clip = line => { let run = []; line.forEach((q, i) => { if (rt.samples[i].span === 'tunnel') { if (run.length > 1) poly(run, segs); run = []; } else run.push(q); }); if (run.length > 1) poly(run, segs); }; clip(rt.lines.edgeL); clip(rt.lines.edgeR); } addLines('aerial', segs); }
     { const segs = [], white = []; for (const b of DATA.bridges) { for (const k of ['edgeL', 'edgeR', 'edgeLU', 'edgeRU']) poly(b.lines[k], segs); for (const j of b.lines.joints) poly(j, segs); for (const st of (b.lines.stays || [])) poly(st, white); }
@@ -215,6 +216,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const rec of ((SEC.state.roadOut || []).flatMap(r => r.instances.lampSmall || []))) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     for (const b of DATA.bridges) for (const rec of (b.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea, dots); S.dots = dots.length;
+    if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the T01-13 deck faces, its ink and the band are cut where the seam crosses the bridge
     S.stats.buildMs = Date.now() - t0; S.built = true;
     return root;
   }
