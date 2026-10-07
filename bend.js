@@ -76,7 +76,9 @@ uniform float uBend;
 uniform vec4 uEdgeFog;
 uniform vec2 uBendMat;
 varying float vBendEdge;`;
+// W8e-c: the sphere is a clear day (uDay = uBend): additive light (lamp pools, the light band, far lights, glows) fades out with it
 const FRAG_FOG = `#include <fog_fragment>
+	if ( uBend > 0.0 && uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - uBend;
 	{ float bendE = vBendEdge * uEdgeFog.x * ( 1.0 - uBend );
 	  if ( bendE > 0.0 && uBendMat.x > -0.5 ) { if ( uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - bendE; else gl_FragColor.rgb = mix( gl_FragColor.rgb, uEdgeFog.yzw, bendE ); } }`;
 const stats = { programs: 0, projectPatched: 0, normalPatched: 0, spritePatched: 0, fogPatched: 0 };
@@ -120,8 +122,10 @@ function patch(shader, material) {
   shader.vertexShader = v;
   // the edge fog needs vBendEdge, which only the two patched paths write
   if (projected || sprite) {
-    const f0 = shader.fragmentShader, f = f0.replace('#include <common>', '#include <common>\n' + FRAG_PARS).replace('#include <fog_fragment>', FRAG_FOG);
-    if (f.includes('bendE')) { shader.fragmentShader = f; stats.fogPatched++; }
+    const f0 = shader.fragmentShader, f = f0.replace('#include <common>', '#include <common>\n' + FRAG_PARS).replace('#include <fog_fragment>', FRAG_FOG)
+      // W8e-c: emissive light (lit windows, the warm interiors, embers) goes out in the daytime of the sphere
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\tif ( uBend > 0.0 ) totalEmissiveRadiance *= 1.0 - uBend;');
+    if (f.includes('bendE')) { shader.fragmentShader = f; stats.fogPatched++; if (f.includes('totalEmissiveRadiance *= 1.0 - uBend')) stats.emissivePatched = (stats.emissivePatched || 0) + 1; }
   }
   stats.programs++;
 }

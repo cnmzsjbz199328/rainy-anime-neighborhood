@@ -86,7 +86,9 @@ uniform float uBend;
 uniform vec4 uEdgeFog;
 uniform vec2 uBendMat;
 varying float vBendEdge;`;
+// W8e-c: the sphere is a clear day (uDay = uBend): additive light (lamp pools, the light band, far lights, glows) fades out with it
 const FRAG_FOG = `#include <fog_fragment>
+	if ( uBend > 0.0 && uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - uBend;
 	{ float bendE = vBendEdge * uEdgeFog.x * ( 1.0 - uBend );
 	  if ( bendE > 0.0 && uBendMat.x > -0.5 ) { if ( uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - bendE; else gl_FragColor.rgb = mix( gl_FragColor.rgb, uEdgeFog.yzw, bendE ); } }`;
 const stats = { programs: 0, projectPatched: 0, normalPatched: 0, spritePatched: 0, fogPatched: 0 };
@@ -130,8 +132,10 @@ function patch(shader, material) {
   shader.vertexShader = v;
   // the edge fog needs vBendEdge, which only the two patched paths write
   if (projected || sprite) {
-    const f0 = shader.fragmentShader, f = f0.replace('#include <common>', '#include <common>\n' + FRAG_PARS).replace('#include <fog_fragment>', FRAG_FOG);
-    if (f.includes('bendE')) { shader.fragmentShader = f; stats.fogPatched++; }
+    const f0 = shader.fragmentShader, f = f0.replace('#include <common>', '#include <common>\n' + FRAG_PARS).replace('#include <fog_fragment>', FRAG_FOG)
+      // W8e-c: emissive light (lit windows, the warm interiors, embers) goes out in the daytime of the sphere
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\tif ( uBend > 0.0 ) totalEmissiveRadiance *= 1.0 - uBend;');
+    if (f.includes('bendE')) { shader.fragmentShader = f; stats.fogPatched++; if (f.includes('totalEmissiveRadiance *= 1.0 - uBend')) stats.emissivePatched = (stats.emissivePatched || 0) + 1; }
   }
   stats.programs++;
 }
@@ -3676,7 +3680,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     else { h.intensity = light0.hemi; m.intensity = light0.moon; scene.fog.density = light0.fog; }
   }
   function tick(t, camera) {
-    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = S.settings.rain ? 1 : 0);
+    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = (S.settings.rain ? 1 : 0) * (1 - BEND.get()));   // W8e-c: no ripples on the sphere
     if (!S.root || !S.root.visible) return;
     const d = distance(camera); S.ink.distance = d;
     const mode = S.settings.ink;
@@ -4123,7 +4127,7 @@ const OCEAN = { build, SHALLOW, DEEP };
 OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   const THREE = global.THREE, W = global.WORLD;
   const S = { built: false, stats: {}, root: null };
-  const uniforms = { uTime: { value: 0 }, uRain: { value: 1 }, uMoon: { value: new THREE.Vector3(-6, 9, 4).normalize() } };
+  const uniforms = { uTime: { value: 0 }, uRain: { value: 1 }, uMoon: { value: new THREE.Vector3(-6, 9, 4).normalize() }, uGlint: { value: new THREE.Vector3(0.78, 0.86, 1.0) } };   // uGlint: the glint colour (daylight.js turns it warm on the sphere)
   if (ctx.lights && ctx.lights.moon) uniforms.uMoon.value.copy(ctx.lights.moon.position).normalize();       // the moon is a fixed world direction (it does not bend with the surface)
   const objs = { water: null, coast: null, inst: [], hulls: [] };
   const tintC = new THREE.Color(), qE = new THREE.Euler(), qQ = new THREE.Quaternion(), mP = new THREE.Vector3(), mS = new THREE.Vector3(), mM = new THREE.Matrix4();
@@ -4146,12 +4150,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   const makeMat = () => {
     const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
     m.onBeforeCompile = shader => {
-      shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon;
+      shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon; shader.uniforms.uGlint = uniforms.uGlint;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;\nvBP = bendPosition(bendWrap(vWP));\nvUp = bendNormal(vWP, vec3(0.0, 1.0, 0.0));\nvEast = bendNormal(vWP, vec3(1.0, 0.0, 0.0));\nvSouth = bendNormal(vWP, vec3(0.0, 0.0, 1.0));');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
+        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nuniform vec3 uGlint;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
         .replace('#include <opaque_fragment>', `
           float cph = 1.0 / cosh(vWP.z / 90.0);
           vec2 q = vec2(vWP.x, vWP.z) * cph;
@@ -4168,7 +4172,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
           vec3 n = normalize(normalize(vUp) + normalize(vEast) * 0.07 * sw + normalize(vSouth) * 0.07 * sin(dot(q, vec2(0.27, -0.31)) * 2.0 + uTime * 0.37));
           vec3 V = normalize(cameraPosition - vBP), Hh = normalize(V + normalize(uMoon));
           float gl = max(dot(n, Hh), 0.0), glint = (pow(gl, 120.0) * 0.85 + pow(gl, 18.0) * 0.10) * smoothstep(0.05, 0.5, vShore);
-          outgoingLight += vec3(0.78, 0.86, 1.0) * glint;
+          outgoingLight += uGlint * glint;
           diffuseColor.a = max(diffuseColor.a, glint * 0.75);
           // foam: the water side of the coast line, breathing slowly
           float fz = 0.024 + 0.014 * sin(uTime * 0.9 + vWP.x * cph * 0.6);
@@ -4222,7 +4226,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   TERR.onExplore(visibility);
 
   function tick(t, camera) {
-    uniforms.uTime.value = t; uniforms.uRain.value = SEC.state.settings.rain ? 1 : 0;
+    uniforms.uTime.value = t; uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get());     // W8e-c: no ripples in the clear daytime of the sphere
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial, near = ink.distance < 120;
     objs.coast.material.opacity = a; objs.coast.visible = a > 0.01;
@@ -4810,10 +4814,10 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   BEND.onChange(visibility);
   TERR.onExplore(visibility);
   function tick(t, camera) {
-    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = SEC.state.settings.rain ? 1 : 0; }
+    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
     if (!S.built || !S.root.visible) return;
     load(camera, false);
-    if (objs.mist) { objs.mist.material.opacity = 0.5 + 0.12 * Math.sin(t * 0.35); objs.mist.visible = SEC.state.ink.distance > 8; }
+    if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
   }
   const api = { ensure, tick, state: S, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
@@ -4974,10 +4978,12 @@ function attach(THREE, scene, ctx) {
   function tick(t, dt, view) {
     const time = st.fixed !== null ? st.fixed : t + st.offset;
     if (st.view) view = st.view;
-    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h), w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, lon: ll.lon, lat: ll.lat };
+    // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend)
+    const dry = view.u > 0 ? 1 - view.u : 1;
+    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h) * dry, w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, dry, lon: ll.lon, lat: ll.lat };
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
     // blend towards the rain look with height: 1 + (m - 1) * wl
-    mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = 1 + (pud - 1) * wl; fogAdd *= wl; const fogK = w.fog * wl;
+    mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = (1 + (pud - 1) * wl) * dry; rain *= dry; fogAdd *= wl; const fogK = w.fog * wl;
     sync();
     if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
     if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }
@@ -5063,11 +5069,13 @@ const NL = {
       base, state: st,
       // wv = { h, u } as the weather gets it; returns the values applied
       tick(wv) {
-        const h = wv.h, u = wv.u || 0, band = NL.bandOf(h), lamp = NL.lampOf(h);
-        const k = ctx.getSetting() === 'rainy' ? NL.panoramaK(h, u) : 0;
+        // W8e-c (D9 revised): the sphere is a clear day, so the night panorama (readable light, stars, light band, far lights) is off whenever uBend > 0; on the flat map
+        // (uBend = 0) everything is as before (the readable light and the stars are 0 there by their own uBend factor)
+        const h = wv.h, u = wv.u || 0, night = u > 0 ? 0 : 1, band = NL.bandOf(h) * night, lamp = NL.lampOf(h);
+        const k = ctx.getSetting() === 'rainy' ? NL.panoramaK(h, u) * night : 0;
         if (k > 0 || st.lastK > 0) { lights.hemi.intensity = base.hemi * (1 + NL.GAIN * k); lights.moon.intensity = base.moon * (1 + NL.GAIN * k); }
         st.lastK = k;
-        const sky = NL.starsOf(h, u); ctx.stars.tick(ctx.camera, sky);
+        const sky = NL.starsOf(h, u) * night; ctx.stars.tick(ctx.camera, sky);
         const R = global.ROADS_API, planet = !!(R && R.state.built && R.state.root.visible);
         if (planet) { R.setNight({ band, lamp }); if (!st.far) buildFar(); st.far.mesh.material.opacity = BAND_MAX * band; st.far.mesh.visible = band > 0.01; }
         else if (st.far) st.far.mesh.visible = false;
@@ -5115,6 +5123,77 @@ function attach(THREE, scene) {
   return api;
 }
 global.STARS = { attach };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// The clear daytime of the sphere (W8e-c, W8_SPEC 11.3, D9 revised 2026-10-07). One global uDay = uBend: 0 on the flat map (the night, untouched), 1 on the sphere.
+// Applied at render time only (scene.onBeforeRender, undone in scene.onAfterRender), so the night systems that write the lights and the sky every frame (weather_fx.js,
+// nightlight.js, the light presets of section.js) keep reading their own values, and nothing at all is touched while uDay = 0:
+//   sky      the background and the fog colour go from the night blue to a day sky
+//   sun      the moon light becomes the sun: warm white, from a fixed direction in the frame of the view target (SUN_LOCAL: about 50 deg above the horizon, from the
+//            south-west), so wherever the sphere is turned the side in view is in daylight
+//   sky light the hemisphere light turns bright and points along the target's local up
+//   sea      the moon glint of the ocean follows the sun and turns warm (ocean.js uGlint)
+// Emissive light (windows, lamps) and the additive glows fade with (1 - uBend) in the shader (bend.js); stars, the light band, the far lights and the readable panorama light
+// with (1 - uBend) in nightlight.js; the weather with (1 - uBend) in weather_fx.js (W8_SPEC 11.4).
+(function (global) {
+'use strict';
+const DAY = {
+  sky: '#a3c6e1', hemiSky: '#eef3f8', hemiGround: '#8c8a7a', hemi: 1.55,
+  sun: '#fff0d8', sunI: 2.6, SUN_LOCAL: [-0.45, 0.76, 0.47],            // east, up, south components (normalised below)
+  glint: [1.0, 0.93, 0.78],
+};
+const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// the local frame of the view target, blended from the world axes (flat) to the sphere's east / up / south by u (as transition.js frame())
+function frameAt(B, x, z, u) {
+  const b = B.basis(x, z), up = norm(mix([0, 1, 0], b.up, u)), e0 = mix([1, 0, 0], b.east, u), k = e0[0] * up[0] + e0[1] * up[1] + e0[2] * up[2];
+  const east = norm([e0[0] - k * up[0], e0[1] - k * up[1], e0[2] - k * up[2]]), south = cross(east, up);
+  return { east, up, south };
+}
+function sunDir(B, x, z, u) {
+  const f = frameAt(B, x, z, u), s = norm(DAY.SUN_LOCAL);
+  return norm([f.east[0] * s[0] + f.up[0] * s[1] + f.south[0] * s[2], f.east[1] * s[0] + f.up[1] * s[1] + f.south[1] * s[2], f.east[2] * s[0] + f.up[2] * s[1] + f.south[2] * s[2]]);
+}
+// ctx = { THREE, scene, hemi, moon, BEND, target: () => [x, y, z] (flat frame), glint: () => { uMoon, uGlint } uniforms of the sea or null }
+function attach(ctx) {
+  const T = ctx.THREE, sc = ctx.scene, C = { sky: new T.Color(DAY.sky), hemiSky: new T.Color(DAY.hemiSky), hemiGround: new T.Color(DAY.hemiGround), sun: new T.Color(DAY.sun) };
+  const saved = { bg: new T.Color(), fog: new T.Color(), hemiColor: new T.Color(), hemiGround: new T.Color(), hemiI: 0, hemiPos: new T.Vector3(), moonColor: new T.Color(), moonI: 0, moonPos: new T.Vector3(), uMoon: new T.Vector3(), uGlint: new T.Vector3() };
+  const st = { active: false, last: null };
+  const prevB = sc.onBeforeRender, prevA = sc.onAfterRender;
+  sc.onBeforeRender = function () {
+    const u = ctx.BEND.get(); st.active = u > 0;
+    if (st.active) {
+      const h = ctx.hemi, m = ctx.moon, t = ctx.target(), g = ctx.glint && ctx.glint();
+      if (sc.background && sc.background.isColor) { saved.bg.copy(sc.background); sc.background.lerp(C.sky, u); }
+      if (sc.fog) { saved.fog.copy(sc.fog.color); sc.fog.color.lerp(C.sky, u); }
+      saved.hemiColor.copy(h.color); saved.hemiGround.copy(h.groundColor); saved.hemiI = h.intensity; saved.hemiPos.copy(h.position);
+      saved.moonColor.copy(m.color); saved.moonI = m.intensity; saved.moonPos.copy(m.position);
+      const f = frameAt(ctx.BEND, t[0], t[2], u), sun = sunDir(ctx.BEND, t[0], t[2], u), moonDir = norm(m.position.toArray()), dir = norm(mix(moonDir, sun, u)), len = m.position.length();
+      h.color.lerp(C.hemiSky, u); h.groundColor.lerp(C.hemiGround, u); h.intensity += (DAY.hemi - h.intensity) * u;
+      h.position.set(...norm(mix(norm(h.position.toArray()), f.up, u))); h.updateMatrixWorld();
+      m.color.lerp(C.sun, u); m.intensity += (DAY.sunI - m.intensity) * u; m.position.set(dir[0] * len, dir[1] * len, dir[2] * len); m.updateMatrixWorld();
+      if (g) { saved.uMoon.copy(g.uMoon.value); saved.uGlint.copy(g.uGlint.value); g.uMoon.value.set(...norm(mix(saved.uMoon.toArray(), sun, u))); g.uGlint.value.set(...mix(saved.uGlint.toArray(), DAY.glint, u)); }
+      st.last = { u, sun, up: f.up, sky: sc.background && sc.background.getHexString(), hemi: h.intensity, sunI: m.intensity };
+    }
+    return prevB.apply(this, arguments);
+  };
+  sc.onAfterRender = function () {
+    if (st.active) {
+      const h = ctx.hemi, m = ctx.moon, g = ctx.glint && ctx.glint();
+      if (sc.background && sc.background.isColor) sc.background.copy(saved.bg);
+      if (sc.fog) sc.fog.color.copy(saved.fog);
+      h.color.copy(saved.hemiColor); h.groundColor.copy(saved.hemiGround); h.intensity = saved.hemiI; h.position.copy(saved.hemiPos); h.updateMatrixWorld();
+      m.color.copy(saved.moonColor); m.intensity = saved.moonI; m.position.copy(saved.moonPos); m.updateMatrixWorld();
+      if (g) { g.uMoon.value.copy(saved.uMoon); g.uGlint.value.copy(saved.uGlint); }
+      st.active = false;
+    }
+    return prevA.apply(this, arguments);
+  };
+  return { state: st, DAY, sunDir: (x, z, u) => sunDir(ctx.BEND, x, z, u) };
+}
+global.DAYLIGHT = { attach, DAY, sunDir, frameAt };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -19696,8 +19775,8 @@ function transitionStep(dt){
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
 function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoothstep(0,24,away));if(!(lift>0))return[target.x,target.y,target.z];const ll=lonLatAt(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);const flatH=Math.max(0,((h??TERRAIN.BASE)-TERRAIN.BASE)/Math.cos(ll.lat*Math.PI/180));return[target.x,target.y+(1-u)*TRANSITION.smoothstep(0,24,away)*flatH+u*Math.max(0,h??0),target.z];}
 // W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height)
-function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,target:[roam.position.x,0,roam.position.z]};}
-  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-target.y;return{lonLat:ll,h,target:[target.x,target.y,target.z]};}
+function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,target:[roam.position.x,0,roam.position.z],u:0};}
+  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-target.y;return{lonLat:ll,h,target:[target.x,target.y,target.z],u};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
@@ -19707,7 +19786,7 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
 }else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001);signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
@@ -19717,7 +19796,9 @@ const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj},BE
 const roads=ROADS.attach(scene,{ramp,renderer},BEND,terrain,section);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
-window.__scene={scene,renderer,camera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+// W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
+const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
+window.__scene={scene,renderer,camera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>
