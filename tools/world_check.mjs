@@ -1,6 +1,6 @@
 // Planet layout checks WC1-WC11 (W1). Run: node tools/world_check.mjs [--write]
 //   --write   also writes docs/world/survey/check-report.md and area-report.md
-// WC12-WC14 belong to W2/W8 and are reported as PENDING.
+// WC12-WC14 need a browser: WC12 is tools/regress.mjs, WC13 is tools/regress.mjs --weather lock:rain plus tools/weather_check.mjs, WC14 is tools/wc14_check.mjs (W8d); they are listed here as INFO.
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,6 +29,7 @@ function check(id, title, fn) {
   for (const m of info) say('  · ' + m);
 }
 function pending(id, title) { results.push({ id, status: 'PENDING' }); say(`PENDING ${id} ${title}（待 W2/W8，不计失败）`); }
+function delegated(id, title) { results.push({ id, status: 'INFO' }); say(`INFO ${id} ${title}`); }       // checked in a browser by another tool (not counted here)
 
 // ---------------------------------------------------------------- area model shared by WC1 and WC2
 const shares = W.computeAreaShares(0.25);
@@ -315,12 +316,12 @@ check('WC11', 'LM05、LM06、LM07 在同一大圆上，误差不超过 0.5°', (
   if (Math.abs(x) > 0.5) fail(`偏差 ${fmt(x, 3)}° > 0.5°`);
 });
 
-pending('WC12', '弯曲为 0 时，现有布局检查与截图与改动前一致');
-pending('WC13', '天气锁定为雨时现有检查与截图一致；天气可复现');
-pending('WC14', '全景距离下没有雨丝和遮挡地表的云层');
+delegated('WC12', '弯曲为 0 时，现有布局检查与截图与改动前一致：node tools/regress.mjs --baseline-ref pre-w6a --mask-patch-margin 24（浏览器）');
+delegated('WC13', '天气锁定为雨时现有检查与截图一致；天气可复现：node tools/regress.mjs ... --weather lock:rain 与 node tools/weather_check.mjs（浏览器）');
+delegated('WC14', '全景距离下没有雨丝和遮挡地表的云层、四个方向可读：node tools/wc14_check.mjs（浏览器）');
 
 const failed = results.filter(r => r.status === 'FAIL').length;
-const summary = `${failed ? 'FAIL' : 'PASS'} world_check：WC1–WC11 ${results.filter(r => r.status === 'PASS').length}/11 通过，WC12–WC14 待后续阶段`;
+const summary = `${failed ? 'FAIL' : 'PASS'} world_check：WC1–WC11 ${results.filter(r => r.status === 'PASS').length}/11 通过，WC12–WC14 由浏览器检查负责（见上）`;
 out.push(summary);                                              // the written report stays deterministic: no timing in it
 console.log(`${summary}；用时 ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 
