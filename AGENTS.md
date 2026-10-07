@@ -17,8 +17,8 @@
 ## Town, planet, and weather boundaries
 - The global design extends the town; it does not replace frozen town geometry or building specifications.
 - Weather is a separately planned system (D8, ST05, W8), not evidence of an already implemented module. Default town rain and regression screenshots must remain consistent.
-- All planet-wide GLOBE views are clear moonlit nights without rain/cloud cover. Time remains night (D9).
-- Neutral illumination in non-globe reference panels is a material/form study, not a daytime game state. Local night panels follow biome weather (snow on ice, usually clear in desert).
+- Sphere mode (button-switched, W8e; D10–D12 in `WORLD_PLAN.md`) is always a clear daytime globe: no rain/snow/fog/cloud at any zoom distance. The flat map (town default, free to pan everywhere) stays at night with local biome weather (D9 as revised 2026-10-07). The ST04/ST05 night-globe wording in older cards and the 39 existing reference images predates this; do not regenerate references unless asked.
+- Neutral illumination in non-globe reference panels is a material/form study, not a game state. Local night panels follow biome weather (snow on ice, usually clear in desert).
 - Correct stale template wording minimally to match established decisions and record the correction. Ask only for a real design-decision change or unresolved meaning; do not repeatedly request confirmation of D8/D9 or the already accepted ST01 style.
 
 ## Validation and delivery
