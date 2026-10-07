@@ -453,7 +453,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   function camLL(camera) {
     const u = BEND.get(); if (u < 0.5) {
-      const ll = W.townToLonLat(camera.position.x, camera.position.z);
+      const ll = W.townToLonLat(camera.position.x, camera.position.z); ll.lon = ((ll.lon + 180) % 360 + 360) % 360 - 180;   // W8e-b: the flat map runs to 275 deg, the table is in -180..180
       return { ...ll, alt: Math.max(0, camera.position.y - Math.max(0, ((TERR.sampler()(ll.lon,ll.lat) ?? BASE)-BASE)/Math.cos(ll.lat*D))) };
     }
     const dx = camera.position.x, dy = camera.position.y + R, dz = camera.position.z, l = Math.hypot(dx, dy, dz);
@@ -559,7 +559,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     DATA.ice = iceField(W, H, { avoid }); DATA.lava = lavaField(W, H, { avoid });
     { const TB = global.TERRAIN.builder(W); DATA.dunes = dunes(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
     INDEX = indexItems(DATA.items); S.data = DATA;
-    buildMeshes(K, M); buildInstances(K, M); buildLines();
+    buildMeshes(K, M); buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
     S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, buildMs: Date.now() - t0, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
     S.built = true; return S.root;
   }

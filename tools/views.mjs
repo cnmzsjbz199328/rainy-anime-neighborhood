@@ -48,8 +48,12 @@ const v3 = await view();
 results.push(['右键平移（目标点在地面上移动，高度不变）', (!near(v2.target[0], v3.target[0]) || !near(v2.target[2], v3.target[2])) && near(v2.target[1], v3.target[1])]);
 await page.evaluate(() => { for (let i = 0; i < 400; i++) window.__scene.view.pan(-200, -200); });
 const v4 = await view();
-const lim = await page.evaluate(()=>({x:window.__scene.transition.span,z:window.__scene.transition.limitZ}));
-results.push([`平面全图临时边界：(${v4.target[0].toFixed(1)}, ${v4.target[2].toFixed(1)})`, Math.abs(v4.target[0])<=lim.x+1e-6 && Math.abs(v4.target[2])<=lim.z+1e-6 && (Math.abs(v4.target[0])>lim.x-1e-3 || Math.abs(v4.target[2])>lim.z-1e-3)]);
+// W8e-b: the flat map runs from the seam at -85 deg to 275 deg (x in [xMin, xMax]), latitude +-80 deg; pan towards both corners
+const lim = await page.evaluate(()=>{const T=window.__scene.transition;return{x0:T.xMin,x1:T.xMax,z:T.limitZ};});
+await page.evaluate(() => { for (let i = 0; i < 400; i++) window.__scene.view.pan(200, 200); });
+const v5 = await view();
+const inside = t => t[0] >= lim.x0 - 1e-6 && t[0] <= lim.x1 + 1e-6 && Math.abs(t[2]) <= lim.z + 1e-6, atEdge = t => Math.abs(t[0] - lim.x0) < 1e-3 || Math.abs(t[0] - lim.x1) < 1e-3 || Math.abs(Math.abs(t[2]) - lim.z) < 1e-3;
+results.push([`平面全图边界（x ${lim.x0.toFixed(1)}…${lim.x1.toFixed(1)}，|z| ≤ ${lim.z.toFixed(1)}）：(${v4.target[0].toFixed(1)}, ${v4.target[2].toFixed(1)}) 与 (${v5.target[0].toFixed(1)}, ${v5.target[2].toFixed(1)})`, inside(v4.target) && inside(v5.target) && atEdge(v4.target) && atEdge(v5.target)]);
 await page.evaluate(() => window.__scene.view.set({ dist: 1e4 }));
 results.push(['缩放上限 400（缩放不切换地图模式）', (await view()).dist === 400]);
 await page.evaluate(() => window.__scene.view.set({ dist: 0 }));

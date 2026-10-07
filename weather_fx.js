@@ -23,7 +23,7 @@ function attach(THREE, scene, ctx) {
     if (st.snow) return st.snow; let s = 0x51f0; const rnd = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
     const N = 900, pos = new Float32Array(N * 3), sp = new Float32Array(N); for (let i = 0; i < N; i++) { pos[i * 3] = (rnd() - 0.5) * 40; pos[i * 3 + 1] = rnd() * 9; pos[i * 3 + 2] = (rnd() - 0.5) * 40; sp[i] = 0.5 + rnd() * 0.4; }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const m = new THREE.PointsMaterial({ color: '#eef4fb', size: 0.09, transparent: true, opacity: 0, depthWrite: false });
+    const m = new THREE.PointsMaterial({ color: '#eef4fb', size: 0.09, transparent: true, opacity: 0, depthWrite: false }); m.userData.noWrap = true;   // laid out round the target in the display frame (W8e-b)
     const o = new THREE.Points(g, m); o.frustumCulled = false; o.visible = false; scene.add(o); return (st.snow = { o, m, pos, sp, N, rnd });
   }
   function tick(t, dt, view) {

@@ -115,7 +115,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
       shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;\nvBP = bendPosition(vWP);\nvUp = bendNormal(vWP, vec3(0.0, 1.0, 0.0));\nvEast = bendNormal(vWP, vec3(1.0, 0.0, 0.0));\nvSouth = bendNormal(vWP, vec3(0.0, 0.0, 1.0));');
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;\nvBP = bendPosition(bendWrap(vWP));\nvUp = bendNormal(vWP, vec3(0.0, 1.0, 0.0));\nvEast = bendNormal(vWP, vec3(1.0, 0.0, 0.0));\nvSouth = bendNormal(vWP, vec3(0.0, 0.0, 1.0));');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
         .replace('#include <opaque_fragment>', `
@@ -170,6 +170,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
       mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; mesh.computeBoundingSphere(); root.add(mesh); objs.inst.push(mesh);
       if (type !== 'weedShadow') { const hull = new THREE.InstancedMesh(geo, M.hullMat, list.length); hull.instanceMatrix = mesh.instanceMatrix; hull.count = list.length; hull.computeBoundingSphere(); hull.name = 'ocean:' + type + ':ink'; root.add(hull); objs.hulls.push(hull); }
     }
+    if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the water is cut along the seam
     S.stats = { ...DATA.stats, buildMs: Date.now() - t0, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
     S.built = true; return root;
   }

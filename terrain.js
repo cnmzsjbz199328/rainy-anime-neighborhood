@@ -265,6 +265,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
         g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
         const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
       });
+      if (BEND.seamSplit) BEND.seamSplit(root);                     // W8e-b: the chunks that cross the seam at -85 deg are cut along it
     });
     state.stats.restBuildMs = Math.round(performance.now() - t);
   }
