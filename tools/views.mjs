@@ -51,7 +51,7 @@ const v4 = await view();
 const lim = 46;
 results.push([`平移边界（目标点限制在 ±${lim}）：(${v4.target[0].toFixed(1)}, ${v4.target[2].toFixed(1)})`, Math.abs(v4.target[0]) <= lim + 1e-6 && Math.abs(v4.target[2]) <= lim + 1e-6 && (Math.abs(v4.target[0]) > lim - 1e-3 || Math.abs(v4.target[2]) > lim - 1e-3)]);
 await page.evaluate(() => window.__scene.view.set({ dist: 1e4 }));
-results.push(['缩放上限 150', (await view()).dist === 150]);
+results.push(['缩放上限 400（W8a：ST04 全景约 300–400 m；d ≤ 150 仍是平面城镇）', (await view()).dist === 400]);
 await page.evaluate(() => window.__scene.view.set({ dist: 0 }));
 results.push(['缩放下限 9', (await view()).dist === 9]);
 // Pan without a right button: Shift + drag, and WASD / arrows relative to the view direction.

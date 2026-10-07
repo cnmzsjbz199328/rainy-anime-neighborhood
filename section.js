@@ -201,7 +201,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
   function buildGlobalInk() {
     if (S.globalInk) return; S.globalInk = true;
-    const t0 = Date.now(), root = S.root, step = 1;
+    const t0 = Date.now(), root = new THREE.Group(), step = 1; root.name = 'globalInk'; S.root.add(root); S.globalInkGroup = root;   // own group: shown only while uBend >= 0.5, so the picture never depends on whether it was built earlier (W8a)
     const nx = 360 / step, ny = 170 / step;
     const sample = (fn) => { const g = new Float32Array((nx + 1) * (ny + 1)); for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) g[j * (nx + 1) + i] = fn(-180 + i * step, -85 + j * step); return g; };
     const contour = (grid, level, altOff) => {
@@ -233,6 +233,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     if (S.root) S.root.visible = show;
     for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
     if (show && BEND.get() >= 0.5 && S.built) global.TERRAIN.withPrivateRandom(buildGlobalInk);
+    if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }
   BEND.onChange(visibility);
 

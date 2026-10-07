@@ -2098,3 +2098,14 @@
   - 球面平移：`uBend > 0` 时目标点不受 `PAN_LIMIT` 限制，限制在墨卡托范围内并在经度 ±180° 环绕；目标在地形之上；相机径向抬升到地形之上 0.5 m。
   - 检查工具 `tools/transition_check.mjs`（C2、C3、C5）与 ST04 八格截图（`docs/world/w8/`）；C1 用 `regress`（8 视角）。
 - 停止条件：见 W8_SPEC 第 10 节；`uBend = 0` 的 d ≤ 150 画面（补丁外 24 m 以外）一旦出现逐位差异，停下报告。
+
+## W8a 卷曲过渡 ST04（2026-10-07，分支 world/W8a，未推送）
+
+- 状态：完成并通过自查。基线 `pre-w8a`。新增 [transition.js](transition.js)（纯函数：`bendOf`、`terrainOf`、`capsOf`、`fogOf`、`farOf`、相机框架 `frame`）；[scene.js](scene.js)：`ZOOM` 上限 400，滚轮与双指缩放置 `pending` 后由距离驱动 `uBend`、雾与地形淡入；相机在 u > 0 时沿局部上方向、观察点按 u 抬到地面、相机径向抬升到地形上 0.5 m；u > 0 时平移不受底座限制（经度环绕、纬度 ±84.5°），回到 u = 0 时目标点滑回底座；漫游时 u 固定为 0；远裁剪面 d > 150 或 u > 0 时 600 m，否则仍为 400 m；`__scene.transition` 钩子。[terrain.js](terrain.js)：「其余地形」用独立材质，可在 u = 0 时按透明度淡入（`setFade`）；极帽改为 `smoothstep(0.98, 1, u)` 淡入。[section.js](section.js)：全球墨线放进自己的组，只在 u ≥ 0.5 时显示（否则先拉远再推近时会留下，画面出现滞回）。工具 [tools/transition_check.mjs](tools/transition_check.mjs)；[tools/views.mjs](tools/views.mjs) 的缩放上限检查改为 400（规格 3.1）。
+- **W8a-C1**：`regress --baseline-ref pre-w6a --mask-patch-margin 24` 8 个视角最大通道差 0，绘制调用与三角形不变（默认 2374 / 239958）。
+- **W8a-C2**：`uBend(d)` 单调、相邻 1 m 最大增量 0.0100（≤ 0.02），d = 150 与 300 处导数约 0.00007；两个新页面分别从 50 m 与 400 m 到 d = 120、190、225、270、300、350：状态逐位相同，画面差异像素 0。
+- **W8a-C3**：1000 个确定性随机目标，`camera.up` 与径向夹角最大 0.00000°；相机最小净空 233.85 m（d ≥ 300 不需要抬升）。
+- **W8a-C4**：ST04 八格截图 `docs/world/w8/`，逐张查看：1 雨中平面城镇；2 拉远后周围地形淡入（雾偏淡，W3 出口灰盒残桩可见）；3–5 卷曲中无裂缝、无新的 z-fighting、城镇建筑不被压扁，道路光带与海岸、田块逐步出现；6–7 完整星球、极帽、晴朗无雨，星球位于画面下半部；8 推近回城镇与第 1 格一致（雨重新出现）。与参考图差异见 [ST04 卡](docs/world/cards/ST04.md) 实施记录。
+- **W8a-C5**：40 档（d = 9…399，每 10 m）相邻档平均通道差 4.20–48.83，最大突变比 1.26（≤ 3）。
+- 既有检查：`world_check` WC1–WC11、`bend_check`、`terrain_check`、`section_check`、`layout_check --png`、`road_check`、`regress --views section`、`views`（缩放上限改为 400 后通过）、`frozen_diff`、两个 `check_kit` 通过。
+- 未做 / 残留：没有云（本计划不做）；过渡中最差情形 d = 150–300 的成本由 C5 的帧序列覆盖，SwiftShader 下全景约 11000 次绘制调用（真机待验证）；星球构图偏下进入待办池。

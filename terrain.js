@@ -225,10 +225,11 @@ TERRAIN.withPrivateRandom = withPrivateRandom;
 
 TERRAIN.attach = function (scene, makeMaterial, BEND) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, stubMat, root;
+  let material, capMat, restMat, stubMat, root;
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
+    restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
     stubMat = material.clone(); stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
@@ -258,25 +259,33 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     const t = performance.now(), restData = B.buildFlat({ ring: false, rest: true }), capData = [true, false].map(north => B.buildCap(north));
     state.restData = restData;
     withPrivateRandom(() => {
-      for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), material, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0; }
+      for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
       capData.forEach((c, k) => {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
-        const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() >= 0.98;
+        const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
       });
     });
     state.stats.restBuildMs = Math.round(performance.now() - t);
   }
+  // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
+  const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
+  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
   function apply() {
-    const u = BEND.get();
-    if (u > 0) buildRest();
-    for (const m of state.rest) m.visible = u > 0;
-    for (const m of state.caps) m.visible = u >= 0.98;
+    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;
+    if (restOn) buildRest();
+    for (const m of state.rest) m.visible = restOn;
+    if (state.restBuilt) setOpacity(restMat, u > 0 ? 1 : state.fade.rest);
+    const cf = smooth(0.98, 1, u);
+    for (const m of state.caps) m.visible = cf > 0;
+    if (state.restBuilt) setOpacity(capMat, cf);
   }
   BEND.onChange(apply);
   state.ringData = ringData;
   // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
   state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...ringData, ...state.restData]); } return state.samplerFn; };
+  state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;

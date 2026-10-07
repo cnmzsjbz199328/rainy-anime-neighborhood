@@ -2107,10 +2107,11 @@ TERRAIN.withPrivateRandom = withPrivateRandom;
 
 TERRAIN.attach = function (scene, makeMaterial, BEND) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, stubMat, root;
+  let material, capMat, restMat, stubMat, root;
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
+    restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
     stubMat = material.clone(); stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
@@ -2140,25 +2141,33 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     const t = performance.now(), restData = B.buildFlat({ ring: false, rest: true }), capData = [true, false].map(north => B.buildCap(north));
     state.restData = restData;
     withPrivateRandom(() => {
-      for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), material, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0; }
+      for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
       capData.forEach((c, k) => {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
-        const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() >= 0.98;
+        const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
       });
     });
     state.stats.restBuildMs = Math.round(performance.now() - t);
   }
+  // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
+  const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
+  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
   function apply() {
-    const u = BEND.get();
-    if (u > 0) buildRest();
-    for (const m of state.rest) m.visible = u > 0;
-    for (const m of state.caps) m.visible = u >= 0.98;
+    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;
+    if (restOn) buildRest();
+    for (const m of state.rest) m.visible = restOn;
+    if (state.restBuilt) setOpacity(restMat, u > 0 ? 1 : state.fade.rest);
+    const cf = smooth(0.98, 1, u);
+    for (const m of state.caps) m.visible = cf > 0;
+    if (state.restBuilt) setOpacity(capMat, cf);
   }
   BEND.onChange(apply);
   state.ringData = ringData;
   // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
   state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...ringData, ...state.restData]); } return state.samplerFn; };
+  state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;
@@ -3444,7 +3453,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
   function buildGlobalInk() {
     if (S.globalInk) return; S.globalInk = true;
-    const t0 = Date.now(), root = S.root, step = 1;
+    const t0 = Date.now(), root = new THREE.Group(), step = 1; root.name = 'globalInk'; S.root.add(root); S.globalInkGroup = root;   // own group: shown only while uBend >= 0.5, so the picture never depends on whether it was built earlier (W8a)
     const nx = 360 / step, ny = 170 / step;
     const sample = (fn) => { const g = new Float32Array((nx + 1) * (ny + 1)); for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) g[j * (nx + 1) + i] = fn(-180 + i * step, -85 + j * step); return g; };
     const contour = (grid, level, altOff) => {
@@ -3476,6 +3485,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     if (S.root) S.root.visible = show;
     for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
     if (show && BEND.get() >= 0.5 && S.built) global.TERRAIN.withPrivateRandom(buildGlobalInk);
+    if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }
   BEND.onChange(visibility);
 
@@ -4639,6 +4649,44 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
 
 if (typeof module !== 'undefined' && module.exports) module.exports = LANDCOVER;
 else global.LANDCOVER = LANDCOVER;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// Town-to-planet transition (W8a, ST04): pure functions, no THREE, no DOM. scene.js drives `uBend` from the camera distance d (the distance from the camera to its target, metres);
+// d <= 150 (the old zoom limit) is always uBend = 0, so every existing view stays pixel for pixel the same. The numbers come from W8_SPEC 3.1:
+//   uBend(d) = smoothstep(150, 300, d)        the town rolls up between 150 and 300 m (a sphere of radius 90 fills a 36 degree view at about 277 m)
+//   terrain(d) = smoothstep(60, 150, d)       the land around the town fades in out of the fog while the town is still flat
+//   caps(u) = smoothstep(0.98, 1, u)          the two ice caps (beyond 85 degrees) fade in last
+//   fog(u) = 1 - u                            the fog gives way to the curvature (the multiplier of the base density)
+// frame() is the camera rig: target and camera follow the local up of the sphere under the target. With u = 0 it returns exactly the old expressions; with u > 0 the offset
+// (east, up, south) is taken in a basis that is the sphere's local frame blended with the identity by u and re-orthonormalised, so the horizon never tilts.
+(function (global) {
+'use strict';
+const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const TR = {
+  ZOOM: [9, 400], FAR_NEAR: 400, FAR_FAR: 600, BEND: [150, 300], TERRAIN: [60, 150], CAPS: 0.98,
+  smoothstep: sm,
+  bendOf: d => sm(150, 300, d),
+  terrainOf: d => sm(60, 150, d),
+  capsOf: u => sm(0.98, 1, u),
+  fogOf: u => 1 - u,
+  // camera far plane: the old 400 m while the view is the old one, 600 m for the planet (the far side of the sphere is behind the horizon, the target is up to 400 m away)
+  farOf: (d, u) => (u > 0 || d > 150 ? 600 : 400),
+  // B = BEND (point, basis); target = [x, y, z] in the flat town frame; returns { position, lookAt, up }
+  frame(B, target, dist, yaw, pitch, u) {
+    const dx = dist * Math.sin(yaw) * Math.cos(pitch), dy = dist * Math.sin(pitch), dz = dist * Math.cos(yaw) * Math.cos(pitch);
+    if (!(u > 0)) return { position: [target[0] + dx, target[1] + dy, target[2] + dz], lookAt: [target[0], target[1], target[2]], up: [0, 1, 0] };
+    const P = B.point(target[0], target[1], target[2], u), b = B.basis(target[0], target[2]);
+    const upn = norm(mix([0, 1, 0], b.up, u)), e0 = mix([1, 0, 0], b.east, u), k = dot(e0, upn), en = norm([e0[0] - k * upn[0], e0[1] - k * upn[1], e0[2] - k * upn[2]]), sn = cross(en, upn);
+    return { position: [P[0] + en[0] * dx + upn[0] * dy + sn[0] * dz, P[1] + en[1] * dx + upn[1] * dy + sn[1] * dz, P[2] + en[2] * dx + upn[2] * dy + sn[2] * dz], lookAt: P, up: upn };
+  },
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = TR;
+else global.TRANSITION = TR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -19147,8 +19195,11 @@ const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferA
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // Pan slides the target over the ground at a speed proportional to distance and never leaves the plinth.
-const ZOOM=[9,150],PAN_LIMIT=BH-2,zoomTo=d=>Math.max(ZOOM[0],Math.min(ZOOM[1],d));
-function shiftTarget(wx,wz){target.x=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.x+wx));target.z=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.z+wz));}
+const ZOOM=TRANSITION.ZOOM,PAN_LIMIT=BH-2,zoomTo=d=>Math.max(ZOOM[0],Math.min(ZOOM[1],d));
+// W8a (ST04): zooming out rolls the town up; the camera distance drives uBend (transition.js). Only an interactive zoom drives it (TR.pending), so tests that set BEND or the view directly keep what they set.
+const TR={auto:true,pending:false,fog0:scene.fog.density,limitZ:Math.abs(WORLD.lonLatToTown(0,84.5).z),span:Math.PI*BEND.R};
+const zoomUser=d=>{const v=zoomTo(d);TR.pending=true;return v;};
+function shiftTarget(wx,wz){if(BEND.get()>0){target.x+=wx;target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));target.x=((target.x+TR.span)%(2*TR.span)+2*TR.span)%(2*TR.span)-TR.span;return;}target.x=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.x+wx));target.z=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.z+wz));}
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
 // Town walking camera (W9a) uses only the frozen roads and alleys in layout.js.
 // Walkable rectangles are narrower than the carriageways, keeping the camera away from plots.
@@ -19158,14 +19209,14 @@ for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.re
 function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
 let roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled===!!roam)return;if(enabled){roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+function setRoaming(enabled){if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);terrain.setFade(0);scene.fog.density=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
 const stick=document.createElement('div');stick.id='town-walk-stick';stick.setAttribute('aria-label','街景移动摇杆');const nub=document.createElement('div');nub.id='town-walk-nub';stick.appendChild(nub);document.body.appendChild(stick);let stickPointer=null;
 function updateStick(e){const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=33,k=len>max?max/len:1;joystickValue=[dx*k/max,-dy*k/max];nub.style.transform=`translate(${dx*k}px,${dy*k}px)`;}
 stick.addEventListener('pointerdown',e=>{if(!roam)return;stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);e.preventDefault();});stick.addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)updateStick(e);});for(const ev of ['pointerup','pointercancel'])stick.addEventListener(ev,e=>{if(e.pointerId===stickPointer){stickPointer=null;joystickValue=[0,0];nub.style.transform='';}});
-const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&!roam){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};dist=zoomTo(dist*pinch/d);pinch=d;pan(m.x-mid.x,m.y-mid.y);mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){roam.heading+=dx*.005;roam.lookPitch=Math.max(-.45,Math.min(.7,roam.lookPitch+dy*.003));}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);last=null;if(roam)canvas.style.cursor='grab';});canvas.addEventListener('wheel',e=>{if(roam)return;e.preventDefault();dist=zoomTo(dist*Math.exp(e.deltaY*.001));},{passive:false});
+const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&!roam){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};dist=zoomUser(dist*pinch/d);pinch=d;pan(m.x-mid.x,m.y-mid.y);mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){roam.heading+=dx*.005;roam.lookPitch=Math.max(-.45,Math.min(.7,roam.lookPitch+dy*.003));}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);last=null;if(roam)canvas.style.cursor='grab';});canvas.addEventListener('wheel',e=>{if(roam)return;e.preventDefault();dist=zoomUser(dist*Math.exp(e.deltaY*.001));},{passive:false});
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);e.preventDefault();}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',()=>keys.clear());
 function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joystickValue[0],z=(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joystickValue[1],m=Math.hypot(x,z);if(m>1){x/=m;z/=m;}return[x,z];}
 // Planet landmarks (W7): landmarks/<id>.js registers LANDMARKS[id](kit, record) and draws in its own local frame (origin = site anchor, +Z towards the first entrance,
@@ -19203,10 +19254,20 @@ function buildLandmarks(){if(landmarksBuilt)return;landmarksBuilt=true;const t0=
     seed=s0;root=scene;});
   landmarkInfo.buildMs=Date.now()-t0;}
 function landmarksVisible(){const show=BEND.get()>0||(window.SECTION_API&&window.SECTION_API.state.mode);if(show&&!landmarksBuilt&&Object.keys(globalThis.LANDMARKS||{}).length)buildLandmarks();for(const g of landmarkGroups)g.visible=!!show;return show;}
+function transitionStep(dt){const free=!window.SECTION_API||!window.SECTION_API.state.mode;
+  if(TR.pending&&TR.auto&&free){TR.pending=false;const u=TRANSITION.bendOf(dist);if(u!==BEND.get())BEND.set(u);terrain.setFade(u>0?0:TRANSITION.terrainOf(dist));scene.fog.density=TR.fog0*TRANSITION.fogOf(u);}
+  const u=BEND.get();
+  // after panning round the planet, a zoom back into the flat town glides the target back inside the plinth (only then: the target is never moved otherwise)
+  if(u===0&&(Math.abs(target.x)>PAN_LIMIT||Math.abs(target.z)>PAN_LIMIT)&&free&&!roam){const cx=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.x)),cz=Math.max(-PAN_LIMIT,Math.min(PAN_LIMIT,target.z)),k=1-Math.exp(-dt*3);target.x+=(cx-target.x)*k;target.z+=(cz-target.z)*k;if(Math.abs(cx-target.x)<1e-3&&Math.abs(cz-target.z)<1e-3){target.x=cx;target.z=cz;}}}
+// the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
+function lookTarget(u){if(!(u>0))return[target.x,target.y,target.z];const ll=WORLD.townToLonLat(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);return[target.x,target.y+u*Math.max(0,h==null?0:h),target.z];}
+// keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
+function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),h=terrain.sampler()(lam/(Math.PI/180),phi/(Math.PI/180));if(h==null)return;const want=R+Math.max(0,h)+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
 if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.heading),rX=-Math.cos(roam.heading),rZ=Math.sin(roam.heading),moveX=fX*mz+rX*mx,moveZ=fZ*mz+rZ*mx,speed=1.5,[wx,wz]=constrainWalk(roam.position.x+moveX*speed*elapsed,roam.position.z+moveZ*speed*elapsed);roam.position.x=wx;roam.position.z=wz;
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
-}else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}camera.position.set(target.x+dist*Math.sin(yaw)*Math.cos(pitch),target.y+dist*Math.sin(pitch),target.z+dist*Math.cos(yaw)*Math.cos(pitch));camera.lookAt(target);}
+}else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(dt);const u=BEND.get(),fr=TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(dist,u);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
+  camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(target);}}
 rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
@@ -19215,7 +19276,7 @@ const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj},BE
 const roads=ROADS.attach(scene,{ramp,renderer},BEND,terrain,section);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
-window.__scene={scene,renderer,camera,groups,bend:BEND,terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,groups,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target)target.fromArray(v.target);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>
