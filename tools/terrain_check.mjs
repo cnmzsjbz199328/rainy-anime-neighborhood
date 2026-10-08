@@ -25,6 +25,9 @@ function check(id, title, fn) {
 const B = T.builder(W);
 const tb = Date.now();
 const chunks = B.buildFlat({ ring: true, rest: true });
+// W8f-c G3 removes only terrain triangles covered by an exit road. For the global area and topology checks,
+// include that covered footprint as the road surface so the W3 world-coverage totals remain comparable.
+const fullChunks = B.buildFlat({ ring: true, rest: true, exitClearance: false });
 const caps = [B.buildCap(true), B.buildCap(false)];
 const stubs = B.buildStubs();
 const buildMs = Date.now() - tb;
@@ -34,6 +37,11 @@ const tris = [];
 for (const c of chunks) for (const [idx, ring] of [[c.ringIndex, true], [c.restIndex, false]]) if (idx) for (let t = 0; t < idx.length; t += 3) {
   const v = [idx[t], idx[t + 1], idx[t + 2]].map(i => ({ lon: c.lonlat[i * 2], lat: c.lonlat[i * 2 + 1], h: c.alt[i], x: c.pos[i * 3], y: c.pos[i * 3 + 1], z: c.pos[i * 3 + 2], i, c }));
   tris.push({ v, ring, c });
+}
+const fullTris = [];
+for (const c of fullChunks) for (const [idx, ring] of [[c.ringIndex, true], [c.restIndex, false]]) if (idx) for (let t = 0; t < idx.length; t += 3) {
+  const v = [0, 1, 2].map(k => { const i = idx[t + k]; return { lon: c.lonlat[i * 2], lat: c.lonlat[i * 2 + 1], h: c.alt[i], x: c.pos[i * 3], y: c.pos[i * 3 + 1], z: c.pos[i * 3 + 2], i, c }; });
+  fullTris.push({ v, ring, c });
 }
 // chord-based spherical area of a small triangle (metres squared on the sphere of radius R)
 const unit = (lon, lat) => [Math.cos(lat * D) * Math.cos(lon * D), Math.cos(lat * D) * Math.sin(lon * D), Math.sin(lat * D)];
@@ -102,7 +110,7 @@ check('W3-C1', '高度一致：顶点 y_flat·cos φ = height − 1.6；确定�
 // ---- W3-C2: areas
 check('W3-C2', '面积一致：总面积 = 4πR²(−85°..85°) − 补丁面积；四类面积与 WC1 的栅格相差 ≤ 0.2 个百分点', ({ info, fail }) => {
   let total = 0; const zone = { building: 0, ocean: 0, wild: 0, ice: 0 };
-  for (const t of tris) { const a = triArea(t.v), lon = (t.v[0].lon + t.v[1].lon + t.v[2].lon) / 3, lat = (t.v[0].lat + t.v[1].lat + t.v[2].lat) / 3; total += a; zone[W.regionAt(lon, lat).zone] += a; }
+  for (const t of fullTris) { const a = triArea(t.v), lon = (t.v[0].lon + t.v[1].lon + t.v[2].lon) / 3, lat = (t.v[0].lat + t.v[1].lat + t.v[2].lat) / 3; total += a; zone[W.regionAt(lon, lat).zone] += a; }
   const band = 4 * Math.PI * R * R * Math.sin(85 * D), patch = R * R * (2 * P.lonMax * D) * (2 * Math.sin(P.latMax * D)), expect = band - patch;
   info(`网格总面积 ${f(total, 0)} m²，期望 ${f(expect, 0)} m²（纬度带 ${f(band, 0)} − 补丁 ${f(patch, 0)}），相差 ${f((total / expect - 1) * 100, 3)}%`);
   if (Math.abs(total / expect - 1) > 0.005) fail('总面积偏差 > 0.5%');
@@ -140,10 +148,10 @@ check('W3-C3', '峰值：最高顶点 26.00 m 在雨见岳锚点；其余山脊 
 });
 
 // ---- W3-C4: seams
-check('W3-C4', '无缝：块边界顶点位置与法线逐位相同；内部边都配对；经度 ±180° 两排顶点在 uBend = 1 时重合', ({ info, fail }) => {
+check('W3-C4', '无缝：块边界顶点位置与法线逐位相同；基础地形内部边都配对；经度 ±180° 两排顶点在 uBend = 1 时重合', ({ info, fail }) => {
   const key = (lon, lat) => `${Math.round(lon * 1e7)},${Math.round(lat * 1e7)}`;
   const first = new Map(); let dup = 0, bad = 0;
-  for (const c of chunks) for (let i = 0; i < c.vertexCount; i++) {
+  for (const c of fullChunks) for (let i = 0; i < c.vertexCount; i++) {
     const k = key(c.lonlat[i * 2], c.lonlat[i * 2 + 1]), rec = [c.pos[i * 3], c.pos[i * 3 + 1], c.pos[i * 3 + 2], c.nrm[i * 3], c.nrm[i * 3 + 1], c.nrm[i * 3 + 2]];
     const g = first.get(k); if (!g) { first.set(k, rec); continue; }
     dup++; if (g.some((v, j) => v !== rec[j])) bad++;
@@ -152,7 +160,7 @@ check('W3-C4', '无缝：块边界顶点位置与法线逐位相同；内部边�
   if (bad) fail(`${bad} 个重复顶点不一致`);
   // edge pairing on lon/lat keys (lon -180 and 180 are the same meridian)
   const kk = (lon, lat) => key(lon === 180 ? -180 : lon, lat), edges = new Map();
-  for (const t of tris) for (let e = 0; e < 3; e++) {
+  for (const t of fullTris) for (let e = 0; e < 3; e++) {
     const a = t.v[e], b = t.v[(e + 1) % 3], ka = kk(a.lon, a.lat), kb = kk(b.lon, b.lat), ek = ka < kb ? ka + '|' + kb : kb + '|' + ka;
     edges.set(ek, (edges.get(ek) || 0) + 1);
   }
@@ -172,7 +180,7 @@ check('W3-C4', '无缝：块边界顶点位置与法线逐位相同；内部边�
   // antimeridian: bent positions of the -180 and +180 vertices of the same ring
   const bend = (x, y, z) => { const tz = z / R, lam = x / R, phi = -Math.atan(Math.sinh(tz)), s = 1 / Math.cosh(tz), k = R + y * s; return [k * Math.cos(phi) * Math.sin(lam), -R + k * Math.cos(phi) * Math.cos(lam), -k * Math.sin(phi)]; };
   let seam = 0, pairs = 0; const west = new Map(), east = new Map();
-  for (const c of chunks) for (let i = 0; i < c.vertexCount; i++) {
+  for (const c of fullChunks) for (let i = 0; i < c.vertexCount; i++) {
     const lon = c.lonlat[i * 2], lat = c.lonlat[i * 2 + 1];
     if (lon === -180) west.set(lat, [c.pos[i * 3], c.pos[i * 3 + 1], c.pos[i * 3 + 2]]); else if (lon === 180) east.set(lat, [c.pos[i * 3], c.pos[i * 3 + 1], c.pos[i * 3 + 2]]);
   }
@@ -230,9 +238,10 @@ check('W3-C6', '9 个出口起点：首点在出口节点上、贴地 0.02 m、�
     ids.add(s.exit);
     const node = W.roadNetwork.nodeById[s.exit], p0 = s.samples[0], d0 = W.arcDistance({ lon: p0.lon, lat: p0.lat }, node);
     let lift = 0, wErr = 0, inside = 0;
+    const m = s.grid?.length || 2;
     s.samples.forEach((p, k) => {
       const c = Math.cos(p.lat * D); lift = Math.max(lift, Math.abs(p.y * c - (p.h - BASE) - 0.02));
-      const L = [s.pos[k * 6], s.pos[k * 6 + 2]], Rr = [s.pos[k * 6 + 3], s.pos[k * 6 + 5]];
+      const L = [s.pos[(k * m) * 3], s.pos[(k * m) * 3 + 2]], Rr = [s.pos[(k * m + m - 1) * 3], s.pos[(k * m + m - 1) * 3 + 2]];
       wErr = Math.max(wErr, Math.abs(Math.hypot(L[0] - Rr[0], L[1] - Rr[1]) * c - want[s.class]));
       if (k > 0 && B.inPatch(p.lon, p.lat) && W.townPatchDistance(p.lon, p.lat) === 0 && Math.abs(Math.abs(p.lon) - P.lonMax) > 1e-9 && Math.abs(Math.abs(p.lat) - P.latMax) > 1e-9) inside++;
     });

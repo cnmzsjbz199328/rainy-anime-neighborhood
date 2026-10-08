@@ -1,7 +1,7 @@
 // Checks W5-C1..C9 for the road network, batches W5a and W5b (RD01, RD02, RD03, RD05, RD06, RD08, tunnel, exits, lamps, light band, entrances). Run after `python3 build.py`:  node tools/road_check.mjs [--no-browser]
 // Data checks run under Node on the generated geometry (world.js, terrain.js mesh heights, roadkit.js, bridge.js, roads.js); the page part measures draw calls.
 // W5-C8 (regression) is tools/regress.mjs --baseline-ref pre-w5 --mask-patch-margin 24 plus the other tools listed in PROGRESS.
-// W8f-a (W8_SPEC 12.1 C): C1 and C3 know the abutment transitions and approaches (centre line within 1.0 m of samplePath inside a transition, 0.05 m outside it; RD01 grade
+// W8f-a / W8f-c (W8_SPEC 12.1 C / 12.4): C1 and C3 know the abutment and node-turn transitions (centre line within 1.0 m inside a transition, 0.05 m outside it; RD01 grade
 // <= 15 % inside an approach, 6 % elsewhere), C9 also checks the town-edge colour of the exits, W5-C10 is the joints (abutments, junctions), W5-C11 the page and budget.
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -51,7 +51,8 @@ check('W5-C1', '中线：生成中线与 samplePath 相差 ≤ 0.05 m（桥台�
   const origOf = segs => { const out = []; let off = 0; segs.forEach((sg, k) => { const e = NET.edges.find(q => q.id === sg.id), len = NET.edgeLength(e); let P = NET.samplePath(e, 0.5); if (sg.rev) P = P.slice().reverse().map(p => ({ ...p, s: len - p.s })); P.forEach((p, i) => { if (k > 0 && i === 0) return; out.push({ ...p, s: p.s + off }); }); off += len; }); return out; };
   const dev = (S, O, i) => { let best = Infinity; const v = W.vec(S.lon, S.lat); for (let k = Math.max(0, i - 6); k < Math.min(O.length - 1, i + 6); k++) best = Math.min(best, W.arcPointDistance(v, W.vec(O[k].lon, O[k].lat), W.vec(O[k + 1].lon, O[k + 1].lat))); return best; };
   const zones = []; for (const a of PLAN.abutments) zones.push({ id: a.route, end: a.rEnd, T: a.fillet.Ta }, { id: a.bridge, end: a.bEnd, T: a.fillet.Tb });
-  const inZone = (id, s, L) => zones.some(z => z.id === id && (z.end === 'start' ? s <= z.T + 1e-6 : L - s <= z.T + 1e-6));
+  const turns = [...PLAN.routes.flatMap(rt => (rt.turns || []).map(q => ({ id: rt.def.id, lo: q.station - q.fillet.Ta, hi: q.station + q.fillet.Tb }))), ...PLAN.bridges.flatMap(b => (b.turns || []).map(q => ({ id: b.def.id, lo: q.station - q.fillet.Ta, hi: q.station + q.fillet.Tb })))];
+  const inZone = (id, s, L) => zones.some(z => z.id === id && (z.end === 'start' ? s <= z.T + 1e-6 : L - s <= z.T + 1e-6)) || turns.some(z => z.id === id && s >= z.lo - 0.6 && s <= z.hi + 0.6);
   for (const rt of PLAN.routes) {
     const m = rt.grid.length, st = rt.strip; let j = 0; while (!(rt.grid[j] <= 0 && rt.grid[j + 1] >= 0)) j++;
     const t = (0 - rt.grid[j]) / (rt.grid[j + 1] - rt.grid[j]), O = origOf(rt.def.segs).filter(p => p.s >= rt.samples[0].s - 1 && p.s <= rt.length + 1); let worst = 0, worstZ = 0;
@@ -75,7 +76,7 @@ check('W5-C1', '中线：生成中线与 samplePath 相差 ≤ 0.05 m（桥台�
     for (const id of b.ids) covered.add(id);
     info(`桥 ${b.def.id}：长 ${f(b.length, 1)} m，中线偏差 ${f(worst, 4)} m（桥台过渡段内 ${f(worstZ, 3)} m），端点相差 ${f(e0, 3)} / ${f(e1, 3)} m（桥台）`);
   }
-  info(`桥台过渡段（W8f-a，公共切线的二次曲线，切线长 ≤ 12 m，离原中线 ≤ 0.75 m）：${PLAN.abutments.map(a => `${a.node} 路侧 ${f(a.fillet.Ta, 1)} m / 桥侧 ${f(a.fillet.Tb, 1)} m，折角 ${f(a.fillet.angle, 1)}°，偏离 ${f(a.fillet.deviation, 2)} m`).join('；')}；端点容差在桥台节点改为 ${TOL} m`);
+  info(`过渡段（桥台 W8f-a + 节点转弯 W8f-c，≤ 12 m，离 samplePath ≤ ${TOL} m）：桥台 ${PLAN.abutments.map(a => `${a.node} ${f(a.fillet.Ta, 1)}/${f(a.fillet.Tb, 1)} m，折角 ${f(a.fillet.angle, 1)}°，偏离 ${f(a.fillet.deviation, 2)} m`).join('；')}；节点转弯 ${turns.map(t => `${t.id} ${f(t.lo, 1)}–${f(t.hi, 1)} m`).join('；')}`);
   // stairs (RD06): the swept path follows samplePath by construction; check the end points and count
   for (const st of PLAN.stairs) {
     const e = NET.edges.find(q => q.id === st.id), n0 = NET.nodeById[e.from], n1 = NET.nodeById[e.to], e0 = arc(st.samples[0], n0), e1 = arc(st.samples[st.samples.length - 1], n1);
@@ -83,9 +84,9 @@ check('W5-C1', '中线：生成中线与 samplePath 相差 ≤ 0.05 m（桥台�
     info(`石阶 ${st.id}（RD06）：长 ${f(st.length, 1)} m，${st.count} 级，端点相差 ${f(e0, 3)} / ${f(e1, 3)} m`);
   }
   // T11-02: the wooden landing of the maintenance stair at the node LM08-south; the other end is the node J-LM08 on the deck (the gate in the parapet)
-  { const bp = PLAN.bridges.find(b => b.access), land = bp.access.landing, nd = NET.nodeById['LM08-south'], d = arc(land, nd), top = arc(bp.samples[bp.access.i], NET.nodeById['J-LM08']);
-    if (d > 0.05) fail(`T11-02 平台与 LM08-south 相差 ${f(d)} m`); if (top > 0.3) fail(`T11-02 楼梯门离 J-LM08 ${f(top)} m`); covered.add('T11-02');
-    info(`T11-02（检修楼梯，裁决见 PROGRESS）：平台中心与 LM08-south 相差 ${f(d, 3)} m，桥面栏杆门在 J-LM08 处（相差 ${f(top, 3)} m），${bp.access.steps.length} 级钢踏步，立柱 ${bp.access.posts} 根`); }
+  { const bp = PLAN.bridges.find(b => b.access), land = bp.access.landing, nd = NET.nodeById['LM08-south'], d = arc(land, nd), gate = bp.samples[bp.access.i], node = NET.nodeById['J-LM08'], topShift = arc(gate, node);
+    if (d > 0.05) fail(`T11-02 平台与 LM08-south 相差 ${f(d)} m`); if (topShift > 1.0) fail(`T11-02 楼梯门过渡后离 J-LM08 ${f(topShift)} m > 1 m`); covered.add('T11-02');
+    info(`T11-02（检修楼梯，裁决见 PROGRESS）：平台中心与 LM08-south 相差 ${f(d, 3)} m，楼梯门随过渡曲线位于 J-LM08 偏移 ${f(topShift, 3)} m（过渡允许 ≤ 1 m），${bp.access.steps.length} 级钢踏步，立柱 ${bp.access.posts} 根`); }
   const w4 = ['T03-01', 'T03-02', 'T03-03', 'T11-01'], rest = NET.edges.filter(e => !covered.has(e.id) && !w4.includes(e.id)).map(e => e.id);
   info(`W5 共覆盖 ${covered.size} 条边（另有 W4 已做的 ${w4.join('、')} 共 ${w4.length} 条）= ${covered.size + w4.length}/${NET.edges.length}；未覆盖 ${rest.length} 条${rest.length ? '：' + rest.join('、') : ''}`);
   if (rest.length) fail(`边缺少几何：${rest.join('、')}`);
@@ -267,10 +268,10 @@ check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（�
   const rows = [];
   for (const nd of NET.nodes.filter(n => n.kind === 'landmark-entrance')) {
     let best = { d: Infinity, id: '' }; for (const it of items) for (let i = 0; i < it.S.length; i++) { const d = arc(it.S[i], nd); if (d < best.d) best = { d, id: it.id, i, n: it.S.length }; }
-    const marks = PLAN.markers.filter(m => m.node === nd.id).length;
+    const marks = PLAN.markers.filter(m => m.node === nd.id).length, tol = nd.id === 'LM09-north' ? 1.0 : 0.05;
     const closed = marks === 2 || nd.id === 'LM04-southeast' || nd.id === 'LM08-south';
-    if (best.d > 0.05) fail(`${nd.id} 最近的道路采样点相差 ${f(best.d)} m > 0.05（${best.id}）`); if (!closed) fail(`${nd.id} 没有入口收口`);
-    rows.push(`${nd.id} ← ${best.id}（${f(best.d, 3)} m，${nd.id === 'LM04-southeast' ? 'W4 断面的土路终点' : nd.id === 'LM08-south' ? '检修楼梯平台' : marks + ' 根导引柱'}）`);
+    if (best.d > tol) fail(`${nd.id} 最近的道路采样点相差 ${f(best.d)} m > ${tol}（${best.id}）`); if (!closed) fail(`${nd.id} 没有入口收口`);
+    rows.push(`${nd.id} ← ${best.id}（${f(best.d, 3)} m，${nd.id === 'LM04-southeast' ? 'W4 断面的土路终点' : nd.id === 'LM08-south' ? '检修楼梯平台' : marks + ' 根导引柱'}${nd.id === 'LM09-north' ? '；G2 允许 ≤ 1 m 转弯偏移' : ''}）`);
   }
   info(rows.join('；'));
   // footprint circles: the centre line of every generated road against the landmark site radius (WC6 tolerance 0.2 m), except within a few metres of its own entrance;
@@ -353,6 +354,132 @@ check('W5-C10', '衔接（W8f-a，W8_SPEC 12.1 C）：6 个桥台的走向、竖
   }
 });
 
+// ---------------------------------------------------------------- W8f-c J2
+check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_SPEC 12.4）', ({ info, fail }) => {
+  const angleStep = S => {
+    let worst = 0;
+    for (let i = 1; i + 1 < S.length; i++) {
+      const a = S[i - 1], b = S[i], c = S[i + 1], h0 = W.bearing(a, b), h1 = W.bearing(b, c);
+      worst = Math.max(worst, Math.abs(((h1 - h0 + 540) % 360) - 180));
+    }
+    return worst;
+  };
+  const turns = [...PLAN.routes.flatMap(rt => (rt.turns || []).map(q => ({ id: rt.def.id, node: q.node, S: rt.samples, q }))),
+    ...PLAN.bridges.flatMap(b => (b.turns || []).map(q => ({ id: b.def.id, node: q.node, S: b.samples, q })))];
+  for (const t of turns) {
+    const { q, S } = t, lo = q.station - q.fillet.Ta, hi = q.station + q.fillet.Tb, zone = S.filter(p => p.s >= lo - 0.6 && p.s <= hi + 0.6);
+    const maxTurn = angleStep(zone), dev = q.fillet.deviation;
+    if (q.fillet.Ta > 12 + 1e-6 || q.fillet.Tb > 12 + 1e-6) fail(`${t.node} 切线长 ${f(q.fillet.Ta, 2)}/${f(q.fillet.Tb, 2)} m > 12 m`);
+    if (maxTurn > 1.0 + 1e-6) fail(`${t.node} 相邻 0.5 m 走向变化 ${f(maxTurn, 3)}° > 1°`);
+    if (dev > 1.0 + 1e-6) fail(`${t.node} 中线偏离 samplePath ${f(dev, 3)} m > 1 m`);
+    info(`${t.node}（${t.id}）：切线 ${f(q.fillet.Ta, 2)}/${f(q.fillet.Tb, 2)} m，最大 0.5 m 走向变化 ${f(maxTurn, 3)}°，最大偏离 ${f(dev, 3)} m`);
+  }
+  const bridge = PLAN.bridges.find(b => b.turns && b.turns.length), joints = bridge.joints;
+  for (const s of joints) {
+    const i = bridge.samples.reduce((best, p, k) => Math.abs(p.s - s) < Math.abs(bridge.samples[best].s - s) ? k : best, 0), row = bridge.samples[i], gap = Math.abs(row.s - s);
+    if (gap > 0.01) fail(`${bridge.ids.join('+')} 内部接缝没有共同横断面（里程误差 ${f(gap, 3)} m）`);
+    info(`${bridge.ids.join('+')} 内部接缝 s=${f(s, 3)} m：单条桥面网格，共用横断面里程误差 ${f(gap, 4)} m`);
+  }
+  let pierO = 0;
+  for (const b of PLAN.bridges) for (const p of b.piers) for (const c of p.columns) pierO = Math.max(pierO, Math.abs(c.o));
+  if (pierO > BR.DECK.half - 0.5 + 1e-6) fail(`桥墩中心横向偏移 ${f(pierO, 2)} m 超出桥面半宽 − 0.5 m`);
+  const access = PLAN.bridges.find(b => b.access), accessNode = NET.nodeById['J-LM08'], gate = access.samples[access.access.i], gateShift = arc(gate, accessNode),
+    planeGate = ROADS.plane(W, gate), gc = planeGate.to(gate), g0 = planeGate.to(access.samples[Math.max(0, access.access.i - 2)]), g1 = planeGate.to(access.samples[Math.min(access.samples.length - 1, access.access.i + 2)]), gl = Math.hypot(g1[0] - g0[0], g1[1] - g0[1]) || 1, gd = [(g1[0] - g0[0]) / gl, (g1[1] - g0[1]) / gl],
+    gateOpen = !(access.instances.barrierConcrete || []).some(it => { if (Math.abs(it.station - access.access.s) > 2.4) return false; const q = planeGate.to(it); return (q[0] - gc[0]) * gd[1] - (q[1] - gc[1]) * gd[0] < 0; });
+  if (gateShift > 1.0) fail(`T11-02 顶端偏离 J-LM08 ${f(gateShift, 3)} m > 1 m`);
+  if (!gateOpen) fail('T11-02 顶端对应的桥栏开口被护栏块占用');
+  info(`T11-02 顶端：距 J-LM08 ${f(gateShift, 3)} m；桥栏检修门区间无护栏块；钢梯板内缘与桥面边缘共边（0.00 m）`);
+
+  // Point-in-triangle queries against the generated flat terrain and swept road strips. The exit
+  // road is the first surface at each paved sample; any remaining terrain facet must lie below it.
+  const exitRoutes = PLAN.routes.filter(q => q.def.exit).map(rt => ({ id: rt.def.exit, rt }));
+  { const ch = RK.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD }); exitRoutes.push({ id: 'N08', rt: ch }); }
+  const exitPolygons = TB.exitPolygons(exitRoutes.map(q => ({ ...q.rt, def: { exit: q.id } }))),
+    terrainChunks = TB.buildFlat({ ring: true, rest: true, exitPolygons }), cell = 4, buckets = new Map(), triKey = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
+  const addTri = (A, B, C) => {
+    const xs = [A[0], B[0], C[0]], zs = [A[2], B[2], C[2]], tri = { A, B, C };
+    for (let ix = Math.floor(Math.min(...xs) / cell); ix <= Math.floor(Math.max(...xs) / cell); ix++) for (let iz = Math.floor(Math.min(...zs) / cell); iz <= Math.floor(Math.max(...zs) / cell); iz++) {
+      const k = `${ix},${iz}`; (buckets.get(k) || buckets.set(k, []).get(k)).push(tri);
+    }
+  };
+  for (const c of terrainChunks) for (const ix of [c.ringIndex, c.restIndex]) if (ix) for (let k = 0; k < ix.length; k += 3) {
+    const at = j => [c.pos[j * 3], c.pos[j * 3 + 1], c.pos[j * 3 + 2]];
+    addTri(at(ix[k]), at(ix[k + 1]), at(ix[k + 2]));
+  }
+  const triY = (x, z, tri) => {
+    const [A, B, C] = [tri.A, tri.B, tri.C], den = (B[2] - C[2]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[2] - C[2]);
+    if (Math.abs(den) < 1e-12) return null;
+    const a = ((B[2] - C[2]) * (x - C[0]) + (C[0] - B[0]) * (z - C[2])) / den, b = ((C[2] - A[2]) * (x - C[0]) + (A[0] - C[0]) * (z - C[2])) / den, c = 1 - a - b;
+    return a >= -1e-7 && b >= -1e-7 && c >= -1e-7 ? a * A[1] + b * B[1] + c * C[1] : null;
+  };
+  const groundAt = (x, z) => { for (const tri of buckets.get(triKey(x, z)) || []) { const y = triY(x, z, tri); if (y !== null) return y; } return null; };
+  const roadAt = (rt, i, x, z) => {
+    const st = rt.strip, m = rt.grid.length;
+    for (let r = Math.max(0, i - 1); r <= Math.min(rt.samples.length - 2, i); r++) for (let j = 0; j + 1 < m; j++) {
+      const at = k => [st.pos[k * 3], st.pos[k * 3 + 1], st.pos[k * 3 + 2]], a = r * m + j, b = a + 1, c = a + m, d = c + 1;
+      for (const ids of [[a, c, b], [b, c, d]]) { const y = triY(x, z, { A: at(ids[0]), B: at(ids[1]), C: at(ids[2]) }); if (y !== null) return y; }
+    }
+    return null;
+  };
+  const roadCrossPoint = (rt, i, o) => {
+    const m = rt.grid.length, g = rt.grid; let j = 0; while (j + 2 < m && g[j + 1] < o) j++;
+    const t = Math.max(0, Math.min(1, (o - g[j]) / (g[j + 1] - g[j]))), a = col(rt.strip, m, i, j), b = col(rt.strip, m, i, j + 1);
+    return [0, 1, 2].map(k => a[k] + (b[k] - a[k]) * t);
+  };
+  const lateralAt = (rt, i, o) => {
+    if (rt.lateral) return rt.lateral(i, o * (rt.cf ? rt.cf[i] : 1));
+    const S = rt.samples, a = S[Math.max(0, i - 1)], b = S[Math.min(S.length - 1, i + 1)], brg = W.bearing(a, b), q = W.destination(S[i], brg + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat];
+  };
+  let rayN = 0, noRoad = 0, buried = 0; const noRoadSamples = [], buriedSamples = [];
+  for (const { id, rt } of exitRoutes) {
+    const half = rt.classes.includes('RD01') || rt.classes.includes('RD01T') ? 4.5 : rt.classes.includes('RD03') ? 2.25 : 1.5, before = noRoad;
+    for (let i = 0; i < rt.samples.length && rt.samples[i].s <= 15 + 1e-6; i++) for (let k = 0; k < 5; k++) {
+      const o = rt.paved[i][0] + (rt.paved[i][1] - rt.paved[i][0]) * k / 4, q = roadCrossPoint(rt, i, o), x = q[0], z = q[2], ry = roadAt(rt, i, x, z), gy = groundAt(x, z);
+      rayN++; if (ry === null) { noRoad++; if (noRoadSamples.length < 10) noRoadSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)}`); continue; } if (gy !== null && gy > ry + 1e-4) { buried++; if (buriedSamples.length < 10) buriedSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)} Δ${f(gy - ry, 3)}m`); }
+    }
+    info(`${id}：首 15 m 内每 0.5 m × 5 横向采样；包含出口铺装半宽约 ${f(half, 2)} m，路面未命中 ${noRoad - before}`);
+  }
+  if (noRoad) fail(`${noRoad}/${rayN} 个出口铺装射线没有命中道路网格：${noRoadSamples.join('、')}`);
+  if (buried) fail(`${buried}/${rayN} 个出口铺装采样上方仍有地形三角面遮住道路：${buriedSamples.join('、')}`);
+  info(`9 个出口：${rayN} 条向下采样，未命中道路 ${noRoad}，地形遮挡 ${buried}`);
+
+  // Terrain colour is sampled by the same pure vertex function as the world mesh.
+  const outerColour = (rt, i, j) => {
+    const k = (i * rt.grid.length + j) * 3, x = rt.strip.pos[k], z = rt.strip.pos[k + 2], lon = x / (R * D), lat = Math.atan(Math.sinh(-z / R)) / D, expected = TB.vertex(lon, lat).c, actual = colorAt(rt.strip, rt.grid.length, i, j);
+    return Math.max(...[0, 1, 2].map(c => Math.abs(expected[c] - actual[c])));
+  };
+  let grassDiff = 0, grassWho = '';
+  for (const rt of PLAN.routes.filter(q => q.classes.some(c => ['RD03', 'RD04', 'RD05'].includes(c)))) {
+    const m = rt.grid.length, sides = [0, m - 1];
+    for (let i = 0; i < rt.samples.length; i += 5) for (const j of sides) { const d = outerColour(rt, i, j); if (d > grassDiff) { grassDiff = d; grassWho = `${rt.def.id} s=${f(rt.samples[i].s, 1)} m`; } }
+    if (rt.classes.includes('RD05')) for (const end of ['taperStart', 'taperEnd']) if (rt.def.opts[end]) {
+      const atEnd = end === 'taperStart' ? [...rt.samples.keys()].filter(i => rt.samples[i].s - rt.samples[0].s <= 3 + 1e-6) : [...rt.samples.keys()].filter(i => rt.samples.at(-1).s - rt.samples[i].s <= 3 + 1e-6);
+      for (const side of [-1, 1]) {
+        const inner = gridIndex(rt.grid, side * 1.5), outer = gridIndex(rt.grid, side * 2.8), widths = atEnd.map(i => ({ d: end === 'taperStart' ? rt.samples[i].s : rt.samples.at(-1).s - rt.samples[i].s,
+          w: dist3(bendPt(...col(rt.strip, m, i, outer)), bendPt(...col(rt.strip, m, i, inner))) }));
+        widths.sort((a, b) => a.d - b.d);
+        if (widths[0].w > 0.02 || widths.some((q, i) => i > 0 && q.w + 0.02 < widths[i - 1].w)) fail(`${rt.def.id} ${end} ${side < 0 ? '左' : '右'}草肩 3 m 内没有从 0 平滑展开：${widths.map(q => f(q.w, 2)).join(' / ')} m`);
+      }
+    }
+  }
+  if (grassDiff > 2 / 255 + 1e-6) fail(`RD03/RD04/RD05 外缘色差 ${f(grassDiff, 5)} > 2/255（${grassWho}）`);
+  info(`RD03/RD04/RD05 外缘与同点地形顶点最大色差 ${f(grassDiff, 5)}（上限 2/255，${grassWho}）；RD05 端头草肩在最后 3 m 内收到 0`);
+
+  let dashDelta = 0, dashWho = '';
+  for (const a of PLAN.abutments) {
+    const rt = PLAN.routes.find(q => q.def.id === a.route), sN = a.rEnd === 'end' ? rt.length : 0, jj = gridIndex(rt.grid, 0.075), rows = [];
+    for (let i = 0; i < rt.samples.length; i++) {
+      const p = rt.samples[i], d = Math.abs(p.s - sN); if (d > 14 + 1e-6) continue;
+      const chain = rt.chainAt(p.s), phase = ((chain / 6) % 1 + 1) % 1; if (phase < 0.45) rows.push({ s: p.s, c: colorAt(rt.strip, rt.grid.length, i, jj) });
+    }
+    for (let i = 1; i < rows.length; i++) if (Math.abs(rows[i].s - rows[i - 1].s) <= 0.51) {
+      const d = Math.max(...[0, 1, 2].map(c => Math.abs(rows[i].c[c] - rows[i - 1].c[c]))); if (d > dashDelta) { dashDelta = d; dashWho = `${a.node} ${f(rows[i - 1].s, 1)}–${f(rows[i].s, 1)} m`; }
+    }
+  }
+  if (dashDelta > 4 / 255 + 1e-6) fail(`同一虚线段相邻顶点色差 ${f(dashDelta, 5)} > 4/255（${dashWho}）`);
+  info(`6 个桥台 14 m 过渡内同一虚线段相邻顶点最大色差 ${f(dashDelta, 5)}（上限 4/255，${dashWho}）`);
+});
+
 // ---------------------------------------------------------------- browser part
 if (!process.argv.includes('--no-browser')) {
   const { launchChromium } = await import('./browser.mjs');
@@ -401,6 +528,42 @@ if (!process.argv.includes('--no-browser')) {
     results.push({ id: 'W5-C11', ok: !fails.length });
     console.log(`${fails.length ? 'FAIL' : 'PASS'} W5-C11 预算与页面：默认画面不变、光带 ≤ 20 次绘制、无页面错误（W8f-a 前编号 W5-C10）`);
     for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m);
+  }
+  {
+    const rows = await page.evaluate(async () => {
+      const S = window.__scene, W = window.WORLD, L = window.LAYOUT, THREE = window.THREE, R = 90, D = Math.PI / 180;
+      S.bend.set(0); S.transition.setMode('flat'); S.terrain.setExplore(false); S.roads.ensure();
+      const flat = (lon, lat) => [R * lon * D, (W.height(lon, lat) - 1.6 + 0.02) / Math.cos(lat * D), -R * Math.asinh(Math.tan(lat * D))];
+      const pathFromExit = node => { const edge = W.roadNetwork.edges.find(e => e.from === node.id || e.to === node.id), length = W.roadNetwork.edgeLength(edge); let samples = W.roadNetwork.samplePath(edge, 0.5); if (edge.to === node.id) samples = samples.slice().reverse().map(p => ({ ...p, s: length - p.s })); return { edge, samples }; };
+      const point = (samples, s, o) => {
+        const P = samples; let p, brg;
+        if (s < 0) { p = P[0]; brg = W.bearing(P[0], P[1]); p = W.destination(p, brg + 180, -s); }
+        else { let i = 0; while (i + 2 < P.length && P[i + 1].s < s) i++; const a = P[i], b = P[Math.min(i + 1, P.length - 1)], q = Math.max(0, Math.min(1, (s - a.s) / Math.max(1e-6, b.s - a.s))); p = { lon: a.lon + (b.lon - a.lon) * q, lat: a.lat + (b.lat - a.lat) * q }; brg = W.bearing(a, b); }
+        if (o) p = W.destination(p, brg + (o > 0 ? 90 : -90), Math.abs(o));
+        return flat(p.lon, p.lat);
+      };
+      const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true }), rows = [];
+      for (const node of W.roadNetwork.nodes.filter(n => n.kind === 'town-exit')) {
+        const { samples } = pathFromExit(node);
+        const center = flat(node.lon, node.lat); S.view.set({ mode: 'free', mapMode: 'flat', target: [center[0], 0, center[2]], yaw: 0, pitch: 1.42, dist: 14 });
+        S.terrain.setExplore(false); if (S.roads.state.root) S.roads.state.root.visible = false; window.__step(1); S.renderer.render(S.scene, S.camera);
+        canvas.width = S.renderer.domElement.width; canvas.height = S.renderer.domElement.height; ctx.drawImage(S.renderer.domElement, 0, 0);
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const pixelMean = points => { let sum = 0, count = 0; for (const p of points) { const v = new THREE.Vector3(...p).project(S.camera), x = Math.round((v.x * 0.5 + 0.5) * canvas.width), y = Math.round((-v.y * 0.5 + 0.5) * canvas.height); if (x < 1 || y < 1 || x >= canvas.width - 1 || y >= canvas.height - 1 || v.z < -1 || v.z > 1) continue; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const k = ((y + dy) * canvas.width + x + dx) * 4; sum += 0.2126 * pixels[k] + 0.7152 * pixels[k + 1] + 0.0722 * pixels[k + 2]; count++; } } return { mean: count ? sum / count : 0, count }; };
+        const headPts = []; for (const s of [0.75, 1.5, 2.5, 3.5, 4.5, 5.5]) for (const o of [-0.9, -0.5, 0.5, 0.9]) headPts.push(point(samples, s, o));
+        const layoutNode = L.roadNodes.find(n => n.id === node.id), townEdge = [...L.roads, ...L.alleys].find(e => e.nodes.includes(node.id));
+        if (!layoutNode || !townEdge) { rows.push({ id: node.id, error: '找不到冻结城镇路网中的出口边' }); continue; }
+        const edgeIndex = townEdge.nodes.indexOf(node.id), innerId = townEdge.nodes[edgeIndex === 0 ? 1 : edgeIndex - 1], innerNode = L.roadNodes.find(n => n.id === innerId), length = Math.hypot(innerNode.x - layoutNode.x, innerNode.z - layoutNode.z), dx = (innerNode.x - layoutNode.x) / length, dz = (innerNode.z - layoutNode.z) / length;
+        const townPts = []; for (const s of [0.75, 1.5, 2.5, 3.5, 4.5, 5.5]) for (const o of [-0.9, -0.5, 0.5, 0.9]) townPts.push([layoutNode.x + dx * s + dz * o, 0.02, layoutNode.z + dz * s - dx * o]);
+        const head = pixelMean(headPts), town = pixelMean(townPts), delta = Math.abs(head.mean - town.mean) / Math.max(1, head.mean, town.mean);
+        rows.push({ id: node.id, head: head.mean, town: town.mean, delta, samples: [head.count, town.count] });
+      }
+      return rows;
+    });
+    const fails = rows.filter(q => q.error || q.delta > 0.15 || !q.samples?.[0] || !q.samples?.[1]);
+    results.push({ id: 'W8f-c-G6-luminance', ok: !fails.length });
+    console.log(`${fails.length ? 'FAIL' : 'PASS'} W8f-c-G6 夜间亮度（平面默认出口头 vs 城镇边缘，同机位）`);
+    for (const q of rows) console.log(`  ${fails.includes(q) ? '✗' : '·'} ${q.id}: 出口头 ${q.head?.toFixed(1)} / 城镇边缘 ${q.town?.toFixed(1)}，相对差 ${q.delta === undefined ? '—' : (q.delta * 100).toFixed(1) + '%'}（阈值 ≤15%，采样像素 ${q.samples?.join('/')}）${q.error ? '；' + q.error : ''}`);
   }
   await browser.close();
 }

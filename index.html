@@ -2130,7 +2130,7 @@ const KIND_COLOR = {
 };
 const ROCK = hex('#6f6b78'), SNOW = hex('#d6e4f0');
 const SHALLOW = hex('#5f8fa0'), DEEP = hex('#1f3a66'), SAND = hex('#8a8794');
-const EXIT_CLASS = { RD01: { w: 9, c: hex('#2e3646') }, RD03: { w: 4.5, c: hex('#2e3646') }, RD05: { w: 3, c: hex('#5c5344') } };   // asphalt, asphalt, packed earth
+const EXIT_CLASS = { RD01: { w: 9, c: hex('#2e3646') }, RD03: { w: 4.5, c: hex('#2e3646') }, RD05: { w: 3, c: hex('#5c5344') } };   // stub widths, asphalt, asphalt, packed earth
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
 function builder(W) {
@@ -2154,6 +2154,54 @@ function builder(W) {
   };
 
   const inPatch = (lon, lat) => lon >= -P.lonMax - EPS && lon <= P.lonMax + EPS && lat >= P.latMin - EPS && lat <= P.latMax + EPS;
+
+  const polyArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
+  // W8f-c G3: cut from the final swept road cross-sections, not the network's unfilleted centreline.
+  // The per-row paving limits include route blends and town heads; the 0.3 m reveal is measured from those edges.
+  const exitPolygons = routes => {
+    const out = [];
+    for (const rt of routes || []) {
+      if (!(rt.def?.exit || rt.exit) || !rt.strip?.pos || !rt.grid?.length || !rt.paved?.length) continue;
+      const m = rt.grid.length, samples = rt.samples, pos = rt.strip.pos;
+      const pointAt = (i, o) => {
+        let j = 0;
+        while (j + 1 < m - 1 && rt.grid[j + 1] < o) j++;
+        const t = (o - rt.grid[j]) / (rt.grid[j + 1] - rt.grid[j]), a = (i * m + j) * 3, b = a + 3;
+        return [pos[a] + (pos[b] - pos[a]) * t, pos[a + 2] + (pos[b + 2] - pos[a + 2]) * t];
+      };
+      const end = samples.findIndex(p => p.s > 15 + 1e-7), last = end < 0 ? samples.length - 1 : end;
+      for (let i = 0; i < last; i++) {
+        const margin0 = samples[i].s <= 15 + 1e-7 ? 0.3 : 0,
+          margin1 = samples[i + 1].s <= 15 + 1e-7 && !(end < 0 && i + 1 === last) ? 0.3 : 0,
+          lo0 = rt.paved[i][0] - margin0, hi0 = rt.paved[i][1] + margin0, lo1 = rt.paved[i + 1][0] - margin1, hi1 = rt.paved[i + 1][1] + margin1;
+        const polygon = [pointAt(i, lo0), pointAt(i + 1, lo1), pointAt(i + 1, hi1), pointAt(i, hi0)];
+        if (Math.abs(polyArea(polygon)) < 1e-7) continue;
+        const xs = polygon.map(p => p[0]), zs = polygon.map(p => p[1]);
+        out.push({ polygon, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs), exit: rt.def?.exit || rt.exit, s0: samples[i].s, s1: samples[i + 1].s });
+      }
+    }
+    return out;
+  };
+  const splitHalfPlane = (poly, a, b, sign) => {
+    const side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])), inside = [], outside = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -1e-9, iq = sq >= -1e-9;
+      if (ip) inside.push(p); else outside.push(p);
+      if (ip !== iq) { const t = sp / (sp - sq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; inside.push(x); outside.push(x); }
+    }
+    const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
+    return [clean(inside), clean(outside)];
+  };
+  const subtractConvex = (subject, clip) => {
+    let rest = subject; const outside = [], sign = polyArea(clip) >= 0 ? 1 : -1;
+    for (let i = 0; i < clip.length && rest.length >= 3; i++) {
+      const [inside, out] = splitHalfPlane(rest, clip[i], clip[(i + 1) % clip.length], sign);
+      if (out.length >= 3 && Math.abs(polyArea(out)) > 1e-10) outside.push(out);
+      rest = inside;
+    }
+    // Any final `rest` is the portion inside the clearance rectangle and is intentionally replaced by road geometry.
+    return outside;
+  };
 
   // vertex data of one lattice point (height, flat position, local-frame normal, colour)
   function vertex(lon, lat) {
@@ -2192,6 +2240,17 @@ function builder(W) {
     const rings = lats.map(l => ({ lat: l, lons: ringLons(l) }));
     const vmap = new Map(), V = [];
     const vid = (r, k) => { const key = r * 100000 + k; let i = vmap.get(key); if (i === undefined) { i = V.length; V.push(vertex(rings[r].lons[k], rings[r].lat)); vmap.set(key, i); } return i; };
+    const clippedV = new Map(), clippedVid = (p, triVerts) => {
+      const x = Math.round(p[0] * 1e5) / 1e5, z = Math.round(p[1] * 1e5) / 1e5, key = `${Math.round(x * 1e5)},${Math.round(z * 1e5)}`;
+      let i = clippedV.get(key); if (i === undefined) {
+        const lon = x / (R * D), lat = Math.atan(Math.sinh(-z / R)) / D, [a, b, c] = triVerts, dx = b.x - a.x, dz = b.z - a.z, ex = c.x - a.x, ez = c.z - a.z, det = dx * ez - ex * dz;
+        const wb = ((x - a.x) * ez - ex * (z - a.z)) / det, wc = (dx * (z - a.z) - (x - a.x) * dz) / det, wa = 1 - wb - wc, ws = [wa, wb, wc];
+        const blend = keyName => ws.reduce((sum, w, j) => sum + w * triVerts[j][keyName], 0), blend3 = keyName => [0, 1, 2].map(k => ws.reduce((sum, w, j) => sum + w * triVerts[j][keyName][k], 0));
+        const n = [blend('nx'), blend('ny'), blend('nz')], nl = Math.hypot(...n) || 1;
+        i = V.length; V.push({ x, y: blend('y'), z, nx: n[0] / nl, ny: n[1] / nl, nz: n[2] / nl, c: blend3('c'), lon, lat, h: BASE + blend('y') * Math.cos(lat * D) }); clippedV.set(key, i);
+      }
+      return i;
+    };
     const tris = [];   // {a, b, c} as vertex ids, with chunk and ring flag resolved later
     const keep = (ra, ka, rb, kb, rc, kc) => {
       const A = [rings[ra].lons[ka], rings[ra].lat], B = [rings[rb].lons[kb], rings[rb].lat], C = [rings[rc].lons[kc], rings[rc].lat];
@@ -2200,6 +2259,31 @@ function builder(W) {
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
       const isRing = W.townPatchDistance(lon, lat) < RING_M;
       if (isRing ? !opts.ring : !opts.rest) return;
+      if (opts.exitPolygons?.length) {
+        let pieces = [[[flatX(A[0]), flatZ(A[1])], [flatX(B[0]), flatZ(B[1])], [flatX(C[0]), flatZ(C[1])]]], changed = false;
+        const x0 = pieces[0].map(p => p[0]), z0 = pieces[0].map(p => p[1]), triBox = { minX: Math.min(...x0), maxX: Math.max(...x0), minZ: Math.min(...z0), maxZ: Math.max(...z0) };
+        for (const rect of opts.exitPolygons) {
+          if (rect.maxX < triBox.minX - 1e-8 || rect.minX > triBox.maxX + 1e-8 || rect.maxZ < triBox.minZ - 1e-8 || rect.minZ > triBox.maxZ + 1e-8) continue;
+          const before = pieces.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0), next = [];
+          for (const poly of pieces) {
+            const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]);
+            if (rect.maxX < Math.min(...xs) - 1e-8 || rect.minX > Math.max(...xs) + 1e-8 || rect.maxZ < Math.min(...zs) - 1e-8 || rect.minZ > Math.max(...zs) + 1e-8) next.push(poly);
+            else next.push(...subtractConvex(poly, rect.polygon));
+          }
+          const after = next.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0);
+          if (after < before - 1e-8) { pieces = next; changed = true; }
+        }
+        if (changed) {
+          const ids0 = [vid(ra, ka), vid(rb, kb), vid(rc, kc)], triVerts = ids0.map(i => V[i]);
+          for (const poly of pieces) for (let k = 1; k + 1 < poly.length; k++) {
+            const p0 = poly[0], p1 = poly[k], p2 = poly[k + 1]; if (Math.abs(polyArea([p0, p1, p2])) < 5e-5) continue;
+            const x = (p0[0] + p1[0] + p2[0]) / 3, z = (p0[1] + p1[1] + p2[1]) / 3, lo = x / (R * D), la = Math.atan(Math.sinh(-z / R)) / D;
+            const ring = W.townPatchDistance(lo, la) < RING_M;
+            tris.push({ a: clippedVid(p0, triVerts), b: clippedVid(p1, triVerts), c: clippedVid(p2, triVerts), lon: lo, lat: la, ring });
+          }
+          return;
+        }
+      }
       tris.push({ a: vid(ra, ka), b: vid(rb, kb), c: vid(rc, kc), lon, lat, ring: isRing });
     };
     for (let r = 0; r + 1 < rings.length; r++) {
@@ -2264,33 +2348,48 @@ function builder(W) {
 
   // Grey-box starts of the town-exit roads: a ribbon on the first min(15 m, edge length) of the edge that touches the exit.
   function buildStubs() {
-    const NET = W.roadNetwork, out = [];
+    const NET = W.roadNetwork, LAYOUT = global.LAYOUT, out = [], asphalt = [0.0509, 0.0646, 0.0783], paving = hex('#8f8a7c'), marking = hex('#c9cfc4');
+    const t01Length = NET.edges.filter(e => e.route === 'T01').reduce((sum, e) => sum + NET.edgeLength(e), 0);
     for (const node of NET.nodes.filter(n => n.kind === 'town-exit')) {
+      // N11–N13 meet the frozen paved alleys; match their local night luminance at the head, then fade to RD05.
+      const alleyHead = !!LAYOUT?.alleys.some(a => a.nodes.includes(node.id)), townAsphalt = alleyHead ? paving : asphalt;
       const edge = NET.edges.find(e => e.from === node.id || e.to === node.id), cls = EXIT_CLASS[edge.class];
       let S = NET.samplePath(edge, 0.5); const len = NET.edgeLength(edge);
       if (edge.to === node.id) S = S.slice().reverse().map(p => ({ ...p, s: len - p.s }));
       const L = Math.min(15, len), pts = S.filter(p => p.s <= L + 1e-9);
-      const P2 = pts.map(p => { const c = Math.cos(p.lat * D); return { x: flatX(p.lon), z: flatZ(p.lat), y: (p.h - BASE + 0.02) / c, w: cls.w / c / 2, lon: p.lon, lat: p.lat, h: p.h }; });
-      const n = P2.length, pos = new Float32Array(n * 6), nrm = new Float32Array(n * 6), col = new Float32Array(n * 6), idx = [];
-      P2.forEach((p, k) => {
-        const a = P2[Math.max(0, k - 1)], b = P2[Math.min(n - 1, k + 1)];
-        let tx = b.x - a.x, tz = b.z - a.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
-        const lx = p.x + tz * p.w, lz = p.z - tx * p.w, rx = p.x - tz * p.w, rz = p.z + tx * p.w;     // left / right edge in the flat plane
-        pos.set([lx, p.y, lz, rx, p.y, rz], k * 6); nrm.set([0, 1, 0, 0, 1, 0], k * 6); col.set([...cls.c, ...cls.c], k * 6);
-        if (k + 1 < n) { const i0 = k * 2; idx.push(i0, i0 + 1, i0 + 2, i0 + 1, i0 + 3, i0 + 2); }
+      // Match W8f-a's six metre town-asphalt head plus eight metre fade, with a marked, tapered grid.
+      const half = cls.w / 2, lineEdge = Math.max(0.15, half - 0.13), grid = [...new Set([-half, -lineEdge - 0.07, -lineEdge + 0.07, -lineEdge + 0.15, -0.15, -0.075, 0.075, 0.15, lineEdge - 0.15, lineEdge - 0.07, lineEdge + 0.07, half])].sort((a, b) => a - b);
+      const n = pts.length, m = grid.length, pos = new Float32Array(n * m * 3), nrm = new Float32Array(n * m * 3), col = new Float32Array(n * m * 3), uv = new Float32Array(n * m * 2), idx = [];
+      const samples = pts.map(p => { const h = W.height(p.lon, p.lat); return { ...p, h, y: (h - BASE + 0.02) / Math.cos(p.lat * D) }; });
+      pts.forEach((p, i) => {
+        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], br = W.bearing(a, b), c = Math.cos(p.lat * D);
+        const fade = 1 - Math.max(0, Math.min(1, (p.s - 6) / 8)), body = cls.c.map((v, k) => v + (townAsphalt[k] - v) * fade);
+        const ringS = node.id === 'N01' ? t01Length - p.s : p.s, phase = ((ringS / 6) % 1 + 1) % 1, dash = phase < 0.45;
+        for (let j = 0; j < m; j++) {
+          const o = grid[j], q = o ? W.destination(p, br + (o > 0 ? 90 : -90), Math.abs(o)) : p, k = (i * m + j) * 3;
+          const x = flatX(q.lon), z = flatZ(q.lat); pos.set([x, (W.height(q.lon, q.lat) - BASE + 0.02) / Math.cos(q.lat * D), z], k); nrm.set([0, 1, 0], k); uv.set([x / 4, -z / 4], (i * m + j) * 2);
+          let color = body;
+          const isEdgeLine = Math.abs(Math.abs(o) - lineEdge) <= 0.071;
+          const isCenterLine = Math.abs(o) <= 0.075 && dash;
+          if (isEdgeLine || isCenterLine) color = marking.map((v, z) => v + (body[z] - v) * (1 - fade));
+          // The head uses the same textured town-asphalt material as the town sheet. Vertex colours
+          // are multipliers, so white means the exact town asphalt and the fade is relative to it.
+          col.set(color.map((v, z) => v / townAsphalt[z]), k);
+        }
       });
+      for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; idx.push(a, c, b, b, c, d); }
       // winding: make the triangles face +y whichever way the ribbon runs
       for (let t = 0; t < idx.length; t += 3) {
         const A = [pos[idx[t] * 3], pos[idx[t] * 3 + 1], pos[idx[t] * 3 + 2]], B = [pos[idx[t + 1] * 3], pos[idx[t + 1] * 3 + 1], pos[idx[t + 1] * 3 + 2]], C = [pos[idx[t + 2] * 3], pos[idx[t + 2] * 3 + 1], pos[idx[t + 2] * 3 + 2]];
         const ny = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]);
         if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; }
       }
-      out.push({ exit: node.id, edge: edge.id, class: edge.class, width: cls.w, length: L, vertexCount: n * 2, pos, nrm, col, index: Uint32Array.from(idx), samples: P2 });
+      out.push({ exit: node.id, edge: edge.id, class: edge.class, surface: alleyHead ? 'paving' : 'asphalt', width: cls.w, length: L, headLength: 6, fadeLength: 8, vertexCount: n * m, pos, nrm, col, uv, index: Uint32Array.from(idx), samples, grid });
     }
     return out;
   }
 
-  return { buildFlat, buildCap, buildStubs, vertex, lats, ringLons, inPatch, flatX, flatZ };
+  return { buildFlat, buildCap, buildStubs, exitPolygons, vertex, lats, ringLons, inPatch, flatX, flatZ };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -2332,17 +2431,18 @@ function withPrivateRandom(fn) {
 
 TERRAIN.withPrivateRandom = withPrivateRandom;
 
-TERRAIN.attach = function (scene, makeMaterial, BEND) {
+TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, restMat, stubMat, root;
+  let material, capMat, restMat, stubMat, stubPavingMat, root;
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
     restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
-    stubMat = material.clone(); stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
+    stubMat = townAsphaltMaterial ? townAsphaltMaterial.clone() : material.clone(); stubMat.vertexColors = true; stubMat.needsUpdate = true; stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
+    stubPavingMat = stubMat.clone(); stubPavingMat.color.set('#8f8a7c'); stubPavingMat.needsUpdate = true;
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
-  const state = { ring: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
+  const state = { ring: [], ringFlat: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
   const geom = (c, index) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
@@ -2352,16 +2452,37 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
   const t0 = performance.now();
-  const ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
+  const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW });
+  let ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
   withPrivateRandom(() => {
-    for (const c of ringData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
+    for (const c of flatRingData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring-flat', state.ringFlat, { cx: c.cx, cy: c.cy });
+    for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
     for (const s of stubData) {
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
-      add(g, stubMat, 'stub', state.stubs, { exit: s.exit, edge: s.edge });
+      g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(s.uv, 2)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
+      add(g, s.surface === 'paving' ? stubPavingMat : stubMat, 'stub', state.stubs, { exit: s.exit, edge: s.edge, surface: s.surface });
     }
   });
   state.stats.ringBuildMs = Math.round(performance.now() - t0);
+
+  state.setExitRoutes = routes => {
+    const exitPolygons = B.exitPolygons(routes);
+    if (!exitPolygons.length) return { exits: 0, polygons: 0 };
+    for (const m of state.ring) { root.remove(m); m.geometry.dispose(); }
+    state.ring.length = 0;
+    const t = performance.now();
+    ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitPolygons });
+    withPrivateRandom(() => {
+      for (const c of ringData) if (c.ringIndex) {
+        const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
+        m.visible = BEND.get() > 0;
+      }
+    });
+    state.ringData = ringData;
+    state.stats.exitClearanceMs = Math.round(performance.now() - t);
+    state.stats.exitClearancePolygons = exitPolygons.length;
+    return { exits: new Set(exitPolygons.map(q => q.exit)).size, polygons: exitPolygons.length };
+  };
 
   function buildRest() {
     if (state.restBuilt) return; state.restBuilt = true;
@@ -2387,7 +2508,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   state.setExplore = on => { if (on === state.explore) return; state.explore = on; for (const fn of exploreListeners) fn(); };
   state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
   function apply() {
-    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;
+    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0, sphereRingOn = u > 0;
+    for (const m of state.ringFlat) m.visible = !sphereRingOn;
+    for (const m of state.ring) m.visible = sphereRingOn;
     if (restOn) buildRest();
     for (const m of state.rest) m.visible = restOn;
     if (state.restBuilt) setOpacity(restMat, u > 0 ? 1 : state.fade.rest);
@@ -2398,7 +2521,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   BEND.onChange(apply);
   state.ringData = ringData;
   // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
-  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...ringData, ...state.restData]); } return state.samplerFn; };
+  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...flatRingData, ...state.restData]); } return state.samplerFn; };
   state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);
@@ -2996,7 +3119,7 @@ function chain(W, ids, opts = {}) {
 //     textured material), the asphalt vertex colour there is the town's mean colour (W5-C9), fading to the class colour over `fade` metres.
 const ASPH = { asphalt: 1, asphaltL: 1 }, APB = 8;          // APB: metres before an approach over which the cross-section becomes RD01B (paved width 7 -> 10 m at <= 0.6 m/m, W5-C9)
 function route(W, segs, o = {}) {
-  const NET = W.roadNetwork, BL = o.blend || BLEND, AB = o.abut || {}, ENDS = ['start', 'end'].filter(k => AB[k]);
+  const NET = W.roadNetwork, BL = o.blend || BLEND, AB = o.abut || {}, ENDS = ['start', 'end'].filter(k => AB[k]), TURNS = o.turns || [];
   const edges = segs.map(sg => NET.edges.find(e => e.id === sg.id));
   let classes = edges.map(e => e.class);
   const S = [], edgeOf = []; let off = 0; let joints = [];
@@ -3011,8 +3134,41 @@ function route(W, segs, o = {}) {
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const sNodeOf = which => (which === 'end' ? off : 0);
-  // W8f-a: the fillet replaces the centre line within T of an abutment node
-  for (const which of ENDS) { const J = AB[which], sN = sNodeOf(which); for (let i = 0; i < n; i++) { const d = Math.abs(sN - S[i].s); if (d > J.T + 1e-9) continue; const p = J.at(-d); S[i] = { ...S[i], lon: p.lon, lat: p.lat, h: W.height(p.lon, p.lat) }; } }
+  // W8f-a abutment curves and W8f-c node turns can overlap on the short T01-14 approach to J-W1.
+  // Blend their centre-line offsets smoothly through the shared station range so neither curve is
+  // overwritten at the overlap edge (which would create a visible heading kink at the bridge).
+  const P2 = 2 * Math.PI * R, flatX = p => R * p.lon * D, flatZ = p => -R * Math.asinh(Math.tan(p.lat * D));
+  const transitions = [];
+  for (const which of ENDS) {
+    const J = AB[which], sN = sNodeOf(which), T = J.Ta ?? J.T;
+    transitions.push({ lo: which === 'start' ? 0 : sN - T, hi: which === 'start' ? T : sN,
+      at: s => J.at(-Math.abs(sN - s)) });
+  }
+  for (const q of TURNS) transitions.push({ lo: q.station - q.fillet.Ta, hi: q.station + q.fillet.Tb, at: s => q.fillet.at(s - q.station) });
+  transitions.sort((a, b) => a.lo - b.lo);
+  const smoother = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / Math.max(1e-9, b - a))); return t * t * (3 - 2 * t); };
+  for (let i = 0; i < n; i++) {
+    const s = S[i].s, active = transitions.filter(q => s >= q.lo - 1e-9 && s <= q.hi + 1e-9);
+    if (!active.length) continue;
+    let p;
+    const pair = transitions.length === 2 && Math.min(transitions[0].hi, transitions[1].hi) > Math.max(transitions[0].lo, transitions[1].lo)
+      ? (() => { const a = transitions[0], b = transitions[1], unionLo = Math.min(a.lo, b.lo), unionHi = Math.max(a.hi, b.hi), margin = 0.5, lo = Math.max(unionLo, Math.max(a.lo, b.lo) - margin), hi = Math.min(unionHi, Math.min(a.hi, b.hi) + margin); return s >= lo && s <= hi ? { a, b, lo, hi } : null; })()
+      : null;
+    if (pair) {
+      const a = pair.a.at(s), b = pair.b.at(s), refX = flatX(S[i]), ax0 = flatX(a), bx0 = flatX(b), ax = ax0 + P2 * Math.round((refX - ax0) / P2), bx = bx0 + P2 * Math.round((refX - bx0) / P2), az = flatZ(a), bz = flatZ(b), w = smoother(pair.lo, pair.hi, s), x = ax + (bx - ax) * w, z = az + (bz - az) * w;
+      p = { lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D };
+    }
+    else if (active.length === 1) p = active[0].at(s);
+    else {
+      let a = active[0].at(s), ax = flatX(a), az = flatZ(a), refX = flatX(S[i]); ax += P2 * Math.round((refX - ax) / P2);
+      for (let k = 1; k < active.length; k++) {
+        const prev = active[k - 1], next = active[k], b = next.at(s), bx0 = flatX(b), bz = flatZ(b), bx = bx0 + P2 * Math.round((refX - bx0) / P2), lo = Math.max(prev.lo, next.lo), hi = Math.min(prev.hi, next.hi), w = hi > lo ? smoother(lo, hi, s) : (s >= hi ? 1 : 0);
+        ax += (bx - ax) * w; az += (bz - az) * w;
+      }
+      const lat = Math.atan(Math.sinh(-az / R)) / D, lon = ax / (R * D); p = { lon, lat };
+    }
+    S[i] = { ...S[i], lon: p.lon, lat: p.lat, h: W.height(p.lon, p.lat) };
+  }
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
   const brg = S.map((p, i) => W.bearing(S[Math.max(0, i - 1)], S[Math.min(n - 1, i + 1)]));
   for (const which of ENDS) { const i = which === 'end' ? n - 1 : 0, b = (AB[which].brg + (which === 'end' ? 0 : 180)) % 360; brg[i] = b; T[i] = [Math.sin(b * D), -Math.cos(b * D)]; }
@@ -3045,8 +3201,13 @@ function route(W, segs, o = {}) {
   const cf = bed.map((b, i) => 1 + aW[i] * (R / (R + b - BASE) - 1));        // the deck's lateral factor (bridge.js) toward the node
   // W8f-a: a route with an abutment has every column the deck's top has (bridge.js JOINT): the last cross-section shares all its vertices with the deck's first one
   const grid = [...new Set([...classes, ...(ENDS.length ? ['RD01B'] : [])].flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], ENDS.length ? [-4.8, -4.7, -3.6, 3.6, 4.7, 4.8] : []))].sort((a, b) => a - b), m = grid.length;
-  const evalP = (prof, oo, tc) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there (the verge blends into it)
-    const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => ({ l: q[1], c: colOf(q[2]), m: q[3] || 0, a: ASPH[q[2]] || 0 });
+  const evalP = (prof, oo, tc, cls) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there
+    const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => {
+      let c = colOf(q[2]);
+      // W8f-c G4: RD05 keeps its darker inner grass, then blends to the exact terrain colour at the outside edge.
+      if (tc && cls === 'RD05' && Math.abs(oo) > 1.9) { const u = smooth(1.9, 2.8, Math.abs(oo)); c = c.map((v, i) => v + (tc[i] - v) * u); }
+      return { l: q[1], c, m: q[3] || 0, a: ASPH[q[2]] || 0 };
+    };
     if (oo <= P[0][0]) return at(P[0]); if (oo >= P[P.length - 1][0]) return at(P[P.length - 1]);
     let j = 0; while (P[j + 1][0] < oo) j++;
     const t = (oo - P[j][0]) / (P[j + 1][0] - P[j][0]), a = at(P[j]), b = at(P[j + 1]);
@@ -3060,12 +3221,27 @@ function route(W, segs, o = {}) {
   const surface = (i, oo) => { let j = 0; while (j + 2 < m && grid[j + 1] < oo) j++; const t = Math.max(0, Math.min(1, (oo - grid[j]) / (grid[j + 1] - grid[j]))); return colAlt[i * m + j] + (colAlt[i * m + j + 1] - colAlt[i * m + j]) * t; };
   const wts = i => { const u = joints.map(jt => smooth(jt - BL, jt + BL, S[i].s)); return classes.map((_, k) => (k === 0 ? 1 : u[k - 1]) - (k < joints.length ? u[k] : 0)); };
   // one column of sample i: profile mix of the classes, the approach blend into RD01B, the junction mouths
+  const shoulderScale = (oo, sP) => {
+    if (!classes.includes('RD05') || Math.abs(oo) <= 1.5) return 1;
+    let width = 1;
+    if (o.taperStart) width = Math.min(width, smooth(0, 3, Math.max(0, sP - S[0].s)));
+    if (o.taperEnd) width = Math.min(width, smooth(0, 3, Math.max(0, S[n - 1].s - sP)));
+    return width;
+  };
+  const roadOffset = (oo, sP) => Math.abs(oo) <= 1.5 ? oo : Math.sign(oo) * (1.5 + (Math.abs(oo) - 1.5) * shoulderScale(oo, sP));
   const column = (i, j, w) => {
-    const oo = grid[j], a = aW[i], [lo, la] = lateral(i, oo * cf[i]), g = W.height(lo, la), tc = o.terrainColor && Math.abs(oo) > 1.8 ? o.terrainColor(lo, la) : null, sP = S[i].s;
-    let lift = 0, mix = 0, asp = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], oo, tc); lift += wk * e.l; mix += wk * e.m; asp += wk * e.a; c = c.map((v, ci) => v + wk * e.c[ci]); } });
+    const oo = grid[j], sP = S[i].s, oPhys = roadOffset(oo, sP), a = aW[i], [lo, la] = lateral(i, oPhys * cf[i]), g = W.height(lo, la), tc = o.terrainColor && Math.abs(oo) > 1.8 ? o.terrainColor(lo, la) : null;
+    let lift = 0, mix = 0, asp = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], oo, tc, classes[kk]); lift += wk * e.l; mix += wk * e.m; asp += wk * e.a; c = c.map((v, ci) => v + wk * e.c[ci]); } });
     if (a > 0) { const e = evalP(PROFILES.RD01B, oo, tc); lift += (e.l - lift) * a; mix += (e.m - mix) * a; asp += (e.a - asp) * a; c = c.map((v, ci) => v + (e.c[ci] - v) * a); }
     if (Math.abs(oo) > 4.5) for (const q of MO) if (sP >= q.s0 && sP <= q.s1 && Math.sign(oo) === q.side && Math.abs(oo) <= q.to + 1e-9) { lift = 0; mix = 1; }
-    return { oo, lo, la, g, lift, mix, asp, c, base: g + (bed[i] - g) * mix };
+    const taper = shoulderScale(oo, sP);
+    if (taper < 1 - 1e-9) {
+      const edgeO = Math.sign(oo) * 1.5; let edgeLift = 0, edgeMix = 0;
+      w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], edgeO, null, classes[kk]); edgeLift += wk * e.l; edgeMix += wk * e.m; } });
+      if (a > 0) { const e = evalP(PROFILES.RD01B, edgeO, null); edgeLift += (e.l - edgeLift) * a; edgeMix += (e.m - edgeMix) * a; }
+      lift = edgeLift + (lift - edgeLift) * taper; mix = edgeMix + (mix - edgeMix) * taper;
+    }
+    return { oo, geomO: oPhys, lo, la, g, lift, mix, asp, c, base: g + (bed[i] - g) * mix };
   };
   const csOf = i => (o.townStart ? 0.44 + 0.56 * smooth(0, 6, S[i].s) : 1);
   // W8f-a ramp of a branch: the change of each column at the end row (paved columns to the target, the verge columns follow the nearer paved edge and taper to nothing)
@@ -3086,20 +3262,27 @@ function route(W, segs, o = {}) {
     paved.push([pl, pr]);
     const rampK = RP ? 1 - smooth(0, rampLen, Math.abs(S[i].s - S[iR].s)) : 0;
     for (let j = 0; j < m; j++) {
-      const v = column(i, j, w), oo = v.oo, sP = S[i].s; let c = v.c, asp = v.asp;
-      const base = v.base + rampD[j] * rampK;
+      const v = column(i, j, w), oo = v.oo, sP = S[i].s; let c = v.c, asp = v.asp, dashOn = false;
+      let delta = rampD[j];
+      if (RP && classes.includes('RD05') && Math.abs(grid[j]) > 1.5 && (o.taperStart || o.taperEnd)) {
+        let e = j; for (let q = 0; q < m; q++) if (Math.sign(grid[q]) === Math.sign(grid[j]) && Math.abs(grid[q] - Math.sign(grid[j]) * 1.5) < Math.abs(grid[e] - Math.sign(grid[j]) * 1.5)) e = q;
+        const taper = shoulderScale(grid[j], S[i].s); delta = rampD[e] + (rampD[j] - rampD[e]) * taper;
+      }
+      const base = v.base + delta * rampK;
       const distEdge = Math.min(Math.abs(oo - pl), Math.abs(oo - pr)), inside = oo > pl && oo < pr;
       const hz = hash(sP * 2.1, oo * 9.3), hz2 = hash(sP * 0.7, oo * 3.1);
       // centre dashes (6 m period, 45 % paint, on the ring's chainage) and edge lines that fade with the wear (fresh on the approaches, like the deck's)
       if (w.some((wk, kk) => wk > 0.5 && /^RD01/.test(classes[kk])) || a > 0.5) {
-        if (Math.abs(oo) < 0.09) { const ph = ((chainAt(sP) / 6) % 1 + 1) % 1, on = ph < 0.45; if (!on) { c = lin(COL.asphalt); asp = 1; } }      // the gap between dashes is asphalt (the town head too)
+        if (Math.abs(oo) < 0.09) { const ph = ((chainAt(sP) / 6) % 1 + 1) % 1, on = ph < 0.45; dashOn = on; if (!on) { c = lin(COL.asphalt); asp = 1; } }      // the gap between dashes is asphalt (the town head too)
         if (Math.abs(Math.abs(oo) - 3.24) < 0.1) { const f = 1 - (0.55 * wear + 0.4 * hash(sP * 1.7, oo * 4.1)) * (1 - a); const as = lin(COL.asphalt); c = c.map((cv, ci) => as[ci] + (cv - as[ci]) * f); }
       }
       if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const gc = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((cv, ci) => cv + (gc[ci] - cv) * mixv); } }
       if (inside && wear > 0.1) { const crack = hash(sP * 3.3, oo * 5.7); if (crack > 1 - 0.18 * wear) { const gc = lin(COL.crack); c = c.map((cv, ci) => cv + (gc[ci] - cv) * 0.7); } c = c.map(cv => cv * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
       if (HD && hw > 0 && asp > 0) { const k = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * k); }
+      // W8f-c G5: the painted dashes blend linearly to bridge white within the final 14 m of each abutment approach.
+      if (dashOn && ENDS.length) { const blend = Math.max(...ENDS.map(which => Math.max(0, 1 - Math.abs(sNodeOf(which) - sP) / 14))); if (blend > 0) { const white = lin(COL.dash); c = c.map((cv, ci) => cv + (white[ci] - cv) * blend); } }
       pure.push(HD && hw >= 1 && v.asp >= 0.999 ? 1 : 0);
-      pos.push(F[i].x + (-T[i][1]) * oo * cf[i] * F[i].k, (base + v.lift * cs - BASE) / Math.cos(v.la * D), F[i].z + T[i][0] * oo * cf[i] * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + v.lift * cs);
+      pos.push(F[i].x + (-T[i][1]) * v.geomO * cf[i] * F[i].k, (base + v.lift * cs - BASE) / Math.cos(v.la * D), F[i].z + T[i][0] * v.geomO * cf[i] * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + v.lift * cs);
     }
     bedAlt.push(bed[i]);
   }
@@ -3121,7 +3304,7 @@ function route(W, segs, o = {}) {
     }
   }
   const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }) };
-  return { ids: segs.map(q => q.id), classes, joints, samples: S, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
+  return { ids: segs.map(q => q.id), classes, joints, samples: S, turns: TURNS, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
 }
 
 const ROADKIT = { build, sweep, chain, route, PROFILES, DECK, COL, lin, BLEND, TOWN_ASPHALT, TOWN_HEAD };
@@ -3165,6 +3348,8 @@ function build(W, ids, o = {}) {
   const AB = o.abut || {};
   if (AB.start) for (const p of S) if (p.s <= AB.start.T + 1e-9) { const q = AB.start.at(p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
   if (AB.end) for (const p of S) if (off - p.s <= AB.end.T + 1e-9) { const q = AB.end.at(off - p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
+  // W8f-c G1: bridge-to-bridge nodes use the same sampled centreline transition on both sides of the node.
+  for (const q of (o.turns || [])) for (const p of S) { const d = p.s - q.station, f = q.fillet; if (d < -f.Ta - 1e-9 || d > f.Tb + 1e-9) continue; const a = f.at(d); p.lon = a.lon; p.lat = a.lat; p.h = W.height(a.lon, a.lat); }
   // unwrapped longitudes: the chain across the dateline (T01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
   S.forEach((p, i) => { p.lonU = i === 0 ? p.lon : S[i - 1].lonU + ((p.lon - S[i - 1].lonU + 540) % 360 - 180); });
   const n = S.length, L = off, flat = p => ({ x: R * p.lonU * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
@@ -3188,7 +3373,7 @@ function build(W, ids, o = {}) {
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
-  const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
+  const out = { ids, samples: S, turns: o.turns || [], alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
@@ -3926,13 +4111,13 @@ const ROUTES = [
   { id: 'N04-T02', exit: 'N04', segs: [{ id: 'T02-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 31], poles: [9, 24, 38, 48], sign: [{ s: 13, type: 'signRound' }], mirror: 'bend', busStop: 31 } },
   // W8f-a: N09-T05 now stops 10.4 m before LM09-north (the junction paving takes the rest): the lamp and the jizo keep their distance before the junction (3.3 m, 4.3 m)
   { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 19.6], poles: [11, 17], sign: [{ s: 14, type: 'signRound' }], jizo: 18.6 } },
-  { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
-  { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
-  { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4, taperEnd: true } },
+  { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4, taperEnd: true } },
+  { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4, taperEnd: true } },
   // W5b: the RD05 branches off T01 (start beyond the edge of the trunk road), the snow route RD08
-  { id: 'T07-RD05', segs: [{ id: 'T07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20 }, furnish: { kind: 'RD05', post: true } },
-  { id: 'T08-RD05', segs: [{ id: 'T08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40 }, furnish: { kind: 'RD05', post: true } },
-  { id: 'T09-RD05', segs: [{ id: 'T09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20 }, furnish: { kind: 'RD05', stakes: true } },
+  { id: 'T07-RD05', segs: [{ id: 'T07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
+  { id: 'T08-RD05', segs: [{ id: 'T08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
+  { id: 'T09-RD05', segs: [{ id: 'T09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', stakes: true } },
   { id: 'T10-RD08', segs: [{ id: 'T10-01' }], opts: { wearMax: 0, weeds: false }, furnish: { kind: 'RD08', poleEvery: 8, shelter: 17.5 } },
 ];
 const STAIRS = ['T02-02', 'T08-02'];
@@ -4044,7 +4229,7 @@ function plane(W, node) {
 // ends, curvature nearly even (sin(angle) / 2T at the ends and in the middle). Ta stops 0.5 m short of a kink over 5 deg on the road (LM09-north, 10.5 m from J-W1, turns by 22 deg);
 // the smaller kinks of the road's own nodes within 12 m (J-T04, J-T07, J-T09: 1-2 deg) are smoothed with the joint; both lengths shrink until the curve stays within FILLET_E
 // of the original centre lines. road / bridge: centre-line points {lon, lat} from the node outward. at(t), t in [-Ta, Tb], walks the curve at a uniform rate (t < 0 on the road).
-function transition(W, node, road, bridge) {
+function transition(W, node, road, bridge, maxDeviation = FILLET_E) {
   // distances along both centre lines and along the curve are true metres on the sphere (the plane stretches by up to 2 % at 12 m from the node)
   const P = plane(W, node), poly = pts => { const g = pts.map(p => P.to(p)), c = [0]; for (let k = 1; k < g.length; k++) c.push(c[k - 1] + W.arcDistance(pts[k - 1], pts[k])); return { g, c }; };
   const Rd = poly(road), Bd = poly(bridge), unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
@@ -4059,7 +4244,7 @@ function transition(W, node, road, bridge) {
     const N = 240, pts = [], cum = [0];
     const ll = []; for (let k = 0; k <= N; k++) { const u = k / N, w0 = (1 - u) * (1 - u), w1 = 2 * u * (1 - u), w2 = u * u; pts.push([w0 * A.p[0] + w1 * V[0] + w2 * B.p[0], w0 * A.p[1] + w1 * V[1] + w2 * B.p[1]]); ll.push(P.from(pts[k])); if (k) cum.push(cum[k - 1] + W.arcDistance(ll[k - 1], ll[k])); }
     E = Math.max(...pts.map(q => Math.min(distTo(Rd, q, Ta + 1), distTo(Bd, q, Tb + 1)))); curve = { pts, cum }; len = cum[N];
-    if (E <= FILLET_E) break; Ta *= 0.92; Tb *= 0.92;
+    if (E <= maxDeviation) break; Ta *= 0.92; Tb *= 0.92;
   }
   const at = t => {
     if (t <= -Ta) return P.from(along(Rd, -t).p); if (t >= Tb) return P.from(along(Bd, t).p);
@@ -4074,6 +4259,20 @@ function chainPoints(W, segs, fromEnd) {
   const NET = W.roadNetwork, out = [];
   segs.forEach((sg, k) => { const e = NET.edges.find(q => q.id === sg.id); let P = NET.samplePath(e, 0.5); if (sg.rev) P = P.slice().reverse(); P.forEach((p, i) => { if (k > 0 && i === 0) return; out.push({ lon: p.lon, lat: p.lat }); }); });
   return fromEnd ? out.reverse() : out;
+}
+// A curve at a node between consecutive route edges. `station` uses the same cumulative samplePath chainage
+// as roadkit.route() and bridge.build(); the curve itself uses the same common-tangent construction as an abutment.
+function nodeTurn(W, segs, node) {
+  const NET = W.roadNetwork; let station = 0;
+  for (let k = 1; k < segs.length; k++) {
+    const prev = segs[k - 1], next = segs[k];
+    station += NET.edgeLength(NET.edges.find(e => e.id === prev.id));
+    if (routeNode(NET, prev, 'end') === node && routeNode(NET, next, 'start') === node) {
+      const incoming = chainPoints(W, [{ id: prev.id, rev: !prev.rev }], false), outgoing = chainPoints(W, [next], false);
+      return { node, station, fillet: transition(W, NET.nodeById[node], incoming, outgoing, node === 'LM09-north' ? 0.95 : FILLET_E) };
+    }
+  }
+  throw new Error(`no route joint at ${node}: ${segs.map(q => q.id).join('+')}`);
 }
 // the node of a route's first / last segment
 function routeNode(NET, sg, which) { const e = NET.edges.find(q => q.id === sg.id); return (which === 'start') === !sg.rev ? e.from : e.to; }
@@ -4101,11 +4300,11 @@ function ringChain(W) {
 // by 22 deg at LM09-north): its carriageway edge on the branch side (3.5 m) is one line per leg. Each of the branch's two paved edges meets the edge line of the leg it lands on;
 // a corner arc of radius r is tangent to both (T1 on the trunk edge, T2 on the branch edge); the branch then starts 0.6 m beyond the farther T2. The mouth = the trunk stations
 // where the paving outline lies in the ditch band (4.4-7.3 m from the centre), at least the branch's paved width + 1 m on each side: there the ditch is filled and no barrier stands.
-function junctionPlan(W, J, RK) {
+function junctionPlan(W, J, RK, turn = null) {
   const NET = W.roadNetwork, N0 = NET.nodeById[J.node], P = plane(W, N0), tr = ROUTES.find(r => r.id === J.trunk), br = ROUTES.find(r => r.id === J.branch);
   const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1], right = d => [d[1], -d[0]];
   let sJ = 0, iSeg = 0; for (; iSeg < tr.segs.length; iSeg++) { if (routeNode(NET, tr.segs[iSeg], 'start') === J.node) break; sJ += NET.edgeLength(NET.edges.find(e => e.id === tr.segs[iSeg].id)); }
-  const dF = unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
+  const dF = turn ? unit(P.to(turn.fillet.at(0.5)).map((v, i) => v - P.to(turn.fillet.at(-0.5))[i])) : unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = turn ? dF : unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
   const bEdge = br.segs[0].id, bd = unit(P.to(nearNode(W, bEdge, N0, 4))), sigma = dot(bd, right(dM)) > 0 ? 1 : -1;
   const h = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved[1], vE = 3.5, r = J.r, nB = right(bd);
   const legs = { back: { d: dB, p: right(dB).map(v => v * sigma * vE) }, fwd: { d: dF, p: right(dF).map(v => v * sigma * vE) } };
@@ -4225,11 +4424,14 @@ function abutWall(W, rt, ab, deckAlt) {
 function plan(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept)
-  const AB = abutments(WS, BR), CH = ringChain(WS), JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK)), head = RK.TOWN_HEAD;
+  const AB = abutments(WS, BR), CH = ringChain(WS), lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north'),
+    bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) },
+    JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)), head = RK.TOWN_HEAD;
   const optsOf = def => {
     const o = { ...def.opts, terrainColor: tc };
     if (def.exit) o.townHead = head;
     if (CH[def.id]) o.chain = CH[def.id];
+    if (def.id === 'N01-west') o.turns = [lm09Turn];
     for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
     const mo = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (mo.length) o.mouths = mo;
     const jb = JP.find(j => j.branch === def.id); if (jb) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
@@ -4248,6 +4450,7 @@ function plan(W, H, tc) {
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
     const o = { ...def, chain: CH[def.id], abut: {} };
+    if (bridgeTurnDefs[def.id]) o.turns = bridgeTurnDefs[def.id];
     for (const a of AB.filter(q => q.bridge === def.id)) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
     const b = BR.build(WS, def.ids, o); b.def = def; return b;
   });
@@ -4272,6 +4475,9 @@ function plan(W, H, tc) {
   const markers = [], items = [...routes.map(rt => ({ kind: 'route', rt, hw: rt.def.furnish && rt.def.furnish.kind === 'RD05' ? 1.5 : rt.def.furnish && rt.def.furnish.kind === 'RD08' ? 1.0 : rt.def.furnish && rt.def.furnish.kind === 'RD03' ? 2.25 : 4.5 })), ...stairs.map(st => ({ kind: 'stairs', rt: st, hw: 0.8 }))];
   for (const nd of W.roadNetwork.nodes.filter(q => q.kind === 'landmark-entrance')) {
     let best = null; for (const it of items) { const S = it.rt.samples; for (const i of [0, S.length - 1, ...(it.kind === 'route' ? S.map((_, j) => j) : [])]) { const d = global.WORLD ? 0 : 0; void d; const dd = W.arcDistance(S[i], nd); if (dd < 0.4 && (!best || dd < best.d)) best = { d: dd, it, i }; } }
+    if (!best && nd.id === 'LM09-north') {
+      for (const it of items.filter(q => q.kind === 'route')) { const S = it.rt.samples; for (let i = 0; i < S.length; i++) { const dd = W.arcDistance(S[i], nd); if (dd <= 1.0 && (!best || dd < best.d)) best = { d: dd, it, i }; } }
+    }
     if (!best) continue;
     const { it, i } = best, T = it.rt.tangent, yaw = Math.atan2(T[i][0], T[i][1]);
     for (const sd of [-1, 1]) { const [lo, la] = it.rt.lateral(i, sd * (it.hw + 0.75)); markers.push({ type: 'gatePost', lon: lo, lat: la, alt: (it.rt.surface ? it.rt.surface(i, sd * (it.hw + 0.75)) : WS.height(lo, la)), yaw, s: [1, 1, 1], lean: [0, 0], tint: [1, 1, 1], node: nd.id }); }
@@ -4295,6 +4501,11 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const t0 = Date.now();
     const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
     const TB = global.TERRAIN.builder(W); DATA = plan(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
+    // W8f-c G3: terrain yields only the final road pavement plus 0.3 m reveal, including the W4 T03 chain at N08.
+    if (TERR.setExitRoutes) {
+      const n08 = global.ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD });
+      TERR.setExitRoutes([...DATA.routes.filter(rt => rt.def.exit), { ...n08, def: { exit: 'N08' } }]);
+    }
     const root = new THREE.Group(); root.name = 'roads'; scene.add(root); S.root = root;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
@@ -19863,7 +20074,14 @@ globalThis.LMLIB = function (K) {
   const { THREE, group, mesh, box, cyl, mat, warm } = K, L = LMLIB(K), PI = Math.PI, rnd = K.rand(909);
   const out = { stats: {}, update() {} };
   const gr = group('lm09Ground'); L.use(gr);
-  L.ground(10.6, '#5d7658', 0.02);
+  // W8f-c G2: trim the north side of the site lawn before the T01 curb; the entrance lane still reaches the road centreline.
+  const lawnR = 10.6, lawnNorth = 7.4, cut = Math.acos(lawnNorth / lawnR), boundary = [];
+  for (let i = 0; i <= 40; i++) { const a = cut + (2 * PI - 2 * cut) * i / 40; boundary.push([lawnR * Math.sin(a), 0.02, lawnR * Math.cos(a)]); }
+  const lawnGeo = new THREE.BufferGeometry(), lawnPos = [0, 0.02, 0], lawnIdx = [];
+  boundary.forEach(p => lawnPos.push(...p));
+  for (let i = 0; i < boundary.length; i++) lawnIdx.push(0, i + 1, (i + 1) % boundary.length + 1);
+  lawnGeo.setAttribute('position', new THREE.Float32BufferAttribute(lawnPos, 3)); lawnGeo.setIndex(lawnIdx); lawnGeo.computeVertexNormals();
+  mesh(lawnGeo, mat('#5d7658'), 0, 0, 0, false, gr);
   box(0, 0.06, 9.2, 2.6, 0.1, 8.6, '#8a8d90', true, gr);                                      // station lane from the road (z 13.35) down to the turning circle
   const cd = L.ground(6.0, '#767a7e', 0.05); cd.position.z = 1.0; const cg = mesh(new THREE.RingGeometry(5.6, 6.0, 40), mat('#a8a8a0'), 0, 0.08, 1.0, false, gr); cg.rotation.x = -PI / 2;
   box(0, 0.06, -1.6, 2.4, 0.1, 2.4, '#8a8d90', true, gr);                                      // the way from the circle to the platform
@@ -20318,7 +20536,7 @@ rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i]
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
+const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND,matT('#46505b','asphalt'));
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),

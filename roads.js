@@ -23,13 +23,13 @@ const ROUTES = [
   { id: 'N04-T02', exit: 'N04', segs: [{ id: 'T02-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 31], poles: [9, 24, 38, 48], sign: [{ s: 13, type: 'signRound' }], mirror: 'bend', busStop: 31 } },
   // W8f-a: N09-T05 now stops 10.4 m before LM09-north (the junction paving takes the rest): the lamp and the jizo keep their distance before the junction (3.3 m, 4.3 m)
   { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 19.6], poles: [11, 17], sign: [{ s: 14, type: 'signRound' }], jizo: 18.6 } },
-  { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
-  { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
-  { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4, taperEnd: true } },
+  { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4, taperEnd: true } },
+  { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4, taperEnd: true } },
   // W5b: the RD05 branches off T01 (start beyond the edge of the trunk road), the snow route RD08
-  { id: 'T07-RD05', segs: [{ id: 'T07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20 }, furnish: { kind: 'RD05', post: true } },
-  { id: 'T08-RD05', segs: [{ id: 'T08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40 }, furnish: { kind: 'RD05', post: true } },
-  { id: 'T09-RD05', segs: [{ id: 'T09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20 }, furnish: { kind: 'RD05', stakes: true } },
+  { id: 'T07-RD05', segs: [{ id: 'T07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
+  { id: 'T08-RD05', segs: [{ id: 'T08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
+  { id: 'T09-RD05', segs: [{ id: 'T09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', stakes: true } },
   { id: 'T10-RD08', segs: [{ id: 'T10-01' }], opts: { wearMax: 0, weeds: false }, furnish: { kind: 'RD08', poleEvery: 8, shelter: 17.5 } },
 ];
 const STAIRS = ['T02-02', 'T08-02'];
@@ -141,7 +141,7 @@ function plane(W, node) {
 // ends, curvature nearly even (sin(angle) / 2T at the ends and in the middle). Ta stops 0.5 m short of a kink over 5 deg on the road (LM09-north, 10.5 m from J-W1, turns by 22 deg);
 // the smaller kinks of the road's own nodes within 12 m (J-T04, J-T07, J-T09: 1-2 deg) are smoothed with the joint; both lengths shrink until the curve stays within FILLET_E
 // of the original centre lines. road / bridge: centre-line points {lon, lat} from the node outward. at(t), t in [-Ta, Tb], walks the curve at a uniform rate (t < 0 on the road).
-function transition(W, node, road, bridge) {
+function transition(W, node, road, bridge, maxDeviation = FILLET_E) {
   // distances along both centre lines and along the curve are true metres on the sphere (the plane stretches by up to 2 % at 12 m from the node)
   const P = plane(W, node), poly = pts => { const g = pts.map(p => P.to(p)), c = [0]; for (let k = 1; k < g.length; k++) c.push(c[k - 1] + W.arcDistance(pts[k - 1], pts[k])); return { g, c }; };
   const Rd = poly(road), Bd = poly(bridge), unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
@@ -156,7 +156,7 @@ function transition(W, node, road, bridge) {
     const N = 240, pts = [], cum = [0];
     const ll = []; for (let k = 0; k <= N; k++) { const u = k / N, w0 = (1 - u) * (1 - u), w1 = 2 * u * (1 - u), w2 = u * u; pts.push([w0 * A.p[0] + w1 * V[0] + w2 * B.p[0], w0 * A.p[1] + w1 * V[1] + w2 * B.p[1]]); ll.push(P.from(pts[k])); if (k) cum.push(cum[k - 1] + W.arcDistance(ll[k - 1], ll[k])); }
     E = Math.max(...pts.map(q => Math.min(distTo(Rd, q, Ta + 1), distTo(Bd, q, Tb + 1)))); curve = { pts, cum }; len = cum[N];
-    if (E <= FILLET_E) break; Ta *= 0.92; Tb *= 0.92;
+    if (E <= maxDeviation) break; Ta *= 0.92; Tb *= 0.92;
   }
   const at = t => {
     if (t <= -Ta) return P.from(along(Rd, -t).p); if (t >= Tb) return P.from(along(Bd, t).p);
@@ -171,6 +171,20 @@ function chainPoints(W, segs, fromEnd) {
   const NET = W.roadNetwork, out = [];
   segs.forEach((sg, k) => { const e = NET.edges.find(q => q.id === sg.id); let P = NET.samplePath(e, 0.5); if (sg.rev) P = P.slice().reverse(); P.forEach((p, i) => { if (k > 0 && i === 0) return; out.push({ lon: p.lon, lat: p.lat }); }); });
   return fromEnd ? out.reverse() : out;
+}
+// A curve at a node between consecutive route edges. `station` uses the same cumulative samplePath chainage
+// as roadkit.route() and bridge.build(); the curve itself uses the same common-tangent construction as an abutment.
+function nodeTurn(W, segs, node) {
+  const NET = W.roadNetwork; let station = 0;
+  for (let k = 1; k < segs.length; k++) {
+    const prev = segs[k - 1], next = segs[k];
+    station += NET.edgeLength(NET.edges.find(e => e.id === prev.id));
+    if (routeNode(NET, prev, 'end') === node && routeNode(NET, next, 'start') === node) {
+      const incoming = chainPoints(W, [{ id: prev.id, rev: !prev.rev }], false), outgoing = chainPoints(W, [next], false);
+      return { node, station, fillet: transition(W, NET.nodeById[node], incoming, outgoing, node === 'LM09-north' ? 0.95 : FILLET_E) };
+    }
+  }
+  throw new Error(`no route joint at ${node}: ${segs.map(q => q.id).join('+')}`);
 }
 // the node of a route's first / last segment
 function routeNode(NET, sg, which) { const e = NET.edges.find(q => q.id === sg.id); return (which === 'start') === !sg.rev ? e.from : e.to; }
@@ -198,11 +212,11 @@ function ringChain(W) {
 // by 22 deg at LM09-north): its carriageway edge on the branch side (3.5 m) is one line per leg. Each of the branch's two paved edges meets the edge line of the leg it lands on;
 // a corner arc of radius r is tangent to both (T1 on the trunk edge, T2 on the branch edge); the branch then starts 0.6 m beyond the farther T2. The mouth = the trunk stations
 // where the paving outline lies in the ditch band (4.4-7.3 m from the centre), at least the branch's paved width + 1 m on each side: there the ditch is filled and no barrier stands.
-function junctionPlan(W, J, RK) {
+function junctionPlan(W, J, RK, turn = null) {
   const NET = W.roadNetwork, N0 = NET.nodeById[J.node], P = plane(W, N0), tr = ROUTES.find(r => r.id === J.trunk), br = ROUTES.find(r => r.id === J.branch);
   const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1], right = d => [d[1], -d[0]];
   let sJ = 0, iSeg = 0; for (; iSeg < tr.segs.length; iSeg++) { if (routeNode(NET, tr.segs[iSeg], 'start') === J.node) break; sJ += NET.edgeLength(NET.edges.find(e => e.id === tr.segs[iSeg].id)); }
-  const dF = unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
+  const dF = turn ? unit(P.to(turn.fillet.at(0.5)).map((v, i) => v - P.to(turn.fillet.at(-0.5))[i])) : unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = turn ? dF : unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
   const bEdge = br.segs[0].id, bd = unit(P.to(nearNode(W, bEdge, N0, 4))), sigma = dot(bd, right(dM)) > 0 ? 1 : -1;
   const h = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved[1], vE = 3.5, r = J.r, nB = right(bd);
   const legs = { back: { d: dB, p: right(dB).map(v => v * sigma * vE) }, fwd: { d: dF, p: right(dF).map(v => v * sigma * vE) } };
@@ -322,11 +336,14 @@ function abutWall(W, rt, ab, deckAlt) {
 function plan(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept)
-  const AB = abutments(WS, BR), CH = ringChain(WS), JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK)), head = RK.TOWN_HEAD;
+  const AB = abutments(WS, BR), CH = ringChain(WS), lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north'),
+    bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) },
+    JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)), head = RK.TOWN_HEAD;
   const optsOf = def => {
     const o = { ...def.opts, terrainColor: tc };
     if (def.exit) o.townHead = head;
     if (CH[def.id]) o.chain = CH[def.id];
+    if (def.id === 'N01-west') o.turns = [lm09Turn];
     for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
     const mo = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (mo.length) o.mouths = mo;
     const jb = JP.find(j => j.branch === def.id); if (jb) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
@@ -345,6 +362,7 @@ function plan(W, H, tc) {
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
     const o = { ...def, chain: CH[def.id], abut: {} };
+    if (bridgeTurnDefs[def.id]) o.turns = bridgeTurnDefs[def.id];
     for (const a of AB.filter(q => q.bridge === def.id)) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
     const b = BR.build(WS, def.ids, o); b.def = def; return b;
   });
@@ -369,6 +387,9 @@ function plan(W, H, tc) {
   const markers = [], items = [...routes.map(rt => ({ kind: 'route', rt, hw: rt.def.furnish && rt.def.furnish.kind === 'RD05' ? 1.5 : rt.def.furnish && rt.def.furnish.kind === 'RD08' ? 1.0 : rt.def.furnish && rt.def.furnish.kind === 'RD03' ? 2.25 : 4.5 })), ...stairs.map(st => ({ kind: 'stairs', rt: st, hw: 0.8 }))];
   for (const nd of W.roadNetwork.nodes.filter(q => q.kind === 'landmark-entrance')) {
     let best = null; for (const it of items) { const S = it.rt.samples; for (const i of [0, S.length - 1, ...(it.kind === 'route' ? S.map((_, j) => j) : [])]) { const d = global.WORLD ? 0 : 0; void d; const dd = W.arcDistance(S[i], nd); if (dd < 0.4 && (!best || dd < best.d)) best = { d: dd, it, i }; } }
+    if (!best && nd.id === 'LM09-north') {
+      for (const it of items.filter(q => q.kind === 'route')) { const S = it.rt.samples; for (let i = 0; i < S.length; i++) { const dd = W.arcDistance(S[i], nd); if (dd <= 1.0 && (!best || dd < best.d)) best = { d: dd, it, i }; } }
+    }
     if (!best) continue;
     const { it, i } = best, T = it.rt.tangent, yaw = Math.atan2(T[i][0], T[i][1]);
     for (const sd of [-1, 1]) { const [lo, la] = it.rt.lateral(i, sd * (it.hw + 0.75)); markers.push({ type: 'gatePost', lon: lo, lat: la, alt: (it.rt.surface ? it.rt.surface(i, sd * (it.hw + 0.75)) : WS.height(lo, la)), yaw, s: [1, 1, 1], lean: [0, 0], tint: [1, 1, 1], node: nd.id }); }
@@ -392,6 +413,11 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const t0 = Date.now();
     const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
     const TB = global.TERRAIN.builder(W); DATA = plan(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
+    // W8f-c G3: terrain yields only the final road pavement plus 0.3 m reveal, including the W4 T03 chain at N08.
+    if (TERR.setExitRoutes) {
+      const n08 = global.ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD });
+      TERR.setExitRoutes([...DATA.routes.filter(rt => rt.def.exit), { ...n08, def: { exit: 'N08' } }]);
+    }
     const root = new THREE.Group(); root.name = 'roads'; scene.add(root); S.root = root;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });

@@ -6,7 +6,7 @@
 //   options: --frames N (default 40)   --out DIR (keep the shots of both builds, default: temp)
 //            --views a,b   only these views
 //            --mask-patch-margin 24   (W3 and later) ignore the pixels where the terrain ring / exit starts are visible: the current build
-//            is rendered a second time with those meshes hidden, the pixels that differ (dilated by 2 px) are the mask; everything
+//            is rendered a second time with those meshes hidden, the pixels that differ are dilated by the requested screenshot-pixel margin; everything
 //            outside the mask must still match the baseline (max channel diff 0.. 2, same rule). Only pixels near the town patch may change.
 //
 // Determinism: Math.random is replaced by a seeded generator, requestAnimationFrame is driven by hand with the
@@ -93,7 +93,7 @@ async function shoot(browser, html, outDir, bend, withMask) {
       const url = S.renderer.domElement.toDataURL('image/png'), calls = S.renderer.info.render.calls, tris = S.renderer.info.render.triangles;
       let hiddenUrl = null;
       if (withMask && S.terrain) {            // second render without the ring and the exit starts: the differing pixels are the mask
-        const ring = [...S.terrain.ring, ...S.terrain.stubs], was = ring.map(m => m.visible);
+        const ring = [...S.terrain.ring, ...(S.terrain.ringFlat || []), ...S.terrain.stubs], was = ring.map(m => m.visible);
         ring.forEach(m => { m.visible = false; });
         S.renderer.render(S.scene, S.camera); hiddenUrl = S.renderer.domElement.toDataURL('image/png');
         ring.forEach((m, i) => { m.visible = was[i]; });
@@ -109,13 +109,13 @@ async function shoot(browser, html, outDir, bend, withMask) {
   return { info, errors };
 }
 
-async function compare(browser, dirA, dirB, masked) {
+async function compare(browser, dirA, dirB, masked, maskMargin = 2) {
   const page = await browser.newPage();
   const out = {};
   for (const name of Object.keys(VIEWS)) {
     const a = fs.readFileSync(path.join(dirA, name + '.png')).toString('base64'), b = fs.readFileSync(path.join(dirB, name + '.png')).toString('base64');
     const h = masked ? fs.readFileSync(path.join(dirB, name + '.hidden.png')).toString('base64') : null;
-    out[name] = await page.evaluate(async ([a, b, h]) => {
+    out[name] = await page.evaluate(async ([a, b, h, margin]) => {
       const load = s => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + s; });
       const [ia, ib, ih] = await Promise.all([load(a), load(b), h ? load(h) : null]);
       if (ia.width !== ib.width || ia.height !== ib.height) return { error: 'size differs' };
@@ -125,13 +125,15 @@ async function compare(browser, dirA, dirB, masked) {
       if (ih) {                                   // pixels where the ring/exit meshes are visible, dilated by 2 px
         const dh = data(ih), raw = new Uint8Array(W * H); mask = new Uint8Array(W * H);
         for (let k = 0; k < W * H; k++) raw[k] = (Math.abs(db[k * 4] - dh[k * 4]) + Math.abs(db[k * 4 + 1] - dh[k * 4 + 1]) + Math.abs(db[k * 4 + 2] - dh[k * 4 + 2])) > 0 ? 1 : 0;
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (raw[y * W + x]) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && xx < W && yy >= 0 && yy < H) mask[yy * W + xx] = 1; }
+        const radius = Math.max(2, Math.ceil(Number(margin) || 2)), horizontal = new Uint8Array(W * H);
+        for (let y = 0; y < H; y++) { let n = 0; for (let x = 0; x <= Math.min(W - 1, radius); x++) n += raw[y * W + x]; for (let x = 0; x < W; x++) { horizontal[y * W + x] = n ? 1 : 0; const leaving = x - radius, entering = x + radius + 1; if (leaving >= 0) n -= raw[y * W + leaving]; if (entering < W) n += raw[y * W + entering]; } }
+        for (let x = 0; x < W; x++) { let n = 0; for (let y = 0; y <= Math.min(H - 1, radius); y++) n += horizontal[y * W + x]; for (let y = 0; y < H; y++) { mask[y * W + x] = n ? 1 : 0; const leaving = y - radius, entering = y + radius + 1; if (leaving >= 0) n -= horizontal[leaving * W + x]; if (entering < H) n += horizontal[entering * W + x]; } }
         for (let k = 0; k < W * H; k++) masked += mask[k];
       }
-      let max = 0, over = 0;
-      for (let k = 0; k < da.length; k += 4) { if (mask && mask[k / 4]) continue; let m = 0; for (let c = 0; c < 3; c++) m = Math.max(m, Math.abs(da[k + c] - db[k + c])); if (m > max) max = m; if (m > 2) over++; }
-      return { max, over, total: da.length / 4, masked, fraction: over / (da.length / 4) };
-    }, [a, b, h]);
+      let max = 0, over = 0, rawMax = 0, rawOver = 0;
+      for (let k = 0; k < da.length; k += 4) { let m = 0; for (let c = 0; c < 3; c++) m = Math.max(m, Math.abs(da[k + c] - db[k + c])); if (m > rawMax) rawMax = m; if (m > 2) rawOver++; if (mask && mask[k / 4]) continue; if (m > max) max = m; if (m > 2) over++; }
+      return { max, over, rawMax, rawOver, total: da.length / 4, masked, fraction: over / (da.length / 4) };
+    }, [a, b, h, maskMargin]);
   }
   await page.close();
   return out;
@@ -171,12 +173,12 @@ try {
     if (has('--baseline-ref')) { const b = buildRef(arg('--baseline-ref')); other = b.html; cleanup = b.cleanup; label = arg('--baseline-ref'); }
     const A = await shoot(browser, other, path.join(tmp, 'baseline'), null);
     const B = await shoot(browser, current, path.join(tmp, 'current'), bendValue === null ? 0 : Number(bendValue), maskMargin !== null);
-    const cmp = await compare(browser, path.join(tmp, 'baseline'), path.join(tmp, 'current'), maskMargin !== null);
+    const cmp = await compare(browser, path.join(tmp, 'baseline'), path.join(tmp, 'current'), maskMargin !== null, maskMargin === null ? 2 : Number(maskMargin));
     console.log(`regress: ${label} vs current, ${FRAMES} frames per view`);
     for (const [name, r] of Object.entries(cmp)) {
       const ok = !r.error && r.fraction <= 0.0001;
       if (!ok) exit = 1;
-      console.log(`${ok ? 'PASS' : 'FAIL'} ${name.padEnd(13)} ${r.error || `max channel diff ${r.max}, pixels over 2: ${r.over}/${r.total} (${(r.fraction * 100).toFixed(4)}%)${maskMargin !== null ? `, masked ${r.masked} px (${(r.masked / r.total * 100).toFixed(2)}%)` : ''}`}  draw calls ${A.info[name].calls} → ${B.info[name].calls}, triangles ${A.info[name].triangles} → ${B.info[name].triangles}`);
+      console.log(`${ok ? 'PASS' : 'FAIL'} ${name.padEnd(13)} ${r.error || `max channel diff ${r.max}, pixels over 2: ${r.over}/${r.total} (${(r.fraction * 100).toFixed(4)}%)${maskMargin !== null ? `, masked ${r.masked} px (${(r.masked / r.total * 100).toFixed(2)}%), unmasked pixels over 2: ${r.rawOver}/${r.total} (max ${r.rawMax})` : ''}`}  draw calls ${A.info[name].calls} → ${B.info[name].calls}, triangles ${A.info[name].triangles} → ${B.info[name].triangles}`);
     }
     for (const [who, e] of [['baseline', A.errors], ['current', B.errors]]) if (e.length) { console.log(`page errors (${who}):`, e.join(' | ')); exit = 1; }
     console.log(exit ? 'FAIL regress' : 'PASS regress');

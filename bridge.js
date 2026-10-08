@@ -33,6 +33,8 @@ function build(W, ids, o = {}) {
   const AB = o.abut || {};
   if (AB.start) for (const p of S) if (p.s <= AB.start.T + 1e-9) { const q = AB.start.at(p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
   if (AB.end) for (const p of S) if (off - p.s <= AB.end.T + 1e-9) { const q = AB.end.at(off - p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
+  // W8f-c G1: bridge-to-bridge nodes use the same sampled centreline transition on both sides of the node.
+  for (const q of (o.turns || [])) for (const p of S) { const d = p.s - q.station, f = q.fillet; if (d < -f.Ta - 1e-9 || d > f.Tb + 1e-9) continue; const a = f.at(d); p.lon = a.lon; p.lat = a.lat; p.h = W.height(a.lon, a.lat); }
   // unwrapped longitudes: the chain across the dateline (T01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
   S.forEach((p, i) => { p.lonU = i === 0 ? p.lon : S[i - 1].lonU + ((p.lon - S[i - 1].lonU + 540) % 360 - 180); });
   const n = S.length, L = off, flat = p => ({ x: R * p.lonU * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
@@ -56,7 +58,7 @@ function build(W, ids, o = {}) {
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
-  const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
+  const out = { ids, samples: S, turns: o.turns || [], alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
