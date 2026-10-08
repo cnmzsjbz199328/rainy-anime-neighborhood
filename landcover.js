@@ -530,7 +530,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     for(const mesh of [...TERR.rest,...objs.strips.filter(o=>['cover:dunes','cover:ice'].includes(o.name))]){const g=mesh.geometry,pos=g.attributes.position,old=g.attributes.color,neo=old.clone();
       for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));if(W.townPatchDistance(ll.lon,ll.lat)<=24)continue;const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
         // the floor seen between the crowns from far away, mottled by the instance table: leafA going to the shade of cedarD where the stand is denser or more cedar
-        if(reg.kind==='forest'){const shade=Math.min(1,.6*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
+        if(reg.kind==='forest'){const shade=Math.min(1,.9*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
         neo.setXYZ(i,...color);
       }baked.push({g,old,neo});
@@ -547,7 +547,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     // the instance colour turns it to the mean leaf colour of the group's own trees (cedar groups darker, bamboo lighter)
     const geo=K.builder().add(new THREE.IcosahedronGeometry(1,0),P.leafA,{p:[0,1,0],top:P.leafC}).build(),leafA=lin(P.leafA),rel=t=>lin(P[{treeRound:'leafA',cedar:'cedar',pine:'pine',bamboo:'bamboo'}[t]]).map((c,j)=>c/leafA[j]);
     canopy=new THREE.InstancedMesh(geo,M.treeMat,Math.max(1,canopyGroups.length));canopy.name='cover:canopy-proxy';canopy.frustumCulled=false;canopy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);S.root.add(canopy);
-    canopyGroups.forEach((g,i)=>{const j=.8+.4*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));});
+    canopyGroups.forEach((g,i)=>{const j=.75+.5*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));});
     S.distant={groups:canopyGroups.length,triangles:canopyGroups.length*20,bakedVertices:baked.reduce((n,b)=>n+b.neo.count,0)};
   }
   function updateDistant(){
