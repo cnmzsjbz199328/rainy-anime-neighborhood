@@ -517,10 +517,49 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   function teaGeo(K) { const b = K.builder(); b.add(new THREE.BoxGeometry(1, 1, 1), '#3f6a4e', { p: [0, 0.4, 0], s: [1.0, 0.8, 2.0], top: '#4c7a58', noise: 0.08 }); K.geometries.teaRow = b.build(); return K.geometries.teaRow; }
   const TREE_SET = new Set(['treeRound', 'cedar', 'pine', 'bamboo']);
+  // W8f-b: density is sampled from the authoritative instance table, in 3D
+  // surface cells (continuous across the longitude seam and near the poles).
+  const smoothCover=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+  const baked=[], canopyGroups=[]; let canopy=null, weights=null;
+  function buildDistant(K,M){
+    weights=new Float32Array(DATA.items.length);const P=K.palette;
+    const cells=new Map(),point=(lo,la)=>[R*Math.cos(la*D)*Math.sin(lo*D),R*Math.cos(la*D)*Math.cos(lo*D),-R*Math.sin(la*D)];
+    for(const it of DATA.items){const p=point(it.lon,it.lat),key=p.map(x=>Math.floor(x/8)).join(',');let c=cells.get(key);if(!c)cells.set(key,c={n:0,trees:0,cedar:0});c.n++;if(TREE_SET.has(it.type))c.trees++;if(it.type==='cedar')c.cedar++;}
+    const density=(lo,la)=>{const p=point(lo,la).map(x=>x/8),a=p.map(Math.floor);let trees=0,small=0,cedar=0;
+      for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const b=[a[0]+x,a[1]+y,a[2]+z],c=cells.get(b.join(','));if(!c)continue;const ds=b.reduce((v,q,i)=>v+(q+.5-p[i])**2,0),w=Math.exp(-ds*1.5);trees+=c.trees*w;small+=c.n*w;cedar+=c.cedar*w;}return{trees,small,cedar};};
+    for(const mesh of [...TERR.rest,...objs.strips.filter(o=>['cover:dunes','cover:ice'].includes(o.name))]){const g=mesh.geometry,pos=g.attributes.position,old=g.attributes.color,neo=old.clone();
+      for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));if(W.townPatchDistance(ll.lon,ll.lat)<=24)continue;const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
+        // the floor seen between the crowns from far away, mottled by the instance table: leafA going to the shade of cedarD where the stand is denser or more cedar
+        if(reg.kind==='forest'){const shade=Math.min(1,.6*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
+        else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
+        neo.setXYZ(i,...color);
+      }baked.push({g,old,neo});
+    }
+    // Each 16 m source tile is split into four local crown patches. Each patch
+    // stays at its trees' centroid and uses a single 20-triangle crown.
+    for(const ids of INDEX.tiles.values()){
+      const trees=ids.filter(i=>TREE_SET.has(DATA.items[i].type)&&W.regionAt(DATA.items[i].lon,DATA.items[i].lat).kind==='forest'&&W.townPatchDistance(DATA.items[i].lon,DATA.items[i].lat)>24);
+      if(!trees.length)continue;const origin=DATA.items[trees[0]],parts=new Map();
+      for(const i of trees){const it=DATA.items[i],dx=wrapLon(it.lon-origin.lon)*R*D*Math.cos(it.lat*D),dz=(it.lat-origin.lat)*R*D,key=Math.floor(dx/8)+','+Math.floor(dz/8);if(!parts.has(key))parts.set(key,[]);parts.get(key).push(i);}
+      for(const members of parts.values()){const lo=origin.lon+members.reduce((v,i)=>v+wrapLon(DATA.items[i].lon-origin.lon),0)/members.length,la=members.reduce((v,i)=>v+DATA.items[i].lat,0)/members.length,F=flatOf(wrapLon(lo),la),h=TERR.sampler()(wrapLon(lo),la);canopyGroups.push({members,F,h,scale:Math.min(4,1.2+Math.sqrt(members.length)*.7)});}
+    }
+    // The crown of treeRound_far (leafA rising to leafC, the trees' own material), so the hand-over to the loaded trees keeps the colour;
+    // the instance colour turns it to the mean leaf colour of the group's own trees (cedar groups darker, bamboo lighter)
+    const geo=K.builder().add(new THREE.IcosahedronGeometry(1,0),P.leafA,{p:[0,1,0],top:P.leafC}).build(),leafA=lin(P.leafA),rel=t=>lin(P[{treeRound:'leafA',cedar:'cedar',pine:'pine',bamboo:'bamboo'}[t]]).map((c,j)=>c/leafA[j]);
+    canopy=new THREE.InstancedMesh(geo,M.treeMat,Math.max(1,canopyGroups.length));canopy.name='cover:canopy-proxy';canopy.frustumCulled=false;canopy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);S.root.add(canopy);
+    canopyGroups.forEach((g,i)=>{const j=.8+.4*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));});
+    S.distant={groups:canopyGroups.length,triangles:canopyGroups.length*20,bakedVertices:baked.reduce((n,b)=>n+b.neo.count,0)};
+  }
+  function updateDistant(){
+    if(!canopy)return;let count=0;
+    for(let gi=0;gi<canopyGroups.length;gi++){const g=canopyGroups[gi],detail=g.members.reduce((n,i)=>n+weights[i],0)/g.members.length,fade=1-detail;if(fade<=.001)continue;
+      const k=g.F.k,sc=g.scale*Math.sqrt(fade);qQ.identity();mM.compose(mP.set(g.F.x,(g.h-BASE)*k,g.F.z),qQ,mS.set(k*sc,k*2.4*Math.sqrt(fade),k*sc));canopy.setMatrixAt(count,mM);canopy.setColorAt(count,tintC.setRGB(...g.tint));count++;
+    }canopy.count=count;canopy.instanceMatrix.needsUpdate=true;canopy.instanceColor.needsUpdate=true;canopy.computeBoundingSphere();
+  }
   function load(camera, force) {
-    const ll = camLL(camera); if (!ll || ll.alt > 110) { for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; S.last = null; return; }
+    const ll = camLL(camera); if (!ll || ll.alt >= 110) { if(weights)weights.fill(0); for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; S.last = null; updateDistant(); return; }
     if (!force && S.last && Math.abs(S.last.lon - ll.lon) * Math.cos(ll.lat * D) * R * D < 1e-9 && Math.abs(S.last.lat - ll.lat) * R * D < 1e-9 && Math.abs(S.last.alt - ll.alt) < 1e-9 && S.last.bend === BEND.get()) return;
-    S.last = { ...ll, bend: BEND.get() };
+    S.last = { ...ll, bend: BEND.get() };if(weights)weights.fill(0);
     const radius = Math.min(80, Math.max(30, 20 + ll.alt * 1.2)), band = INDEX.bandDeg, b0 = Math.floor((ll.lat - radius / (R * D)) / band), b1 = Math.floor((ll.lat + radius / (R * D)) / band);
     const counts = {}; for (const key of Object.keys(objs.inst)) counts[key] = 0; let total = 0;
     const cx = flatOf(ll.lon, ll.lat);
@@ -530,13 +569,14 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
         for (const i of tile) {
           const o = i * 12, x = INDEX.f[o], z = INDEX.f[o + 1], k = 1 / Math.cos(Math.atan(Math.sinh(-z / R))); const dx = (x - cx.x) / k, dz = (z - cx.z) / k; if (dx * dx + dz * dz > radius * radius) continue;
           let type = INDEX.types[INDEX.type[i]]; if (TREE_SET.has(type)) { const d3 = Math.hypot(dx, dz, ll.alt); if (d3 >= 26) type += '_far'; } const inst = objs.inst[type]; if (!inst || counts[type] >= inst.cap) continue;
-          qE.set(INDEX.f[o + 10], INDEX.f[o + 3], INDEX.f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, (INDEX.f[o + 2] - BASE) * k, z), qQ, mS.set(k * INDEX.f[o + 4], k * INDEX.f[o + 5], k * INDEX.f[o + 6]));
+          const fade=(1-smoothCover(radius-10,radius,Math.hypot(dx,dz)))*(1-smoothCover(90,110,ll.alt));if(fade<=0)continue;if(weights)weights[i]=fade;
+          qE.set(INDEX.f[o + 10], INDEX.f[o + 3], INDEX.f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, (INDEX.f[o + 2] - BASE) * k, z), qQ, mS.set(k * INDEX.f[o + 4]*fade, k * INDEX.f[o + 5]*fade, k * INDEX.f[o + 6]*fade));
           const n = counts[type]++; inst.mesh.setMatrixAt(n, mM); inst.mesh.setColorAt(n, tintC.setRGB(INDEX.f[o + 7], INDEX.f[o + 8], INDEX.f[o + 9])); total++;
         } }
     }
     // Transparent hull sorting also uses these bounds; stale centres made identical views path-dependent.
     for (const [type, o] of Object.entries(objs.inst)) { o.mesh.count = counts[type]; if (o.hull) o.hull.count = counts[type]; o.mesh.instanceMatrix.needsUpdate = true; if (o.mesh.instanceColor) o.mesh.instanceColor.needsUpdate = true; o.mesh.computeBoundingSphere(); if (o.hull) o.hull.computeBoundingSphere(); }
-    S.loaded = total; S.counts = counts;
+    S.loaded = total; S.counts = counts;updateDistant();
   }
   function buildLines() {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
@@ -560,6 +600,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     { const TB = global.TERRAIN.builder(W); DATA.dunes = dunes(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
     INDEX = indexItems(DATA.items); S.data = DATA;
     buildMeshes(K, M); buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
+    buildDistant(K, M);   // W8f-b: after the seam cut, so the baked colours are the cut meshes' own attributes
     S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, buildMs: Date.now() - t0, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
     S.built = true; return S.root;
   }
@@ -569,6 +610,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   TERR.onExplore(visibility);
   function tick(t, camera) {
     TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
+    for(const b of baked){const desired=(BEND.get()>0||TERR.explore)?b.neo:b.old;if(b.g.attributes.color!==desired)b.g.setAttribute('color',desired);}
     if (!S.built || !S.root.visible) return;
     load(camera, false);
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere

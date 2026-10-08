@@ -7,6 +7,8 @@
 //      preset and the same camera. The ground under each pixel comes from the ray against the planet's sphere and world.js regionAt (terrain height is ignored: a statistic, not a map)
 //   C  the road light band is there in every direction: at least 1500 pixels (1280 x 800) that differ when the band is hidden
 //   D  a landmark light is visible in every direction: at least one far light (store / onsen village / harbour / lighthouse) changes the picture by 40 levels or more when it is hidden
+// Since W8e (D9 revised, D10) the panorama is the sphere mode, a clear day without the band and the lights: A and the app path of B run there; C and D, the night lights seen from
+// panorama height, run on the flat map at 350 m over night_check's four places (the flat map's own panorama; the town is its default centre). Corrected in W8f-b, thresholds unchanged.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,7 +50,7 @@ const page = await open(html);
 // ---- A: every weather the same, no weather particles
 {
   const L = []; let ok = true;
-  await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.view.set({ target: [0, 1.2, 0], dist: 350, pitch: 1.5, yaw: 0 }); S.transition.pending = true; window.__step(60); });
+  await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.transition.setMode('sphere'); S.transition.step(3); S.view.set({ target: [0, 1.2, 0], dist: 350, pitch: 1.5, yaw: 0 }); window.__step(60); });
   const info = await page.evaluate(() => { const S = window.__scene, g = S.weather.get(); return { h: g.h, time: g.time, lon: g.lon, lat: g.lat }; }), urls = {};
   const states = ['rain', 'after', 'overcast', 'clear', 'snow', 'fog'];
   for (const st of states) {
@@ -60,22 +62,27 @@ const page = await open(html);
   const diffs = []; for (const st of states.slice(1)) { const d = await page.evaluate(async ([a, b]) => { const load = async u => { const i = new Image(); i.src = u; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const q = c.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, c.width, c.height).data; }; const A = await load(a), B = await load(b); let n = 0; for (let k = 0; k < A.length; k += 4) if (A[k] !== B[k] || A[k + 1] !== B[k + 1] || A[k + 2] !== B[k + 2]) n++; return n; }, [urls.rain, urls[st]]); diffs.push(`${st} 对雨 ${d}`); if (d) ok = false; }
   out(ok, 'WC14-A 全景（相机离地 ' + f(info.h, 0) + ' m）任何天气画面逐位相同，没有雨丝、雪、云', [...L, `差异像素：${diffs.join('；')}`, '做法：同一帧、只换天气再应用（时钟不前进），与 W8b-C4 相同']);
 }
-// ---- B, C, D on the app's own panorama path
-const curStats = {}, shots = {};
+// ---- B on the app's own panorama path (the sphere), C and D on the flat map at night
+const curStats = {}, shots = {}, FLAT = [['FRONT', -25, 32], ['EAST', 90, 0], ['BACK', 180, 0], ['WEST', -125, 0]];
 {
-  await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); });
-  const rows = [], bandPx = {}, farPeak = {};
+  await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.transition.setMode('sphere'); S.transition.step(3); });
   for (const [name, lon, lat] of DIRS) {
-    await page.evaluate(([lon, lat]) => { const S = window.__scene, q = window.WORLD.lonLatToTown(lon, lat); S.view.set({ target: [q.x, 1.2, q.z], dist: 350, pitch: 1.5, yaw: 0 }); S.transition.pending = true; window.__step(60); }, [lon, lat]);
+    await page.evaluate(([lon, lat]) => { const S = window.__scene, q = window.WORLD.lonLatToTown(lon, lat); S.view.set({ target: [q.x, 1.2, q.z], dist: 350, pitch: 1.5, yaw: 0 }); window.__step(60); }, [lon, lat]);
     const A = await shot(page); shots[name] = A; curStats[name] = await regionStats(page, A);
+  }
+  await page.evaluate(() => { const S = window.__scene; S.transition.setMode('flat'); S.transition.step(3); });
+  const rows = [], bandPx = {}, farPeak = {};
+  for (const [name, lon, lat] of FLAT) {
+    await page.evaluate(([lon, lat]) => { const S = window.__scene, q = window.WORLD.lonLatToTown(lon, lat); S.view.set({ target: [q.x, 1.2, q.z], dist: 350, pitch: 1.5, yaw: 0 }); window.__step(60); }, [lon, lat]);
+    const A = await shot(page);
     const noBand = await page.evaluate(() => { const S = window.__scene, l = S.roads.state.band.meshes, was = l.map(m => m.visible); l.forEach(m => { m.visible = false; }); S.renderer.render(S.scene, S.camera); const u = S.renderer.domElement.toDataURL('image/png'); l.forEach((m, i) => { m.visible = was[i]; }); return u; });
     const noFar = await page.evaluate(() => { const S = window.__scene, m = S.night.light.far().mesh, was = m.visible; m.visible = false; S.renderer.render(S.scene, S.camera); const u = S.renderer.domElement.toDataURL('image/png'); m.visible = was; return u; });
     const cnt = await page.evaluate(async ([a, b, c]) => { const load = async u => { const i = new Image(); i.src = u; await i.decode(); const cv = document.createElement('canvas'); cv.width = i.width; cv.height = i.height; const q = cv.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, cv.width, cv.height).data; }; const A = await load(a), B = await load(b), C = await load(c), L = (d, k) => 0.2126 * d[k] + 0.7152 * d[k + 1] + 0.0722 * d[k + 2]; let band = 0, far = 0; for (let k = 0; k < A.length; k += 4) { if (L(A, k) - L(B, k) > 8) band++; far = Math.max(far, L(A, k) - L(C, k)); } return { band, far }; }, [A, noBand, noFar]);
     bandPx[name] = cnt.band; farPeak[name] = cnt.far; rows.push(`${name}：光带像素 ${cnt.band}，最亮的远景暖光点比隐藏它时亮 ${f(cnt.far, 0)} 级`);
   }
-  const okC = DIRS.every(([n]) => bandPx[n] >= 1500), okD = DIRS.every(([n]) => farPeak[n] >= 40);
-  out(okC, 'WC14-C 道路光带在四个方向的像素数 ≥ 1500', DIRS.map(([n]) => `${n} ${bandPx[n]}`));
-  out(okD, 'WC14-D 四个方向都能看到地标的光点（远景暖光点隐藏前后画面差 ≥ 40 级）', DIRS.map(([n]) => `${n} ${f(farPeak[n], 0)} 级`));
+  const okC = FLAT.every(([n]) => bandPx[n] >= 1500), okD = FLAT.every(([n]) => farPeak[n] >= 40), at = ([n, lon, lat]) => `${n}（${lon}°, ${lat}°）`;
+  out(okC, 'WC14-C 道路光带在四个方向的像素数 ≥ 1500（平面夜间，离地 350 m）', FLAT.map(d => `${at(d)} ${bandPx[d[0]]}`));
+  out(okD, 'WC14-D 四个方向都能看到地标的光点（远景暖光点隐藏前后画面差 ≥ 40 级；平面夜间，离地 350 m）', FLAT.map(d => `${at(d)} ${f(farPeak[d[0]], 0)} 级`));
 }
 await page.close();
 // the baseline: the build of W6's end, direct placement with the panorama preset; the current build measured the same way
