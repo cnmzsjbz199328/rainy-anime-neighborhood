@@ -66,7 +66,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     // roads: strips and instances
     const roadOut = ['T03-01', 'T03-02', 'T03-03', 'T11-01'].map(id => global.ROADKIT.build(WS, id));
     // T03-01/02/03 are swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping in); their own strips and edge lines are replaced
-    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03']); S.chain = CH;
+    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
     for (const r of roadOut.slice(0, 3)) { r.strips = []; r.lines = {}; }
     for (const [t, list] of Object.entries(CH.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
@@ -102,6 +102,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const m = new THREE.Mesh(g, mat); m.name = 'sec:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
     stripMesh(CH.strip, groundMat); for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
+    // W8f-a: the first 6 m of exit N08 in the town's own asphalt material (colour and grain, one texture repeat per 4 m)
+    if (CH.strip.headIndex.length && ctx.townAsphalt) { const st = CH.strip, used = [...new Set(st.headIndex)], map = new Map(used.map((v, k) => [v, k])), pos = new Float32Array(used.length * 3), uv = new Float32Array(used.length * 2);
+      used.forEach((v, k) => { for (let c = 0; c < 3; c++) pos[k * 3 + c] = st.pos[v * 3 + c]; uv[k * 2] = st.pos[v * 3] / 4; uv[k * 2 + 1] = -st.pos[v * 3 + 2] / 4; });
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(Uint32Array.from(st.headIndex, v => map.get(v)), 1)); g.computeVertexNormals(); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, Object.assign(ctx.townAsphalt.clone(), { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.name = 'sec:town-head N08'; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); }
     // TR01 town edge: gravel shoulder and grass band along the patch's south edge, in the corridor
     { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
       stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }

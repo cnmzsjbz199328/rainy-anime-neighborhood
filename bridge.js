@@ -17,17 +17,28 @@ const COL = { top: '#3a4152', asphalt: '#2f3645', asphaltL: '#3a4152', line: '#c
 // deck cross-section: width 10 m (card), girder 1.55 m deep; lane layout as RD01 (7 m carriageway, 1 m shoulders), 0.5 m concrete kerb outside
 const DECK = { half: 5.0, girder: 1.55, side: 0.95, slope: 0.148, base: 4.2, hump: 1.8, humpHalf: 20, pierEvery: 11, lampEvery: 16, jointEvery: 12, towerAbove: 13.5, towerLegO: 5.9 };
 const TOP = [[0.075, 0.046, 'dash'], [0.1, 0.045, 'asphalt'], [3.12, 0.03, 'asphalt'], [3.18, 0.032, 'line'], [3.3, 0.032, 'line'], [3.36, 0.03, 'asphalt'], [3.5, 0.025, 'asphalt'], [4.5, 0.015, 'asphaltL'], [4.6, 0.01, 'concreteL'], [5.0, 0.01, 'concreteL']];
-const TOPCOLS = [...TOP.map(([o, l, c]) => [-o, l, c]).reverse(), ...TOP];
+// W8f-a: the deck's top also has a column at every offset where an RD01 approach has one (0.3 ... 4.8 m; lift and colour interpolated, the look is unchanged), so that
+// the road's last cross-section and the deck's first one share every vertex (no T-junction, no hairline crack on the sphere)
+const JOINT = [0.3, 0.6, 1.0, 2.0, 3.6, 4.7, 4.8];
+const TOPX = (() => { const at = o => { let j = 0; while (TOP[j + 1][0] < o) j++; const t = (o - TOP[j][0]) / (TOP[j + 1][0] - TOP[j][0]), a = lin(COL[TOP[j][2]]), b = lin(COL[TOP[j + 1][2]]); return [o, TOP[j][1] + (TOP[j + 1][1] - TOP[j][1]) * t, a.map((v, i) => v + (b[i] - v) * t)]; };
+  return [...TOP, ...JOINT.map(at)].sort((a, b) => a[0] - b[0]); })();
+const TOPCOLS = [...TOPX.map(([o, l, c]) => [-o, l, c]).reverse(), ...TOPX];
 
 function build(W, ids, o = {}) {
   const NET = W.roadNetwork, edges = ids.map(id => NET.edges.find(e => e.id === id));
   const S = [], joints = []; let off = 0;
   edges.forEach((e, k) => { const P = NET.samplePath(e, 0.5); P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, h: W.height(p.lon, p.lat), s: p.s + off }); }); off += NET.edgeLength(e); if (k + 1 < edges.length) joints.push(off); });
+  // W8f-a (W8_SPEC 12.1 C1): at an abutment the centre line within T of the node follows the common-tangent fillet shared with the road (roads.js, o.abut.start / end:
+  // at(t) with t > 0 on the bridge, brg = the bearing of increasing t at the node), the end sample takes the fillet's tangent: the road's last cross-section is the deck's first
+  const AB = o.abut || {};
+  if (AB.start) for (const p of S) if (p.s <= AB.start.T + 1e-9) { const q = AB.start.at(p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
+  if (AB.end) for (const p of S) if (off - p.s <= AB.end.T + 1e-9) { const q = AB.end.at(off - p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
   // unwrapped longitudes: the chain across the dateline (T01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
   S.forEach((p, i) => { p.lonU = i === 0 ? p.lon : S[i - 1].lonU + ((p.lon - S[i - 1].lonU + 540) % 360 - 180); });
   const n = S.length, L = off, flat = p => ({ x: R * p.lonU * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
   const brg = S.map((p, i) => W.bearing(S[Math.max(0, i - 1)], S[Math.min(n - 1, i + 1)]));
+  for (const [k, i, turn] of [['start', 0, 0], ['end', n - 1, 180]]) if (AB[k]) { const b = (AB[k].brg + turn) % 360; brg[i] = b; T[i] = [Math.sin(b * D), -Math.cos(b * D)]; }
   // bend.js scales lengths by (R + y)/R at height y above the sphere: lateral offsets on a deck (2-4 m above the town level) are reduced by that factor so that
   // the deck, the parapets and the piers are 10 m wide on the sphere (RD02 card), not 10.3-10.5 m (W5-C2)
   const cf = new Array(n).fill(1);
@@ -35,7 +46,8 @@ function build(W, ids, o = {}) {
   const lateral = (i, oo) => latRaw(i, oo * cf[i]);
   const ground = (i, oo) => { const [lo, la] = lateral(i, oo); return W.height(lo, la); };
   // ---- vertical alignment: climb at DECK.slope from each abutment to the base height, a hump at the tower (if any), rounded by a 2 m moving average
-  const hS = S[0].h, hE = S[n - 1].h, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
+  // W8f-a: the deck starts at the altitude of the road's approach (raised by its fill, never lower than the terrain at the node: the deck over the water is not lowered)
+  const hS = o.startAlt === undefined ? S[0].h : o.startAlt, hE = o.endAlt === undefined ? S[n - 1].h : o.endAlt, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
   // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of T11-02 has room at the node (W5b裁决)
   const pylonS = humpS === null ? null : humpS + (o.pylonShift || 0);
   const base = o.base || DECK.base;
@@ -44,7 +56,7 @@ function build(W, ids, o = {}) {
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
-  const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg };
+  const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
@@ -58,8 +70,8 @@ function build(W, ids, o = {}) {
     for (let i = 0; i < n; i++) {
       const k = F[i].k;
       for (let j = 0; j < m; j++) {
-        const [oo, dy, ck] = cols[j]; let c = lin(COL[ck] || COL.concrete);
-        if (ck === 'dash') { if (((S[i].s / 6) % 1) >= 0.45) c = lin(COL.asphalt); }
+        const [oo, dy, ck] = cols[j]; let c = Array.isArray(ck) ? ck.slice() : lin(COL[ck] || COL.concrete);
+        if (ck === 'dash') { const c6 = o.chain ? o.chain.c0 + o.chain.dir * S[i].s : S[i].s; if ((((c6 / 6) % 1) + 1) % 1 >= 0.45) c = lin(COL.asphalt); }     // W8f-a: the ring's chainage
         if (opts.stain) { const f = 0.85 + 0.25 * hash(S[i].s * 0.7, oo * 3.3 + dy * 9); c = c.map(v => v * f); }
         const kk = 1 / Math.cos(lateral(i, oo)[1] * D);
         pos.push(F[i].x + (-T[i][1]) * oo * cf[i] * k, (A[i] + dy - BASE) * kk, F[i].z + T[i][0] * oo * cf[i] * k); col.push(c[0], c[1], c[2]);
@@ -82,16 +94,20 @@ function build(W, ids, o = {}) {
   strip('chamfer-right', [[DECK.half, -sd, 'concrete'], [3.2, -gd, 'concreteD']], [0.35, -0.94], { stain: true });
   strip('under', [[-3.2, -gd, 'concreteD'], [3.2, -gd, 'concreteD']], [0, -1], { stain: true });
 
-  // ---- parapets (concrete barrier pieces every 2 m on both kerbs), lamps (alternating sides every 16 m), expansion joints
-  const jointSeg = [];
-  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
+  // ---- parapets (concrete barrier pieces on both kerbs), lamps (alternating sides every 16 m), expansion joints
+  // W8f-a: round(L / 2) pieces at exact stations, each stretched to L / round(L / 2) (1.9-2.1 m), so that the parapet is flush with both abutments and meets the road's barriers
+  const jointSeg = [], nBar = Math.max(1, Math.round(L / 2)), bSp = L / nBar;
+  const atS = s => { let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return { i, t: Math.max(0, Math.min(1, (s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s))) }; };
+  const addS = (type, s, oo, dy, extra) => { const { i, t } = atS(s), a = lateral(i, oo), b = lateral(i + 1, oo), lon = a[0] + ((((b[0] - a[0]) % 360) + 540) % 360 - 180) * t;
+    (out.instances[type] = out.instances[type] || []).push({ type, lon, lat: a[1] + (b[1] - a[1]) * t, alt: A[i] + (A[i + 1] - A[i]) * t + dy, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: [1, 1, 1], station: s }); };
+  for (let kb = 0; kb < nBar; kb++) { const s = (kb + 0.5) * bSp, i = atS(s).i; for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) addS('barrierConcrete', s, side * 4.85, 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)], s: [bSp / 2, 1, 1] }); }
   let lampN = 0;
   for (let s = DECK.lampEvery / 2; s < L; s += DECK.lampEvery) {
     const i = Math.min(n - 1, Math.round(s / 0.5)), side = lampN++ % 2 ? 1 : -1, r = rightOf(i);
     if (pylonS !== null && Math.abs(S[i].s - pylonS) < 2) continue;
     const it = add('lamp', i, side * 4.4, A[i] + 0.01, { yaw: yawToward(-side * r[0], -side * r[1]) }); it.s = [0.85, 0.85, 0.85];
     out.lamps.push({ i, s: S[i].s, side });
-    add('lampPool', i, side * 1.2, A[i] + 0.03, {});
+    add('lampPool', i, side * 1.2, A[i] + 0.03, { yaw: yawAlong(i), lean: [0, pitchAt(i)] });      // W8f-a: tilted with the deck (14.8 % at the ends), not cut by it
   }
   for (let s = DECK.jointEvery; s < L - 3; s += DECK.jointEvery) {
     const i = Math.min(n - 1), ii = Math.round(s / 0.5), [la, lb] = [lateral(ii, -DECK.half + 0.2), lateral(ii, DECK.half - 0.2)];
@@ -186,7 +202,7 @@ function tunnel(W, edgeId, bed) {
   return { edge: edgeId, from: sp.fromMeters, to: sp.toMeters, length: sp.toMeters - sp.fromMeters, idx, samples: S, flatOf: F, tangent: T, bed: i => bed[i], innerR: 4.7, wallH: 1.0, shell: 0.7 };
 }
 
-const BRIDGE = { build, tunnel, DECK, COL };
+const BRIDGE = { build, tunnel, DECK, COL, TOPCOLS: TOPCOLS.map(q => q[0]) };
 if (typeof module !== 'undefined' && module.exports) module.exports = BRIDGE;
 else global.BRIDGE = BRIDGE;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
