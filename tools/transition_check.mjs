@@ -33,8 +33,8 @@ if (want('c2')) {
       for(const d of [9,25,150,400]){S.view.set({dist:d});T.step(.1);check(`${mode} d=${d} 不改变弯曲`,S.bend.get()===(mode==='flat'?0:1));}
     }
     S.view.set({target:[T.xMax-1,1.2,0],yaw:0,dist:25});S.view.pan(-100,0);check('球形经度环绕（接缝 −85° 处回到西端）',S.view.get().target[0]<T.xMin+5);
-    S.view.set({target:[0,1.2,0]});for(let i=0;i<300;i++)S.view.pan(0,-200);check('纬度上限 80°',Math.abs(Math.abs(S.view.get().target[2])-T.limitZ)<1e-9&&Math.abs(T.limitZ-Math.abs(window.WORLD.lonLatToTown(0,80).z))<1e-9);
-    const target=S.view.get().target;T.setMode('flat');T.step(.7);const u=S.bend.get();T.setMode('sphere');T.step(.1);check('动画中途反向连续',S.bend.get()>u&&S.bend.get()<1);T.step(2);
+    T.setMode('flat');T.step(3);S.view.set({target:[0,1.2,0]});for(let i=0;i<300;i++)S.view.pan(0,-200);check('平面纬度上限 80°',Math.abs(Math.abs(S.view.get().target[2])-T.limitZ)<1e-9&&Math.abs(T.limitZ-Math.abs(window.WORLD.lonLatToTown(0,80).z))<1e-9);
+    T.setMode('sphere');T.step(3);const target=S.view.get().target;T.setMode('flat');T.step(.7);const u=S.bend.get();T.setMode('sphere');T.step(.1);check('动画中途反向连续',S.bend.get()>u&&S.bend.get()<1);T.step(2);
     check('切换不丢目标',JSON.stringify(target)===JSON.stringify(S.view.get().target));
     T.setMode('flat');T.step(3);S.view.set({target:[T.xMax-1,1.2,0],yaw:0,dist:25});S.view.pan(-100,0);check('平面在东接缝夹紧',S.view.get().target[0]===T.xMax);S.view.set({target:[T.xMin+1,1.2,0]});S.view.pan(100,0);check('平面在西接缝夹紧',S.view.get().target[0]===T.xMin);
     S.view.set({target:[window.WORLD.lonLatToTown(-126.9,0).x,1.2,0]});check('规范经度目标（接缝以西）显示在东段',Math.abs(S.view.get().target[0]-(window.WORLD.lonLatToTown(-126.9,0).x+S.bend.PERIOD))<1e-4);
@@ -68,7 +68,7 @@ if (want('c3')) {
     let worstAng = 0, minClear = 1e9, minRaw = 1e9, lifted = 0; const cam = S.camera;
     for (let i = 0; i < 1000; i++) {
       const lon = -180 + rnd() * 360, lat = -84 + rnd() * 168, q = W.lonLatToTown(lon, lat), yaw = rnd() * 6.283, pitch = 0.05 + rnd() * 1.4, d = 9 + rnd() * 391, h0 = Math.max(0, samp(lon, lat) ?? 0);
-      const fr = T.frame(B, [q.x, h0 + 1.2, q.z], d, yaw, pitch, 1), P = B.point(q.x, h0 + 1.2, q.z, 1), rv = [P[0], P[1] + R, P[2]], rl = Math.hypot(...rv), upv = fr.up;
+      S.sphereCamera.reset([q.x,h0+1.2,q.z]);const fr = S.sphereCamera.frame([q.x, h0 + 1.2, q.z], d, yaw, pitch), P = B.point(q.x, h0 + 1.2, q.z, 1), rv = [P[0], P[1] + R, P[2]], rl = Math.hypot(...rv), upv = fr.up;
       const ang = Math.acos(Math.max(-1, Math.min(1, (rv[0] * upv[0] + rv[1] * upv[1] + rv[2] * upv[2]) / rl))) / D; worstAng = Math.max(worstAng, ang);
       cam.position.set(...fr.position); const alt0 = (v => Math.hypot(v.x, v.y + R, v.z))(cam.position); S.transition.lift();
       const v = cam.position, r = Math.hypot(v.x, v.y + R, v.z), lam = Math.atan2(v.x, v.y + R), phi = Math.asin(-v.z / r), g = Math.max(0, samp(lam / D, phi / D) ?? 0);

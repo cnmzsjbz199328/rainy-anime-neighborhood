@@ -5202,10 +5202,49 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   function teaGeo(K) { const b = K.builder(); b.add(new THREE.BoxGeometry(1, 1, 1), '#3f6a4e', { p: [0, 0.4, 0], s: [1.0, 0.8, 2.0], top: '#4c7a58', noise: 0.08 }); K.geometries.teaRow = b.build(); return K.geometries.teaRow; }
   const TREE_SET = new Set(['treeRound', 'cedar', 'pine', 'bamboo']);
+  // W8f-b: density is sampled from the authoritative instance table, in 3D
+  // surface cells (continuous across the longitude seam and near the poles).
+  const smoothCover=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+  const baked=[], canopyGroups=[]; let canopy=null, weights=null;
+  function buildDistant(K,M){
+    weights=new Float32Array(DATA.items.length);const P=K.palette;
+    const cells=new Map(),point=(lo,la)=>[R*Math.cos(la*D)*Math.sin(lo*D),R*Math.cos(la*D)*Math.cos(lo*D),-R*Math.sin(la*D)];
+    for(const it of DATA.items){const p=point(it.lon,it.lat),key=p.map(x=>Math.floor(x/8)).join(',');let c=cells.get(key);if(!c)cells.set(key,c={n:0,trees:0,cedar:0});c.n++;if(TREE_SET.has(it.type))c.trees++;if(it.type==='cedar')c.cedar++;}
+    const density=(lo,la)=>{const p=point(lo,la).map(x=>x/8),a=p.map(Math.floor);let trees=0,small=0,cedar=0;
+      for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const b=[a[0]+x,a[1]+y,a[2]+z],c=cells.get(b.join(','));if(!c)continue;const ds=b.reduce((v,q,i)=>v+(q+.5-p[i])**2,0),w=Math.exp(-ds*1.5);trees+=c.trees*w;small+=c.n*w;cedar+=c.cedar*w;}return{trees,small,cedar};};
+    for(const mesh of [...TERR.rest,...objs.strips.filter(o=>['cover:dunes','cover:ice'].includes(o.name))]){const g=mesh.geometry,pos=g.attributes.position,old=g.attributes.color,neo=old.clone();
+      for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));if(W.townPatchDistance(ll.lon,ll.lat)<=24)continue;const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
+        // the floor seen between the crowns from far away, mottled by the instance table: leafA going to the shade of cedarD where the stand is denser or more cedar
+        if(reg.kind==='forest'){const shade=Math.min(1,.9*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
+        else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
+        neo.setXYZ(i,...color);
+      }baked.push({g,old,neo});
+    }
+    // Each 16 m source tile is split into four local crown patches. Each patch
+    // stays at its trees' centroid and uses a single 20-triangle crown.
+    for(const ids of INDEX.tiles.values()){
+      const trees=ids.filter(i=>TREE_SET.has(DATA.items[i].type)&&W.regionAt(DATA.items[i].lon,DATA.items[i].lat).kind==='forest'&&W.townPatchDistance(DATA.items[i].lon,DATA.items[i].lat)>24);
+      if(!trees.length)continue;const origin=DATA.items[trees[0]],parts=new Map();
+      for(const i of trees){const it=DATA.items[i],dx=wrapLon(it.lon-origin.lon)*R*D*Math.cos(it.lat*D),dz=(it.lat-origin.lat)*R*D,key=Math.floor(dx/8)+','+Math.floor(dz/8);if(!parts.has(key))parts.set(key,[]);parts.get(key).push(i);}
+      for(const members of parts.values()){const lo=origin.lon+members.reduce((v,i)=>v+wrapLon(DATA.items[i].lon-origin.lon),0)/members.length,la=members.reduce((v,i)=>v+DATA.items[i].lat,0)/members.length,F=flatOf(wrapLon(lo),la),h=TERR.sampler()(wrapLon(lo),la);canopyGroups.push({members,F,h,scale:Math.min(4,1.2+Math.sqrt(members.length)*.7)});}
+    }
+    // The crown of treeRound_far (leafA rising to leafC, the trees' own material), so the hand-over to the loaded trees keeps the colour;
+    // the instance colour turns it to the mean leaf colour of the group's own trees (cedar groups darker, bamboo lighter)
+    const geo=K.builder().add(new THREE.IcosahedronGeometry(1,0),P.leafA,{p:[0,1,0],top:P.leafC}).build(),leafA=lin(P.leafA),rel=t=>lin(P[{treeRound:'leafA',cedar:'cedar',pine:'pine',bamboo:'bamboo'}[t]]).map((c,j)=>c/leafA[j]);
+    canopy=new THREE.InstancedMesh(geo,M.treeMat,Math.max(1,canopyGroups.length));canopy.name='cover:canopy-proxy';canopy.frustumCulled=false;canopy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);S.root.add(canopy);
+    canopyGroups.forEach((g,i)=>{const j=.75+.5*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));});
+    S.distant={groups:canopyGroups.length,triangles:canopyGroups.length*20,bakedVertices:baked.reduce((n,b)=>n+b.neo.count,0)};
+  }
+  function updateDistant(){
+    if(!canopy)return;let count=0;
+    for(let gi=0;gi<canopyGroups.length;gi++){const g=canopyGroups[gi],detail=g.members.reduce((n,i)=>n+weights[i],0)/g.members.length,fade=1-detail;if(fade<=.001)continue;
+      const k=g.F.k,sc=g.scale*Math.sqrt(fade);qQ.identity();mM.compose(mP.set(g.F.x,(g.h-BASE)*k,g.F.z),qQ,mS.set(k*sc,k*2.4*Math.sqrt(fade),k*sc));canopy.setMatrixAt(count,mM);canopy.setColorAt(count,tintC.setRGB(...g.tint));count++;
+    }canopy.count=count;canopy.instanceMatrix.needsUpdate=true;canopy.instanceColor.needsUpdate=true;canopy.computeBoundingSphere();
+  }
   function load(camera, force) {
-    const ll = camLL(camera); if (!ll || ll.alt > 110) { for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; S.last = null; return; }
+    const ll = camLL(camera); if (!ll || ll.alt >= 110) { if(weights)weights.fill(0); for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; S.last = null; updateDistant(); return; }
     if (!force && S.last && Math.abs(S.last.lon - ll.lon) * Math.cos(ll.lat * D) * R * D < 1e-9 && Math.abs(S.last.lat - ll.lat) * R * D < 1e-9 && Math.abs(S.last.alt - ll.alt) < 1e-9 && S.last.bend === BEND.get()) return;
-    S.last = { ...ll, bend: BEND.get() };
+    S.last = { ...ll, bend: BEND.get() };if(weights)weights.fill(0);
     const radius = Math.min(80, Math.max(30, 20 + ll.alt * 1.2)), band = INDEX.bandDeg, b0 = Math.floor((ll.lat - radius / (R * D)) / band), b1 = Math.floor((ll.lat + radius / (R * D)) / band);
     const counts = {}; for (const key of Object.keys(objs.inst)) counts[key] = 0; let total = 0;
     const cx = flatOf(ll.lon, ll.lat);
@@ -5215,13 +5254,14 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
         for (const i of tile) {
           const o = i * 12, x = INDEX.f[o], z = INDEX.f[o + 1], k = 1 / Math.cos(Math.atan(Math.sinh(-z / R))); const dx = (x - cx.x) / k, dz = (z - cx.z) / k; if (dx * dx + dz * dz > radius * radius) continue;
           let type = INDEX.types[INDEX.type[i]]; if (TREE_SET.has(type)) { const d3 = Math.hypot(dx, dz, ll.alt); if (d3 >= 26) type += '_far'; } const inst = objs.inst[type]; if (!inst || counts[type] >= inst.cap) continue;
-          qE.set(INDEX.f[o + 10], INDEX.f[o + 3], INDEX.f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, (INDEX.f[o + 2] - BASE) * k, z), qQ, mS.set(k * INDEX.f[o + 4], k * INDEX.f[o + 5], k * INDEX.f[o + 6]));
+          const fade=(1-smoothCover(radius-10,radius,Math.hypot(dx,dz)))*(1-smoothCover(90,110,ll.alt));if(fade<=0)continue;if(weights)weights[i]=fade;
+          qE.set(INDEX.f[o + 10], INDEX.f[o + 3], INDEX.f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, (INDEX.f[o + 2] - BASE) * k, z), qQ, mS.set(k * INDEX.f[o + 4]*fade, k * INDEX.f[o + 5]*fade, k * INDEX.f[o + 6]*fade));
           const n = counts[type]++; inst.mesh.setMatrixAt(n, mM); inst.mesh.setColorAt(n, tintC.setRGB(INDEX.f[o + 7], INDEX.f[o + 8], INDEX.f[o + 9])); total++;
         } }
     }
     // Transparent hull sorting also uses these bounds; stale centres made identical views path-dependent.
     for (const [type, o] of Object.entries(objs.inst)) { o.mesh.count = counts[type]; if (o.hull) o.hull.count = counts[type]; o.mesh.instanceMatrix.needsUpdate = true; if (o.mesh.instanceColor) o.mesh.instanceColor.needsUpdate = true; o.mesh.computeBoundingSphere(); if (o.hull) o.hull.computeBoundingSphere(); }
-    S.loaded = total; S.counts = counts;
+    S.loaded = total; S.counts = counts;updateDistant();
   }
   function buildLines() {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
@@ -5245,6 +5285,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     { const TB = global.TERRAIN.builder(W); DATA.dunes = dunes(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
     INDEX = indexItems(DATA.items); S.data = DATA;
     buildMeshes(K, M); buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
+    buildDistant(K, M);   // W8f-b: after the seam cut, so the baked colours are the cut meshes' own attributes
     S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, buildMs: Date.now() - t0, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
     S.built = true; return S.root;
   }
@@ -5254,6 +5295,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   TERR.onExplore(visibility);
   function tick(t, camera) {
     TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
+    for(const b of baked){const desired=(BEND.get()>0||TERR.explore)?b.neo:b.old;if(b.g.attributes.color!==desired)b.g.setAttribute('color',desired);}
     if (!S.built || !S.root.visible) return;
     load(camera, false);
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
@@ -5300,6 +5342,47 @@ const TR = {
 if (typeof module !== 'undefined' && module.exports) module.exports = TR;
 else global.TRANSITION = TR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// D13: parallel-transported target frame. No longitude singularity in interaction.
+(function(global){
+'use strict';
+global.SPHERE_CAMERA=function(THREE,B,camera){
+  const C=new THREE.Vector3(0,-B.R,0),n=new THREE.Vector3(0,1,0),east=new THREE.Vector3(1,0,0);
+  let grab=null,radius=B.R+1.2;
+  const v=a=>new THREE.Vector3(...a);
+  function reset(target){const b=B.basis(target[0],target[2]);n.fromArray(b.up);east.fromArray(b.east);grab=null;}
+  function rotate(q){n.applyQuaternion(q).normalize();east.applyQuaternion(q).addScaledVector(n,-east.dot(n)).normalize();}
+  function flat(){const lat=Math.max(-89.9,Math.min(89.9,Math.asin(Math.max(-1,Math.min(1,-n.z)))*180/Math.PI));return[B.wrapX(B.R*Math.atan2(n.x,n.y)),-B.R*Math.asinh(Math.tan(lat*Math.PI/180))];}
+  function frame(target,d,yaw,pitch){
+    if(!grab){const p=v(B.point(...target,1));radius=p.distanceTo(C);}
+    const south=new THREE.Vector3().crossVectors(east,n),back=east.clone().multiplyScalar(Math.sin(yaw)).addScaledVector(south,Math.cos(yaw));
+    const P=C.clone().addScaledVector(n,radius),position=P.clone().addScaledVector(n,d*Math.sin(pitch)).addScaledVector(back,d*Math.cos(pitch));
+    const t=Math.max(0,Math.min(1,(d-80)/220)),look=P.clone().lerp(C,t*t*(3-2*t));
+    // At the exact zenith the radial up is parallel to the view. The limiting
+    // screen up is -back, preserving heading instead of lookAt's arbitrary fallback.
+    return {position:position.toArray(),lookAt:look.toArray(),up:n.toArray(),screenUp:back.clone().negate().toArray()};
+  }
+  function hit(x,y,snap){
+    const rect=snap.rect,ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2(2*(x-rect.left)/rect.width-1,1-2*(y-rect.top)/rect.height),snap.camera);
+    return ray.ray.intersectSphere(new THREE.Sphere(C,B.R),new THREE.Vector3());
+  }
+  function begin(x,y,rect){camera.updateMatrixWorld();const cam=camera.clone();cam.updateMatrixWorld();grab={camera:cam,rect,n:n.clone(),east:east.clone(),x,y,lastX:x,lastY:y,lastQ:new THREE.Quaternion()};grab.anchor=hit(x,y,grab);}
+  function drag(x,y){
+    if(!grab)return;const end=hit(x,y,grab);let q;
+    if(grab.anchor&&end){q=new THREE.Quaternion().setFromUnitVectors(end.sub(C).normalize(),grab.anchor.clone().sub(C).normalize());const pixels=Math.hypot(x-grab.lastX,y-grab.lastY);if(pixels>0)grab.edgeRate=q.angleTo(grab.lastQ)/pixels;grab.lastQ.copy(q);}
+    else{
+      // Off-disc: continue at the limb's angular scale, in the frozen screen frame.
+      const right=new THREE.Vector3().setFromMatrixColumn(grab.camera.matrixWorld,0),up=new THREE.Vector3().setFromMatrixColumn(grab.camera.matrixWorld,1);
+      const scale=grab.edgeRate??(2*Math.tan(grab.camera.fov*Math.PI/360)*grab.camera.position.distanceTo(C)/(grab.rect.height*B.R));
+      q=new THREE.Quaternion().setFromAxisAngle(up,-(x-grab.lastX)*scale).multiply(new THREE.Quaternion().setFromAxisAngle(right,-(y-grab.lastY)*scale)).multiply(grab.lastQ);grab.lastQ.copy(q);
+    }
+    n.copy(grab.n).applyQuaternion(q).normalize();east.copy(grab.east).applyQuaternion(q).normalize();grab.lastX=x;grab.lastY=y;
+  }
+  function move(x,z,metres,yaw){const south=new THREE.Vector3().crossVectors(east,n),dir=east.clone().multiplyScalar(Math.cos(yaw)*x-Math.sin(yaw)*z).addScaledVector(south,-Math.sin(yaw)*x-Math.cos(yaw)*z);if(dir.lengthSq()<1e-12)return;const axis=new THREE.Vector3().crossVectors(n,dir.normalize()).normalize();rotate(new THREE.Quaternion().setFromAxisAngle(axis,metres/B.R));}
+  return{reset,flat,frame,begin,drag,end(){grab=null;},move,state:()=>({normal:n.toArray(),east:east.toArray(),radius,dragging:!!grab})};
+};
+})(globalThis);
 
 </script><script>
 // Weather of the planet (W8b, D8 / ST05): a pure, deterministic function of place and time. No THREE, no DOM, no Math.random.
@@ -20148,9 +20231,12 @@ const ZOOM=TRANSITION.ZOOM,zoomTo=d=>Math.max(ZOOM[0],Math.min(ZOOM[1],d));
 const TR={auto:true,mode:'flat',phase:0,animating:false,fog0:scene.fog.density,limitZ:Math.abs(WORLD.lonLatToTown(0,80).z),span:Math.PI*BEND.R,xMin:BEND.SEAM,xMax:BEND.SEAM+BEND.PERIOD};
 const canonLon=l=>((l+180)%360+360)%360-180,lonLatAt=(x,z)=>{const ll=WORLD.townToLonLat(x,z);ll.lon=canonLon(ll.lon);return ll;};
 const zoomUser=zoomTo;
+const sphereCamera=SPHERE_CAMERA(THREE,BEND,camera);
+function syncSphereTarget(){const p=sphereCamera.flat();target.x=p[0];target.z=p[1];}
+function orbitSphere(dx,dy){yaw-=dx*.006;pitch=Math.max(.16,Math.min(Math.PI/2,pitch+dy*.005));}
 const townDistance=()=>TRANSITION.patchDistance(target.x,target.z,BH);
 const townAvailable=()=>TR.mode==='flat'&&BEND.get()===0&&townDistance()===0;
-function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);section.setMode(false);TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
+function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);section.setMode(false);if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
 function shiftTarget(wx,wz){target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));const x=target.x+wx;target.x=TR.mode==='sphere'?BEND.wrapX(x):Math.max(TR.xMin,Math.min(TR.xMax,x));}
 
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
@@ -20170,7 +20256,7 @@ const mapButton=document.createElement('button');mapButton.id='map-mode-toggle';
 const stick=document.createElement('div');stick.id='town-walk-stick';stick.setAttribute('aria-label','街景移动摇杆');const nub=document.createElement('div');nub.id='town-walk-nub';stick.appendChild(nub);document.body.appendChild(stick);let stickPointer=null;
 function updateStick(e){const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=33,k=len>max?max/len:1;joystickValue=[dx*k/max,-dy*k/max];nub.style.transform=`translate(${dx*k}px,${dy*k}px)`;}
 stick.addEventListener('pointerdown',e=>{if(!roam)return;stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);e.preventDefault();});stick.addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)updateStick(e);});for(const ev of ['pointerup','pointercancel'])stick.addEventListener(ev,e=>{if(e.pointerId===stickPointer){stickPointer=null;joystickValue=[0,0];nub.style.transform='';}});
-const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&!roam){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};dist=zoomUser(dist*pinch/d);pinch=d;pan(m.x-mid.x,m.y-mid.y);mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){roam.heading+=dx*.005;roam.lookPitch=Math.max(-.45,Math.min(.7,roam.lookPitch+dy*.003));}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);last=null;if(roam)canvas.style.cursor='grab';});canvas.addEventListener('wheel',e=>{if(roam)return;e.preventDefault();dist=zoomUser(dist*Math.exp(e.deltaY*.001));},{passive:false});
+const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(TR.mode==='sphere'&&!roam&&pointers.size===1)sphereCamera.begin(e.clientX,e.clientY,canvas.getBoundingClientRect());if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&!roam){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};dist=zoomUser(dist*pinch/d);pinch=d;if(TR.mode==='sphere'){sphereCamera.end();orbitSphere(m.x-mid.x,m.y-mid.y);}else pan(m.x-mid.x,m.y-mid.y);mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){roam.heading+=dx*.005;roam.lookPitch=Math.max(-.45,Math.min(.7,roam.lookPitch+dy*.003));}else if(TR.mode==='sphere'){if(e.buttons===2||e.shiftKey||e.ctrlKey){sphereCamera.end();orbitSphere(dx,dy);}else{sphereCamera.drag(e.clientX,e.clientY);syncSphereTarget();}}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);if(TR.mode==='sphere')sphereCamera.end();last=null;if(TR.mode==='sphere'&&pointers.size===1){last={...[...pointers.values()][0]};sphereCamera.begin(last.x,last.y,canvas.getBoundingClientRect());}if(roam)canvas.style.cursor='grab';});canvas.addEventListener('wheel',e=>{if(roam)return;e.preventDefault();dist=zoomUser(dist*Math.exp(e.deltaY*.001));},{passive:false});
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);e.preventDefault();}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',()=>keys.clear());
 function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joystickValue[0],z=(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joystickValue[1],m=Math.hypot(x,z);if(m>1){x/=m;z/=m;}return[x,z];}
 // Planet landmarks (W7): landmarks/<id>.js registers LANDMARKS[id](kit, record) and draws in its own local frame (origin = site anchor, +Z towards the first entrance,
@@ -20225,8 +20311,9 @@ function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
 if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.heading),rX=-Math.cos(roam.heading),rZ=Math.sin(roam.heading),moveX=fX*mz+rX*mx,moveZ=fZ*mz+rZ*mx,speed=1.5,[wx,wz]=constrainWalk(roam.position.x+moveX*speed*elapsed,roam.position.z+moveZ*speed*elapsed);roam.position.x=wx;roam.position.z=wz;
   const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
-}else{const [kx,kz]=movement();if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
-  camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
+}else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
+  if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
+  camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
 rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
@@ -20244,7 +20331,7 @@ const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,s
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
-window.__scene={scene,renderer,camera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,sphereCamera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>

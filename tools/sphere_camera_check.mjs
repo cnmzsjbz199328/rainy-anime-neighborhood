@@ -1,0 +1,30 @@
+// W8f-b K2–K8: browser input, measured from camera matrices (no synthetic handler calls).
+import fs from 'node:fs';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {launchChromium} from './browser.mjs';
+import {INIT} from './road_views.mjs';
+const browser=await launchChromium(),page=await browser.newPage({viewport:{width:1280,height:800},hasTouch:true}),rows=[],errors=[];
+page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(INIT.replace('16.667','(1000/60)'));await page.goto(pathToFileURL(path.resolve('index.html')).href);await page.waitForFunction(()=>window.__scene);await page.evaluate(()=>{const S=window.__scene;window.__step(2);S.transition.setMode('sphere');S.transition.step(3);window.__step(2);window.__render=S.renderer.render.bind(S.renderer);S.renderer.render=()=>{};});
+const step=()=>page.evaluate(()=>window.__step(1));
+const setup=async(d,lat=0,pitch=1.2,lon=-80)=>{await page.evaluate(([d,lat,pitch,lon])=>{const S=window.__scene,q=WORLD.lonLatToTown(lon,lat);S.view.set({target:[q.x,1.2,q.z],dist:d,yaw:0,pitch});window.__step(1);S.camera.updateMatrixWorld();},[d,lat,pitch,lon]);};
+async function save(name){const url=await page.evaluate(()=>{const S=window.__scene;window.__render(S.scene,S.camera);return S.renderer.domElement.toDataURL('image/png');});fs.writeFileSync('docs/world/w8f-b/'+name+'.png',Buffer.from(url.split(',')[1],'base64'));}
+const state=()=>page.evaluate(()=>{const S=window.__scene;S.camera.updateMatrixWorld();return{...S.view.get(),...S.sphereCamera.state(),quaternion:S.camera.quaternion.toArray()};});
+const angle=(a,b)=>Math.acos(Math.max(-1,Math.min(1,a.reduce((s,x,i)=>s+x*b[i],0))));
+const report=(name,ok,data)=>{rows.push({name,ok,data});console.log(`${ok?'PASS':'FAIL'} ${name} ${JSON.stringify(data)}`);};
+const arcs=[];let maxErr=0;
+for(const d of [25,100,400])for(const lat of [0,45,75]){
+ await setup(d,lat);const before=await state();
+ const anchor=await page.evaluate(()=>{const S=window.__scene,T=THREE,r=new T.Raycaster();r.setFromCamera(new T.Vector2(-150/640,0),S.camera);const p=r.ray.intersectSphere(new T.Sphere(new T.Vector3(0,-90,0),90),new T.Vector3());return p?.toArray();});
+ await page.mouse.move(490,400);await page.mouse.down();for(let i=1;i<=10;i++){await page.mouse.move(490+i*30,400);await step();}await page.mouse.up();await step();const after=await state();
+ const err=anchor?await page.evaluate(a=>{const p=new THREE.Vector3(...a).project(window.__scene.camera);return Math.hypot((p.x+1)*640-790,(1-p.y)*400-400);},anchor):1e9;
+ maxErr=Math.max(maxErr,err);arcs.push({d,lat,metres:90*angle(before.normal,after.normal),err});
+}
+report('K2 抓取',maxErr<=3,arcs);const ratios=[25,100,400].map(d=>{const a=arcs.filter(a=>a.d===d).map(a=>a.metres);return{d,ratio:Math.max(...a)/Math.min(...a)};});report('K3 纬度无关',ratios.every(a=>a.ratio<=1.1),ratios);
+await setup(25,85,Math.PI/2,0);await save('camera-pole-before');let prev=await state(),maxLat=85,maxTurn=0,crossed=false;await page.mouse.move(640,240);await page.mouse.down();for(let i=1;i<=100;i++){await page.mouse.move(640,240+i*4);await step();const s=await state(),lat=Math.asin(-s.normal[2])*180/Math.PI;maxLat=Math.max(maxLat,lat);maxTurn=Math.max(maxTurn,2*Math.acos(Math.min(1,Math.abs(s.quaternion.reduce((n,x,j)=>n+x*prev.quaternion[j],0))))*180/Math.PI);if(s.normal[1]<0)crossed=true;prev=s;}await page.mouse.up();await step();await save('camera-pole-after');report('K4 过极点',{maxLat,maxTurn,crossed}.maxLat>=89&&maxTurn<=5&&crossed,{maxLat,maxTurn,crossed});
+const walks=[];for(const d of [25,400]){await setup(d);const a=await state();await page.keyboard.down('w');await page.evaluate(()=>window.__step(60));await page.keyboard.up('w');const b=await state();walks.push({d,metres:90*angle(a.normal,b.normal)});}report('K5 弧长速度',Math.abs(walks[0].metres-15)<=1.5&&walks[1].metres<=40+1e-8,walks);
+await setup(25,45,.6);const a=await state();await page.mouse.move(640,250);await page.mouse.down({button:'right'});await page.mouse.move(700,650,{steps:10});await step();await page.mouse.up({button:'right'});const b=await state();const down=await page.evaluate(()=>{const S=window.__scene;return Math.acos(Math.min(1,-S.camera.getWorldDirection(new THREE.Vector3()).dot(new THREE.Vector3(...S.sphereCamera.state().normal))))*180/Math.PI;});report('K6 环视/俯视',angle(a.normal,b.normal)<1e-6&&down<=1,{targetAngle:angle(a.normal,b.normal),pitch:b.pitch,down});
+const centers=[];await setup(100,45,.16);await page.mouse.wheel(0,Math.log(4)*1000);await step();await page.mouse.move(640,350);await page.mouse.down({button:'right'});for(const p of [.16,.6,1.1,Math.PI/2]){await page.mouse.move(640,350+(p-.16)/.005,{steps:10});await step();centers.push(await page.evaluate(()=>{const p=new THREE.Vector3(0,-90,0).project(window.__scene.camera);return Math.hypot(p.x*640,p.y*400);}));}await page.mouse.up({button:'right'});await save('camera-centered-zenith');report('K7 居中',Math.max(...centers)<=20,centers);
+const cdp=await page.context().newCDPSession(page),touch=async(type,points)=>{await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:points.map(([x,y],id)=>({x,y,id}))});await step();};
+await setup(100);const ta=await state();await touch('touchStart',[[600,400]]);await touch('touchMove',[[700,400]]);await touch('touchEnd',[]);const tb=await state();await touch('touchStart',[[500,400],[700,400]]);await touch('touchMove',[[450,400],[750,400]]);const tc=await state();await touch('touchMove',[[490,450],[790,450]]);await touch('touchEnd',[]);const td=await state();report('K8 触屏',angle(ta.normal,tb.normal)>.01&&tc.dist<tb.dist&&angle(tc.normal,td.normal)<1e-6&&Math.abs(td.yaw-tc.yaw)>.1,{singleArc:90*angle(ta.normal,tb.normal),pinch:[tb.dist,tc.dist],orbitYaw:td.yaw-tc.yaw,targetAngle:angle(tc.normal,td.normal)});
+report('页面错误',!errors.length,errors);fs.writeFileSync('docs/world/w8f-b/camera-results.json',JSON.stringify(rows,null,2));await browser.close();process.exitCode=rows.every(r=>r.ok)?0:1;
