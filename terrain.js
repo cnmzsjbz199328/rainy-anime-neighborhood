@@ -22,7 +22,6 @@ const KIND_COLOR = {
 const ROCK = hex('#6f6b78'), SNOW = hex('#d6e4f0');
 const SHALLOW = hex('#5f8fa0'), DEEP = hex('#1f3a66'), SAND = hex('#8a8794');
 const EXIT_CLASS = { RD01: { w: 9, c: hex('#2e3646') }, RD03: { w: 4.5, c: hex('#2e3646') }, RD05: { w: 3, c: hex('#5c5344') } };   // stub widths, asphalt, asphalt, packed earth
-const EXIT_CLEARANCE = { RD01: 10, RD03: 4.5, RD05: 4.5 };    // max swept pavement width; RD05 exits have an RD03 head
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
 function builder(W) {
@@ -47,22 +46,33 @@ function builder(W) {
 
   const inPatch = (lon, lat) => lon >= -P.lonMax - EPS && lon <= P.lonMax + EPS && lat >= P.latMin - EPS && lat <= P.latMax + EPS;
 
-  // W8f-c G3: cut the swept exit pavement plus 0.3 m from TR01 without dropping whole lattice triangles.
-  // The frozen centreline can differ from the finished road by up to 1 m through an abutment/turn; the
-  // extra metre in this mask envelope keeps the actual paved edge plus its 0.3 m reveal clear.
-  const exitClearance = W.roadNetwork.nodes.filter(n => n.kind === 'town-exit').flatMap(node => {
-    const NET = W.roadNetwork, edge = NET.edges.find(e => e.from === node.id || e.to === node.id), width = (EXIT_CLEARANCE[edge.class] || 0) / 2 + 0.3 + 1.0;
-    let S = NET.samplePath(edge, 0.5); if (edge.to === node.id) { const len = NET.edgeLength(edge); S = S.slice().reverse().map(p => ({ ...p, s: len - p.s })); }
-    const points = S.filter(p => p.s <= 15 + 1e-9).map(p => [flatX(p.lon), flatZ(p.lat)]), rects = [];
-    for (let i = 0; i + 1 < points.length; i++) {
-      const a = points[i], b = points[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l,
-        e0 = i ? 0.25 : 1.0, e1 = i + 2 < points.length ? 0.25 : 1.0, aa = [a[0] - ux * e0, a[1] - uz * e0], bb = [b[0] + ux * e1, b[1] + uz * e1], nx = -uz * width, nz = ux * width;
-      const polygon = [[aa[0] + nx, aa[1] + nz], [bb[0] + nx, bb[1] + nz], [bb[0] - nx, bb[1] - nz], [aa[0] - nx, aa[1] - nz]], xs = polygon.map(p => p[0]), zs = polygon.map(p => p[1]);
-      rects.push({ polygon, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) });
-    }
-    return rects;
-  });
   const polyArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
+  // W8f-c G3: cut from the final swept road cross-sections, not the network's unfilleted centreline.
+  // The per-row paving limits include route blends and town heads; the 0.3 m reveal is measured from those edges.
+  const exitPolygons = routes => {
+    const out = [];
+    for (const rt of routes || []) {
+      if (!(rt.def?.exit || rt.exit) || !rt.strip?.pos || !rt.grid?.length || !rt.paved?.length) continue;
+      const m = rt.grid.length, samples = rt.samples, pos = rt.strip.pos;
+      const pointAt = (i, o) => {
+        let j = 0;
+        while (j + 1 < m - 1 && rt.grid[j + 1] < o) j++;
+        const t = (o - rt.grid[j]) / (rt.grid[j + 1] - rt.grid[j]), a = (i * m + j) * 3, b = a + 3;
+        return [pos[a] + (pos[b] - pos[a]) * t, pos[a + 2] + (pos[b + 2] - pos[a + 2]) * t];
+      };
+      const end = samples.findIndex(p => p.s > 15 + 1e-7), last = end < 0 ? samples.length - 1 : end;
+      for (let i = 0; i < last; i++) {
+        const margin0 = samples[i].s <= 15 + 1e-7 ? 0.3 : 0,
+          margin1 = samples[i + 1].s <= 15 + 1e-7 && !(end < 0 && i + 1 === last) ? 0.3 : 0,
+          lo0 = rt.paved[i][0] - margin0, hi0 = rt.paved[i][1] + margin0, lo1 = rt.paved[i + 1][0] - margin1, hi1 = rt.paved[i + 1][1] + margin1;
+        const polygon = [pointAt(i, lo0), pointAt(i + 1, lo1), pointAt(i + 1, hi1), pointAt(i, hi0)];
+        if (Math.abs(polyArea(polygon)) < 1e-7) continue;
+        const xs = polygon.map(p => p[0]), zs = polygon.map(p => p[1]);
+        out.push({ polygon, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs), exit: rt.def?.exit || rt.exit, s0: samples[i].s, s1: samples[i + 1].s });
+      }
+    }
+    return out;
+  };
   const splitHalfPlane = (poly, a, b, sign) => {
     const side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])), inside = [], outside = [];
     for (let i = 0; i < poly.length; i++) {
@@ -140,10 +150,10 @@ function builder(W) {
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
       const isRing = W.townPatchDistance(lon, lat) < RING_M;
       if (isRing ? !opts.ring : !opts.rest) return;
-      if (opts.exitClearance !== false) {
+      if (opts.exitPolygons?.length) {
         let pieces = [[[flatX(A[0]), flatZ(A[1])], [flatX(B[0]), flatZ(B[1])], [flatX(C[0]), flatZ(C[1])]]], changed = false;
         const x0 = pieces[0].map(p => p[0]), z0 = pieces[0].map(p => p[1]), triBox = { minX: Math.min(...x0), maxX: Math.max(...x0), minZ: Math.min(...z0), maxZ: Math.max(...z0) };
-        for (const rect of exitClearance) {
+        for (const rect of opts.exitPolygons) {
           if (rect.maxX < triBox.minX - 1e-8 || rect.minX > triBox.maxX + 1e-8 || rect.maxZ < triBox.minZ - 1e-8 || rect.minZ > triBox.maxZ + 1e-8) continue;
           const before = pieces.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0), next = [];
           for (const poly of pieces) {
@@ -229,33 +239,48 @@ function builder(W) {
 
   // Grey-box starts of the town-exit roads: a ribbon on the first min(15 m, edge length) of the edge that touches the exit.
   function buildStubs() {
-    const NET = W.roadNetwork, out = [];
+    const NET = W.roadNetwork, LAYOUT = global.LAYOUT, out = [], asphalt = [0.0509, 0.0646, 0.0783], paving = hex('#8f8a7c'), marking = hex('#c9cfc4');
+    const t01Length = NET.edges.filter(e => e.route === 'T01').reduce((sum, e) => sum + NET.edgeLength(e), 0);
     for (const node of NET.nodes.filter(n => n.kind === 'town-exit')) {
+      // N11–N13 meet the frozen paved alleys; match their local night luminance at the head, then fade to RD05.
+      const alleyHead = !!LAYOUT?.alleys.some(a => a.nodes.includes(node.id)), townAsphalt = alleyHead ? paving : asphalt;
       const edge = NET.edges.find(e => e.from === node.id || e.to === node.id), cls = EXIT_CLASS[edge.class];
       let S = NET.samplePath(edge, 0.5); const len = NET.edgeLength(edge);
       if (edge.to === node.id) S = S.slice().reverse().map(p => ({ ...p, s: len - p.s }));
       const L = Math.min(15, len), pts = S.filter(p => p.s <= L + 1e-9);
-      const P2 = pts.map(p => { const c = Math.cos(p.lat * D); return { x: flatX(p.lon), z: flatZ(p.lat), y: (p.h - BASE + 0.02) / c, w: cls.w / c / 2, lon: p.lon, lat: p.lat, h: p.h }; });
-      const n = P2.length, pos = new Float32Array(n * 6), nrm = new Float32Array(n * 6), col = new Float32Array(n * 6), idx = [];
-      P2.forEach((p, k) => {
-        const a = P2[Math.max(0, k - 1)], b = P2[Math.min(n - 1, k + 1)];
-        let tx = b.x - a.x, tz = b.z - a.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
-        const lx = p.x + tz * p.w, lz = p.z - tx * p.w, rx = p.x - tz * p.w, rz = p.z + tx * p.w;     // left / right edge in the flat plane
-        pos.set([lx, p.y, lz, rx, p.y, rz], k * 6); nrm.set([0, 1, 0, 0, 1, 0], k * 6); col.set([...cls.c, ...cls.c], k * 6);
-        if (k + 1 < n) { const i0 = k * 2; idx.push(i0, i0 + 1, i0 + 2, i0 + 1, i0 + 3, i0 + 2); }
+      // Match W8f-a's six metre town-asphalt head plus eight metre fade, with a marked, tapered grid.
+      const half = cls.w / 2, lineEdge = Math.max(0.15, half - 0.13), grid = [...new Set([-half, -lineEdge - 0.07, -lineEdge + 0.07, -lineEdge + 0.15, -0.15, -0.075, 0.075, 0.15, lineEdge - 0.15, lineEdge - 0.07, lineEdge + 0.07, half])].sort((a, b) => a - b);
+      const n = pts.length, m = grid.length, pos = new Float32Array(n * m * 3), nrm = new Float32Array(n * m * 3), col = new Float32Array(n * m * 3), uv = new Float32Array(n * m * 2), idx = [];
+      const samples = pts.map(p => { const h = W.height(p.lon, p.lat); return { ...p, h, y: (h - BASE + 0.02) / Math.cos(p.lat * D) }; });
+      pts.forEach((p, i) => {
+        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], br = W.bearing(a, b), c = Math.cos(p.lat * D);
+        const fade = 1 - Math.max(0, Math.min(1, (p.s - 6) / 8)), body = cls.c.map((v, k) => v + (townAsphalt[k] - v) * fade);
+        const ringS = node.id === 'N01' ? t01Length - p.s : p.s, phase = ((ringS / 6) % 1 + 1) % 1, dash = phase < 0.45;
+        for (let j = 0; j < m; j++) {
+          const o = grid[j], q = o ? W.destination(p, br + (o > 0 ? 90 : -90), Math.abs(o)) : p, k = (i * m + j) * 3;
+          const x = flatX(q.lon), z = flatZ(q.lat); pos.set([x, (W.height(q.lon, q.lat) - BASE + 0.02) / Math.cos(q.lat * D), z], k); nrm.set([0, 1, 0], k); uv.set([x / 4, -z / 4], (i * m + j) * 2);
+          let color = body;
+          const isEdgeLine = Math.abs(Math.abs(o) - lineEdge) <= 0.071;
+          const isCenterLine = Math.abs(o) <= 0.075 && dash;
+          if (isEdgeLine || isCenterLine) color = marking.map((v, z) => v + (body[z] - v) * (1 - fade));
+          // The head uses the same textured town-asphalt material as the town sheet. Vertex colours
+          // are multipliers, so white means the exact town asphalt and the fade is relative to it.
+          col.set(color.map((v, z) => v / townAsphalt[z]), k);
+        }
       });
+      for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; idx.push(a, c, b, b, c, d); }
       // winding: make the triangles face +y whichever way the ribbon runs
       for (let t = 0; t < idx.length; t += 3) {
         const A = [pos[idx[t] * 3], pos[idx[t] * 3 + 1], pos[idx[t] * 3 + 2]], B = [pos[idx[t + 1] * 3], pos[idx[t + 1] * 3 + 1], pos[idx[t + 1] * 3 + 2]], C = [pos[idx[t + 2] * 3], pos[idx[t + 2] * 3 + 1], pos[idx[t + 2] * 3 + 2]];
         const ny = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]);
         if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; }
       }
-      out.push({ exit: node.id, edge: edge.id, class: edge.class, width: cls.w, length: L, vertexCount: n * 2, pos, nrm, col, index: Uint32Array.from(idx), samples: P2 });
+      out.push({ exit: node.id, edge: edge.id, class: edge.class, surface: alleyHead ? 'paving' : 'asphalt', width: cls.w, length: L, headLength: 6, fadeLength: 8, vertexCount: n * m, pos, nrm, col, uv, index: Uint32Array.from(idx), samples, grid });
     }
     return out;
   }
 
-  return { buildFlat, buildCap, buildStubs, vertex, lats, ringLons, inPatch, flatX, flatZ };
+  return { buildFlat, buildCap, buildStubs, exitPolygons, vertex, lats, ringLons, inPatch, flatX, flatZ };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -297,14 +322,15 @@ function withPrivateRandom(fn) {
 
 TERRAIN.withPrivateRandom = withPrivateRandom;
 
-TERRAIN.attach = function (scene, makeMaterial, BEND) {
+TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, restMat, stubMat, root;
+  let material, capMat, restMat, stubMat, stubPavingMat, root;
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
     restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
-    stubMat = material.clone(); stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
+    stubMat = townAsphaltMaterial ? townAsphaltMaterial.clone() : material.clone(); stubMat.vertexColors = true; stubMat.needsUpdate = true; stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
+    stubPavingMat = stubMat.clone(); stubPavingMat.color.set('#8f8a7c'); stubPavingMat.needsUpdate = true;
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
   const state = { ring: [], ringFlat: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
@@ -317,18 +343,37 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
   const t0 = performance.now();
-  const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitClearance: false }),
-    ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
+  const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW });
+  let ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
   withPrivateRandom(() => {
     for (const c of flatRingData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring-flat', state.ringFlat, { cx: c.cx, cy: c.cy });
     for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
     for (const s of stubData) {
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
-      add(g, stubMat, 'stub', state.stubs, { exit: s.exit, edge: s.edge });
+      g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(s.uv, 2)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
+      add(g, s.surface === 'paving' ? stubPavingMat : stubMat, 'stub', state.stubs, { exit: s.exit, edge: s.edge, surface: s.surface });
     }
   });
   state.stats.ringBuildMs = Math.round(performance.now() - t0);
+
+  state.setExitRoutes = routes => {
+    const exitPolygons = B.exitPolygons(routes);
+    if (!exitPolygons.length) return { exits: 0, polygons: 0 };
+    for (const m of state.ring) { root.remove(m); m.geometry.dispose(); }
+    state.ring.length = 0;
+    const t = performance.now();
+    ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitPolygons });
+    withPrivateRandom(() => {
+      for (const c of ringData) if (c.ringIndex) {
+        const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
+        m.visible = BEND.get() > 0;
+      }
+    });
+    state.ringData = ringData;
+    state.stats.exitClearanceMs = Math.round(performance.now() - t);
+    state.stats.exitClearancePolygons = exitPolygons.length;
+    return { exits: new Set(exitPolygons.map(q => q.exit)).size, polygons: exitPolygons.length };
+  };
 
   function buildRest() {
     if (state.restBuilt) return; state.restBuilt = true;

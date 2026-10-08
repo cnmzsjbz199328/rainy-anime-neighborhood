@@ -392,7 +392,10 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
 
   // Point-in-triangle queries against the generated flat terrain and swept road strips. The exit
   // road is the first surface at each paved sample; any remaining terrain facet must lie below it.
-  const terrainChunks = TB.buildFlat({ ring: true, rest: true }), cell = 4, buckets = new Map(), triKey = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
+  const exitRoutes = PLAN.routes.filter(q => q.def.exit).map(rt => ({ id: rt.def.exit, rt }));
+  { const ch = RK.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD }); exitRoutes.push({ id: 'N08', rt: ch }); }
+  const exitPolygons = TB.exitPolygons(exitRoutes.map(q => ({ ...q.rt, def: { exit: q.id } }))),
+    terrainChunks = TB.buildFlat({ ring: true, rest: true, exitPolygons }), cell = 4, buckets = new Map(), triKey = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
   const addTri = (A, B, C) => {
     const xs = [A[0], B[0], C[0]], zs = [A[2], B[2], C[2]], tri = { A, B, C };
     for (let ix = Math.floor(Math.min(...xs) / cell); ix <= Math.floor(Math.max(...xs) / cell); ix++) for (let iz = Math.floor(Math.min(...zs) / cell); iz <= Math.floor(Math.max(...zs) / cell); iz++) {
@@ -423,8 +426,6 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
     const t = Math.max(0, Math.min(1, (o - g[j]) / (g[j + 1] - g[j]))), a = col(rt.strip, m, i, j), b = col(rt.strip, m, i, j + 1);
     return [0, 1, 2].map(k => a[k] + (b[k] - a[k]) * t);
   };
-  const exitRoutes = PLAN.routes.filter(rt => rt.def.exit).map(rt => ({ id: rt.def.exit, rt }));
-  { const ch = RK.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD }); exitRoutes.push({ id: 'N08', rt: ch }); }
   const lateralAt = (rt, i, o) => {
     if (rt.lateral) return rt.lateral(i, o * (rt.cf ? rt.cf[i] : 1));
     const S = rt.samples, a = S[Math.max(0, i - 1)], b = S[Math.min(S.length - 1, i + 1)], brg = W.bearing(a, b), q = W.destination(S[i], brg + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat];
@@ -434,7 +435,7 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
     const half = rt.classes.includes('RD01') || rt.classes.includes('RD01T') ? 4.5 : rt.classes.includes('RD03') ? 2.25 : 1.5, before = noRoad;
     for (let i = 0; i < rt.samples.length && rt.samples[i].s <= 15 + 1e-6; i++) for (let k = 0; k < 5; k++) {
       const o = rt.paved[i][0] + (rt.paved[i][1] - rt.paved[i][0]) * k / 4, q = roadCrossPoint(rt, i, o), x = q[0], z = q[2], ry = roadAt(rt, i, x, z), gy = groundAt(x, z);
-      rayN++; if (ry === null) { noRoad++; if (noRoadSamples.length < 10) noRoadSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)}`); continue; } if (gy !== null && gy >= ry - 1e-4) { buried++; if (buriedSamples.length < 10) buriedSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)} Δ${f(gy - ry, 3)}m`); }
+      rayN++; if (ry === null) { noRoad++; if (noRoadSamples.length < 10) noRoadSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)}`); continue; } if (gy !== null && gy > ry + 1e-4) { buried++; if (buriedSamples.length < 10) buriedSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)} Δ${f(gy - ry, 3)}m`); }
     }
     info(`${id}：首 15 m 内每 0.5 m × 5 横向采样；包含出口铺装半宽约 ${f(half, 2)} m，路面未命中 ${noRoad - before}`);
   }
@@ -527,6 +528,42 @@ if (!process.argv.includes('--no-browser')) {
     results.push({ id: 'W5-C11', ok: !fails.length });
     console.log(`${fails.length ? 'FAIL' : 'PASS'} W5-C11 预算与页面：默认画面不变、光带 ≤ 20 次绘制、无页面错误（W8f-a 前编号 W5-C10）`);
     for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m);
+  }
+  {
+    const rows = await page.evaluate(async () => {
+      const S = window.__scene, W = window.WORLD, L = window.LAYOUT, THREE = window.THREE, R = 90, D = Math.PI / 180;
+      S.bend.set(0); S.transition.setMode('flat'); S.terrain.setExplore(false); S.roads.ensure();
+      const flat = (lon, lat) => [R * lon * D, (W.height(lon, lat) - 1.6 + 0.02) / Math.cos(lat * D), -R * Math.asinh(Math.tan(lat * D))];
+      const pathFromExit = node => { const edge = W.roadNetwork.edges.find(e => e.from === node.id || e.to === node.id), length = W.roadNetwork.edgeLength(edge); let samples = W.roadNetwork.samplePath(edge, 0.5); if (edge.to === node.id) samples = samples.slice().reverse().map(p => ({ ...p, s: length - p.s })); return { edge, samples }; };
+      const point = (samples, s, o) => {
+        const P = samples; let p, brg;
+        if (s < 0) { p = P[0]; brg = W.bearing(P[0], P[1]); p = W.destination(p, brg + 180, -s); }
+        else { let i = 0; while (i + 2 < P.length && P[i + 1].s < s) i++; const a = P[i], b = P[Math.min(i + 1, P.length - 1)], q = Math.max(0, Math.min(1, (s - a.s) / Math.max(1e-6, b.s - a.s))); p = { lon: a.lon + (b.lon - a.lon) * q, lat: a.lat + (b.lat - a.lat) * q }; brg = W.bearing(a, b); }
+        if (o) p = W.destination(p, brg + (o > 0 ? 90 : -90), Math.abs(o));
+        return flat(p.lon, p.lat);
+      };
+      const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true }), rows = [];
+      for (const node of W.roadNetwork.nodes.filter(n => n.kind === 'town-exit')) {
+        const { samples } = pathFromExit(node);
+        const center = flat(node.lon, node.lat); S.view.set({ mode: 'free', mapMode: 'flat', target: [center[0], 0, center[2]], yaw: 0, pitch: 1.42, dist: 14 });
+        S.terrain.setExplore(false); if (S.roads.state.root) S.roads.state.root.visible = false; window.__step(1); S.renderer.render(S.scene, S.camera);
+        canvas.width = S.renderer.domElement.width; canvas.height = S.renderer.domElement.height; ctx.drawImage(S.renderer.domElement, 0, 0);
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const pixelMean = points => { let sum = 0, count = 0; for (const p of points) { const v = new THREE.Vector3(...p).project(S.camera), x = Math.round((v.x * 0.5 + 0.5) * canvas.width), y = Math.round((-v.y * 0.5 + 0.5) * canvas.height); if (x < 1 || y < 1 || x >= canvas.width - 1 || y >= canvas.height - 1 || v.z < -1 || v.z > 1) continue; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const k = ((y + dy) * canvas.width + x + dx) * 4; sum += 0.2126 * pixels[k] + 0.7152 * pixels[k + 1] + 0.0722 * pixels[k + 2]; count++; } } return { mean: count ? sum / count : 0, count }; };
+        const headPts = []; for (const s of [0.75, 1.5, 2.5, 3.5, 4.5, 5.5]) for (const o of [-0.9, -0.5, 0.5, 0.9]) headPts.push(point(samples, s, o));
+        const layoutNode = L.roadNodes.find(n => n.id === node.id), townEdge = [...L.roads, ...L.alleys].find(e => e.nodes.includes(node.id));
+        if (!layoutNode || !townEdge) { rows.push({ id: node.id, error: '找不到冻结城镇路网中的出口边' }); continue; }
+        const edgeIndex = townEdge.nodes.indexOf(node.id), innerId = townEdge.nodes[edgeIndex === 0 ? 1 : edgeIndex - 1], innerNode = L.roadNodes.find(n => n.id === innerId), length = Math.hypot(innerNode.x - layoutNode.x, innerNode.z - layoutNode.z), dx = (innerNode.x - layoutNode.x) / length, dz = (innerNode.z - layoutNode.z) / length;
+        const townPts = []; for (const s of [0.75, 1.5, 2.5, 3.5, 4.5, 5.5]) for (const o of [-0.9, -0.5, 0.5, 0.9]) townPts.push([layoutNode.x + dx * s + dz * o, 0.02, layoutNode.z + dz * s - dx * o]);
+        const head = pixelMean(headPts), town = pixelMean(townPts), delta = Math.abs(head.mean - town.mean) / Math.max(1, head.mean, town.mean);
+        rows.push({ id: node.id, head: head.mean, town: town.mean, delta, samples: [head.count, town.count] });
+      }
+      return rows;
+    });
+    const fails = rows.filter(q => q.error || q.delta > 0.15 || !q.samples?.[0] || !q.samples?.[1]);
+    results.push({ id: 'W8f-c-G6-luminance', ok: !fails.length });
+    console.log(`${fails.length ? 'FAIL' : 'PASS'} W8f-c-G6 夜间亮度（平面默认出口头 vs 城镇边缘，同机位）`);
+    for (const q of rows) console.log(`  ${fails.includes(q) ? '✗' : '·'} ${q.id}: 出口头 ${q.head?.toFixed(1)} / 城镇边缘 ${q.town?.toFixed(1)}，相对差 ${q.delta === undefined ? '—' : (q.delta * 100).toFixed(1) + '%'}（阈值 ≤15%，采样像素 ${q.samples?.join('/')}）${q.error ? '；' + q.error : ''}`);
   }
   await browser.close();
 }

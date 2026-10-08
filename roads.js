@@ -413,6 +413,11 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const t0 = Date.now();
     const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
     const TB = global.TERRAIN.builder(W); DATA = plan(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
+    // W8f-c G3: terrain yields only the final road pavement plus 0.3 m reveal, including the W4 T03 chain at N08.
+    if (TERR.setExitRoutes) {
+      const n08 = global.ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD });
+      TERR.setExitRoutes([...DATA.routes.filter(rt => rt.def.exit), { ...n08, def: { exit: 'N08' } }]);
+    }
     const root = new THREE.Group(); root.name = 'roads'; scene.add(root); S.root = root;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });

@@ -325,7 +325,7 @@ rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i]
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
+const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND,matT('#46505b','asphalt'));
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
