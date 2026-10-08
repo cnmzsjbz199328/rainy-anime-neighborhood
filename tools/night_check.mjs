@@ -10,7 +10,7 @@
 //   C2  brightness order on the four hemispheres of the clear panorama (uBend = 1, d = 350) and the two poles. Every light is measured on a dark render (all scene lights at 0, so only
 //       what shines by itself is left over the sky colour) as its own contribution: the frame minus the same frame without it, the largest increase in levels (0-255). The reference
 //       is the band's core ribbon alone (what stands for the street lamps: one layer on land, no sea reflection). The store, the onsen village, the harbour and the lighthouse (their far
-//       lights) are at least 0.95 of its smallest value over the six views (two layers overlap at the bridge heads and double it); the volcano ember is below 0.6 of it and below all of them; the hidden clues at their synchronised peak are below 0.8 of it, visible at sync
+//       lights) are at least 0.95 of its smallest value over the six views (two layers overlap at the bridge heads and double it); the volcano ember is below 0.6 of it and below all of them; the hidden clues at their synchronised peak are below 0.95 of it (CLUE, W8f-a), visible at sync
 //       (>= 1.5 levels over the frame off sync) and exactly 0 off sync (the clue envelope), the two off-sync frames differing by no more than 15 levels in the clue's window (other motion, e.g. the snow mist of LM07)
 //   C3  stars: invisible while w_local > 0.5 (h < 80 m), on at the clear panorama (pixels change when they are switched off), never on the flat town (uBend = 0)
 //   C4  readable light: sky light and moon x (1 + 0.5 (1 - w_local)) on the planet (rain locked so the weather multipliers are 1), still a cold night (the planet's mean colour has more blue than
@@ -61,6 +61,10 @@ const without = async (page, pick, fn) => { await page.evaluate(pick => { const 
 const dark = (page, hide = '[]') => page.evaluate(hide => { const S = window.__scene, hid = eval(hide).map(o => [o, o.visible]), ls = []; hid.forEach(([o]) => { o.visible = false; }); S.scene.traverse(o => { if (o.isLight) { ls.push([o, o.intensity]); o.intensity = 0; } });
   S.renderer.render(S.scene, S.camera); const u = S.renderer.domElement.toDataURL('image/png'); for (const [o, v] of ls) o.intensity = v; for (const [o, v] of hid) o.visible = v; return u; }, hide);
 const DIP = 0.35, FOCAL = 0.9;   // FOCAL: far lights against the band core (W8c: 0.95 on the sphere)
+// CLUE: the hidden clues against the band core. W8_SPEC 5.1: a clue is dimmer than any street lamp. W8c-W8e-c used 0.8 of the smallest core, met only because the core of
+// the back / west / front views was a double layer (the road's and the bridge's ribbons overlapping at the kinked abutments, N09-T05 running into the trunk: 186 / 192 / 210);
+// since W8f-a the joints are seamless and the core is the single ribbon everywhere (148-177), and LM06 at 134.5 is 0.91 of the west view's 148: below the band, not by 20 %
+const CLUE = 0.95;
    // lowest share of the road light where the lamps hand over to the band (W8c: 40 % on the sphere; measured on the flat map since W8e-c)
 const BAND = 'S.roads.state.band.meshes', FARM = '[S.night.light.far().mesh]', NOTCORE = "S.roads.state.band.meshes.filter(m => m.name !== 'lightband:core')";
 const EMBER = "(() => { const o = []; for (const g of S.landmarks.info.LM01.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.color && m.material.color.getHexString() === '7a2a1e') o.push(m); }); return o; })()";
@@ -130,12 +134,12 @@ if (want('c2') || args.includes('--shots')) {
     const focal = [['store', 'front'], ['LM02', 'front'], ['LM10', 'east'], ['LM08', 'back']], minBand = Math.min(...Object.values(bandPeaks).filter(v => v > 0)), minF = Math.min(...focal.map(([k, v]) => peaks[k + '@' + v] ?? 0)), clueIds = ['LM05', 'LM06', 'LM07'].filter(k => peaks[k] !== undefined);
     const stand = focal.every(([k, v]) => peaks[k + '@' + v] !== undefined && peaks[k + '@' + v] >= FOCAL * minBand);
     const weak = peaks.ember !== undefined && peaks.ember < minF && peaks.ember < minBand * 0.6;
-    const clue = clueIds.length === 3 && clueIds.every(k => peaks[k] < minBand * 0.8 && peaks[k] >= 1.5 && offs[k].env.off && offs[k].offd <= 15);
+    const clue = clueIds.length === 3 && clueIds.every(k => peaks[k] < minBand * CLUE && peaks[k] >= 1.5 && offs[k].env.off && offs[k].offd <= 15);
     if (!stand || !weak || !clue) ok = false;
     out(ok, 'W8c-C2（平面模式）地图六处 d = 350 俯视的亮度排序：便利店、温泉村、渔港、灯塔不低于光带；火山口红光最弱；隐藏线索低于光带、同步可见、非同步为 0', [...rows,
       `焦点（自己的光加在暗画面上的最大增量）不低于光带核心（单层，有道路的画面里的最小值 ${f(minBand, 0)}，南北两处没有道路；两层光带在桥头重叠处约 250）的 ${FOCAL} 倍（球面时 0.95；W8e-c 起在平面上测，平铺光带比球面上亮，便利店 166 对 175）：${focal.map(([k, v]) => `${k} ${f(peaks[k + '@' + v] ?? 0, 0)}（该画面光带核心 ${f(bandPeaks[v], 0)}）`).join('；')}`,
       `火山口 ${f(peaks.ember ?? -1, 1)}（< 最弱的焦点 ${f(minF, 0)}，且 < 光带核心最小值 ${f(minBand, 0)} 的 0.6 倍）`,
-      `隐藏线索（同步时）${clueIds.map(k => `${k} ${f(peaks[k], 1)}（非同步亮度${offs[k].env.off ? '为 0' : '不为 0'}，两帧最大差 ${f(offs[k].offd, 1)}）`).join('；')}（< 光带核心最小值 ${f(minBand, 0)} 的 0.8 倍、同步可见 ≥ 1.5 级、非同步为 0、其余动态 ≤ 15 级）`]);
+      `隐藏线索（同步时）${clueIds.map(k => `${k} ${f(peaks[k], 1)}（非同步亮度${offs[k].env.off ? '为 0' : '不为 0'}，两帧最大差 ${f(offs[k].offd, 1)}）`).join('；')}（< 光带核心最小值 ${f(minBand, 0)} 的 ${CLUE} 倍、同步可见 ≥ 1.5 级、非同步为 0、其余动态 ≤ 15 级；W8f-a 起光带核心都是单层，原 0.8 倍只在旧接缝的双层重叠处成立，见文件头）`]);
   }
   if (args.includes('--shots')) {
     // the light band close-up: 150 m over the T01 ring just outside the town (the band nearly full, the lamps gone), clear night

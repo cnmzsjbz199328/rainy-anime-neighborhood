@@ -256,6 +256,83 @@ function seamSplit(root) {
 }
 const IDENTITY = new THREE.Matrix4(), tmpBox = new THREE.Box3();
 
+// ---- W8f-a sphere copies of large faces (W8_SPEC 12.1 B). The shader only moves vertices, so a face bends as its flat chord: the town's 96 m plinth top and asphalt
+// sheet (12-triangle boxes) sink about 24 m below the sphere in the middle and the sky shows through the streets. tessellate() gives every mesh and line set under the
+// roots whose horizontal edges (in the world frame) exceed maxEdge a subdivided copy: an edge longer than maxEdge is split at its midpoint, the triangle is re-cut by the
+// edges that were split (1, 2 or 3: two, three or four children, winding kept) and the children are cut again until no edge is longer. The decision and the new point
+// depend on the edge alone (its two end positions), so two triangles that share an edge split it the same way: no T-junctions, no cracks, also in non-indexed meshes.
+// Every attribute is the mean of the two ends (normals re-normalised); the groups (BoxGeometry has six) are kept. A chord of 4 m sags 4^2 / (8 R) = 2.2 cm at R = 90.
+// The flat geometry is kept untouched: use(true) swaps the copies in (uBend > 0), use(false) puts the originals back (the flat town is bit for bit the old one).
+function tessellateGeometry(g, mw, maxEdge, lines) {
+  const pos = g.attributes.position;
+  if (!pos || Object.keys(g.morphAttributes || {}).length) return null;
+  const names = Object.keys(g.attributes), attrs = names.map(k => g.attributes[k]);
+  if (attrs.some(a => a.isInterleavedBufferAttribute)) return null;
+  const n0 = pos.count, e = mw.elements, X = [], Z = [];
+  for (let i = 0; i < n0; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); X.push(e[0] * x + e[4] * y + e[8] * z + e[12]); Z.push(e[2] * x + e[6] * y + e[10] * z + e[14]); }
+  const m2 = maxEdge * maxEdge, long = (a, b) => { const dx = X[a] - X[b], dz = Z[a] - Z[b]; return dx * dx + dz * dz > m2; };
+  const idx = g.index ? g.index.array : null, total = Math.min(idx ? idx.length : n0, g.drawRange.start + g.drawRange.count), at = k => (idx ? idx[k] : k), per = lines ? 2 : 3;
+  let any = false;
+  for (let t = 0; t + per <= total && !any; t += per) any = lines ? long(at(t), at(t + 1)) : long(at(t), at(t + 1)) || long(at(t + 1), at(t + 2)) || long(at(t + 2), at(t));
+  if (!any) return null;
+  const data = attrs.map(a => Array.from(a.array.subarray(0, a.count * a.itemSize)));
+  let count = n0; const cache = new Map(), out = [];
+  const mid = (a, b) => {
+    if (a > b) { const t = a; a = b; b = t; }
+    const key = a * 4194304 + b; let m = cache.get(key); if (m !== undefined) return m;
+    m = count++;
+    attrs.forEach((a2, k) => { const s = a2.itemSize, d = data[k]; for (let c = 0; c < s; c++) d.push((d[a * s + c] + d[b * s + c]) / 2);
+      if (names[k] === 'normal' && s === 3) { const o = m * 3, l = Math.hypot(d[o], d[o + 1], d[o + 2]) || 1; d[o] /= l; d[o + 1] /= l; d[o + 2] /= l; } });
+    X.push((X[a] + X[b]) / 2); Z.push((Z[a] + Z[b]) / 2); cache.set(key, m); return m;
+  };
+  const h2 = (a, b) => (X[a] - X[b]) ** 2 + (Z[a] - Z[b]) ** 2;
+  const tri = (a0, b0, c0) => {
+    const st = [[a0, b0, c0]];
+    while (st.length) {
+      const [p, q, r] = st.pop(), lp = long(p, q), lq = long(q, r), lr = long(r, p), k = lp + lq + lr;
+      if (!k) { out.push(p, q, r); continue; }
+      if (k === 3) { const m1 = mid(p, q), m2 = mid(q, r), m3 = mid(r, p); st.push([p, m1, m3], [m1, q, m2], [m3, m2, r], [m1, m2, m3]); continue; }
+      if (k === 1) { const [A, B, C] = lp ? [p, q, r] : lq ? [q, r, p] : [r, p, q], m = mid(A, B); st.push([A, m, C], [m, B, C]); continue; }
+      // two long edges: rotate so that they are A-B and B-C (the short one C-A), cut the corner at B, the quad A m1 m2 C by its shorter diagonal
+      const [A, B, C] = !lr ? [p, q, r] : !lp ? [q, r, p] : [r, p, q], m1 = mid(A, B), m2 = mid(B, C);
+      st.push([m1, B, m2]);
+      if (h2(A, m2) <= h2(m1, C)) st.push([A, m1, m2], [A, m2, C]); else st.push([A, m1, C], [m1, m2, C]);
+    }
+  };
+  const seg = (a0, b0) => { const st = [[a0, b0]]; while (st.length) { const [p, q] = st.pop(); if (long(p, q)) { const m = mid(p, q); st.push([m, q], [p, m]); } else out.push(p, q); } };
+  const groups = g.groups && g.groups.length ? g.groups : [{ start: 0, count: total, materialIndex: 0 }], ng = [];
+  for (const gr of groups) { const s0 = out.length, end = Math.min(total, gr.start + gr.count); for (let t = gr.start; t + per <= end; t += per) { if (lines) seg(at(t), at(t + 1)); else tri(at(t), at(t + 1), at(t + 2)); } ng.push({ start: s0, count: out.length - s0, materialIndex: gr.materialIndex }); }
+  const G = new THREE.BufferGeometry();
+  names.forEach((k, j) => { const a = attrs[j]; G.setAttribute(k, new THREE.BufferAttribute(new a.array.constructor(data[j]), a.itemSize, a.normalized)); });
+  G.setIndex(new THREE.BufferAttribute(count > 65535 ? new Uint32Array(out) : new Uint16Array(out), 1));
+  if (g.groups && g.groups.length) for (const q of ng) G.addGroup(q.start, q.count, q.materialIndex);
+  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = (g.name || g.type) + ':sphere';
+  return { G, before: total / per, after: out.length / per };
+}
+// roots: objects to walk; opts.maxEdge (4 m), opts.box (only objects whose bounding-sphere centre lies within |x|, |z| <= box). Instanced meshes, points, sprites,
+// objects under a userData.live node (animated) and materials flagged noBend / noWrap (rain, snow) are left alone.
+function tessellate(roots, opts = {}) {
+  const maxEdge = opts.maxEdge || 4, box = opts.box === undefined ? Infinity : opts.box, t0 = Date.now(), list = [];
+  const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge };
+  const c = new THREE.Vector3();
+  for (const r of roots) {
+    r.updateMatrixWorld(true);
+    r.traverse(o => {
+      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || noBend(o) || noWrap(o)) return;
+      for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
+      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+      c.copy(g.boundingSphere.center).applyMatrix4(o.matrixWorld); if (Math.abs(c.x) > box || Math.abs(c.z) > box) return;
+      stats.objects++;
+      const res = tessellateGeometry(g, o.matrixWorld, maxEdge, o.isLineSegments); if (!res) return;
+      list.push({ o, flat: g, sphere: res.G });
+      if (o.isLineSegments) { stats.lines++; stats.segmentsBefore += res.before; stats.segmentsAfter += res.after; }
+      else { stats.meshes++; stats.trianglesBefore += res.before; stats.trianglesAfter += res.after; }
+    });
+  }
+  stats.ms = Date.now() - t0;
+  return { list, stats, use(on) { for (const q of list) q.o.geometry = on ? q.sphere : q.flat; } };
+}
+
 let scene = null;
 const listeners = [];
 const culled = new WeakMap(), patchedLights = new WeakSet(), lights = [];
@@ -309,7 +386,7 @@ const BEND = {
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
   SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
-  seamSplit, seamStats,
+  seamSplit, seamStats, tessellate,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },
   setEdgeFog(on) { edgeU.value.x = on ? 1 : 0; return edgeU.value.x; },
   // CPU mirror of the edge fog (before the 1 - uBend factor) at a point of the flat display frame

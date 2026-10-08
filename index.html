@@ -266,6 +266,83 @@ function seamSplit(root) {
 }
 const IDENTITY = new THREE.Matrix4(), tmpBox = new THREE.Box3();
 
+// ---- W8f-a sphere copies of large faces (W8_SPEC 12.1 B). The shader only moves vertices, so a face bends as its flat chord: the town's 96 m plinth top and asphalt
+// sheet (12-triangle boxes) sink about 24 m below the sphere in the middle and the sky shows through the streets. tessellate() gives every mesh and line set under the
+// roots whose horizontal edges (in the world frame) exceed maxEdge a subdivided copy: an edge longer than maxEdge is split at its midpoint, the triangle is re-cut by the
+// edges that were split (1, 2 or 3: two, three or four children, winding kept) and the children are cut again until no edge is longer. The decision and the new point
+// depend on the edge alone (its two end positions), so two triangles that share an edge split it the same way: no T-junctions, no cracks, also in non-indexed meshes.
+// Every attribute is the mean of the two ends (normals re-normalised); the groups (BoxGeometry has six) are kept. A chord of 4 m sags 4^2 / (8 R) = 2.2 cm at R = 90.
+// The flat geometry is kept untouched: use(true) swaps the copies in (uBend > 0), use(false) puts the originals back (the flat town is bit for bit the old one).
+function tessellateGeometry(g, mw, maxEdge, lines) {
+  const pos = g.attributes.position;
+  if (!pos || Object.keys(g.morphAttributes || {}).length) return null;
+  const names = Object.keys(g.attributes), attrs = names.map(k => g.attributes[k]);
+  if (attrs.some(a => a.isInterleavedBufferAttribute)) return null;
+  const n0 = pos.count, e = mw.elements, X = [], Z = [];
+  for (let i = 0; i < n0; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); X.push(e[0] * x + e[4] * y + e[8] * z + e[12]); Z.push(e[2] * x + e[6] * y + e[10] * z + e[14]); }
+  const m2 = maxEdge * maxEdge, long = (a, b) => { const dx = X[a] - X[b], dz = Z[a] - Z[b]; return dx * dx + dz * dz > m2; };
+  const idx = g.index ? g.index.array : null, total = Math.min(idx ? idx.length : n0, g.drawRange.start + g.drawRange.count), at = k => (idx ? idx[k] : k), per = lines ? 2 : 3;
+  let any = false;
+  for (let t = 0; t + per <= total && !any; t += per) any = lines ? long(at(t), at(t + 1)) : long(at(t), at(t + 1)) || long(at(t + 1), at(t + 2)) || long(at(t + 2), at(t));
+  if (!any) return null;
+  const data = attrs.map(a => Array.from(a.array.subarray(0, a.count * a.itemSize)));
+  let count = n0; const cache = new Map(), out = [];
+  const mid = (a, b) => {
+    if (a > b) { const t = a; a = b; b = t; }
+    const key = a * 4194304 + b; let m = cache.get(key); if (m !== undefined) return m;
+    m = count++;
+    attrs.forEach((a2, k) => { const s = a2.itemSize, d = data[k]; for (let c = 0; c < s; c++) d.push((d[a * s + c] + d[b * s + c]) / 2);
+      if (names[k] === 'normal' && s === 3) { const o = m * 3, l = Math.hypot(d[o], d[o + 1], d[o + 2]) || 1; d[o] /= l; d[o + 1] /= l; d[o + 2] /= l; } });
+    X.push((X[a] + X[b]) / 2); Z.push((Z[a] + Z[b]) / 2); cache.set(key, m); return m;
+  };
+  const h2 = (a, b) => (X[a] - X[b]) ** 2 + (Z[a] - Z[b]) ** 2;
+  const tri = (a0, b0, c0) => {
+    const st = [[a0, b0, c0]];
+    while (st.length) {
+      const [p, q, r] = st.pop(), lp = long(p, q), lq = long(q, r), lr = long(r, p), k = lp + lq + lr;
+      if (!k) { out.push(p, q, r); continue; }
+      if (k === 3) { const m1 = mid(p, q), m2 = mid(q, r), m3 = mid(r, p); st.push([p, m1, m3], [m1, q, m2], [m3, m2, r], [m1, m2, m3]); continue; }
+      if (k === 1) { const [A, B, C] = lp ? [p, q, r] : lq ? [q, r, p] : [r, p, q], m = mid(A, B); st.push([A, m, C], [m, B, C]); continue; }
+      // two long edges: rotate so that they are A-B and B-C (the short one C-A), cut the corner at B, the quad A m1 m2 C by its shorter diagonal
+      const [A, B, C] = !lr ? [p, q, r] : !lp ? [q, r, p] : [r, p, q], m1 = mid(A, B), m2 = mid(B, C);
+      st.push([m1, B, m2]);
+      if (h2(A, m2) <= h2(m1, C)) st.push([A, m1, m2], [A, m2, C]); else st.push([A, m1, C], [m1, m2, C]);
+    }
+  };
+  const seg = (a0, b0) => { const st = [[a0, b0]]; while (st.length) { const [p, q] = st.pop(); if (long(p, q)) { const m = mid(p, q); st.push([m, q], [p, m]); } else out.push(p, q); } };
+  const groups = g.groups && g.groups.length ? g.groups : [{ start: 0, count: total, materialIndex: 0 }], ng = [];
+  for (const gr of groups) { const s0 = out.length, end = Math.min(total, gr.start + gr.count); for (let t = gr.start; t + per <= end; t += per) { if (lines) seg(at(t), at(t + 1)); else tri(at(t), at(t + 1), at(t + 2)); } ng.push({ start: s0, count: out.length - s0, materialIndex: gr.materialIndex }); }
+  const G = new THREE.BufferGeometry();
+  names.forEach((k, j) => { const a = attrs[j]; G.setAttribute(k, new THREE.BufferAttribute(new a.array.constructor(data[j]), a.itemSize, a.normalized)); });
+  G.setIndex(new THREE.BufferAttribute(count > 65535 ? new Uint32Array(out) : new Uint16Array(out), 1));
+  if (g.groups && g.groups.length) for (const q of ng) G.addGroup(q.start, q.count, q.materialIndex);
+  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = (g.name || g.type) + ':sphere';
+  return { G, before: total / per, after: out.length / per };
+}
+// roots: objects to walk; opts.maxEdge (4 m), opts.box (only objects whose bounding-sphere centre lies within |x|, |z| <= box). Instanced meshes, points, sprites,
+// objects under a userData.live node (animated) and materials flagged noBend / noWrap (rain, snow) are left alone.
+function tessellate(roots, opts = {}) {
+  const maxEdge = opts.maxEdge || 4, box = opts.box === undefined ? Infinity : opts.box, t0 = Date.now(), list = [];
+  const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge };
+  const c = new THREE.Vector3();
+  for (const r of roots) {
+    r.updateMatrixWorld(true);
+    r.traverse(o => {
+      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || noBend(o) || noWrap(o)) return;
+      for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
+      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+      c.copy(g.boundingSphere.center).applyMatrix4(o.matrixWorld); if (Math.abs(c.x) > box || Math.abs(c.z) > box) return;
+      stats.objects++;
+      const res = tessellateGeometry(g, o.matrixWorld, maxEdge, o.isLineSegments); if (!res) return;
+      list.push({ o, flat: g, sphere: res.G });
+      if (o.isLineSegments) { stats.lines++; stats.segmentsBefore += res.before; stats.segmentsAfter += res.after; }
+      else { stats.meshes++; stats.trianglesBefore += res.before; stats.trianglesAfter += res.after; }
+    });
+  }
+  stats.ms = Date.now() - t0;
+  return { list, stats, use(on) { for (const q of list) q.o.geometry = on ? q.sphere : q.flat; } };
+}
+
 let scene = null;
 const listeners = [];
 const culled = new WeakMap(), patchedLights = new WeakSet(), lights = [];
@@ -319,7 +396,7 @@ const BEND = {
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
   SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
-  seamSplit, seamStats,
+  seamSplit, seamStats, tessellate,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },
   setEdgeFog(on) { edgeU.value.x = on ? 1 : 0; return edgeU.value.x; },
   // CPU mirror of the edge fog (before the 1 - uBend factor) at a point of the flat display frame
@@ -2709,7 +2786,8 @@ const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math
 
 // Profiles: lateral offset o (true metres, positive to the right of travel), lift l above the ground (or above the deck for the boardwalk), colour.
 const COL = { asphalt: '#2f3645', asphaltL: '#3a4152', gravel: '#6a6458', gravelD: '#585349', grass: '#4f7d5b', grassD: '#3f6a50', ditch: '#27475a', ditchD: '#1f3a48', lip: '#7a7a82',
-  crack: '#4a4e58', line: '#c9cfc4', dash: '#c9cfc4', snowTrack: '#bccfe2', snowEdge: '#d4e4f0', concreteL: '#7c828c', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c' };
+  crack: '#4a4e58', line: '#c9cfc4', dash: '#c9cfc4', snowTrack: '#bccfe2', snowEdge: '#d4e4f0', concreteL: '#7c828c', weed: '#5a6a48', dirt: '#6a5a46', dirtD: '#4a3f33', rut: '#3f362d', ruts: '#5a5040', deck: '#8a6a4c', deckD: '#6c5238', beam: '#5a4434', plankEdge: '#4a3a2c',
+  kerb: '#8a8f99' };   // kerb = the RD02 deck's concrete kerb (bridge.js concreteL), for the approaches (W8f-a)
 const PROFILES = {
   // RD03: single carriageway 4.5 m (card: 4-5 m) with a gravel shoulder, a side ditch on the left and grass beyond
   RD03: { paved: [-2.25, 2.25], pts: [[-4.4, 0, 'grass'], [-3.7, 0, 'grassD'], [-3.55, -0.04, 'lip'], [-3.45, -0.3, 'ditchD'], [-2.95, -0.3, 'ditch'], [-2.85, -0.05, 'lip'], [-2.75, 0.0, 'gravel'], [-2.3, 0.02, 'gravelD'], [-2.25, 0.045, 'asphalt'], [2.25, 0.045, 'asphalt'], [2.3, 0.02, 'gravelD'], [2.75, 0.0, 'gravel'], [3.3, 0, 'grassD'], [4.2, 0, 'grass']] },
@@ -2729,6 +2807,14 @@ const rd01 = town => {
   return { paved: town ? [-4.5, 4.5] : [-3.5, 3.5], bed: true, pts: [...left, ...right] };
 };
 PROFILES.RD01 = rd01(false); PROFILES.RD01T = rd01(true);
+// RD01B (W8f-a): the bridge approach, the deck's own cross-section on land (bridge.js TOP: lanes, asphalt shoulders, a 0.4 m concrete kerb at 4.6-5.0 m) and an embankment
+// beyond it (bed level to 5.15 m, then down to the terrain): the last cross-section before a bridge matches the deck's first one (W8_SPEC 12.1 C1)
+PROFILES.RD01B = (() => { const right = [[0.075, 0.046, 'dash', 1], [0.1, 0.045, 'asphalt', 1], [3.12, 0.03, 'asphalt', 1], [3.18, 0.032, 'line', 1], [3.3, 0.032, 'line', 1], [3.36, 0.03, 'asphalt', 1], [3.5, 0.025, 'asphalt', 1],
+  [4.5, 0.015, 'asphaltL', 1], [4.6, 0.01, 'kerb', 1], [5.0, 0.01, 'kerb', 1], [5.15, 0, 'grassD', 1], [7.2, 0, 'grassD', 0.35], [9.5, 0, 'grass', 0]];
+  return { paved: [-5.0, 5.0], bed: true, pts: [...right.map(([o, l, c, m]) => [-o, l, c, m]).reverse(), ...right] }; })();
+// the town's asphalt as it renders (W8f-a, W5-C9): scene.js #46505b times the mean of its asphalt texture (linear 0.831 / 0.806 / 0.749, measured in the page; tools/road_check.mjs
+// re-measures it), the colour of an exit's first metres
+const TOWN_ASPHALT = [0.0509, 0.0646, 0.0783], TOWN_HEAD = { len: 6, fade: 8, color: TOWN_ASPHALT };   // the head of every exit: 6 m of town asphalt, 8 m fade
 // RD08: no pavement; a compacted snow track about 2 m wide (card), a slightly lighter edge, the snow of the terrain around it (the verge takes the terrain colour)
 PROFILES.RD08 = { paved: [-1.0, 1.0], pts: [[-3.4, 0, 'grass', 0], [-2.4, 0, 'grassD', 0], [-1.4, 0.0, 'snowEdge', 0], [-1.05, -0.04, 'snowTrack', 0], [-0.3, -0.06, 'snowTrack', 0], [0.3, -0.06, 'snowTrack', 0], [1.05, -0.04, 'snowTrack', 0], [1.4, 0.0, 'snowEdge', 0], [2.4, 0, 'grassD', 0], [3.4, 0, 'grass', 0]] };
 const DECK = { half: 1.0, planks: 0.32, pileEvery: 2.5, lampEvery: 10, minAbove: 0.9, followLift: 0.15 };   // boardwalk 2 m wide (card 1.5-2.5), piles 0.5-1.5 m above the water
@@ -2795,9 +2881,9 @@ function build(W, edgeId, opts = {}) {
     for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
     out.strips.push({ name: 'RD07 beams', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * 4 });
     out.widths = { paved: 2 * DECK.half, deckAbove: [], pileAbove: [] };
-    // planks across the deck, every 0.32 m
+    // planks across the deck, every 0.32 m: yaw = atan2(tx, tz) turns the plank's long local x across the tangent (no extra quarter turn)
     for (let s = 0.15; s < out.length - 0.1; s += DECK.planks) {
-      const i = Math.min(n - 1, Math.round(s / 0.5)), dk = deck(S[i].h), yaw = Math.atan2(T[i][0], T[i][1]) + Math.PI / 2;
+      const i = Math.min(n - 1, Math.round(s / 0.5)), dk = deck(S[i].h), yaw = Math.atan2(T[i][0], T[i][1]);      // the 2 m long axis (local x) across the deck (W8f-a)
       add('plank', S[i].lon, S[i].lat, dk - 0.08, { yaw, s: [1, 1, 1], tint: (() => { const k = 0.85 + 0.3 * hash(s, 19); return [k, k, k]; })() });
     }
     // piles under both edges every 2.5 m, from the sea bed (or ground) up to the deck
@@ -2825,7 +2911,7 @@ function build(W, edgeId, opts = {}) {
     const iE = n - 1, endYaw = Math.atan2(T[iE][0], T[iE][1]), dkE = deck(S[iE].h);
     // landing platform 3 x 3 m beyond the last sample
     const brg = W.bearing(S[n - 2], S[n - 1]);
-    for (let b = 0; b < 10; b++) { const c = W.destination(S[iE], brg, 0.2 + b * DECK.planks); add('plank', c.lon, c.lat, dkE - 0.08, { yaw: endYaw + Math.PI / 2, s: [1.5, 1, 1] }); }
+    for (let b = 0; b < 10; b++) { const c = W.destination(S[iE], brg, 0.2 + b * DECK.planks); add('plank', c.lon, c.lat, dkE - 0.08, { yaw: endYaw, s: [1.5, 1, 1] }); }      // 3.0 m across, 10 planks = 3.2 m along
     for (const sd of [-1.2, 1.2]) { const c = W.destination(S[iE], brg, 3.0), c2 = W.destination(c, brg + 90, sd); add('bollard', c2.lon, c2.lat, dkE, {}); }
     for (const sd of [-1.2, 1.2]) for (const f of [0.3, 3.2]) { const c = W.destination(S[iE], brg, f), c2 = W.destination(c, brg + 90, sd); add('pile', c2.lon, c2.lat, W.height(c2.lon, c2.lat), { s: [1, Math.max(0.3, dkE - 0.1 - W.height(c2.lon, c2.lat)), 1] }); }
     out.landing = { lon: S[iE].lon, lat: S[iE].lat, brg, deck: dkE };
@@ -2840,20 +2926,22 @@ function build(W, edgeId, opts = {}) {
 // 2 x BLEND metres around their joint, and a wear value (0 at the town edge, 1 at the end) frays the paved edge and cracks the surface.
 const BLEND = 3.2;
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-function evalProfile(prof, o) {          // lift and linear colour of a profile at lateral offset o (clamped at the ends)
-  const P = prof.pts; if (o <= P[0][0]) return { l: P[0][1], c: lin(COL[P[0][2]]) }; if (o >= P[P.length - 1][0]) return { l: P[P.length - 1][1], c: lin(COL[P[P.length - 1][2]]) };
+function evalProfile(prof, o) {          // lift, linear colour and asphalt share (W8f-a town head) of a profile at lateral offset o (clamped at the ends)
+  const P = prof.pts, asp = q => (q[2] === 'asphalt' || q[2] === 'asphaltL' ? 1 : 0);
+  if (o <= P[0][0]) return { l: P[0][1], c: lin(COL[P[0][2]]), a: asp(P[0]) }; if (o >= P[P.length - 1][0]) return { l: P[P.length - 1][1], c: lin(COL[P[P.length - 1][2]]), a: asp(P[P.length - 1]) };
   let j = 0; while (P[j + 1][0] < o) j++;
   const t = (o - P[j][0]) / (P[j + 1][0] - P[j][0]), ca = lin(COL[P[j][2]]), cb = lin(COL[P[j + 1][2]]);
-  return { l: P[j][1] + (P[j + 1][1] - P[j][1]) * t, c: ca.map((v, i) => v + (cb[i] - v) * t) };
+  return { l: P[j][1] + (P[j + 1][1] - P[j][1]) * t, c: ca.map((v, i) => v + (cb[i] - v) * t), a: asp(P[j]) + (asp(P[j + 1]) - asp(P[j])) * t };
 }
-function chain(W, ids) {
+// opts.townHead (W8f-a, exit N08): as in route(), the first metres in the town's asphalt (strip.headIndex for the textured cells, the town's mean colour fading to the class colour)
+function chain(W, ids, opts = {}) {
   const NET = W.roadNetwork, edges = ids.map(id => NET.edges.find(e => e.id === id)), classes = edges.map(e => e.class);
   const S = [], edgeOf = []; let off = 0; const joints = [];
   edges.forEach((e, k) => { const P = NET.samplePath(e, 0.5); P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, s: p.s + off }); edgeOf.push(k); }); off += NET.edgeLength(e); if (k + 1 < edges.length) joints.push(off); });
   const n = S.length, total = off, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
   const grid = [...new Set(classes.flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0]))].sort((a, b) => a - b), m = grid.length;
-  const pos = [], col = [], idx = [], paved = [], wearOf = [];
+  const pos = [], col = [], idx = [], headIdx = [], paved = [], wearOf = [], pure = [], HD = opts.townHead || null, headW = s => (!HD ? 0 : s <= HD.len ? 1 : 1 - smooth(HD.len, HD.len + HD.fade, s));
   const profile = i => {                 // class k = u(k-1) - u(k), where u(k) steps 0 -> 1 over 2 x BLEND metres around joint k
     const u = joints.map(jt => smooth(jt - BLEND, jt + BLEND, S[i].s)), w = classes.map((_, k) => (k === 0 ? 1 : u[k - 1]) - (k < joints.length ? u[k] : 0));
     return w;
@@ -2865,17 +2953,18 @@ function chain(W, ids) {
     paved.push([pl, pr]);
     for (let j = 0; j < m; j++) {
       const o = grid[j], q = o ? W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)) : S[i], k = F[i].k, h = W.height(q.lon, q.lat);
-      let lift = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalProfile(PROFILES[classes[kk]], o); lift += wk * e.l; c = c.map((v, ci) => v + wk * e.c[ci]); } });
+      let lift = 0, asp = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalProfile(PROFILES[classes[kk]], o); lift += wk * e.l; asp += wk * e.a; c = c.map((v, ci) => v + wk * e.c[ci]); } });
       // wear: the paved edge frays (a hashed mix toward gravel and weed) and the surface cracks more as the road gets older
       const distEdge = Math.min(Math.abs(o - pl), Math.abs(o - pr)), inside = o > pl && o < pr;
       const hz = hash(S[i].s * 2.1, o * 9.3), hz2 = hash(S[i].s * 0.7, o * 3.1);
       if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const g = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((v, ci) => v + (g[ci] - v) * mixv); } }
       if (inside && wear > 0.1) { const crack = hash(S[i].s * 3.3, o * 5.7); if (crack > 1 - 0.18 * wear) { const g = lin(COL.crack); c = c.map((v, ci) => v + (g[ci] - v) * 0.7); } c = c.map(v => v * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
+      const hw = headW(S[i].s); if (HD && hw > 0 && asp > 0) { const kk = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * kk); } pure.push(HD && hw >= 1 && asp >= 0.999 ? 1 : 0);
       pos.push(F[i].x + (-T[i][1]) * o * k, (h + lift * (0.44 + 0.56 * smooth(0, 6, S[i].s)) - BASE) * k, F[i].z + T[i][0] * o * k); col.push(c[0], c[1], c[2]);
     }
   }
-  for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; idx.push(a, c, b, b, c, d); }
-  for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+  for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; (pure[a] && pure[b] && pure[c] && pure[d] ? headIdx : idx).push(a, c, b, b, c, d); }
+  for (const L of [idx, headIdx]) for (let t = 0; t < L.length; t += 3) { const A = L[t] * 3, B = L[t + 1] * 3, C = L[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = L[t + 1]; L[t + 1] = L[t + 2]; L[t + 2] = tmp; } }
   // weeds and tufts creep in along the paved edge: none at the town edge, more and more with wear (the RD04 / RD05 parts add their own in build())
   const instances = {};
   for (let st = 1.5; st < joints[0]; st += 0.7) {
@@ -2885,7 +2974,7 @@ function chain(W, ids) {
   }
   const lateral = (i, o) => { const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], br = W.bearing(a, b), q = W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat]; };
   const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }) };
-  return { ids, classes, joints, samples: S, instances, strip: { name: 'T03 transition chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total };
+  return { ids, classes, joints, samples: S, instances, strip: { name: 'T03 transition chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total };
 }
 
 
@@ -2893,8 +2982,21 @@ function chain(W, ids) {
 // blend their whole cross-section over 2 x blend metres; a virtual lead class (the town's own asphalt) wears into the first real class; the
 // wear value frays the paved edge, cracks the surface and grows weeds in 5 m bins (a count per bin that never decreases away from the town).
 // Classes with bed:true (RD01) lie on a smoothed centre-line bed (with a straight run through tunnels), the others follow the terrain.
+// W8f-a (W8_SPEC 12.1 C) joins the routes to the bridges and to each other:
+//   o.abut = { start | end: { at(t) -> { lon, lat }, T, brg, grade } }: an RD02 abutment at that end. Within T metres of the node the centre line follows the common-tangent
+//     fillet at(t) (t < 0 on the road, > 0 on the bridge; brg = its bearing of increasing t at the node), and the end sample takes that bearing, so the road's last cross-section
+//     and the deck's first one are the same line. An approach on the road side carries a parabolic vertical curve from the road's grade to the deck's grade (fill only, the
+//     node is raised; the bridge starts at that altitude); the cross-section blends into RD01B (the deck's lanes, shoulders and kerb, an embankment instead of the ditch) over
+//     the APB metres before the approach, the surface wear goes to 0 and the lateral offsets take the deck's factor R / (R + alt - 1.6) (bridge.js) toward the node.
+//   o.chain = { c0, dir }: the centre dashes follow the chainage c0 + dir * s of the whole T01 ring (continuous over the bridges).
+//   o.mouths = [{ s0, s1, side, to }]: the trunk at a T junction: between the stations s0 and s1 the columns of that side from 4.5 m out to `to` lie flat on the bed (no ditch).
+//   o.ramp = { end: 'start' | 'end', len, target(lon, lat) }: a branch meets the junction paving: its last row is lifted (or lowered) to target() for the paved columns, the
+//     change fades over len metres along the road and to nothing at the outer edge of the verge.
+//   o.townHead = { len, fade, color }: an exit's first len metres are the town's asphalt: the cells between pure asphalt columns go to strip.headIndex (drawn with the town's own
+//     textured material), the asphalt vertex colour there is the town's mean colour (W5-C9), fading to the class colour over `fade` metres.
+const ASPH = { asphalt: 1, asphaltL: 1 }, APB = 8;          // APB: metres before an approach over which the cross-section becomes RD01B (paved width 7 -> 10 m at <= 0.6 m/m, W5-C9)
 function route(W, segs, o = {}) {
-  const NET = W.roadNetwork, BL = o.blend || BLEND;
+  const NET = W.roadNetwork, BL = o.blend || BLEND, AB = o.abut || {}, ENDS = ['start', 'end'].filter(k => AB[k]);
   const edges = segs.map(sg => NET.edges.find(e => e.id === sg.id));
   let classes = edges.map(e => e.class);
   const S = [], edgeOf = []; let off = 0; let joints = [];
@@ -2908,8 +3010,12 @@ function route(W, segs, o = {}) {
   if (o.trimStart) { while (S.length > 2 && S[0].s < o.trimStart) { S.shift(); edgeOf.shift(); } }      // start beyond the edge of a wider road it branches from
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
+  const sNodeOf = which => (which === 'end' ? off : 0);
+  // W8f-a: the fillet replaces the centre line within T of an abutment node
+  for (const which of ENDS) { const J = AB[which], sN = sNodeOf(which); for (let i = 0; i < n; i++) { const d = Math.abs(sN - S[i].s); if (d > J.T + 1e-9) continue; const p = J.at(-d); S[i] = { ...S[i], lon: p.lon, lat: p.lat, h: W.height(p.lon, p.lat) }; } }
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
   const brg = S.map((p, i) => W.bearing(S[Math.max(0, i - 1)], S[Math.min(n - 1, i + 1)]));
+  for (const which of ENDS) { const i = which === 'end' ? n - 1 : 0, b = (AB[which].brg + (which === 'end' ? 0 : 180)) % 360; brg[i] = b; T[i] = [Math.sin(b * D), -Math.cos(b * D)]; }
   const lateral = (i, off2) => { if (!off2) return [S[i].lon, S[i].lat]; const q = W.destination(S[i], brg[i] + (off2 > 0 ? 90 : -90), Math.abs(off2)); return [q.lon, q.lat]; };
   // road bed: smoothed centre-line terrain; inside a tunnel the straight run between the two portals
   // the bed never sinks below the terrain mesh anywhere across the 9 m width (the mesh is piecewise linear and differs from the centre-line height across the road)
@@ -2921,61 +3027,104 @@ function route(W, segs, o = {}) {
     const lim = (a, b) => 0.04 * Math.abs(S[b].s - S[a].s); const e0 = bed[0], e1 = bed[n - 1];
     for (let pass = 0; pass < 2; pass++) { for (let i = 1; i < n; i++) bed[i] = Math.max(bed[i - 1] - lim(i - 1, i), Math.min(bed[i - 1] + lim(i - 1, i), bed[i])); for (let i = n - 2; i >= 0; i--) bed[i] = Math.max(bed[i + 1] - lim(i, i + 1), Math.min(bed[i + 1] + lim(i, i + 1), bed[i])); }
     void e0; void e1; }
-  const grid = [...new Set(classes.flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0]))].sort((a, b) => a - b), m = grid.length;
-  const evalP = (prof, oo, tc) => {          // lift, colour (linear), bed mix of a profile at lateral offset oo; tc = the terrain's own colour there (the verge blends into it)
-    const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => ({ l: q[1], c: colOf(q[2]), m: q[3] || 0 });
+  // W8f-a approaches: grade of the bed toward the node at station s (over 2 m); length = (deck grade - road grade) / rate, 6-14 m; z(tau) = z0 + g0 tau + k tau^2 / 2 from the
+  // approach start (tau = 0) to the node (tau = len), k = (deck grade - g0) / len: continuous and differentiable at both ends, the change of grade per metre is k
+  const near = s => { let b = 0; for (let i = 1; i < n; i++) if (Math.abs(S[i].s - s) < Math.abs(S[b].s - s)) b = i; return b; };
+  const aW = new Array(n).fill(0), approaches = [];
+  for (const which of ENDS) {
+    const J = AB[which], sN = sNodeOf(which), dir = which === 'end' ? 1 : -1;
+    const gradeAt = s => { const a = near(s - dir), b = near(s + dir); return (bed[b] - bed[a]) / Math.max(1e-6, dir * (S[b].s - S[a].s)); };
+    // the shortest length (6, 6.5 ... 14 m) whose change of grade per metre stays within the rate (1.35 points per metre, under the 1.5 of W5-C10)
+    let len = J.maxLen || 14; for (let L0 = J.minLen || 6; L0 <= (J.maxLen || 14) + 1e-9; L0 += 0.5) { const iA0 = near(sN - dir * L0); if ((J.grade - gradeAt(S[iA0].s)) / Math.abs(sN - S[iA0].s) <= (J.rate || 0.0135)) { len = L0; break; } }
+    const iA = near(sN - dir * len), L = Math.abs(sN - S[iA].s), z0 = bed[iA], g0 = gradeAt(S[iA].s), k = (J.grade - g0) / L, orig = bed.slice();
+    let fillMin = Infinity, fillMax = -Infinity;
+    for (let i = 0; i < n; i++) { const tau = L - Math.abs(sN - S[i].s); if (tau < -1e-9) continue; const z = z0 + g0 * tau + 0.5 * k * tau * tau; fillMin = Math.min(fillMin, z - orig[i]); fillMax = Math.max(fillMax, z - orig[i]); bed[i] = z; }
+    for (let i = 0; i < n; i++) { const tau = L - Math.abs(sN - S[i].s); aW[i] = Math.max(aW[i], tau >= -1e-9 ? 1 : smooth(-APB, 0, tau)); }
+    approaches.push({ which, node: which === 'end' ? n - 1 : 0, start: iA, s0: Math.min(S[iA].s, sN), s1: Math.max(S[iA].s, sN), len: L, alt: z0 + L * (g0 + J.grade) / 2, gRoad: g0, gDeck: J.grade, rate: k, fillMin, fillMax, terrain: S[which === 'end' ? n - 1 : 0].h });
+  }
+  const cf = bed.map((b, i) => 1 + aW[i] * (R / (R + b - BASE) - 1));        // the deck's lateral factor (bridge.js) toward the node
+  // W8f-a: a route with an abutment has every column the deck's top has (bridge.js JOINT): the last cross-section shares all its vertices with the deck's first one
+  const grid = [...new Set([...classes, ...(ENDS.length ? ['RD01B'] : [])].flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], ENDS.length ? [-4.8, -4.7, -3.6, 3.6, 4.7, 4.8] : []))].sort((a, b) => a - b), m = grid.length;
+  const evalP = (prof, oo, tc) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there (the verge blends into it)
+    const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => ({ l: q[1], c: colOf(q[2]), m: q[3] || 0, a: ASPH[q[2]] || 0 });
     if (oo <= P[0][0]) return at(P[0]); if (oo >= P[P.length - 1][0]) return at(P[P.length - 1]);
     let j = 0; while (P[j + 1][0] < oo) j++;
     const t = (oo - P[j][0]) / (P[j + 1][0] - P[j][0]), a = at(P[j]), b = at(P[j + 1]);
-    return { l: a.l + (b.l - a.l) * t, c: a.c.map((v, i) => v + (b.c[i] - v) * t), m: a.m + (b.m - a.m) * t };
+    return { l: a.l + (b.l - a.l) * t, c: a.c.map((v, i) => v + (b.c[i] - v) * t), m: a.m + (b.m - a.m) * t, a: a.a + (b.a - a.a) * t };
   };
-  const wearMax = o.wearMax === undefined ? 1 : o.wearMax, wearLen = o.wearLen || total * 0.85;
-  const pos = [], col = [], idx = [], paved = [], wearOf = [], bedAlt = [], colAlt = [];
+  const wearMax = o.wearMax === undefined ? 1 : o.wearMax, wearLen = o.wearLen || total * 0.85, MO = o.mouths || [], HD = o.townHead || null;
+  const headW = s => (!HD ? 0 : s <= HD.len ? 1 : 1 - smooth(HD.len, HD.len + HD.fade, s));
+  const chainAt = s => (o.chain ? o.chain.c0 + o.chain.dir * s : s);
+  const pos = [], col = [], idx = [], headIdx = [], paved = [], wearOf = [], bedAlt = [], colAlt = [], pure = [];
   // altitude of the swept surface at sample i, lateral offset oo (linear between the two profile columns): where things on the road must stand
   const surface = (i, oo) => { let j = 0; while (j + 2 < m && grid[j + 1] < oo) j++; const t = Math.max(0, Math.min(1, (oo - grid[j]) / (grid[j + 1] - grid[j]))); return colAlt[i * m + j] + (colAlt[i * m + j + 1] - colAlt[i * m + j]) * t; };
   const wts = i => { const u = joints.map(jt => smooth(jt - BL, jt + BL, S[i].s)); return classes.map((_, k) => (k === 0 ? 1 : u[k - 1]) - (k < joints.length ? u[k] : 0)); };
+  // one column of sample i: profile mix of the classes, the approach blend into RD01B, the junction mouths
+  const column = (i, j, w) => {
+    const oo = grid[j], a = aW[i], [lo, la] = lateral(i, oo * cf[i]), g = W.height(lo, la), tc = o.terrainColor && Math.abs(oo) > 1.8 ? o.terrainColor(lo, la) : null, sP = S[i].s;
+    let lift = 0, mix = 0, asp = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], oo, tc); lift += wk * e.l; mix += wk * e.m; asp += wk * e.a; c = c.map((v, ci) => v + wk * e.c[ci]); } });
+    if (a > 0) { const e = evalP(PROFILES.RD01B, oo, tc); lift += (e.l - lift) * a; mix += (e.m - mix) * a; asp += (e.a - asp) * a; c = c.map((v, ci) => v + (e.c[ci] - v) * a); }
+    if (Math.abs(oo) > 4.5) for (const q of MO) if (sP >= q.s0 && sP <= q.s1 && Math.sign(oo) === q.side && Math.abs(oo) <= q.to + 1e-9) { lift = 0; mix = 1; }
+    return { oo, lo, la, g, lift, mix, asp, c, base: g + (bed[i] - g) * mix };
+  };
+  const csOf = i => (o.townStart ? 0.44 + 0.56 * smooth(0, 6, S[i].s) : 1);
+  // W8f-a ramp of a branch: the change of each column at the end row (paved columns to the target, the verge columns follow the nearer paved edge and taper to nothing)
+  const RP = o.ramp || null, rampD = new Array(m).fill(0), iR = RP ? (RP.end === 'end' ? n - 1 : 0) : -1; let rampLen = 0;
+  if (RP) {
+    const w = wts(iR), ph = w.reduce((s2, v, k) => s2 + v * PROFILES[classes[k]].paved[1], 0), outer = Math.max(...grid.map(Math.abs));
+    for (let j = 0; j < m; j++) { const v = column(iR, j, w); if (Math.abs(v.oo) <= ph + 1e-6) { const tg = RP.target(v.lo, v.la); rampD[j] = tg === null || tg === undefined ? 0 : tg - (v.base + v.lift * csOf(iR)); } }
+    const edgeJ = side => { let b = -1; for (let j = 0; j < m; j++) if (Math.abs(grid[j]) <= ph + 1e-6 && Math.sign(grid[j]) === side && (b < 0 || Math.abs(grid[j]) > Math.abs(grid[b]))) b = j; return b; };
+    const eL = edgeJ(-1), eR = edgeJ(1);
+    for (let j = 0; j < m; j++) if (Math.abs(grid[j]) > ph + 1e-6) { const e = grid[j] < 0 ? eL : eR; rampD[j] = (e >= 0 ? rampD[e] : 0) * (1 - smooth(ph, outer, Math.abs(grid[j]))); }
+    rampLen = typeof RP.len === 'function' ? RP.len(Math.max(...rampD.map(Math.abs))) : RP.len;
+  }
   for (let i = 0; i < n; i++) {
-    const w = wts(i), wear = wearMax * smooth(0, wearLen, S[i].s), cs = o.townStart ? 0.44 + 0.56 * smooth(0, 6, S[i].s) : 1;
+    const w = wts(i), a = aW[i], wear = wearMax * smooth(0, wearLen, S[i].s) * (1 - a), cs = csOf(i), hw = headW(S[i].s);
     wearOf.push(wear);
-    const pl = w.reduce((a, v, k) => a + v * PROFILES[classes[k]].paved[0], 0), pr = w.reduce((a, v, k) => a + v * PROFILES[classes[k]].paved[1], 0);
+    let pl = w.reduce((s2, v, k) => s2 + v * PROFILES[classes[k]].paved[0], 0), pr = w.reduce((s2, v, k) => s2 + v * PROFILES[classes[k]].paved[1], 0);
+    if (a > 0) { pl += (PROFILES.RD01B.paved[0] - pl) * a; pr += (PROFILES.RD01B.paved[1] - pr) * a; }
     paved.push([pl, pr]);
+    const rampK = RP ? 1 - smooth(0, rampLen, Math.abs(S[i].s - S[iR].s)) : 0;
     for (let j = 0; j < m; j++) {
-      const oo = grid[j], [lo, la] = lateral(i, oo), g = W.height(lo, la), tc = o.terrainColor && Math.abs(oo) > 1.8 ? o.terrainColor(lo, la) : null;
-      let lift = 0, mix = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], oo, tc); lift += wk * e.l; mix += wk * e.m; c = c.map((v, ci) => v + wk * e.c[ci]); } });
-      const base = g + (bed[i] - g) * mix;
-      const distEdge = Math.min(Math.abs(oo - pl), Math.abs(oo - pr)), inside = oo > pl && oo < pr, sP = S[i].s;
+      const v = column(i, j, w), oo = v.oo, sP = S[i].s; let c = v.c, asp = v.asp;
+      const base = v.base + rampD[j] * rampK;
+      const distEdge = Math.min(Math.abs(oo - pl), Math.abs(oo - pr)), inside = oo > pl && oo < pr;
       const hz = hash(sP * 2.1, oo * 9.3), hz2 = hash(sP * 0.7, oo * 3.1);
-      // centre dashes (6 m period, 45 % paint) and edge lines that fade with the wear
-      if (w.some((wk, kk) => wk > 0.5 && /^RD01/.test(classes[kk]))) {
-        if (Math.abs(oo) < 0.09) { const on = ((sP / 6) % 1) < 0.45; if (!on) c = lin(COL.asphalt); }
-        if (Math.abs(Math.abs(oo) - 3.24) < 0.1) { const f = 1 - 0.55 * wear - 0.4 * hash(sP * 1.7, oo * 4.1); const a = lin(COL.asphalt); c = c.map((v, ci) => a[ci] + (v - a[ci]) * f); }
+      // centre dashes (6 m period, 45 % paint, on the ring's chainage) and edge lines that fade with the wear (fresh on the approaches, like the deck's)
+      if (w.some((wk, kk) => wk > 0.5 && /^RD01/.test(classes[kk])) || a > 0.5) {
+        if (Math.abs(oo) < 0.09) { const ph = ((chainAt(sP) / 6) % 1 + 1) % 1, on = ph < 0.45; if (!on) { c = lin(COL.asphalt); asp = 1; } }      // the gap between dashes is asphalt (the town head too)
+        if (Math.abs(Math.abs(oo) - 3.24) < 0.1) { const f = 1 - (0.55 * wear + 0.4 * hash(sP * 1.7, oo * 4.1)) * (1 - a); const as = lin(COL.asphalt); c = c.map((cv, ci) => as[ci] + (cv - as[ci]) * f); }
       }
-      if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const gc = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((v, ci) => v + (gc[ci] - v) * mixv); } }
-      if (inside && wear > 0.1) { const crack = hash(sP * 3.3, oo * 5.7); if (crack > 1 - 0.18 * wear) { const gc = lin(COL.crack); c = c.map((v, ci) => v + (gc[ci] - v) * 0.7); } c = c.map(v => v * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
-      pos.push(F[i].x + (-T[i][1]) * oo * F[i].k, (base + lift * cs - BASE) / Math.cos(la * D), F[i].z + T[i][0] * oo * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + lift * cs);
+      if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const gc = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((cv, ci) => cv + (gc[ci] - cv) * mixv); } }
+      if (inside && wear > 0.1) { const crack = hash(sP * 3.3, oo * 5.7); if (crack > 1 - 0.18 * wear) { const gc = lin(COL.crack); c = c.map((cv, ci) => cv + (gc[ci] - cv) * 0.7); } c = c.map(cv => cv * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
+      if (HD && hw > 0 && asp > 0) { const k = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * k); }
+      pure.push(HD && hw >= 1 && v.asp >= 0.999 ? 1 : 0);
+      pos.push(F[i].x + (-T[i][1]) * oo * cf[i] * F[i].k, (base + v.lift * cs - BASE) / Math.cos(v.la * D), F[i].z + T[i][0] * oo * cf[i] * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + v.lift * cs);
     }
     bedAlt.push(bed[i]);
   }
-  for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; idx.push(a, c, b, b, c, d); }
-  for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+  for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; (pure[a] && pure[b] && pure[c] && pure[d] ? headIdx : idx).push(a, c, b, b, c, d); }
+  for (const L of [idx, headIdx]) for (let t = 0; t < L.length; t += 3) { const A = L[t] * 3, B = L[t + 1] * 3, C = L[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = L[t + 1]; L[t + 1] = L[t + 2]; L[t + 2] = tmp; } }
   // weeds and tufts along the paved edge: a deterministic count per 5 m bin that grows with the wear (none at the town edge)
   const instances = {}, add = (type, i, oo, extra = {}) => { const off2 = oo, [lo, la] = lateral(i, oo); (instances[type] = instances[type] || []).push({ type, lon: lo, lat: la, alt: surface(i, off2), yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: [0, 0], tint: extra.tint || [1, 1, 1], station: extra.station }); };
   const sBase = S[0].s;
+  // W8f-a: the sharp kinks of the centre line (a node where the route turns by more than 15 deg: LM09-north, 22 deg): the swept cells fold on the inner side there, so no
+  // weeds (and no barrier pieces, roads.js) stand within a metre or two of it
+  const kinks = []; for (let i = 1; i + 1 < n; i++) { const d = Math.abs(((brg[i + 1] - brg[i - 1] + 540) % 360) - 180); if (d > 15 && !(kinks.length && Math.abs(S[i].s - kinks[kinks.length - 1]) < 1.5)) kinks.push(S[i].s); }
   if (o.weeds !== false) for (let b0 = sBase; b0 < total - 2.4; b0 += 5) {
     const len = Math.min(5, total - b0), mid = b0 + len / 2, wr = wearMax * smooth(0, wearLen, mid), cnt = Math.round(wr * (o.weedsPerBin || 5) * len / 5);
     for (let k = 0; k < cnt; k++) for (const side of [-1, 1]) {
       const st = b0 + 0.6 + (len - 1.2) * hash(b0 + k * 3.1, side * 7), i = Math.min(n - 1, Math.max(0, Math.round((st - sBase) / 0.5))); if (S[i].span === 'tunnel' || S[i].span === 'bridge') continue;
       const oo = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47 + side));
+      if (MO.some(q => q.side === side && st > q.s0 - 0.5 && st < q.s1 + 0.5) || (Math.abs(oo) > 4 && kinks.some(k => Math.abs(st - k) < 1.5))) continue;           // W8f-a: the junction paving covers the mouth
       add(hash(st, 49) < 0.5 ? 'tuft' : 'weed', i, oo, { yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], station: st });
     }
   }
-  const sideLine = (oo) => S.map((p, i) => { const [lo, la] = lateral(i, typeof oo === 'function' ? oo(i) : oo); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; });
-  const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }) };
-  void sideLine;
-  return { ids: segs.map(q => q.id), classes, joints, samples: S, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt };
+  const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }) };
+  return { ids: segs.map(q => q.id), classes, joints, samples: S, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
 }
 
-const ROADKIT = { build, sweep, chain, route, PROFILES, DECK, COL, lin, BLEND };
+const ROADKIT = { build, sweep, chain, route, PROFILES, DECK, COL, lin, BLEND, TOWN_ASPHALT, TOWN_HEAD };
 if (typeof module !== 'undefined' && module.exports) module.exports = ROADKIT;
 else global.ROADKIT = ROADKIT;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -3000,17 +3149,28 @@ const COL = { top: '#3a4152', asphalt: '#2f3645', asphaltL: '#3a4152', line: '#c
 // deck cross-section: width 10 m (card), girder 1.55 m deep; lane layout as RD01 (7 m carriageway, 1 m shoulders), 0.5 m concrete kerb outside
 const DECK = { half: 5.0, girder: 1.55, side: 0.95, slope: 0.148, base: 4.2, hump: 1.8, humpHalf: 20, pierEvery: 11, lampEvery: 16, jointEvery: 12, towerAbove: 13.5, towerLegO: 5.9 };
 const TOP = [[0.075, 0.046, 'dash'], [0.1, 0.045, 'asphalt'], [3.12, 0.03, 'asphalt'], [3.18, 0.032, 'line'], [3.3, 0.032, 'line'], [3.36, 0.03, 'asphalt'], [3.5, 0.025, 'asphalt'], [4.5, 0.015, 'asphaltL'], [4.6, 0.01, 'concreteL'], [5.0, 0.01, 'concreteL']];
-const TOPCOLS = [...TOP.map(([o, l, c]) => [-o, l, c]).reverse(), ...TOP];
+// W8f-a: the deck's top also has a column at every offset where an RD01 approach has one (0.3 ... 4.8 m; lift and colour interpolated, the look is unchanged), so that
+// the road's last cross-section and the deck's first one share every vertex (no T-junction, no hairline crack on the sphere)
+const JOINT = [0.3, 0.6, 1.0, 2.0, 3.6, 4.7, 4.8];
+const TOPX = (() => { const at = o => { let j = 0; while (TOP[j + 1][0] < o) j++; const t = (o - TOP[j][0]) / (TOP[j + 1][0] - TOP[j][0]), a = lin(COL[TOP[j][2]]), b = lin(COL[TOP[j + 1][2]]); return [o, TOP[j][1] + (TOP[j + 1][1] - TOP[j][1]) * t, a.map((v, i) => v + (b[i] - v) * t)]; };
+  return [...TOP, ...JOINT.map(at)].sort((a, b) => a[0] - b[0]); })();
+const TOPCOLS = [...TOPX.map(([o, l, c]) => [-o, l, c]).reverse(), ...TOPX];
 
 function build(W, ids, o = {}) {
   const NET = W.roadNetwork, edges = ids.map(id => NET.edges.find(e => e.id === id));
   const S = [], joints = []; let off = 0;
   edges.forEach((e, k) => { const P = NET.samplePath(e, 0.5); P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, h: W.height(p.lon, p.lat), s: p.s + off }); }); off += NET.edgeLength(e); if (k + 1 < edges.length) joints.push(off); });
+  // W8f-a (W8_SPEC 12.1 C1): at an abutment the centre line within T of the node follows the common-tangent fillet shared with the road (roads.js, o.abut.start / end:
+  // at(t) with t > 0 on the bridge, brg = the bearing of increasing t at the node), the end sample takes the fillet's tangent: the road's last cross-section is the deck's first
+  const AB = o.abut || {};
+  if (AB.start) for (const p of S) if (p.s <= AB.start.T + 1e-9) { const q = AB.start.at(p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
+  if (AB.end) for (const p of S) if (off - p.s <= AB.end.T + 1e-9) { const q = AB.end.at(off - p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
   // unwrapped longitudes: the chain across the dateline (T01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
   S.forEach((p, i) => { p.lonU = i === 0 ? p.lon : S[i - 1].lonU + ((p.lon - S[i - 1].lonU + 540) % 360 - 180); });
   const n = S.length, L = off, flat = p => ({ x: R * p.lonU * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
   const brg = S.map((p, i) => W.bearing(S[Math.max(0, i - 1)], S[Math.min(n - 1, i + 1)]));
+  for (const [k, i, turn] of [['start', 0, 0], ['end', n - 1, 180]]) if (AB[k]) { const b = (AB[k].brg + turn) % 360; brg[i] = b; T[i] = [Math.sin(b * D), -Math.cos(b * D)]; }
   // bend.js scales lengths by (R + y)/R at height y above the sphere: lateral offsets on a deck (2-4 m above the town level) are reduced by that factor so that
   // the deck, the parapets and the piers are 10 m wide on the sphere (RD02 card), not 10.3-10.5 m (W5-C2)
   const cf = new Array(n).fill(1);
@@ -3018,7 +3178,8 @@ function build(W, ids, o = {}) {
   const lateral = (i, oo) => latRaw(i, oo * cf[i]);
   const ground = (i, oo) => { const [lo, la] = lateral(i, oo); return W.height(lo, la); };
   // ---- vertical alignment: climb at DECK.slope from each abutment to the base height, a hump at the tower (if any), rounded by a 2 m moving average
-  const hS = S[0].h, hE = S[n - 1].h, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
+  // W8f-a: the deck starts at the altitude of the road's approach (raised by its fill, never lower than the terrain at the node: the deck over the water is not lowered)
+  const hS = o.startAlt === undefined ? S[0].h : o.startAlt, hE = o.endAlt === undefined ? S[n - 1].h : o.endAlt, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
   // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of T11-02 has room at the node (W5b裁决)
   const pylonS = humpS === null ? null : humpS + (o.pylonShift || 0);
   const base = o.base || DECK.base;
@@ -3027,7 +3188,7 @@ function build(W, ids, o = {}) {
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
-  const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg };
+  const out = { ids, samples: S, alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
@@ -3041,8 +3202,8 @@ function build(W, ids, o = {}) {
     for (let i = 0; i < n; i++) {
       const k = F[i].k;
       for (let j = 0; j < m; j++) {
-        const [oo, dy, ck] = cols[j]; let c = lin(COL[ck] || COL.concrete);
-        if (ck === 'dash') { if (((S[i].s / 6) % 1) >= 0.45) c = lin(COL.asphalt); }
+        const [oo, dy, ck] = cols[j]; let c = Array.isArray(ck) ? ck.slice() : lin(COL[ck] || COL.concrete);
+        if (ck === 'dash') { const c6 = o.chain ? o.chain.c0 + o.chain.dir * S[i].s : S[i].s; if ((((c6 / 6) % 1) + 1) % 1 >= 0.45) c = lin(COL.asphalt); }     // W8f-a: the ring's chainage
         if (opts.stain) { const f = 0.85 + 0.25 * hash(S[i].s * 0.7, oo * 3.3 + dy * 9); c = c.map(v => v * f); }
         const kk = 1 / Math.cos(lateral(i, oo)[1] * D);
         pos.push(F[i].x + (-T[i][1]) * oo * cf[i] * k, (A[i] + dy - BASE) * kk, F[i].z + T[i][0] * oo * cf[i] * k); col.push(c[0], c[1], c[2]);
@@ -3065,16 +3226,20 @@ function build(W, ids, o = {}) {
   strip('chamfer-right', [[DECK.half, -sd, 'concrete'], [3.2, -gd, 'concreteD']], [0.35, -0.94], { stain: true });
   strip('under', [[-3.2, -gd, 'concreteD'], [3.2, -gd, 'concreteD']], [0, -1], { stain: true });
 
-  // ---- parapets (concrete barrier pieces every 2 m on both kerbs), lamps (alternating sides every 16 m), expansion joints
-  const jointSeg = [];
-  for (let s = 1; s < L; s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) add('barrierConcrete', i, side * 4.85, A[i] + 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)] }); }
+  // ---- parapets (concrete barrier pieces on both kerbs), lamps (alternating sides every 16 m), expansion joints
+  // W8f-a: round(L / 2) pieces at exact stations, each stretched to L / round(L / 2) (1.9-2.1 m), so that the parapet is flush with both abutments and meets the road's barriers
+  const jointSeg = [], nBar = Math.max(1, Math.round(L / 2)), bSp = L / nBar;
+  const atS = s => { let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return { i, t: Math.max(0, Math.min(1, (s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s))) }; };
+  const addS = (type, s, oo, dy, extra) => { const { i, t } = atS(s), a = lateral(i, oo), b = lateral(i + 1, oo), lon = a[0] + ((((b[0] - a[0]) % 360) + 540) % 360 - 180) * t;
+    (out.instances[type] = out.instances[type] || []).push({ type, lon, lat: a[1] + (b[1] - a[1]) * t, alt: A[i] + (A[i + 1] - A[i]) * t + dy, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: [1, 1, 1], station: s }); };
+  for (let kb = 0; kb < nBar; kb++) { const s = (kb + 0.5) * bSp, i = atS(s).i; for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) addS('barrierConcrete', s, side * 4.85, 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)], s: [bSp / 2, 1, 1] }); }
   let lampN = 0;
   for (let s = DECK.lampEvery / 2; s < L; s += DECK.lampEvery) {
     const i = Math.min(n - 1, Math.round(s / 0.5)), side = lampN++ % 2 ? 1 : -1, r = rightOf(i);
     if (pylonS !== null && Math.abs(S[i].s - pylonS) < 2) continue;
     const it = add('lamp', i, side * 4.4, A[i] + 0.01, { yaw: yawToward(-side * r[0], -side * r[1]) }); it.s = [0.85, 0.85, 0.85];
     out.lamps.push({ i, s: S[i].s, side });
-    add('lampPool', i, side * 1.2, A[i] + 0.03, {});
+    add('lampPool', i, side * 1.2, A[i] + 0.03, { yaw: yawAlong(i), lean: [0, pitchAt(i)] });      // W8f-a: tilted with the deck (14.8 % at the ends), not cut by it
   }
   for (let s = DECK.jointEvery; s < L - 3; s += DECK.jointEvery) {
     const i = Math.min(n - 1), ii = Math.round(s / 0.5), [la, lb] = [lateral(ii, -DECK.half + 0.2), lateral(ii, DECK.half - 0.2)];
@@ -3169,7 +3334,7 @@ function tunnel(W, edgeId, bed) {
   return { edge: edgeId, from: sp.fromMeters, to: sp.toMeters, length: sp.toMeters - sp.fromMeters, idx, samples: S, flatOf: F, tangent: T, bed: i => bed[i], innerR: 4.7, wallH: 1.0, shell: 0.7 };
 }
 
-const BRIDGE = { build, tunnel, DECK, COL };
+const BRIDGE = { build, tunnel, DECK, COL, TOPCOLS: TOPCOLS.map(q => q[0]) };
 if (typeof module !== 'undefined' && module.exports) module.exports = BRIDGE;
 else global.BRIDGE = BRIDGE;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -3477,7 +3642,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     // roads: strips and instances
     const roadOut = ['T03-01', 'T03-02', 'T03-03', 'T11-01'].map(id => global.ROADKIT.build(WS, id));
     // T03-01/02/03 are swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping in); their own strips and edge lines are replaced
-    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03']); S.chain = CH;
+    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
     for (const r of roadOut.slice(0, 3)) { r.strips = []; r.lines = {}; }
     for (const [t, list] of Object.entries(CH.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
@@ -3513,6 +3678,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const m = new THREE.Mesh(g, mat); m.name = 'sec:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
     stripMesh(CH.strip, groundMat); for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
+    // W8f-a: the first 6 m of exit N08 in the town's own asphalt material (colour and grain, one texture repeat per 4 m)
+    if (CH.strip.headIndex.length && ctx.townAsphalt) { const st = CH.strip, used = [...new Set(st.headIndex)], map = new Map(used.map((v, k) => [v, k])), pos = new Float32Array(used.length * 3), uv = new Float32Array(used.length * 2);
+      used.forEach((v, k) => { for (let c = 0; c < 3; c++) pos[k * 3 + c] = st.pos[v * 3 + c]; uv[k * 2] = st.pos[v * 3] / 4; uv[k * 2 + 1] = -st.pos[v * 3 + 2] / 4; });
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(Uint32Array.from(st.headIndex, v => map.get(v)), 1)); g.computeVertexNormals(); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, Object.assign(ctx.townAsphalt.clone(), { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.name = 'sec:town-head N08'; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); }
     // TR01 town edge: gravel shoulder and grass band along the patch's south edge, in the corridor
     { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
       stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }
@@ -3742,18 +3912,20 @@ else global.SECTION = SECTION;
 const R = 90, D = Math.PI / 180, BASE = 1.6;
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const hash = (a, b) => { let h = Math.imul(Math.round(a * 97), 374761393) ^ Math.imul(Math.round(b * 131), 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+const lin = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255].map(c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
 
 // ---- the W5a plan. Routes are chains of edges swept as one strip (roadkit.route); the town end of every exit starts with the town's own asphalt and wears
 // into the road class (W5_SPEC 3.0): RD01 9 m asphalt -> 7 m with gravel shoulders within 15 m; RD03 fraying edges, cracks, weeds; RD05 from a 4.5 m asphalt apron.
 const LEAD01 = { cls: 'RD01T', at: 8 };
 const ROUTES = [
-  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'], barrierGap: [{ side: -1, s0: 8.8, s1: 15.8 }] } },
+  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'] } },
   { id: 'N01-west', exit: 'N01', segs: [{ id: 'T01-15', rev: true }, { id: 'T01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 11, barrier: ['end'] } },
   { id: 'T01-ridge', segs: [{ id: 'T01-04' }, { id: 'T01-05' }, { id: 'T01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
   { id: 'T01-west', segs: [{ id: 'T01-10' }, { id: 'T01-11' }, { id: 'T01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'] } },
   { id: 'N10-T04', exit: 'N10', segs: [{ id: 'T04-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24, trimEnd: 3.6 }, furnish: { kind: 'RD03', lamps: [6, 25], poles: [10, 21], sign: [{ s: 15, type: 'signTri' }], mirror: 'end', vending: 23.5 } },
   { id: 'N04-T02', exit: 'N04', segs: [{ id: 'T02-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 31], poles: [9, 24, 38, 48], sign: [{ s: 13, type: 'signRound' }], mirror: 'bend', busStop: 31 } },
-  { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 30], poles: [11, 24], sign: [{ s: 14, type: 'signRound' }], jizo: 29 } },
+  // W8f-a: N09-T05 now stops 10.4 m before LM09-north (the junction paving takes the rest): the lamp and the jizo keep their distance before the junction (3.3 m, 4.3 m)
+  { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 19.6], poles: [11, 17], sign: [{ s: 14, type: 'signRound' }], jizo: 18.6 } },
   { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
   { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
   { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
@@ -3777,7 +3949,7 @@ function furnish(W, rt, cfg) {
   if (cfg.kind === 'RD03') return furnishRD03(W, rt, cfg);
   if (cfg.kind === 'RD05') return furnishRD05(W, rt, cfg);
   if (cfg.kind === 'RD08') return furnishRD08(W, rt, cfg);
-  const S = rt.samples, n = S.length, add = (type, i, o, alt, ex = {}) => { const [lo, la] = rt.lateral(i, o); (rt.instances[type] = rt.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: [0, 0], tint: ex.tint || [1, 1, 1] }); };
+  const S = rt.samples, n = S.length, add = (type, i, o, alt, ex = {}) => { const [lo, la] = rt.lateral(i, o); (rt.instances[type] = rt.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: ex.lean || [0, 0], tint: ex.tint || [1, 1, 1] }); };     // W8f-a: the lean is kept (it was dropped)
   const T = rt.tangent, yawAlong = i => Math.atan2(-T[i][1], T[i][0]), yawToward = (dx, dz) => Math.atan2(-dz, dx), yawFace = (dx, dz) => Math.atan2(dx, dz), right = i => [-T[i][1], T[i][0]];
   rt.lamps = [];
   let next = cfg.firstLamp || 3, side = 1;
@@ -3786,15 +3958,25 @@ function furnish(W, rt, cfg) {
     if (S[i].span === 'tunnel') { next += 1; continue; }
     const r = right(i), it = add('lamp', i, side * 4.3, rt.surface(i, side * 4.3), { yaw: yawToward(-side * r[0], -side * r[1]) });
     rt.lamps.push({ i, s: S[i].s, zone: zone === 'building' ? 'human' : 'wild', side }); void it;
-    add('lampPool', i, side * 1.5, rt.surface(i, side * 1.5) + 0.02);
+    add('lampPool', i, side * 1.5, rt.surface(i, side * 1.5) + 0.02, { yaw: Math.atan2(-T[i][1], T[i][0]), lean: [0, Math.atan((rt.bed[Math.min(n - 1, i + 2)] - rt.bed[Math.max(0, i - 2)]) / Math.max(1e-6, S[Math.min(n - 1, i + 2)].s - S[Math.max(0, i - 2)].s))] });      // W8f-a: tilted with the road (approaches climb to 14.8 %)
     side = -side; next += sp;
   }
-  // concrete barriers every 2 m on both shoulders: the last 14 m before a bridge abutment and 10 m outside each tunnel portal
-  const near = [];
-  if ((cfg.barrier || []).includes('start')) near.push([0, 14]);
-  if ((cfg.barrier || []).includes('end')) near.push([rt.length - 14, rt.length]);
+  // concrete barriers on both shoulders: the last 14 m before a bridge abutment and 10 m outside each tunnel portal
+  // W8f-a (W8_SPEC 12.1 C1, C2): next to an abutment the 1.98 m pieces stand at exact stations 1, 3, 5 ... m from the node, continuing the deck's parapet (flush with the
+  // abutment, bridge.js), on the kerb line 4.85 m (x the deck's lateral factor) where the approach is RD01B, 4.62 m on the old shoulder before it; none in a junction mouth
+  const near = [], mouths = rt.mouths || [], inMouth = (s, sd) => mouths.some(q => q.side === sd && s + 1 > q.s0 && s - 1 < q.s1) || (rt.kinks || []).some(k => Math.abs(s - k) < 2);
+  const leanAt = i => Math.atan((rt.bed[Math.min(n - 1, i + 2)] - rt.bed[Math.max(0, i - 2)]) / Math.max(1e-6, S[Math.min(n - 1, i + 2)].s - S[Math.max(0, i - 2)].s));
+  for (const end of ['start', 'end']) {
+    if (!(cfg.barrier || []).includes(end)) continue;
+    const ap = (rt.approaches || []).find(q => q.which === end);
+    if (!ap) { near.push(end === 'start' ? [0, 14] : [rt.length - 14, rt.length]); continue; }
+    const sN = end === 'end' ? rt.length : S[0].s;
+    for (let k = 0; k < 7; k++) { const s = end === 'end' ? sN - 1 - 2 * k : sN + 1 + 2 * k, { i, t } = atS(rt, s), a = rt.approach[i] + (rt.approach[Math.min(n - 1, i + 1)] - rt.approach[i]) * t;
+      for (const sd of [-1, 1]) { if (inMouth(s, sd)) continue; const o = sd * (4.62 + 0.23 * a), [lo, la] = latS(rt, s, o);
+        (rt.instances.barrierConcrete = rt.instances.barrierConcrete || []).push({ type: 'barrierConcrete', lon: lo, lat: la, alt: surfS(rt, s, o), yaw: yawAlong(i), s: [1, 1, 1], lean: [0, leanAt(i)], tint: [1, 1, 1], station: s, side: sd }); } }
+  }
   if (cfg.tunnel) { const tun = S.filter(p => p.span === 'tunnel'); if (tun.length) near.push([tun[0].s - 10, tun[0].s], [tun[tun.length - 1].s, tun[tun.length - 1].s + 10]); }
-  for (const [a, b] of near) for (let s = Math.max(1, a); s < Math.min(rt.length - 0.5, b); s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); if (S[i].span === 'tunnel') continue; for (const sd of [-1, 1]) if (!(cfg.barrierGap || []).some(g => g.side === sd && s > g.s0 && s < g.s1)) add('barrierConcrete', i, sd * 4.62, rt.surface(i, sd * 4.62), { yaw: yawAlong(i), lean: [0, Math.atan((rt.bed[Math.min(n - 1, i + 2)] - rt.bed[Math.max(0, i - 2)]) / Math.max(1e-6, S[Math.min(n - 1, i + 2)].s - S[Math.max(0, i - 2)].s))] }); }
+  for (const [a, b] of near) for (let s = Math.max(1, a); s < Math.min(rt.length - 0.5, b); s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); if (S[i].span === 'tunnel') continue; for (const sd of [-1, 1]) if (!inMouth(s, sd)) add('barrierConcrete', i, sd * 4.62, rt.surface(i, sd * 4.62), { yaw: yawAlong(i), lean: [0, leanAt(i)] }); }
   // milestones every 25 m on the right shoulder (not inside the barrier zones), a bus stop sign
   for (let s = 12; s < rt.length - 4; s += 25) { const i = Math.round(s / 0.5); if (S[i].span === 'tunnel' || near.some(([a, b]) => s > a - 1 && s < b + 1)) continue; add('milestone', i, 4.1, rt.surface(i, 4.1), { yaw: yawAlong(i) + Math.PI / 2 }); }
   if (cfg.busStop) { const i = Math.round(cfg.busStop / 0.5), r = right(i); add('signBus', i, 4.2, rt.surface(i, 4.2), { yaw: yawFace(-r[0], -r[1]) }); }
@@ -3836,10 +4018,251 @@ function furnishRD08(W, rt, cfg) {
   { const i = idxAt(cfg.shelter), o = 3.6, g = rt.surface(i, o); add('shelterOrange', i, o, g - 0.8, { yaw: P.yawAcross(i) }); rt.shelter = { i, s: S[i].s, alt: g }; }
 }
 
+// ---- W8f-a joints (W8_SPEC 12.1 C): the six RD01 / RD02 abutments, the T01 chainage, the five T junctions of a minor road with RD01
+const FILLET_T = 12, FILLET_E = 0.75;                // abutment transitions: at most 12 m on each side of the node (tangent length), within 0.75 m of the original centre lines
+const PAVE_LIFT = 0.01;                              // junction paving above the trunk's surface (flush: <= 0.02 m)
+// the T01 ring in its order of travel (N03 east round the planet to N01): pieces and their direction against the ring's chainage
+const RING = [['N03-east', 1], ['T01-03', 1], ['T01-ridge', 1], ['T01-07+08+09', 1], ['T01-west', 1], ['T01-13', 1], ['N01-west', -1]];
+// T junctions: minor road (branch) on RD01 (trunk); paving class and corner radius (RD03 3 m asphalt, RD05 2 m rammed earth)
+const JUNCTIONS = [
+  { node: 'J-T04', trunk: 'N03-east', branch: 'N10-T04', paving: 'asphalt', r: 3 },
+  { node: 'J-T07', trunk: 'T01-ridge', branch: 'T07-RD05', paving: 'dirt', r: 2 },
+  { node: 'J-T08', trunk: 'T01-west', branch: 'T08-RD05', paving: 'dirt', r: 2 },
+  { node: 'J-T09', trunk: 'T01-west', branch: 'T09-RD05', paving: 'dirt', r: 2 },
+  { node: 'LM09-north', trunk: 'N01-west', branch: 'N09-T05', paving: 'asphalt', r: 3 },
+];
+const wrap180 = a => (((a % 360) + 540) % 360) - 180;
+// local plane at a node: gnomonic (great circles through the node are straight lines, azimuths at the node are true); coordinates east, north in metres
+function plane(W, node) {
+  return {
+    to(p) { const d = W.arcDistance(node, p) / R, b = W.bearing(node, p) * D, rho = R * Math.tan(d); return [rho * Math.sin(b), rho * Math.cos(b)]; },
+    from(g) { const rho = Math.hypot(g[0], g[1]); if (rho < 1e-12) return { lon: node.lon, lat: node.lat }; const q = W.destination(node, Math.atan2(g[0], g[1]) / D, R * Math.atan(rho / R)); return { lon: q.lon, lat: q.lat }; },
+  };
+}
+// common-tangent transition at an abutment node (W8_SPEC 12.1 C1), in the node's gnomonic plane: a quadratic Bezier from A, Ta metres before the node on the road's own centre
+// line (with its direction there), to B, Tb metres after it on the bridge's (with its direction), whose middle control point is where the two tangents meet: tangent at both
+// ends, curvature nearly even (sin(angle) / 2T at the ends and in the middle). Ta stops 0.5 m short of a kink over 5 deg on the road (LM09-north, 10.5 m from J-W1, turns by 22 deg);
+// the smaller kinks of the road's own nodes within 12 m (J-T04, J-T07, J-T09: 1-2 deg) are smoothed with the joint; both lengths shrink until the curve stays within FILLET_E
+// of the original centre lines. road / bridge: centre-line points {lon, lat} from the node outward. at(t), t in [-Ta, Tb], walks the curve at a uniform rate (t < 0 on the road).
+function transition(W, node, road, bridge) {
+  // distances along both centre lines and along the curve are true metres on the sphere (the plane stretches by up to 2 % at 12 m from the node)
+  const P = plane(W, node), poly = pts => { const g = pts.map(p => P.to(p)), c = [0]; for (let k = 1; k < g.length; k++) c.push(c[k - 1] + W.arcDistance(pts[k - 1], pts[k])); return { g, c }; };
+  const Rd = poly(road), Bd = poly(bridge), unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
+  const along = (L, d) => { let k = 0; while (k + 2 < L.g.length && L.c[k + 1] < d) k++; const f = (d - L.c[k]) / Math.max(1e-9, L.c[k + 1] - L.c[k]); return { p: [L.g[k][0] + (L.g[k + 1][0] - L.g[k][0]) * f, L.g[k][1] + (L.g[k + 1][1] - L.g[k][1]) * f], dir: unit([L.g[k + 1][0] - L.g[k][0], L.g[k + 1][1] - L.g[k][1]]) }; };
+  const kinkAt = L => { for (let k = 1; k + 1 < L.g.length && L.c[k] < FILLET_T + 1; k++) { const a = unit([L.g[k][0] - L.g[k - 1][0], L.g[k][1] - L.g[k - 1][1]]), b = unit([L.g[k + 1][0] - L.g[k][0], L.g[k + 1][1] - L.g[k][1]]); if (Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1]))) > 5 * D) return L.c[k]; } return Infinity; };
+  const distTo = (L, q, dMax) => { let best = Infinity; for (let k = 0; k + 1 < L.g.length && L.c[k] < dMax; k++) { const a = L.g[k], b = L.g[k + 1], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1e-12, t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / l2)); best = Math.min(best, Math.hypot(q[0] - a[0] - dx * t, q[1] - a[1] - dz * t)); } return best; };
+  let Ta = Math.min(FILLET_T, kinkAt(Rd) - 0.5), Tb = Math.min(FILLET_T, kinkAt(Bd) - 0.5), curve = null, len = 0, E = 0;
+  for (let it = 0; it < 40; it++) {
+    const A = along(Rd, Ta), B = along(Bd, Tb), tA = [-A.dir[0], -A.dir[1]], tB = B.dir, det = tA[0] * -tB[1] - tA[1] * -tB[0];
+    let V = [(A.p[0] + B.p[0]) / 2, (A.p[1] + B.p[1]) / 2];
+    if (Math.abs(det) > 1e-9) { const rx = B.p[0] - A.p[0], rz = B.p[1] - A.p[1], lam = (rx * -tB[1] - rz * -tB[0]) / det; V = [A.p[0] + lam * tA[0], A.p[1] + lam * tA[1]]; }
+    const N = 240, pts = [], cum = [0];
+    const ll = []; for (let k = 0; k <= N; k++) { const u = k / N, w0 = (1 - u) * (1 - u), w1 = 2 * u * (1 - u), w2 = u * u; pts.push([w0 * A.p[0] + w1 * V[0] + w2 * B.p[0], w0 * A.p[1] + w1 * V[1] + w2 * B.p[1]]); ll.push(P.from(pts[k])); if (k) cum.push(cum[k - 1] + W.arcDistance(ll[k - 1], ll[k])); }
+    E = Math.max(...pts.map(q => Math.min(distTo(Rd, q, Ta + 1), distTo(Bd, q, Tb + 1)))); curve = { pts, cum }; len = cum[N];
+    if (E <= FILLET_E) break; Ta *= 0.92; Tb *= 0.92;
+  }
+  const at = t => {
+    if (t <= -Ta) return P.from(along(Rd, -t).p); if (t >= Tb) return P.from(along(Bd, t).p);
+    const l = (t + Ta) / (Ta + Tb) * len, { pts, cum } = curve; let k = 0; while (k + 2 < pts.length && cum[k + 1] < l) k++; const f = (l - cum[k]) / Math.max(1e-12, cum[k + 1] - cum[k]);
+    return P.from([pts[k][0] + (pts[k + 1][0] - pts[k][0]) * f, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * f]);
+  };
+  const a0 = along(Rd, Ta).dir, b0 = along(Bd, Tb).dir, angle = Math.acos(Math.max(-1, Math.min(1, -a0[0] * b0[0] - a0[1] * b0[1]))) / D;
+  return { at, Ta, Tb, T: Math.max(Ta, Tb), brg: W.bearing(at(-0.05), at(0.05)), angle, offset: W.arcDistance(at(0), node), deviation: E };
+}
+// centre-line points of a list of segments from one of its ends outward (as route() and bridge.js sample them)
+function chainPoints(W, segs, fromEnd) {
+  const NET = W.roadNetwork, out = [];
+  segs.forEach((sg, k) => { const e = NET.edges.find(q => q.id === sg.id); let P = NET.samplePath(e, 0.5); if (sg.rev) P = P.slice().reverse(); P.forEach((p, i) => { if (k > 0 && i === 0) return; out.push({ lon: p.lon, lat: p.lat }); }); });
+  return fromEnd ? out.reverse() : out;
+}
+// the node of a route's first / last segment
+function routeNode(NET, sg, which) { const e = NET.edges.find(q => q.id === sg.id); return (which === 'start') === !sg.rev ? e.from : e.to; }
+// a point of an edge about `d` metres from one of its nodes
+function nearNode(W, edgeId, node, d = 1) { const NET = W.roadNetwork, e = NET.edges.find(q => q.id === edgeId), P = NET.samplePath(e, 0.5); let best = P[0], bd = Infinity; for (const p of P) { const q = Math.abs(W.arcDistance(p, node) - d); if (q < bd) { bd = q; best = p; } } return best; }
+// the abutments: for every end of a bridge, the route that ends there, the fillet and the deck grade the approach climbs to
+function abutments(W, BR) {
+  const NET = W.roadNetwork, out = [];
+  for (const bd of BRIDGES) for (const be of ['start', 'end']) {
+    const node = be === 'start' ? NET.edges.find(q => q.id === bd.ids[0]).from : NET.edges.find(q => q.id === bd.ids[bd.ids.length - 1]).to;
+    const rd = ROUTES.find(r => [routeNode(NET, r.segs[0], 'start'), routeNode(NET, r.segs[r.segs.length - 1], 'end')].includes(node)); if (!rd) continue;
+    const re = routeNode(NET, rd.segs[0], 'start') === node ? 'start' : 'end', N0 = NET.nodeById[node];
+    const road = chainPoints(W, rd.segs, re === 'end'), bridge = chainPoints(W, bd.ids.map(id => ({ id })), be === 'end');
+    out.push({ node, bridge: bd.id, bEnd: be, route: rd.id, rEnd: re, fillet: transition(W, N0, road, bridge), grade: BR.DECK.slope });
+  }
+  return out;
+}
+// chainage of the ring pieces: { c0, dir } with c = c0 + dir * s
+function ringChain(W) {
+  const NET = W.roadNetwork, len = id => NET.edgeLength(NET.edges.find(e => e.id === id)), out = {}; let c = 0;
+  for (const [id, dir] of RING) { const r = ROUTES.find(q => q.id === id), b = BRIDGES.find(q => q.id === id), L = (r ? r.segs.map(q => q.id) : b.ids).reduce((a, x) => a + len(x), 0); out[id] = dir > 0 ? { c0: c, dir: 1 } : { c0: c + L, dir: -1 }; c += L; }
+  return out;
+}
+// junction layout in the node's plane, from world.js alone (before any road is swept). The trunk is two straight legs through the node (it turns by 1-3 deg at J-T04 ... J-T09 and
+// by 22 deg at LM09-north): its carriageway edge on the branch side (3.5 m) is one line per leg. Each of the branch's two paved edges meets the edge line of the leg it lands on;
+// a corner arc of radius r is tangent to both (T1 on the trunk edge, T2 on the branch edge); the branch then starts 0.6 m beyond the farther T2. The mouth = the trunk stations
+// where the paving outline lies in the ditch band (4.4-7.3 m from the centre), at least the branch's paved width + 1 m on each side: there the ditch is filled and no barrier stands.
+function junctionPlan(W, J, RK) {
+  const NET = W.roadNetwork, N0 = NET.nodeById[J.node], P = plane(W, N0), tr = ROUTES.find(r => r.id === J.trunk), br = ROUTES.find(r => r.id === J.branch);
+  const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1], right = d => [d[1], -d[0]];
+  let sJ = 0, iSeg = 0; for (; iSeg < tr.segs.length; iSeg++) { if (routeNode(NET, tr.segs[iSeg], 'start') === J.node) break; sJ += NET.edgeLength(NET.edges.find(e => e.id === tr.segs[iSeg].id)); }
+  const dF = unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
+  const bEdge = br.segs[0].id, bd = unit(P.to(nearNode(W, bEdge, N0, 4))), sigma = dot(bd, right(dM)) > 0 ? 1 : -1;
+  const h = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved[1], vE = 3.5, r = J.r, nB = right(bd);
+  const legs = { back: { d: dB, p: right(dB).map(v => v * sigma * vE) }, fwd: { d: dF, p: right(dF).map(v => v * sigma * vE) } };
+  const meet = (p1, d1, p2, d2) => { const det = d1[0] * -d2[1] - d1[1] * -d2[0], rx = p2[0] - p1[0], rz = p2[1] - p1[1], l = (rx * -d2[1] - rz * -d2[0]) / det; return [p1[0] + l * d1[0], p1[1] + l * d1[1]]; };
+  // station (signed metres from the node along the trunk) and distance from the trunk centre of a point of the plane (the nearer leg)
+  const onTrunk = q => { const a = dot(q, dF), b = dot(q, dB); if (a >= 0) return { s: a, o: Math.abs(dot(q, right(dF))) }; return { s: b, o: Math.abs(dot(q, right(dB))) }; };
+  // each branch edge meets the edge line of the leg it lands on at X; its corner opens along that line away from the branch: backward for the edge on the branch's back side
+  // (smaller station), forward for the other (the acute and the obtuse corner of a skewed junction)
+  const hits = [-1, 1].map(e => { const p2 = nB.map(v => v * e * h), Xf = meet(legs.fwd.p, legs.fwd.d, p2, bd), fwd = dot(Xf, dF) >= 0, X = fwd ? Xf : meet(legs.back.p, legs.back.d, p2, bd); return { e, p2, X, fwd, u: fwd ? dot(X, dF) : dot(X, dB) }; });
+  const edges = hits.map(hi => {
+    const { e, p2, X, fwd } = hi, ahead = hi.u >= Math.min(...hits.map(q => q.u)) + 1e-9 ? 1 : -1, leg = fwd ? dF : dB, h1 = leg.map(v => v * ahead), cg = Math.max(-1, Math.min(1, dot(h1, bd))), g = Math.acos(cg), t = r / Math.tan(g / 2);
+    const T1 = [X[0] + h1[0] * t, X[1] + h1[1] * t], T2 = [X[0] + bd[0] * t, X[1] + bd[1] * t], w = unit([h1[0] + bd[0], h1[1] + bd[1]]), C = [X[0] + w[0] * r / Math.sin(g / 2), X[1] + w[1] * r / Math.sin(g / 2)];
+    const a1 = Math.atan2(T1[1] - C[1], T1[0] - C[0]), a2 = Math.atan2(T2[1] - C[1], T2[0] - C[0]), da = Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1));
+    const arc = Array.from({ length: 13 }, (_, k) => [C[0] + r * Math.cos(a1 + da * k / 12), C[1] + r * Math.sin(a1 + da * k / 12)]);
+    return { e, X, leg: fwd ? 'fwd' : 'back', C, T1, T2, arc, lam: dot(T2, bd), corner: g / D, line: { p: p2, d: bd } };
+  });
+  const lamEnd = Math.max(...edges.map(q => q.lam)) + 0.6, band = [];
+  for (const q of edges) { const end = [q.line.p[0] + lamEnd * bd[0], q.line.p[1] + lamEnd * bd[1]], line = [...q.arc, end]; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f <= 1; f += 0.1) { const c = onTrunk([line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f]); if (c.o >= 4.4 && c.o <= 7.3) band.push(c.s); } }
+  const xc = onTrunk(bd.map(v => v * 5.1 / Math.max(0.2, Math.abs(dot(bd, right(dM)))))), half = h / Math.max(0.2, Math.abs(dot(bd, right(dM)))) + 1;
+  const u0 = Math.min(...band, xc.s - half) - 0.3, u1 = Math.max(...band, xc.s + half) + 0.3;
+  return { ...J, N0, P, toUV: q => P.to(q), fromUV: (x, y) => P.from([x, y]), sJ, sigma, h, bd, nB, dF, dB, edges, lamEnd, mouth: { s0: sJ + u0, s1: sJ + u1, side: sigma, to: 7.2 }, branchEnd: routeNode(NET, br.segs[0], 'start') === J.node ? 'start' : 'end' };
+}
+// a route at a fractional station: index and fraction, lateral point (with the approach's lateral factor), surface altitude
+const atS = (rt, s) => { const S = rt.samples, n = S.length; let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return { i, t: Math.max(0, Math.min(1, (s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s))) }; };
+const latS = (rt, s, o) => { const { i, t } = atS(rt, s), a = rt.lateral(i, o * rt.cf[i]), b = rt.lateral(i + 1, o * rt.cf[i + 1]); return [a[0] + wrap180(b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+const surfS = (rt, s, o) => { const { i, t } = atS(rt, s); return rt.surface(i, o) + (rt.surface(i + 1, o) - rt.surface(i, o)) * t; };
+// station and lateral offset (grid metres, + = right of travel) of a point near a route, searched within +-20 m of a station hint
+function project(rt, lon, lat, hint) {
+  const S = rt.samples, F = rt.flatOf, n = S.length, x = R * lon * D, z = -R * Math.asinh(Math.tan(lat * D)); let best = null;
+  for (let i = 0; i + 1 < n; i++) {
+    if (Math.abs(S[i].s - hint) > 20) continue;
+    const ax = F[i].x, az = F[i].z, dx = F[i + 1].x - ax, dz = F[i + 1].z - az, px = x + 2 * Math.PI * R * Math.round((ax - x) / (2 * Math.PI * R)), l2 = dx * dx + dz * dz || 1e-12;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (z - az) * dz) / l2)), qx = ax + dx * t, qz = az + dz * t, d2 = (px - qx) ** 2 + (z - qz) ** 2;
+    if (!best || d2 < best.d2) { const k = F[i].k, Tx = rt.tangent[i][0] + (rt.tangent[i + 1][0] - rt.tangent[i][0]) * t, Tz = rt.tangent[i][1] + (rt.tangent[i + 1][1] - rt.tangent[i][1]) * t, side = ((px - qx) * -Tz + (z - qz) * Tx) >= 0 ? 1 : -1;
+      best = { d2, s: S[i].s + (S[i + 1].s - S[i].s) * t, o: side * Math.sqrt(d2) / k / (rt.cf[i] + (rt.cf[i + 1] - rt.cf[i]) * t), i, t }; }
+  }
+  return best;
+}
+// the junction paving in the node's plane: the outline runs along the trunk's actual carriageway edge (3.5 m, sampled from the swept trunk between the two corners), round the
+// corner arc and up the branch edge on one side, across the branch's actual last row, and back down the other side; it is cut into triangles by ear clipping and every edge longer
+// than 0.75 m is split at its midpoint (the same rule on both sides of an edge, no cracks), so that the heights - the trunk's surface (its mouth is flat on the bed) + PAVE_LIFT,
+// which the branch's last row was lifted to - follow the ground. Returns the strip, the ink of both curb lines and the corner data.
+function earClip(P) {
+  const n = P.length, area = P.reduce((a, p, i) => { const q = P[(i + 1) % n]; return a + p[0] * q[1] - q[0] * p[1]; }, 0), V = Array.from({ length: n }, (_, i) => i);
+  if (area < 0) V.reverse();
+  const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]), out = [];
+  const inside = (p, a, b, c) => cross(a, b, p) >= -1e-12 && cross(b, c, p) >= -1e-12 && cross(c, a, p) >= -1e-12;
+  let guard = 0;
+  while (V.length > 3 && guard++ < 10000) {
+    let cut = false;
+    for (let k = 0; k < V.length; k++) {
+      const i0 = V[(k + V.length - 1) % V.length], i1 = V[k], i2 = V[(k + 1) % V.length], a = P[i0], b = P[i1], c = P[i2];
+      if (cross(a, b, c) <= 1e-12) continue;
+      if (V.some(j => j !== i0 && j !== i1 && j !== i2 && inside(P[j], a, b, c))) continue;
+      out.push(i0, i1, i2); V.splice(k, 1); cut = true; break;
+    }
+    if (!cut) break;
+  }
+  if (V.length === 3) out.push(V[0], V[1], V[2]);
+  return out;
+}
+function paving(W, jp, trunk, branch) {
+  const iE = jp.branchEnd === 'end' ? branch.samples.length - 1 : 0, ends = [-1, 1].map(sd => { const [lo, la] = branch.lateral(iE, sd * jp.h); return jp.toUV({ lon: lo, lat: la }); });
+  const dLine = (q, p) => Math.abs((p[0] - q.line.p[0]) * -q.line.d[1] + (p[1] - q.line.p[1]) * q.line.d[0]), stOf = g => { const ll = jp.fromUV(g[0], g[1]); return project(trunk, ll.lon, ll.lat, jp.sJ).s; };
+  const edgeAt = s => { const [lo, la] = latS(trunk, s, jp.sigma * 3.5); return jp.toUV({ lon: lo, lat: la }); };          // the trunk's actual carriageway edge at station s
+  const sides = jp.edges.map(q => { const sX = stOf(q.X), sT = stOf(q.T1); return { q, E: dLine(q, ends[0]) < dLine(q, ends[1]) ? ends[0] : ends[1], sX, X: edgeAt(sX), T1: edgeAt(sT), sT }; }).sort((a, b) => a.sX - b.sX);
+  // the body: the branch's footprint down to the trunk edge (between the two X), with T2 on its sides; two corner fans from X over the arcs (T1 snapped onto the actual edge)
+  const nB = Math.max(1, Math.ceil((sides[1].sX - sides[0].sX) / 0.5)), bottom = Array.from({ length: nB + 1 }, (_, k) => k === 0 ? sides[0].X : k === nB ? sides[1].X : edgeAt(sides[0].sX + (sides[1].sX - sides[0].sX) * k / nB));
+  const body = [...bottom, sides[1].q.T2, sides[1].E, sides[0].E, sides[0].q.T2], V = body.map(p => p.slice()), tris = earClip(V);
+  const left = [sides[0].T1, ...sides[0].q.arc.slice(1)], right = [sides[1].T1, ...sides[1].q.arc.slice(1)];
+  for (const [sd, arc] of [[sides[0], left], [sides[1], right]]) { const x = V.push(sd.X.slice()) - 1, first = V.length; arc.forEach(p => V.push(p.slice())); for (let k = 0; k + 1 < arc.length; k++) tris.push(x, first + k, first + k + 1); }
+  // the midpoint refinement (edges <= 0.75 m)
+  const cache = new Map(), MAX2 = 0.75 * 0.75, idx = [];
+  const mid = (a, b) => { const k = Math.min(a, b) * 1e6 + Math.max(a, b); let m = cache.get(k); if (m === undefined) { m = V.length; V.push([(V[a][0] + V[b][0]) / 2, (V[a][1] + V[b][1]) / 2]); cache.set(k, m); } return m; };
+  const long = (a, b) => (V[a][0] - V[b][0]) ** 2 + (V[a][1] - V[b][1]) ** 2 > MAX2;
+  const st = []; for (let t = 0; t < tris.length; t += 3) st.push([tris[t], tris[t + 1], tris[t + 2]]);
+  while (st.length) {
+    const [p, q, r] = st.pop(), lp = long(p, q), lq = long(q, r), lr = long(r, p), k = lp + lq + lr;
+    if (!k) { idx.push(p, q, r); continue; }
+    if (k === 3) { const m1 = mid(p, q), m2 = mid(q, r), m3 = mid(r, p); st.push([p, m1, m3], [m1, q, m2], [m3, m2, r], [m1, m2, m3]); continue; }
+    if (k === 1) { const [A, B, C] = lp ? [p, q, r] : lq ? [q, r, p] : [r, p, q], m = mid(A, B); st.push([A, m, C], [m, B, C]); continue; }
+    const [A, B, C] = !lr ? [p, q, r] : !lp ? [q, r, p] : [r, p, q], m1 = mid(A, B), m2 = mid(B, C); st.push([m1, B, m2], [A, m1, m2], [A, m2, C]);
+  }
+  const pos = [], col = [], pts = [], C = jp.paving === 'asphalt' ? [lin('#2f3645'), lin('#353c4b')] : [lin('#6a5a46'), lin('#5a4c3b')];
+  for (const g of V) {
+    const ll = jp.fromUV(g[0], g[1]), pr = project(trunk, ll.lon, ll.lat, jp.sJ), h = surfS(trunk, pr.s, pr.o) + PAVE_LIFT, k = 1 / Math.cos(ll.lat * D);
+    pos.push(R * ll.lon * D, (h - BASE) * k, -R * Math.asinh(Math.tan(ll.lat * D))); pts.push({ lon: ll.lon, lat: ll.lat, h, s: pr.s, o: pr.o });
+    const hz = hash(g[0] * 1.3, g[1] * 1.1), c = C[0].map((v2, ci) => (v2 + (C[1][ci] - v2) * hz) * (0.97 + 0.05 * hash(g[0] * 2.3, g[1] * 1.9))); col.push(c[0], c[1], c[2]);
+  }
+  // wound to face up in the flat frame (the coverage below shows that no two triangles overlap: the sum of their areas equals the outline's)
+  for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, Cc = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[Cc] - pos[A]) - (pos[B] - pos[A]) * (pos[Cc + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+  const outline = [...bottom.slice(0, 1), ...[...left].reverse(), sides[0].q.T2, sides[0].E, sides[1].E, sides[1].q.T2, ...[...right].reverse().slice(0, -1), right[0], ...bottom.slice(-1)];
+  const polyA = P2 => Math.abs(P2.reduce((a, p, i) => { const q = P2[(i + 1) % P2.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+  let triArea = 0; for (let t = 0; t < idx.length; t += 3) { const [a, b2, c2] = [V[idx[t]], V[idx[t + 1]], V[idx[t + 2]]]; triArea += Math.abs((b2[0] - a[0]) * (c2[1] - a[1]) - (b2[1] - a[1]) * (c2[0] - a[0])) / 2; }
+  const bodyArea = polyA(body), fanArea = [left, right].map((arc, k) => { const X = sides[k].X; let a = 0; for (let j = 0; j + 1 < arc.length; j++) a += Math.abs((arc[j][0] - X[0]) * (arc[j + 1][1] - X[1]) - (arc[j][1] - X[1]) * (arc[j + 1][0] - X[0])) / 2; return a; });
+  const inkOf = line => { const ptsL = []; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f < 1; f += 0.25) ptsL.push([line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f]); ptsL.push(line[line.length - 1]);
+    return ptsL.map(g => { const ll = jp.fromUV(g[0], g[1]), pr = project(trunk, ll.lon, ll.lat, jp.sJ); return { lon: ll.lon, lat: ll.lat, alt: surfS(trunk, pr.s, pr.o) + PAVE_LIFT + 0.06 }; }); };
+  return { strip: { name: 'junction ' + jp.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3 }, ink: [inkOf([...left, sides[0].E]), inkOf([...right, sides[1].E])], pts, outline, triangles: idx.length / 3,
+    coverage: triArea / Math.max(1e-9, bodyArea + fanArea[0] + fanArea[1]), corners: sides.map(q => ({ leg: q.q.leg, corner: q.q.corner, s: q.sT, sX: q.sX })), ends: sides.map(q => q.E) };
+}
+// abutment end wall: a vertical concrete curtain under the road's last cross-section, from its surface down to below the girder (|o| <= 5) or into the terrain (the embankment's
+// end), facing the bridge: it closes the box girder's open end and the end of the approach's fill above the terrain
+function abutWall(W, rt, ab, deckAlt) {
+  const i = ab.rEnd === 'end' ? rt.samples.length - 1 : 0, m = rt.grid.length, st = rt.strip, pos = [], col = [], idx = [], dir = ab.rEnd === 'end' ? rt.tangent[i] : [-rt.tangent[i][0], -rt.tangent[i][1]];
+  const c0 = lin('#7c828c'), c1 = lin('#5f6672');
+  for (let j = 0; j < m; j++) {
+    const a = (i * m + j) * 3, oo = rt.grid[j], [lo, la] = rt.lateral(i, oo * rt.cf[i]), top = rt.colAlt[i * m + j], g = W.height(lo, la), bot = Math.min(top - 0.05, Math.abs(oo) <= 5.0 ? deckAlt - 1.85 : g - 0.3), k = 1 / Math.cos(la * D);
+    pos.push(st.pos[a], (top - 0.03 - BASE) * k, st.pos[a + 2], st.pos[a], (bot - BASE) * k, st.pos[a + 2]);      // 3 cm under the surface: no depth fight along the joint
+    const f = 0.88 + 0.2 * hash(oo * 3.1, i); col.push(...c0.map(v => v * f), ...c1.map(v => v * f));
+  }
+  for (let j = 0; j + 1 < m; j++) { const a = 2 * j, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, c, c, b, d); }
+  for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, Cc = idx[t + 2] * 3, ux = pos[B] - pos[A], uy = pos[B + 1] - pos[A + 1], uz = pos[B + 2] - pos[A + 2], vx = pos[Cc] - pos[A], vy = pos[Cc + 1] - pos[A + 1], vz = pos[Cc + 2] - pos[A + 2];
+    const nx = uy * vz - uz * vy, nz = ux * vy - uy * vx; if (nx * dir[0] + nz * dir[1] < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
+  return { name: 'abutment wall ' + ab.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true };
+}
+
 function plan(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
-  const routes = ROUTES.map(def => { const rt = RK.route(WS, def.segs, { ...def.opts, terrainColor: tc }); rt.def = def; if (def.furnish) furnish(WS, rt, def.furnish); return rt; });
-  const bridges = BRIDGES.map(def => { const b = BR.build(WS, def.ids, def); b.def = def; return b; });
+  // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept)
+  const AB = abutments(WS, BR), CH = ringChain(WS), JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK)), head = RK.TOWN_HEAD;
+  const optsOf = def => {
+    const o = { ...def.opts, terrainColor: tc };
+    if (def.exit) o.townHead = head;
+    if (CH[def.id]) o.chain = CH[def.id];
+    for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
+    const mo = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (mo.length) o.mouths = mo;
+    const jb = JP.find(j => j.branch === def.id); if (jb) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
+    return o;
+  };
+  const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
+  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; }
+  // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
+  for (const def of ROUTES.filter(branchOf)) {
+    const jp = branchOf(def), trunk = byId[jp.trunk], o = optsOf(def);
+    o.ramp = { end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } };
+    const rt = RK.route(WS, def.segs, o); rt.def = def; byId[def.id] = rt;
+  }
+  const routes = ROUTES.map(def => byId[def.id]);
+  for (const rt of routes) if (rt.def.furnish) furnish(WS, rt, rt.def.furnish);
+  // bridges: their ends on the shared fillets, starting at the approaches' altitude
+  const bridges = BRIDGES.map(def => {
+    const o = { ...def, chain: CH[def.id], abut: {} };
+    for (const a of AB.filter(q => q.bridge === def.id)) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
+    const b = BR.build(WS, def.ids, o); b.def = def; return b;
+  });
+  // the road's last cross-section takes the deck's first one vertex by vertex (|o| <= 5 m: the same offsets on both, mirrored where the two run against each other;
+  // a deck laid out one circumference east of the road, T01-07+08+09 at J-W3, is moved back by it: bend.js shifts the road there by the same amount)
+  // shifted(x, k): the float32 value v k circumferences away from x such that the shader's float32 sum v - k * PERIOD (bend.js, exact for its uniform) is x again, bit for bit
+  const shifted = (x, k) => { const P = Math.fround(2 * Math.PI * R), want = Math.fround(x), v0 = Math.fround(x + k * P), ulp = Math.abs(Math.fround(v0 * (1 + 2 ** -23)) - v0) || 1e-7;
+    for (let q = 0; q <= 8; q++) for (const sg of [1, -1]) { const v = Math.fround(v0 + sg * q * ulp); if (Math.fround(v - k * P) === want) return v; } return v0; };
+  for (const a of AB) {
+    const rt = byId[a.route], b = bridges.find(q => q.def.id === a.bridge), m = rt.grid.length, iR = a.rEnd === 'end' ? rt.samples.length - 1 : 0, iB = a.bEnd === 'start' ? 0 : b.samples.length - 1, flip = a.rEnd === a.bEnd, tc = b.topCols, top = b.strips[0], P2 = 2 * Math.PI * R;
+    rt.grid.forEach((o, j) => { if (Math.abs(o) > 5 + 1e-9) return; const jb = tc.findIndex(q => Math.abs(q - (flip ? -o : o)) < 1e-6); if (jb < 0) return; const s2 = (iB * tc.length + jb) * 3, d = (iR * m + j) * 3;
+      const k = Math.round((rt.strip.pos[d] - top.pos[s2]) / P2); rt.strip.pos[d] = k ? shifted(top.pos[s2], k) : top.pos[s2]; rt.strip.pos[d + 1] = top.pos[s2 + 1]; rt.strip.pos[d + 2] = top.pos[s2 + 2]; });
+  }
+  const abuts = AB.map(a => { const rt = byId[a.route], ap = rt.approaches.find(q => q.which === a.rEnd); return { ...a, approach: ap, wall: abutWall(WS, rt, a, ap.alt) }; });
+  const junctions = JP.map(jp => ({ ...jp, ...paving(WS, jp, byId[jp.trunk], byId[jp.branch]) }));
   // lit polylines for the light band: RD01 along the bed (with a gap in the tunnel), RD02 along the deck; the sea parts for the reflections
   const lit = [], sea = [];
   for (const rt of routes) { if (!(rt.lamps && rt.lamps.length)) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
@@ -3853,10 +4276,10 @@ function plan(W, H, tc) {
     const { it, i } = best, T = it.rt.tangent, yaw = Math.atan2(T[i][0], T[i][1]);
     for (const sd of [-1, 1]) { const [lo, la] = it.rt.lateral(i, sd * (it.hw + 0.75)); markers.push({ type: 'gatePost', lon: lo, lat: la, alt: (it.rt.surface ? it.rt.surface(i, sd * (it.hw + 0.75)) : WS.height(lo, la)), yaw, s: [1, 1, 1], lean: [0, 0], tint: [1, 1, 1], node: nd.id }); }
   }
-  return { routes, bridges, stairs, markers, lit, sea, WS };
+  return { routes, bridges, stairs, markers, lit, sea, WS, abutments: abuts, junctions };
 }
 
-const ROADS = { plan, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD };
+const ROADS = { plan, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -3894,6 +4317,19 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     };
     for (const rt of DATA.routes) stripMesh({ ...rt.strip, normals: true }, M.groundMat);
     for (const b of DATA.bridges) for (const st of b.strips) stripMesh(st, bridgeMat);
+    // W8f-a: the first 6 m of the town exits in the town's own asphalt material (colour and grain; uv: one texture repeat per 4 m as the town's slabs), the junction paving
+    // (biased over the trunk's shoulder it lies on) and the abutment walls
+    // each kind is one mesh (one draw call): the heads of the eight exits, the five pavings, the six walls
+    const merge = (name, parts, withUV) => { const pos = [], col = [], uv = [], idx = []; for (const q of parts) { const base = pos.length / 3; for (let k = 0; k < q.pos.length; k++) pos.push(q.pos[k]); for (let k = 0; k < q.col.length; k++) col.push(q.col[k]); if (withUV) for (let k = 0; k < q.pos.length; k += 3) uv.push(q.pos[k] / 4, -q.pos[k + 2] / 4); for (const v of q.index) idx.push(base + v); }
+      return { name, pos: Float32Array.from(pos), col: Float32Array.from(col), uv: withUV ? Float32Array.from(uv) : null, index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true }; };
+    const headMat = ctx.townAsphalt ? Object.assign(ctx.townAsphalt.clone(), { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }) : M.groundMat;
+    const heads = DATA.routes.filter(rt => rt.strip.headIndex && rt.strip.headIndex.length).map(rt => { const st = rt.strip, used = [...new Set(st.headIndex)], map = new Map(used.map((v, k) => [v, k])), pos = new Float32Array(used.length * 3), col = new Float32Array(used.length * 3);
+      used.forEach((v, k) => { for (let c = 0; c < 3; c++) { pos[k * 3 + c] = st.pos[v * 3 + c]; col[k * 3 + c] = st.col[v * 3 + c]; } }); return { pos, col, index: Uint32Array.from(st.headIndex, v => map.get(v)) }; });
+    if (heads.length) { const h = merge('town heads', heads, true), m = stripMesh(h, headMat); m.geometry.setAttribute('uv', new THREE.BufferAttribute(h.uv, 2)); }
+    const pavingMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -6 });
+    S.materials.pavingMat = pavingMat; S.materials.headMat = headMat;
+    if (DATA.junctions.length) stripMesh({ ...merge('junction paving', DATA.junctions.map(j => j.strip)), normals: false }, pavingMat);      // up normals: an even surface, no facets
+    if (DATA.abutments.length) stripMesh(merge('abutment walls', DATA.abutments.map(a => a.wall)), bridgeMat);
 
     // ---- tunnel (T01-05): a half-round arch tube along the bed, outer concrete shell, dark inner lining, a portal ring and a black void disc at each end
     for (const rt of DATA.routes) if (rt.tunnel) buildTunnel(rt, root, stripMesh, bridgeMat);
@@ -3931,7 +4367,9 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     // a line keeps its longitudes continuous (no 360 degree jump where it crosses the date line, W8e-b): bend.js then moves each segment as a whole at the seam
     const poly = (pts, out) => { let prev = null, lon0 = null; for (const q of pts) { const lon = lon0 === null ? q.lon : lon0 + (((q.lon - lon0) % 360 + 540) % 360 - 180); lon0 = lon; const f = flatOf(lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
     const addLines = (layer, segs, color) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, color ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, fog: false }) : lineMat()); l.name = 'road:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; return l; };
-    { const segs = []; for (const rt of DATA.routes) { const clip = line => { let run = []; line.forEach((q, i) => { if (rt.samples[i].span === 'tunnel') { if (run.length > 1) poly(run, segs); run = []; } else run.push(q); }); if (run.length > 1) poly(run, segs); }; clip(rt.lines.edgeL); clip(rt.lines.edgeR); } addLines('aerial', segs); }
+    { const segs = []; for (const rt of DATA.routes) { const clip = line => { let run = []; line.forEach((q, i) => { if (rt.samples[i].span === 'tunnel') { if (run.length > 1) poly(run, segs); run = []; } else run.push(q); }); if (run.length > 1) poly(run, segs); }; clip(rt.lines.edgeL); clip(rt.lines.edgeR); }
+      for (const j of DATA.junctions) for (const line of j.ink) poly(line, segs);         // W8f-a: the curb lines of the junction paving
+      addLines('aerial', segs); }
     { const segs = [], white = []; for (const b of DATA.bridges) { for (const k of ['edgeL', 'edgeR', 'edgeLU', 'edgeRU']) poly(b.lines[k], segs); for (const j of b.lines.joints) poly(j, segs); for (const st of (b.lines.stays || [])) poly(st, white); }
       addLines('bridge', segs); addLines('bridge', white, 0xe6ebf2); }
 
@@ -3943,6 +4381,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
       const addNear = (segs, color, op) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, fog: false })); l.name = 'road:near-line'; l.matrixAutoUpdate = false; root.add(l); objs.lines.near.push(l); };
       addNear(rope, 0xb59a74, 0.95); addNear(rail, 0xaeb7c4, 0.95); addNear(wire, 0x1f2a38, 0.9); S.stats.wireSegments = wire.length / 6; }
     { const segs = []; for (const st of DATA.stairs) { poly(st.lines.edgeL, segs); poly(st.lines.edgeR, segs); } addLines('aerial', segs); }
+
 
     // ---- light band (RD01, RD02 and RD03 routes), with dots for the lanterns of the stairs and the small lamps of the boardwalk and the maintenance stair
     const dots = []; for (const st of DATA.stairs) for (const l of st.lanterns) dots.push({ lon: l.lon, lat: l.lat, alt: l.alt + 0.6 });
@@ -19691,6 +20130,8 @@ for(const f of L.legacyFurniture){const g=groups[f.group],{x,z,rotY}=f.slot,c=Ma
   g.rotation.y=rotY;g.position.set(x-(ax*c+az*n),LV.pavement-y0,z-(-ax*n+az*c));}
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
+// W8f-a: everything built so far is the town (ground, buildings, furniture, puddles); its large faces get sphere copies the first time uBend > 0 (below).
+const townRoots=scene.children.slice();
 // Rain falls in a box that follows the view target (clamped to the plinth), never under the roofs and
 // awnings of buildings (their registered shelter rects, see layout.js).
 const roofs=L.structures.flatMap(s=>s.shelter?s.shelter.map(r=>worldRect(s,r)):s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
@@ -19792,13 +20233,18 @@ const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P0
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
 BEND.attach(scene);
-const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj},BEND,terrain);
-const roads=ROADS.attach(scene,{ramp,renderer},BEND,terrain,section);
+// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
+// showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
+// swapped in while uBend > 0; at uBend = 0 the town draws its own geometry again (the default view is bit for bit the old one, WC12).
+const townSphere={built:null,on:false};
+BEND.onChange(u=>{const on=u>0;if(on===townSphere.on)return;if(on&&!townSphere.built)townSphere.built=BEND.tessellate(townRoots,{maxEdge:4,box:50});townSphere.on=on;townSphere.built.use(on);});
+const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj,townAsphalt:matT('#46505b','asphalt')},BEND,terrain);
+const roads=ROADS.attach(scene,{ramp,renderer,townAsphalt:matT('#46505b','asphalt')},BEND,terrain,section);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
-window.__scene={scene,renderer,camera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>
