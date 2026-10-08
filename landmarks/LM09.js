@@ -7,7 +7,14 @@
   const { THREE, group, mesh, box, cyl, mat, warm } = K, L = LMLIB(K), PI = Math.PI, rnd = K.rand(909);
   const out = { stats: {}, update() {} };
   const gr = group('lm09Ground'); L.use(gr);
-  L.ground(10.6, '#5d7658', 0.02);
+  // W8f-c G2: trim the north side of the site lawn before the T01 curb; the entrance lane still reaches the road centreline.
+  const lawnR = 10.6, lawnNorth = 7.4, cut = Math.acos(lawnNorth / lawnR), boundary = [];
+  for (let i = 0; i <= 40; i++) { const a = cut + (2 * PI - 2 * cut) * i / 40; boundary.push([lawnR * Math.sin(a), 0.02, lawnR * Math.cos(a)]); }
+  const lawnGeo = new THREE.BufferGeometry(), lawnPos = [0, 0.02, 0], lawnIdx = [];
+  boundary.forEach(p => lawnPos.push(...p));
+  for (let i = 0; i < boundary.length; i++) lawnIdx.push(0, i + 1, (i + 1) % boundary.length + 1);
+  lawnGeo.setAttribute('position', new THREE.Float32BufferAttribute(lawnPos, 3)); lawnGeo.setIndex(lawnIdx); lawnGeo.computeVertexNormals();
+  mesh(lawnGeo, mat('#5d7658'), 0, 0, 0, false, gr);
   box(0, 0.06, 9.2, 2.6, 0.1, 8.6, '#8a8d90', true, gr);                                      // station lane from the road (z 13.35) down to the turning circle
   const cd = L.ground(6.0, '#767a7e', 0.05); cd.position.z = 1.0; const cg = mesh(new THREE.RingGeometry(5.6, 6.0, 40), mat('#a8a8a0'), 0, 0.08, 1.0, false, gr); cg.rotation.x = -PI / 2;
   box(0, 0.06, -1.6, 2.4, 0.1, 2.4, '#8a8d90', true, gr);                                      // the way from the circle to the platform

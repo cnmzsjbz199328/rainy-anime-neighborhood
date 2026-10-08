@@ -93,7 +93,7 @@ async function shoot(browser, html, outDir, bend, withMask) {
       const url = S.renderer.domElement.toDataURL('image/png'), calls = S.renderer.info.render.calls, tris = S.renderer.info.render.triangles;
       let hiddenUrl = null;
       if (withMask && S.terrain) {            // second render without the ring and the exit starts: the differing pixels are the mask
-        const ring = [...S.terrain.ring, ...S.terrain.stubs], was = ring.map(m => m.visible);
+        const ring = [...S.terrain.ring, ...(S.terrain.ringFlat || []), ...S.terrain.stubs], was = ring.map(m => m.visible);
         ring.forEach(m => { m.visible = false; });
         S.renderer.render(S.scene, S.camera); hiddenUrl = S.renderer.domElement.toDataURL('image/png');
         ring.forEach((m, i) => { m.visible = was[i]; });

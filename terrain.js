@@ -21,7 +21,8 @@ const KIND_COLOR = {
 };
 const ROCK = hex('#6f6b78'), SNOW = hex('#d6e4f0');
 const SHALLOW = hex('#5f8fa0'), DEEP = hex('#1f3a66'), SAND = hex('#8a8794');
-const EXIT_CLASS = { RD01: { w: 9, c: hex('#2e3646') }, RD03: { w: 4.5, c: hex('#2e3646') }, RD05: { w: 3, c: hex('#5c5344') } };   // asphalt, asphalt, packed earth
+const EXIT_CLASS = { RD01: { w: 9, c: hex('#2e3646') }, RD03: { w: 4.5, c: hex('#2e3646') }, RD05: { w: 3, c: hex('#5c5344') } };   // stub widths, asphalt, asphalt, packed earth
+const EXIT_CLEARANCE = { RD01: 10, RD03: 4.5, RD05: 4.5 };    // max swept pavement width; RD05 exits have an RD03 head
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
 function builder(W) {
@@ -45,6 +46,43 @@ function builder(W) {
   };
 
   const inPatch = (lon, lat) => lon >= -P.lonMax - EPS && lon <= P.lonMax + EPS && lat >= P.latMin - EPS && lat <= P.latMax + EPS;
+
+  // W8f-c G3: cut the swept exit pavement plus 0.3 m from TR01 without dropping whole lattice triangles.
+  // The frozen centreline can differ from the finished road by up to 1 m through an abutment/turn; the
+  // extra metre in this mask envelope keeps the actual paved edge plus its 0.3 m reveal clear.
+  const exitClearance = W.roadNetwork.nodes.filter(n => n.kind === 'town-exit').flatMap(node => {
+    const NET = W.roadNetwork, edge = NET.edges.find(e => e.from === node.id || e.to === node.id), width = (EXIT_CLEARANCE[edge.class] || 0) / 2 + 0.3 + 1.0;
+    let S = NET.samplePath(edge, 0.5); if (edge.to === node.id) { const len = NET.edgeLength(edge); S = S.slice().reverse().map(p => ({ ...p, s: len - p.s })); }
+    const points = S.filter(p => p.s <= 15 + 1e-9).map(p => [flatX(p.lon), flatZ(p.lat)]), rects = [];
+    for (let i = 0; i + 1 < points.length; i++) {
+      const a = points[i], b = points[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l,
+        e0 = i ? 0.25 : 1.0, e1 = i + 2 < points.length ? 0.25 : 1.0, aa = [a[0] - ux * e0, a[1] - uz * e0], bb = [b[0] + ux * e1, b[1] + uz * e1], nx = -uz * width, nz = ux * width;
+      const polygon = [[aa[0] + nx, aa[1] + nz], [bb[0] + nx, bb[1] + nz], [bb[0] - nx, bb[1] - nz], [aa[0] - nx, aa[1] - nz]], xs = polygon.map(p => p[0]), zs = polygon.map(p => p[1]);
+      rects.push({ polygon, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) });
+    }
+    return rects;
+  });
+  const polyArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
+  const splitHalfPlane = (poly, a, b, sign) => {
+    const side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])), inside = [], outside = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -1e-9, iq = sq >= -1e-9;
+      if (ip) inside.push(p); else outside.push(p);
+      if (ip !== iq) { const t = sp / (sp - sq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; inside.push(x); outside.push(x); }
+    }
+    const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
+    return [clean(inside), clean(outside)];
+  };
+  const subtractConvex = (subject, clip) => {
+    let rest = subject; const outside = [], sign = polyArea(clip) >= 0 ? 1 : -1;
+    for (let i = 0; i < clip.length && rest.length >= 3; i++) {
+      const [inside, out] = splitHalfPlane(rest, clip[i], clip[(i + 1) % clip.length], sign);
+      if (out.length >= 3 && Math.abs(polyArea(out)) > 1e-10) outside.push(out);
+      rest = inside;
+    }
+    // Any final `rest` is the portion inside the clearance rectangle and is intentionally replaced by road geometry.
+    return outside;
+  };
 
   // vertex data of one lattice point (height, flat position, local-frame normal, colour)
   function vertex(lon, lat) {
@@ -83,6 +121,17 @@ function builder(W) {
     const rings = lats.map(l => ({ lat: l, lons: ringLons(l) }));
     const vmap = new Map(), V = [];
     const vid = (r, k) => { const key = r * 100000 + k; let i = vmap.get(key); if (i === undefined) { i = V.length; V.push(vertex(rings[r].lons[k], rings[r].lat)); vmap.set(key, i); } return i; };
+    const clippedV = new Map(), clippedVid = (p, triVerts) => {
+      const x = Math.round(p[0] * 1e5) / 1e5, z = Math.round(p[1] * 1e5) / 1e5, key = `${Math.round(x * 1e5)},${Math.round(z * 1e5)}`;
+      let i = clippedV.get(key); if (i === undefined) {
+        const lon = x / (R * D), lat = Math.atan(Math.sinh(-z / R)) / D, [a, b, c] = triVerts, dx = b.x - a.x, dz = b.z - a.z, ex = c.x - a.x, ez = c.z - a.z, det = dx * ez - ex * dz;
+        const wb = ((x - a.x) * ez - ex * (z - a.z)) / det, wc = (dx * (z - a.z) - (x - a.x) * dz) / det, wa = 1 - wb - wc, ws = [wa, wb, wc];
+        const blend = keyName => ws.reduce((sum, w, j) => sum + w * triVerts[j][keyName], 0), blend3 = keyName => [0, 1, 2].map(k => ws.reduce((sum, w, j) => sum + w * triVerts[j][keyName][k], 0));
+        const n = [blend('nx'), blend('ny'), blend('nz')], nl = Math.hypot(...n) || 1;
+        i = V.length; V.push({ x, y: blend('y'), z, nx: n[0] / nl, ny: n[1] / nl, nz: n[2] / nl, c: blend3('c'), lon, lat, h: BASE + blend('y') * Math.cos(lat * D) }); clippedV.set(key, i);
+      }
+      return i;
+    };
     const tris = [];   // {a, b, c} as vertex ids, with chunk and ring flag resolved later
     const keep = (ra, ka, rb, kb, rc, kc) => {
       const A = [rings[ra].lons[ka], rings[ra].lat], B = [rings[rb].lons[kb], rings[rb].lat], C = [rings[rc].lons[kc], rings[rc].lat];
@@ -91,6 +140,31 @@ function builder(W) {
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
       const isRing = W.townPatchDistance(lon, lat) < RING_M;
       if (isRing ? !opts.ring : !opts.rest) return;
+      if (opts.exitClearance !== false) {
+        let pieces = [[[flatX(A[0]), flatZ(A[1])], [flatX(B[0]), flatZ(B[1])], [flatX(C[0]), flatZ(C[1])]]], changed = false;
+        const x0 = pieces[0].map(p => p[0]), z0 = pieces[0].map(p => p[1]), triBox = { minX: Math.min(...x0), maxX: Math.max(...x0), minZ: Math.min(...z0), maxZ: Math.max(...z0) };
+        for (const rect of exitClearance) {
+          if (rect.maxX < triBox.minX - 1e-8 || rect.minX > triBox.maxX + 1e-8 || rect.maxZ < triBox.minZ - 1e-8 || rect.minZ > triBox.maxZ + 1e-8) continue;
+          const before = pieces.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0), next = [];
+          for (const poly of pieces) {
+            const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]);
+            if (rect.maxX < Math.min(...xs) - 1e-8 || rect.minX > Math.max(...xs) + 1e-8 || rect.maxZ < Math.min(...zs) - 1e-8 || rect.minZ > Math.max(...zs) + 1e-8) next.push(poly);
+            else next.push(...subtractConvex(poly, rect.polygon));
+          }
+          const after = next.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0);
+          if (after < before - 1e-8) { pieces = next; changed = true; }
+        }
+        if (changed) {
+          const ids0 = [vid(ra, ka), vid(rb, kb), vid(rc, kc)], triVerts = ids0.map(i => V[i]);
+          for (const poly of pieces) for (let k = 1; k + 1 < poly.length; k++) {
+            const p0 = poly[0], p1 = poly[k], p2 = poly[k + 1]; if (Math.abs(polyArea([p0, p1, p2])) < 5e-5) continue;
+            const x = (p0[0] + p1[0] + p2[0]) / 3, z = (p0[1] + p1[1] + p2[1]) / 3, lo = x / (R * D), la = Math.atan(Math.sinh(-z / R)) / D;
+            const ring = W.townPatchDistance(lo, la) < RING_M;
+            tris.push({ a: clippedVid(p0, triVerts), b: clippedVid(p1, triVerts), c: clippedVid(p2, triVerts), lon: lo, lat: la, ring });
+          }
+          return;
+        }
+      }
       tris.push({ a: vid(ra, ka), b: vid(rb, kb), c: vid(rc, kc), lon, lat, ring: isRing });
     };
     for (let r = 0; r + 1 < rings.length; r++) {
@@ -233,7 +307,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     stubMat = material.clone(); stubMat.polygonOffset = true; stubMat.polygonOffsetFactor = -1; stubMat.polygonOffsetUnits = -1;
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
-  const state = { ring: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
+  const state = { ring: [], ringFlat: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
   const geom = (c, index) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
@@ -243,9 +317,11 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
   const t0 = performance.now();
-  const ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
+  const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitClearance: false }),
+    ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
   withPrivateRandom(() => {
-    for (const c of ringData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
+    for (const c of flatRingData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring-flat', state.ringFlat, { cx: c.cx, cy: c.cy });
+    for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
     for (const s of stubData) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
@@ -278,7 +354,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   state.setExplore = on => { if (on === state.explore) return; state.explore = on; for (const fn of exploreListeners) fn(); };
   state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
   function apply() {
-    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;
+    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0, sphereRingOn = u > 0;
+    for (const m of state.ringFlat) m.visible = !sphereRingOn;
+    for (const m of state.ring) m.visible = sphereRingOn;
     if (restOn) buildRest();
     for (const m of state.rest) m.visible = restOn;
     if (state.restBuilt) setOpacity(restMat, u > 0 ? 1 : state.fade.rest);
@@ -289,7 +367,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   BEND.onChange(apply);
   state.ringData = ringData;
   // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
-  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...ringData, ...state.restData]); } return state.samplerFn; };
+  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...flatRingData, ...state.restData]); } return state.samplerFn; };
   state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);

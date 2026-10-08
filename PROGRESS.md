@@ -2578,3 +2578,25 @@
   - `wc14_check` 仍是那两项既有未通过（BACK 沙漠 13.7、WEST 村落 3.8），EAST 森林 34.2 → 36.3。
 - 截图逐张看：`forest-sphere-d140/d300`、`farm-sphere-d300`、`grass-sphere-d300` 的 current。林地比林缘深，成片的林子读得出，没有黑面或格子块。三张入库对比图已按新结果重做（`docs/world/w8f-b/distant-*-before-after.webp`，55–94 KB）。
 - 后续：衔接复核的 6 类既有问题由 W8f-c 修（ROADMAP 新行，规格 W8_SPEC 12.4）；W8d 的 5 条真机反馈现在可以复验。
+
+### W8f-c 阶段细化（2026-10-08）
+
+- 规格：[docs/world/W8_SPEC.md](docs/world/W8_SPEC.md) 第 12.4 节；问题来源：本文件「W8f-b」→「道路与路口衔接截图复核」及 `docs/BACKLOG.md` 的 W8f-a/W8f-b 观察。无新增设计卡。
+- 范围：修 G1–G6：桥–桥节点 J-P1/J-LM08 曲线；LM09-north 曲线和入口坪；RD03 的 N04/N09/N10 道路上覆面；RD05 路肩配地形色并在端头收口；桥台中线虚线过渡；9 个城镇出口灰盒换为有标线的出口头。
+- 不做：不改 `world.js` 节点/控制点、`layout.js`、冻结城镇几何或城镇平面坐标；不处理其他待办或 W8d 真机复验。
+- 开工基线：main HEAD `b71ecaabbc582debe9a46075499c5e90802ee7de`，标签 `pre-w8f-c`；分支 `world/W8f-c`。G1–G5 与 G6 分两次提交。
+- J1：42 个连接点各 3 个机位（球形俯视、球形沿路、平面夜间沿路），前后各 126 张；逐点检查 G1–G6 消失、其余连接不变差。图像保存在 `docs/world/w8f-c/pre-w8f-c/` 与 `docs/world/w8f-c/current/`，逐张复核并留 3–5 张压缩关键图。
+- J2：检查 G1/G2 缓和曲线 ≤1°/0.5 m 且中线偏离 ≤1.0 m，接缝 ≤0.01 m；桥墩与钢梯端头仍满足第 12.4 节位置约束。
+- J2：入口坪及 9 个出口 15 m 范围按每 0.5 m、5 条横向射线检查首个命中为道路网格；包含 `uBend > 0` 的细分网格。G3 对象先定位；若归属 `layout.js` 冻结城镇几何则停止。
+- J2：量测 RD03/RD05 路肩外缘与地形色差 ≤2/255、端头最后 3 m 收至 0；桥台虚线同段色差 ≤4/255。
+- WC12：先完成 G1–G5，晴雨两种基线回归 8 视角逐位相同；再做 G6，运行 `regress --baseline-ref pre-w8f-c --mask-patch-margin 24` 与锁雨版，遮罩外逐位相同，并记录未遮罩差异像素数。
+- WC12 性能：默认绘制调用增量 ≤9、三角形增量 ≤10,000；按 ROADMAP §4.6，默认调用增幅不得超过 10%。
+- 通用检查：`measure_samples`、`layout_check --png`、`views`、`section_check`、`terrain_check`、`ocean_check`、`bend_check`、`seam_check`、`cover_check`、`day_check`、`night_check`、`transition_check` C2/C3、`landmark_check LM08/LM09`、`world_check`。
+- 视觉审查：按 AGENT_PROTOCOLS §4 检查物件接地、面闪烁/裂缝/黑面、标线连续、弯曲接缝和控制台；同时核对平面夜景出口亮度差 ≤15%。
+- 基线生成中：使用未修改的 `index.html` 在 `pre-w8f-c` 运行 `node tools/joint_shots.mjs`；完成后才重建当前版。
+- 主要风险：节点过弯规格阈值无法同时满足；G3 若属于冻结城镇几何；G1–G5 使 WC12 像素变化、G6 使遮罩外变化；性能超预算且无法压回。遇到即停止并报告。
+- 约束冲突裁决：按 W8_SPEC §12.4 的既定几何与 D8/D9 决策；平面出口允许且只允许 WC12-M 遮罩范围内变化，无需新的用户确认。
+- 真机限制：本机截图和性能数据来自 Chromium/SwiftShader；真机质量仍需用户设备验证，不以软件渲染数据替代。
+- G1–G5（第一提交，2026-10-09）：桥–桥与 LM09 转弯、入口坪、出口地形裁切、路肩渐变和桥台虚线连续已完成；`index.html` 由 `python3 build.py` 生成。`regress --baseline-ref pre-w8f-c` 与 `--weather lock:rain` 均 8/8 视角逐像素相同（最大通道差 0、差异像素 0），默认 2374 次绘制调用 / 239958 个三角形，与基线一致。
+- G1–G5 检查：`road_check`（11 项）、`terrain_check`（7 项）、`world_check`（11 项）、`section_check`（8 项）、`ocean_check`（4 项）、`cover_check`（9 项）、`bend_check`、`seam_check`、`day_check`（D1–D4）、`night_check`（C1–C4）、`transition_check` C2/C3、`measure_samples`、`layout_check --png` 与 `views.mjs` 均通过；`landmark_check LM09` 通过。`landmark_check LM08` 仅 W7-C5 动态像素项失败（t=2.0/3.7 s 差异 0），为 W8e-c 起已记录的问题，本轮未改 LM08。
+- 当前提交只含 G1–G5；G6 出口头仍待第二提交。`joint_shots` 的基线 42 处 × 3 张已在 `docs/world/w8f-c/pre-w8f-c/` 生成；当前版完整复拍及逐张前后对照在 G6 完成后进行。

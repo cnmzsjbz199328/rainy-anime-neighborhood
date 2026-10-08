@@ -221,7 +221,7 @@ function chain(W, ids, opts = {}) {
 //     textured material), the asphalt vertex colour there is the town's mean colour (W5-C9), fading to the class colour over `fade` metres.
 const ASPH = { asphalt: 1, asphaltL: 1 }, APB = 8;          // APB: metres before an approach over which the cross-section becomes RD01B (paved width 7 -> 10 m at <= 0.6 m/m, W5-C9)
 function route(W, segs, o = {}) {
-  const NET = W.roadNetwork, BL = o.blend || BLEND, AB = o.abut || {}, ENDS = ['start', 'end'].filter(k => AB[k]);
+  const NET = W.roadNetwork, BL = o.blend || BLEND, AB = o.abut || {}, ENDS = ['start', 'end'].filter(k => AB[k]), TURNS = o.turns || [];
   const edges = segs.map(sg => NET.edges.find(e => e.id === sg.id));
   let classes = edges.map(e => e.class);
   const S = [], edgeOf = []; let off = 0; let joints = [];
@@ -236,8 +236,41 @@ function route(W, segs, o = {}) {
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const sNodeOf = which => (which === 'end' ? off : 0);
-  // W8f-a: the fillet replaces the centre line within T of an abutment node
-  for (const which of ENDS) { const J = AB[which], sN = sNodeOf(which); for (let i = 0; i < n; i++) { const d = Math.abs(sN - S[i].s); if (d > J.T + 1e-9) continue; const p = J.at(-d); S[i] = { ...S[i], lon: p.lon, lat: p.lat, h: W.height(p.lon, p.lat) }; } }
+  // W8f-a abutment curves and W8f-c node turns can overlap on the short T01-14 approach to J-W1.
+  // Blend their centre-line offsets smoothly through the shared station range so neither curve is
+  // overwritten at the overlap edge (which would create a visible heading kink at the bridge).
+  const P2 = 2 * Math.PI * R, flatX = p => R * p.lon * D, flatZ = p => -R * Math.asinh(Math.tan(p.lat * D));
+  const transitions = [];
+  for (const which of ENDS) {
+    const J = AB[which], sN = sNodeOf(which), T = J.Ta ?? J.T;
+    transitions.push({ lo: which === 'start' ? 0 : sN - T, hi: which === 'start' ? T : sN,
+      at: s => J.at(-Math.abs(sN - s)) });
+  }
+  for (const q of TURNS) transitions.push({ lo: q.station - q.fillet.Ta, hi: q.station + q.fillet.Tb, at: s => q.fillet.at(s - q.station) });
+  transitions.sort((a, b) => a.lo - b.lo);
+  const smoother = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / Math.max(1e-9, b - a))); return t * t * (3 - 2 * t); };
+  for (let i = 0; i < n; i++) {
+    const s = S[i].s, active = transitions.filter(q => s >= q.lo - 1e-9 && s <= q.hi + 1e-9);
+    if (!active.length) continue;
+    let p;
+    const pair = transitions.length === 2 && Math.min(transitions[0].hi, transitions[1].hi) > Math.max(transitions[0].lo, transitions[1].lo)
+      ? (() => { const a = transitions[0], b = transitions[1], unionLo = Math.min(a.lo, b.lo), unionHi = Math.max(a.hi, b.hi), margin = 0.5, lo = Math.max(unionLo, Math.max(a.lo, b.lo) - margin), hi = Math.min(unionHi, Math.min(a.hi, b.hi) + margin); return s >= lo && s <= hi ? { a, b, lo, hi } : null; })()
+      : null;
+    if (pair) {
+      const a = pair.a.at(s), b = pair.b.at(s), refX = flatX(S[i]), ax0 = flatX(a), bx0 = flatX(b), ax = ax0 + P2 * Math.round((refX - ax0) / P2), bx = bx0 + P2 * Math.round((refX - bx0) / P2), az = flatZ(a), bz = flatZ(b), w = smoother(pair.lo, pair.hi, s), x = ax + (bx - ax) * w, z = az + (bz - az) * w;
+      p = { lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D };
+    }
+    else if (active.length === 1) p = active[0].at(s);
+    else {
+      let a = active[0].at(s), ax = flatX(a), az = flatZ(a), refX = flatX(S[i]); ax += P2 * Math.round((refX - ax) / P2);
+      for (let k = 1; k < active.length; k++) {
+        const prev = active[k - 1], next = active[k], b = next.at(s), bx0 = flatX(b), bz = flatZ(b), bx = bx0 + P2 * Math.round((refX - bx0) / P2), lo = Math.max(prev.lo, next.lo), hi = Math.min(prev.hi, next.hi), w = hi > lo ? smoother(lo, hi, s) : (s >= hi ? 1 : 0);
+        ax += (bx - ax) * w; az += (bz - az) * w;
+      }
+      const lat = Math.atan(Math.sinh(-az / R)) / D, lon = ax / (R * D); p = { lon, lat };
+    }
+    S[i] = { ...S[i], lon: p.lon, lat: p.lat, h: W.height(p.lon, p.lat) };
+  }
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
   const brg = S.map((p, i) => W.bearing(S[Math.max(0, i - 1)], S[Math.min(n - 1, i + 1)]));
   for (const which of ENDS) { const i = which === 'end' ? n - 1 : 0, b = (AB[which].brg + (which === 'end' ? 0 : 180)) % 360; brg[i] = b; T[i] = [Math.sin(b * D), -Math.cos(b * D)]; }
@@ -270,8 +303,13 @@ function route(W, segs, o = {}) {
   const cf = bed.map((b, i) => 1 + aW[i] * (R / (R + b - BASE) - 1));        // the deck's lateral factor (bridge.js) toward the node
   // W8f-a: a route with an abutment has every column the deck's top has (bridge.js JOINT): the last cross-section shares all its vertices with the deck's first one
   const grid = [...new Set([...classes, ...(ENDS.length ? ['RD01B'] : [])].flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], ENDS.length ? [-4.8, -4.7, -3.6, 3.6, 4.7, 4.8] : []))].sort((a, b) => a - b), m = grid.length;
-  const evalP = (prof, oo, tc) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there (the verge blends into it)
-    const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => ({ l: q[1], c: colOf(q[2]), m: q[3] || 0, a: ASPH[q[2]] || 0 });
+  const evalP = (prof, oo, tc, cls) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there
+    const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => {
+      let c = colOf(q[2]);
+      // W8f-c G4: RD05 keeps its darker inner grass, then blends to the exact terrain colour at the outside edge.
+      if (tc && cls === 'RD05' && Math.abs(oo) > 1.9) { const u = smooth(1.9, 2.8, Math.abs(oo)); c = c.map((v, i) => v + (tc[i] - v) * u); }
+      return { l: q[1], c, m: q[3] || 0, a: ASPH[q[2]] || 0 };
+    };
     if (oo <= P[0][0]) return at(P[0]); if (oo >= P[P.length - 1][0]) return at(P[P.length - 1]);
     let j = 0; while (P[j + 1][0] < oo) j++;
     const t = (oo - P[j][0]) / (P[j + 1][0] - P[j][0]), a = at(P[j]), b = at(P[j + 1]);
@@ -285,12 +323,27 @@ function route(W, segs, o = {}) {
   const surface = (i, oo) => { let j = 0; while (j + 2 < m && grid[j + 1] < oo) j++; const t = Math.max(0, Math.min(1, (oo - grid[j]) / (grid[j + 1] - grid[j]))); return colAlt[i * m + j] + (colAlt[i * m + j + 1] - colAlt[i * m + j]) * t; };
   const wts = i => { const u = joints.map(jt => smooth(jt - BL, jt + BL, S[i].s)); return classes.map((_, k) => (k === 0 ? 1 : u[k - 1]) - (k < joints.length ? u[k] : 0)); };
   // one column of sample i: profile mix of the classes, the approach blend into RD01B, the junction mouths
+  const shoulderScale = (oo, sP) => {
+    if (!classes.includes('RD05') || Math.abs(oo) <= 1.5) return 1;
+    let width = 1;
+    if (o.taperStart) width = Math.min(width, smooth(0, 3, Math.max(0, sP - S[0].s)));
+    if (o.taperEnd) width = Math.min(width, smooth(0, 3, Math.max(0, S[n - 1].s - sP)));
+    return width;
+  };
+  const roadOffset = (oo, sP) => Math.abs(oo) <= 1.5 ? oo : Math.sign(oo) * (1.5 + (Math.abs(oo) - 1.5) * shoulderScale(oo, sP));
   const column = (i, j, w) => {
-    const oo = grid[j], a = aW[i], [lo, la] = lateral(i, oo * cf[i]), g = W.height(lo, la), tc = o.terrainColor && Math.abs(oo) > 1.8 ? o.terrainColor(lo, la) : null, sP = S[i].s;
-    let lift = 0, mix = 0, asp = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], oo, tc); lift += wk * e.l; mix += wk * e.m; asp += wk * e.a; c = c.map((v, ci) => v + wk * e.c[ci]); } });
+    const oo = grid[j], sP = S[i].s, oPhys = roadOffset(oo, sP), a = aW[i], [lo, la] = lateral(i, oPhys * cf[i]), g = W.height(lo, la), tc = o.terrainColor && Math.abs(oo) > 1.8 ? o.terrainColor(lo, la) : null;
+    let lift = 0, mix = 0, asp = 0, c = [0, 0, 0]; w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], oo, tc, classes[kk]); lift += wk * e.l; mix += wk * e.m; asp += wk * e.a; c = c.map((v, ci) => v + wk * e.c[ci]); } });
     if (a > 0) { const e = evalP(PROFILES.RD01B, oo, tc); lift += (e.l - lift) * a; mix += (e.m - mix) * a; asp += (e.a - asp) * a; c = c.map((v, ci) => v + (e.c[ci] - v) * a); }
     if (Math.abs(oo) > 4.5) for (const q of MO) if (sP >= q.s0 && sP <= q.s1 && Math.sign(oo) === q.side && Math.abs(oo) <= q.to + 1e-9) { lift = 0; mix = 1; }
-    return { oo, lo, la, g, lift, mix, asp, c, base: g + (bed[i] - g) * mix };
+    const taper = shoulderScale(oo, sP);
+    if (taper < 1 - 1e-9) {
+      const edgeO = Math.sign(oo) * 1.5; let edgeLift = 0, edgeMix = 0;
+      w.forEach((wk, kk) => { if (wk > 1e-4) { const e = evalP(PROFILES[classes[kk]], edgeO, null, classes[kk]); edgeLift += wk * e.l; edgeMix += wk * e.m; } });
+      if (a > 0) { const e = evalP(PROFILES.RD01B, edgeO, null); edgeLift += (e.l - edgeLift) * a; edgeMix += (e.m - edgeMix) * a; }
+      lift = edgeLift + (lift - edgeLift) * taper; mix = edgeMix + (mix - edgeMix) * taper;
+    }
+    return { oo, geomO: oPhys, lo, la, g, lift, mix, asp, c, base: g + (bed[i] - g) * mix };
   };
   const csOf = i => (o.townStart ? 0.44 + 0.56 * smooth(0, 6, S[i].s) : 1);
   // W8f-a ramp of a branch: the change of each column at the end row (paved columns to the target, the verge columns follow the nearer paved edge and taper to nothing)
@@ -311,20 +364,27 @@ function route(W, segs, o = {}) {
     paved.push([pl, pr]);
     const rampK = RP ? 1 - smooth(0, rampLen, Math.abs(S[i].s - S[iR].s)) : 0;
     for (let j = 0; j < m; j++) {
-      const v = column(i, j, w), oo = v.oo, sP = S[i].s; let c = v.c, asp = v.asp;
-      const base = v.base + rampD[j] * rampK;
+      const v = column(i, j, w), oo = v.oo, sP = S[i].s; let c = v.c, asp = v.asp, dashOn = false;
+      let delta = rampD[j];
+      if (RP && classes.includes('RD05') && Math.abs(grid[j]) > 1.5 && (o.taperStart || o.taperEnd)) {
+        let e = j; for (let q = 0; q < m; q++) if (Math.sign(grid[q]) === Math.sign(grid[j]) && Math.abs(grid[q] - Math.sign(grid[j]) * 1.5) < Math.abs(grid[e] - Math.sign(grid[j]) * 1.5)) e = q;
+        const taper = shoulderScale(grid[j], S[i].s); delta = rampD[e] + (rampD[j] - rampD[e]) * taper;
+      }
+      const base = v.base + delta * rampK;
       const distEdge = Math.min(Math.abs(oo - pl), Math.abs(oo - pr)), inside = oo > pl && oo < pr;
       const hz = hash(sP * 2.1, oo * 9.3), hz2 = hash(sP * 0.7, oo * 3.1);
       // centre dashes (6 m period, 45 % paint, on the ring's chainage) and edge lines that fade with the wear (fresh on the approaches, like the deck's)
       if (w.some((wk, kk) => wk > 0.5 && /^RD01/.test(classes[kk])) || a > 0.5) {
-        if (Math.abs(oo) < 0.09) { const ph = ((chainAt(sP) / 6) % 1 + 1) % 1, on = ph < 0.45; if (!on) { c = lin(COL.asphalt); asp = 1; } }      // the gap between dashes is asphalt (the town head too)
+        if (Math.abs(oo) < 0.09) { const ph = ((chainAt(sP) / 6) % 1 + 1) % 1, on = ph < 0.45; dashOn = on; if (!on) { c = lin(COL.asphalt); asp = 1; } }      // the gap between dashes is asphalt (the town head too)
         if (Math.abs(Math.abs(oo) - 3.24) < 0.1) { const f = 1 - (0.55 * wear + 0.4 * hash(sP * 1.7, oo * 4.1)) * (1 - a); const as = lin(COL.asphalt); c = c.map((cv, ci) => as[ci] + (cv - as[ci]) * f); }
       }
       if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const gc = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((cv, ci) => cv + (gc[ci] - cv) * mixv); } }
       if (inside && wear > 0.1) { const crack = hash(sP * 3.3, oo * 5.7); if (crack > 1 - 0.18 * wear) { const gc = lin(COL.crack); c = c.map((cv, ci) => cv + (gc[ci] - cv) * 0.7); } c = c.map(cv => cv * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
       if (HD && hw > 0 && asp > 0) { const k = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * k); }
+      // W8f-c G5: the painted dashes blend linearly to bridge white within the final 14 m of each abutment approach.
+      if (dashOn && ENDS.length) { const blend = Math.max(...ENDS.map(which => Math.max(0, 1 - Math.abs(sNodeOf(which) - sP) / 14))); if (blend > 0) { const white = lin(COL.dash); c = c.map((cv, ci) => cv + (white[ci] - cv) * blend); } }
       pure.push(HD && hw >= 1 && v.asp >= 0.999 ? 1 : 0);
-      pos.push(F[i].x + (-T[i][1]) * oo * cf[i] * F[i].k, (base + v.lift * cs - BASE) / Math.cos(v.la * D), F[i].z + T[i][0] * oo * cf[i] * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + v.lift * cs);
+      pos.push(F[i].x + (-T[i][1]) * v.geomO * cf[i] * F[i].k, (base + v.lift * cs - BASE) / Math.cos(v.la * D), F[i].z + T[i][0] * v.geomO * cf[i] * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + v.lift * cs);
     }
     bedAlt.push(bed[i]);
   }
@@ -346,7 +406,7 @@ function route(W, segs, o = {}) {
     }
   }
   const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }) };
-  return { ids: segs.map(q => q.id), classes, joints, samples: S, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
+  return { ids: segs.map(q => q.id), classes, joints, samples: S, turns: TURNS, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
 }
 
 const ROADKIT = { build, sweep, chain, route, PROFILES, DECK, COL, lin, BLEND, TOWN_ASPHALT, TOWN_HEAD };
