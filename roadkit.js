@@ -42,6 +42,12 @@ PROFILES.RD01B = (() => { const right = [[0.075, 0.046, 'dash', 1], [0.1, 0.045,
 const TOWN_ASPHALT = [0.0509, 0.0646, 0.0783], TOWN_HEAD = { len: 6, fade: 8, color: TOWN_ASPHALT };   // the head of every exit: 6 m of town asphalt, 8 m fade
 // W8g-b: the alley exits N11-N13 keep the paving of 12.4 G6 (#8f8a7c on the town asphalt's grain, the same mean as above) over their paved width
 const TOWN_PAVING = [0.2283, 0.2049, 0.1510], TOWN_HEAD_PAVING = { len: 6, fade: 8, color: TOWN_PAVING, paved: true };
+// W8g-b: the markings of the 12.4 G6 heads, now on the exit road itself (one road in the town and the explore view): an exit head whose class paints no lines of its own
+// (all but RD01) has edge lines 0.14 m wide at +-(w / 2 - 0.13) of the G6 head width (4.5 m, the alleys' paving 3 m) and centre dashes 0.15 m wide (6 m period, 45 %,
+// from the town edge), in the line colour fading with the town asphalt (len + fade); markCols are the grid columns they need
+const headMarks = (HD, classes) => (HD && !/^RD01/.test(classes[0]) ? { e: (HD.paved ? 3 : 4.5) / 2 - 0.13 } : null);
+const markCols = M => (M ? [-0.15, -0.075, 0.075, 0.15, ...[M.e - 0.15, M.e - 0.07, M.e + 0.07].flatMap(v => [-v, v])].map(v => +v.toFixed(3)) : []);
+const markOn = (M, o, s) => !!M && (Math.abs(Math.abs(o) - M.e) <= 0.071 || (Math.abs(o) <= 0.076 && ((s / 6) % 1 + 1) % 1 < 0.45));
 // RD08: no pavement; a compacted snow track about 2 m wide (card), a slightly lighter edge, the snow of the terrain around it (the verge takes the terrain colour)
 PROFILES.RD08 = { paved: [-1.0, 1.0], pts: [[-3.4, 0, 'grass', 0], [-2.4, 0, 'grassD', 0], [-1.4, 0.0, 'snowEdge', 0], [-1.05, -0.04, 'snowTrack', 0], [-0.3, -0.06, 'snowTrack', 0], [0.3, -0.06, 'snowTrack', 0], [1.05, -0.04, 'snowTrack', 0], [1.4, 0.0, 'snowEdge', 0], [2.4, 0, 'grassD', 0], [3.4, 0, 'grass', 0]] };
 // W8g-b (W8_SPEC 13.2 B4): the footprint of each cross-section, lateral offsets of the outer edges: sh = the shoulder (gravel, dirt, kerb), full = the whole cross-section
@@ -174,7 +180,7 @@ function chain(W, ids, opts = {}) {
   if (opts.until !== undefined) while (S.length > 2 && S[S.length - 1].s > opts.until + 1e-9) { S.pop(); edgeOf.pop(); }
   const n = S.length, total = off, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
-  const grid = [...new Set(classes.flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0]))].sort((a, b) => a - b), m = grid.length;
+  const HM = headMarks(opts.townHead, classes), grid = [...new Set(classes.flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], markCols(HM)))].sort((a, b) => a - b), m = grid.length;
   const pos = [], col = [], idx = [], headIdx = [], paved = [], foot = [], wearOf = [], pure = [], HD = opts.townHead || null, headW = s => (!HD ? 0 : s <= HD.len ? 1 : 1 - smooth(HD.len, HD.len + HD.fade, s));
   const profile = i => {                 // class k = u(k-1) - u(k), where u(k) steps 0 -> 1 over 2 x BLEND metres around joint k
     const u = joints.map(jt => smooth(jt - BLEND, jt + BLEND, S[i].s)), w = classes.map((_, k) => (k === 0 ? 1 : u[k - 1]) - (k < joints.length ? u[k] : 0));
@@ -194,7 +200,9 @@ function chain(W, ids, opts = {}) {
       const hz = hash(S[i].s * 2.1, o * 9.3), hz2 = hash(S[i].s * 0.7, o * 3.1);
       if (distEdge < 0.9 && wear > 0.05) { const fray = (inside ? 0.0 : 0.35) + wear * 0.8, mixv = Math.max(0, Math.min(1, (hz - (1 - fray * (1 - distEdge / 0.9))) * 4)); if (mixv > 0) { const g = lin(hz2 < 0.5 ? COL.weed : COL.gravel); c = c.map((v, ci) => v + (g[ci] - v) * mixv); } }
       if (inside && wear > 0.1) { const crack = hash(S[i].s * 3.3, o * 5.7); if (crack > 1 - 0.18 * wear) { const g = lin(COL.crack); c = c.map((v, ci) => v + (g[ci] - v) * 0.7); } c = c.map(v => v * (1 - 0.1 * wear + 0.2 * wear * hz2)); }
-      const hw = headW(S[i].s); if (HD && hw > 0 && asp > 0) { const kk = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * kk); } pure.push(HD && hw >= 1 && asp >= 0.999 ? 1 : 0);
+      const hw = headW(S[i].s); if (HD && hw > 0 && asp > 0) { const kk = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * kk); }
+      const mk = hw > 0 && markOn(HM, o, S[i].s); if (mk) { const ln = lin(COL.line); c = c.map((cv, ci) => cv + (ln[ci] - cv) * hw); }
+      pure.push(!mk && HD && hw >= 1 && asp >= 0.999 ? 1 : 0);
       pos.push(F[i].x + (-T[i][1]) * o * k, (h + lift * (0.44 + 0.56 * smooth(0, 6, S[i].s)) - BASE) * k, F[i].z + T[i][0] * o * k); col.push(c[0], c[1], c[2]);
     }
   }
@@ -314,8 +322,8 @@ function route(W, segs, o = {}) {
   const cf = bed.map((b, i) => 1 + aW[i] * (R / (R + b - BASE) - 1));        // the deck's lateral factor (bridge.js) toward the node
   // W8f-a: a route with an abutment has every column the deck's top has (bridge.js JOINT): the last cross-section shares all its vertices with the deck's first one
   // (o.gridAbut, W8g-b: the columns of a route with an abutment, for an exit head cut before the abutment: the head's rows have the full route's columns)
-  const abG = ENDS.length || o.gridAbut;
-  const grid = [...new Set([...classes, ...(abG ? ['RD01B'] : [])].flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], abG ? [-4.8, -4.7, -3.6, 3.6, 4.7, 4.8] : []))].sort((a, b) => a - b), m = grid.length;
+  const abG = ENDS.length || o.gridAbut, HM = headMarks(o.townHead, classes);
+  const grid = [...new Set([...classes, ...(abG ? ['RD01B'] : [])].flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], abG ? [-4.8, -4.7, -3.6, 3.6, 4.7, 4.8] : [], markCols(HM)))].sort((a, b) => a - b), m = grid.length;
   const evalP = (prof, oo, tc, cls) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there
     const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => {
       let c = colOf(q[2]);
@@ -398,7 +406,8 @@ function route(W, segs, o = {}) {
       if (HD && hw > 0 && asp > 0) { const k = asp * hw; c = c.map((cv, ci) => cv + (HD.color[ci] - cv) * k); }
       // W8f-c G5: the painted dashes blend linearly to bridge white within the final 14 m of each abutment approach.
       if (dashOn && ENDS.length) { const blend = Math.max(...ENDS.map(which => Math.max(0, 1 - Math.abs(sNodeOf(which) - sP) / 14))); if (blend > 0) { const white = lin(COL.dash); c = c.map((cv, ci) => cv + (white[ci] - cv) * blend); } }
-      pure.push(HD && hw >= 1 && (HD.paved ? asp : v.asp) >= 0.999 ? 1 : 0);
+      const mk = hw > 0 && markOn(HM, oo, sP); if (mk) { const ln = lin(COL.line); c = c.map((cv, ci) => cv + (ln[ci] - cv) * hw); }      // the G6 head markings (above)
+      pure.push(!mk && HD && hw >= 1 && (HD.paved ? asp : v.asp) >= 0.999 ? 1 : 0);
       pos.push(F[i].x + (-T[i][1]) * v.geomO * cf[i] * F[i].k, (base + v.lift * cs - BASE) / Math.cos(v.la * D), F[i].z + T[i][0] * v.geomO * cf[i] * F[i].k); col.push(c[0], c[1], c[2]); colAlt.push(base + v.lift * cs);
     }
     bedAlt.push(bed[i]);
