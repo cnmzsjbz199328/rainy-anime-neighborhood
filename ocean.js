@@ -148,12 +148,15 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   };
 
   let DATA = null;
-  function build_() {
-    const t0 = Date.now(), K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
+  // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build_() {
+    SEC.ensure();
+    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
     const RD = global.ROADS_API && global.ROADS_API.ensure && (global.ROADS_API.ensure(), global.ROADS_API.data());
     const centre = []; if (RD) { for (const r of RD.routes) for (const p of r.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const b of RD.bridges) for (const p of b.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const s of RD.stairs) for (const p of s.samples) centre.push({ lon: p.lon, lat: p.lat }); }
     DATA = build(W, [...TERR.ringData, ...TERR.restData], H, { centre: centre.filter((_, i) => i % 2 === 0), clear: 8 }); S.data = DATA;
-    const root = new THREE.Group(); root.name = 'ocean'; scene.add(root); S.root = root;
+    yield;
+    const root = new THREE.Group(); root.name = 'ocean'; root.visible = false; scene.add(root); S.root = root;
     const d = DATA.water, g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(d.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(d.col, 4)); g.setAttribute('aShore', new THREE.BufferAttribute(d.shore, 1));
     const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
@@ -171,11 +174,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
       if (type !== 'weedShadow') { const hull = new THREE.InstancedMesh(geo, M.hullMat, list.length); hull.instanceMatrix = mesh.instanceMatrix; hull.count = list.length; hull.computeBoundingSphere(); hull.name = 'ocean:' + type + ':ink'; root.add(hull); objs.hulls.push(hull); }
     }
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the water is cut along the seam
-    S.stats = { ...DATA.stats, buildMs: Date.now() - t0, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
-    S.built = true; return root;
+    S.stats = { ...DATA.stats, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
+    root.visible = true; S.built = true; return root;
   }
+  const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
 
-  function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build_); } return S.root; }
+  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
@@ -196,7 +200,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const m of objs.inst) m.visible = near; for (const h of objs.hulls) h.visible = near && g > 0.01;
   }
 
-  const api = { ensure, tick, state: S, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
+  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
   global.OCEAN_API = api;
   return api;
 };

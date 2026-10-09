@@ -333,12 +333,14 @@ function abutWall(W, rt, ab, deckAlt) {
   return { name: 'abutment wall ' + ab.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true };
 }
 
-function plan(W, H, tc) {
+// W8g-a: plan() as a generator that yields between its larger parts (worldgen.js runs it in steps); plan() below runs it in one go
+function* planSteps(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept)
   const AB = abutments(WS, BR), CH = ringChain(WS), lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north'),
     bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) },
     JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)), head = RK.TOWN_HEAD;
+  yield;
   const optsOf = def => {
     const o = { ...def.opts, terrainColor: tc };
     if (def.exit) o.townHead = head;
@@ -350,15 +352,17 @@ function plan(W, H, tc) {
     return o;
   };
   const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
-  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; }
+  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
   // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
   for (const def of ROUTES.filter(branchOf)) {
     const jp = branchOf(def), trunk = byId[jp.trunk], o = optsOf(def);
     o.ramp = { end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } };
     const rt = RK.route(WS, def.segs, o); rt.def = def; byId[def.id] = rt;
+    yield;
   }
   const routes = ROUTES.map(def => byId[def.id]);
   for (const rt of routes) if (rt.def.furnish) furnish(WS, rt, rt.def.furnish);
+  yield;
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
     const o = { ...def, chain: CH[def.id], abut: {} };
@@ -366,6 +370,7 @@ function plan(W, H, tc) {
     for (const a of AB.filter(q => q.bridge === def.id)) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
     const b = BR.build(WS, def.ids, o); b.def = def; return b;
   });
+  yield;
   // the road's last cross-section takes the deck's first one vertex by vertex (|o| <= 5 m: the same offsets on both, mirrored where the two run against each other;
   // a deck laid out one circumference east of the road, T01-07+08+09 at J-W3, is moved back by it: bend.js shifts the road there by the same amount)
   // shifted(x, k): the float32 value v k circumferences away from x such that the shader's float32 sum v - k * PERIOD (bend.js, exact for its uniform) is x again, bit for bit
@@ -396,8 +401,9 @@ function plan(W, H, tc) {
   }
   return { routes, bridges, stairs, markers, lit, sea, WS, abutments: abuts, junctions };
 }
+function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
-const ROADS = { plan, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
+const ROADS = { plan, planSteps, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -409,16 +415,19 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const matrixOfAlt = it => { const f = flatOf(it.lon, it.lat); qE.set(it.lean[0], it.yaw, it.lean[1], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(f.x, (it.alt - BASE) * f.k, f.z), qQ, mS.set(f.k * it.s[0], f.k * it.s[1], f.k * it.s[2])); return mM.clone(); };
   let DATA = null;
 
-  function build() {
-    const t0 = Date.now();
-    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
-    const TB = global.TERRAIN.builder(W); DATA = plan(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
+  // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build() {
+    SEC.ensure();
+    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
+    const TB = global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
     // W8f-c G3: terrain yields only the final road pavement plus 0.3 m reveal, including the W4 T03 chain at N08.
     if (TERR.setExitRoutes) {
       const n08 = global.ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD });
+      yield;
       TERR.setExitRoutes([...DATA.routes.filter(rt => rt.def.exit), { ...n08, def: { exit: 'N08' } }]);
+      yield;
     }
-    const root = new THREE.Group(); root.name = 'roads'; scene.add(root); S.root = root;
+    const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -512,9 +521,10 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const b of DATA.bridges) for (const rec of (b.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea, dots); S.dots = dots.length;
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the T01-13 deck faces, its ink and the band are cut where the seam crosses the bridge
-    S.stats.buildMs = Date.now() - t0; S.built = true;
+    root.visible = true; S.built = true;
     return root;
   }
+  const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
 
   function buildTunnel(rt, root, stripMesh, mat) {
     const tn = rt.tunnel, idx = tn.idx, F = rt.flatOf, T = rt.tangent, n = idx.length;
@@ -550,7 +560,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
 
   // ---------------------------------------------------------------- visibility, per-frame update, hooks
-  function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build); } return S.root; }
+  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
@@ -583,7 +593,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
 
   const api = {
-    ensure, tick, state: S,
+    ensure, tick, state: S, visibility, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
     setLightBand(v) { ensure(); S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },

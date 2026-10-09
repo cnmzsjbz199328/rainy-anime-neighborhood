@@ -2618,3 +2618,17 @@
   - 完整清单见 [W8_SPEC](docs/world/W8_SPEC.md) 第 13 节开头。
 - **计划**：ROADMAP 新增 W8g-a…d 四行，规格写在 W8_SPEC 第 13 节；WORLD_PLAN 增加 D14；WORLD_AGENT_START 增加 W8g 一节；待办池新增 4 条；BORROWING_NOTES 追加 middle-earth、doodleshooter、Sketchbook 三个来源。
 - **本轮范围**：只改文档，未改代码；临时测量脚本放在会话临时目录，未入库。W8g-a 会把测量方法做成 `tools/perf_baseline.mjs`。
+
+### W8g-a 阶段细化（2026-10-09）
+
+- 规格：[W8_SPEC](docs/world/W8_SPEC.md) 第 13.0、13.1、13.5 节；决策 D14（WORLD_PLAN 第 3 节）；无设计卡。分支 `world/W8g-a`，基线标签 `pre-w8g-a` = `42354a5`（W8g 规划文档提交；代码与 `470bd1d` 相同）。
+- 范围：A1 `tools/perf_baseline.mjs`；A2 `world.js` 高度函数提速（逐位相同）；A3 `ringFlat`/`ring` 只算一次、采样器按块懒构建；A4 新模块 `worldgen.js` 统一调度后台预生成。
+- 不做：W8g-b 的道路头、`ringFlat` 去除、`road_check` 口径；W8g-c/d；不改裁切结果，也不改平面/球形各用哪张网格；不改任何像素。
+- 退出标准：T1 A2 逐位相同（新工具 `tools/height_check.mjs`：全球格点及梯度探针、9 个出口前 15 m、20 万随机点，另比地形网格数据）；T2 延后模块 CPU 总耗时 ≤ 2.0 s；T3 预生成期间最长任务 ≤ 150 ms（上限 300）；T4 预生成后冷出城 9 个出口最长任务 ≤ 100 ms；T5 WC12 两种天气 8/8 逐位相同、默认 2374 / 240618 不变，`joint_shots` 基线与当前各 126 张逐位 0 差异。
+- 检查：`world_check`、`terrain_check`、`road_check`、`cover_check`、`section_check`、`ocean_check`、`seam_check`、`bend_check`、`day_check`、`night_check`、`transition_check` C2/C3、`views`、`measure_samples`、`layout_check --png`。
+- 预算：默认视角绘制调用不变（ROADMAP 第 4 节第 6 条）；`index.html` 增量远小于 0.6 MB（只有代码，不嵌预计算数据，除非 T2 达不到）。
+- 停止条件：A2 不能逐位相同；WC12 或 `joint_shots` 出现差异且原因是生成结果变了；T2 压不回；需要改冻结数据。
+- 裁决 1（分步与随机流）：各模块的构建改成生成器，由 `TERRAIN.job` 逐步推进；一个构建只用一条私有随机流，跨步继续，与原来一次 `withPrivateRandom` 抽到的数相同。步骤顺序 = 原按需构建的创建顺序（地形 rest → 采样器 → section → 全景墨线 → roads → ocean → landcover → 地标），所以场景图顺序、对象与材质编号的相对顺序都不变。根对象在构建中隐藏，最后一步恢复为原来的可见，再立即套用模块自己的可见性规则。
+- 裁决 2（采样器的“块”）：rest 未建成前，`sampler()` 按 15° 地形块懒构建，只建查询点周围 5 × 3 块，每个 1° 格子的三角形列表与全球索引同序；rest 建成后直接返回全球索引（同一组数，供全球范围的构建使用）。roads、ocean、landcover 原来通过 `sampler()` 顺带建 rest，现在在同一位置显式调用 `buildRest()`，保持创建顺序。
+- 裁决 3（GPU 部分）：本仓库的 three（r158 系）`renderer.compile(root, camera, scene)` 遍历根下全部对象（含隐藏的），灯光取自场景中可见的灯，所以对每个根调用 `compileAsync` 预编译出的程序与之后渲染用的程序相同。GPU 缓冲上传只能靠绘制，本行不做，只测量。
+- 裁决 4（不预生成的部分）：城镇球面细分副本（`BEND.tessellate`，第一次进球形时建）不预生成：它在城镇自己的 `Math.random` 流里生成 uuid，提前建会改变城镇雨滴的随机序列。全景墨线（只在球形时显示）作为单独的 job 预生成，用它自己的私有随机流，与原来单独一次 `withPrivateRandom` 相同。

@@ -33,11 +33,12 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     return mM.clone();
   };
 
-  function build() {
-    const t0 = Date.now();
+  // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
     H = global.TERRAIN.sampler(W, { lonMin: -16, lonMax: 40, latMin: -72, latMax: -27 }); WS = Object.assign(Object.create(W), { height: H });
-    const root = new THREE.Group(); root.name = 'section'; scene.add(root); S.root = root;
+    const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
+    yield;
     const inkColor = 0x273647;
     // ---- materials
     const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
@@ -83,6 +84,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       if (gname) { const g = new THREE.InstancedMesh(K.geometries[gname], glowMat, list.length); g.instanceMatrix = mesh.instanceMatrix; g.computeBoundingSphere(); g.name = 'sec:' + name + ':glow'; root.add(g); objs.glows.push(g); }
       return { mesh, hull };
     };
+    yield;
     S.counts = {};
     for (const [t, list] of Object.entries(all)) {
       S.counts[t] = list.length;
@@ -111,6 +113,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
       stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }
 
+    yield;
     // ---- paddies and fallow fields: Voronoi plots on a fine grid, ridges 0.36 m wide and 0.2 m high
     { const P = PLAN.plots, nu = Math.round((P.u1 - P.u0) / P.step), nv = Math.round((P.v1 - P.v0) / P.step);
       const pos = [], col = [], idx = [], wpos = [], wcol = [], widx = [], vinfo = [];
@@ -143,6 +146,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const wm = new THREE.Mesh(wg, WATERK.paddy); wm.name = 'sec:paddy-water'; wm.matrixAutoUpdate = false; wm.renderOrder = 2; root.add(wm); objs.water.push(wm); S.stats.paddyWaterTriangles = widx.length / 3;
     }
 
+    yield;
     // ---- sea water: grid over the gulf, fading to transparent at the shoreline; the foam line breathes along it
     { const u0 = -16, u1 = 42, v0 = 36, v1 = 63.5, st = 0.5, nu = Math.round((u1 - u0) / st), nv = Math.round((v1 - v0) / st);
       const pos = [], col = [], shore = [], idx = [], hh = [];
@@ -198,10 +202,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const coast = []; for (let u = -16; u <= 42; u += 0.5) { let lo = 34, hi = 50; const f = v => { const [lon, lat] = PLAN.toLL(u, v); return W.coastDistance(lon, lat); }; if (f(lo) <= 0 || f(hi) > 0) continue; for (let n = 0; n < 24; n++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; } const [lon, lat] = PLAN.toLL(u, (lo + hi) / 2); coast.push({ lon, lat, alt: 0.03 }); }
       const csegs = []; poly(coast, 0, csegs); addLines('coast', csegs);
     }
-    S.stats.buildMs = Date.now() - t0;
+    root.visible = true;
     S.built = true;
     return root;
   }
+  const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
 
   // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
   function buildGlobalInk() {
@@ -231,13 +236,15 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
 
   // ---------------------------------------------------------------- visibility, hooks, per-frame update
   const lerp3 = (v, a, b) => a + (b - a) * v;
-  function ensure() { if (!S.built) global.TERRAIN.withPrivateRandom(build); return S.root; }
+  function ensure() { if (!S.built) job.finish(); return S.root; }
+  // the panorama outlines as their own job: their own private stream, as their own withPrivateRandom call had (W8g-a builds them ahead of time)
+  const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); });
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || S.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
     for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
-    if (show && BEND.get() >= 0.5 && S.built) global.TERRAIN.withPrivateRandom(buildGlobalInk);
+    if (show && BEND.get() >= 0.5 && S.built) inkJob.finish();
     if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }
   BEND.onChange(visibility);
@@ -300,7 +307,8 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   }
 
   const api = {
-    ensure, tick, state: S,
+    ensure, tick, state: S, visibility,
+    jobs: { build: job, ink: inkJob },                     // W8g-a: worldgen.js steps them ahead of time
     setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; visibility(); },
     set(v) {
       if (v.rain !== undefined) { S.settings.rain = !!v.rain; if (ctx.rainObj) ctx.rainObj.visible = S.settings.rain; }

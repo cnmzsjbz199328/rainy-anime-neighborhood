@@ -1,0 +1,572 @@
+{
+ "tool": "tools/perf_baseline.mjs",
+ "label": "pre-w8g-a",
+ "ref": "pre-w8g-a",
+ "commit": "42354a54ad2dd0340a43f11d856e54e1908b245c",
+ "dirty": false,
+ "date": "2026-10-09T05:49:31.324Z",
+ "renderer": "metal",
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist"
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "windowMs": 5000,
+ "dragFrames": 60,
+ "noGenWaitMs": 6000,
+ "loads": [
+  {
+   "sceneMs": 9582,
+   "firstFrameMs": 10363
+  },
+  {
+   "sceneMs": 9220,
+   "firstFrameMs": 10110
+  },
+  {
+   "sceneMs": 2026,
+   "firstFrameMs": 2190
+  },
+  {
+   "sceneMs": 2105,
+   "firstFrameMs": 2282
+  },
+  {
+   "sceneMs": 2125,
+   "firstFrameMs": 2299
+  },
+  {
+   "sceneMs": 2082,
+   "firstFrameMs": 2263
+  },
+  {
+   "sceneMs": 2088,
+   "firstFrameMs": 2267
+  },
+  {
+   "sceneMs": 2132,
+   "firstFrameMs": 2312
+  },
+  {
+   "sceneMs": 2126,
+   "firstFrameMs": 2302
+  },
+  {
+   "sceneMs": 2129,
+   "firstFrameMs": 2319
+  },
+  {
+   "sceneMs": 2929,
+   "firstFrameMs": 3167
+  },
+  {
+   "sceneMs": 2522,
+   "firstFrameMs": 2879
+  },
+  {
+   "sceneMs": 3290,
+   "firstFrameMs": 3553
+  },
+  {
+   "sceneMs": 3356,
+   "firstFrameMs": 3617
+  },
+  {
+   "sceneMs": 3363,
+   "firstFrameMs": 3640
+  },
+  {
+   "sceneMs": 3490,
+   "firstFrameMs": 3907
+  },
+  {
+   "sceneMs": 3437,
+   "firstFrameMs": 3719
+  },
+  {
+   "sceneMs": 3496,
+   "firstFrameMs": 3816
+  },
+  {
+   "sceneMs": 3547,
+   "firstFrameMs": 3842
+  },
+  {
+   "sceneMs": 3707,
+   "firstFrameMs": 3979
+  },
+  {
+   "sceneMs": 9190,
+   "firstFrameMs": 9888
+  }
+ ],
+ "pregen": {
+  "present": false,
+  "waitedMs": 6022,
+  "worldgen": null,
+  "startDelayMs": null,
+  "longTasks": [
+   [
+    13574,
+    63
+   ],
+   [
+    13638,
+    53
+   ],
+   [
+    13693,
+    51
+   ],
+   [
+    13744,
+    51
+   ],
+   [
+    13796,
+    65
+   ],
+   [
+    13861,
+    53
+   ],
+   [
+    15526,
+    52
+   ]
+  ],
+  "longestTaskMs": 65,
+  "moduleMs": {
+   "rest": null,
+   "section": null,
+   "roads": null,
+   "ocean": null,
+   "cover": null,
+   "landmarks": null
+  }
+ },
+ "exits": {
+  "N01": {
+   "immediate": {
+    "longestTaskMs": 17238,
+    "maxFrameGapMs": 17238,
+    "frames": 77,
+    "longTasks": [
+     [
+      265,
+      82
+     ],
+     [
+      623,
+      53
+     ],
+     [
+      1206,
+      17238
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6013,
+    "longestTaskMs": 5458,
+    "maxFrameGapMs": 5467,
+    "frames": 77,
+    "longTasks": [
+     [
+      587,
+      5458
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N03": {
+   "immediate": {
+    "longestTaskMs": 5535,
+    "maxFrameGapMs": 5540,
+    "frames": 85,
+    "longTasks": [
+     [
+      651,
+      5535
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6015,
+    "longestTaskMs": 5376,
+    "maxFrameGapMs": 5381,
+    "frames": 85,
+    "longTasks": [
+     [
+      648,
+      5376
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 20,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N04": {
+   "immediate": {
+    "longestTaskMs": 5587,
+    "maxFrameGapMs": 5591,
+    "frames": 91,
+    "longTasks": [
+     [
+      701,
+      5587
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6007,
+    "longestTaskMs": 5649,
+    "maxFrameGapMs": 5654,
+    "frames": 91,
+    "longTasks": [
+     [
+      721,
+      5649
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 22,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N08": {
+   "immediate": {
+    "longestTaskMs": 5609,
+    "maxFrameGapMs": 5618,
+    "frames": 65,
+    "longTasks": [
+     [
+      488,
+      5609
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6008,
+    "longestTaskMs": 6974,
+    "maxFrameGapMs": 6983,
+    "frames": 65,
+    "longTasks": [
+     [
+      487,
+      6974
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 21,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N09": {
+   "immediate": {
+    "longestTaskMs": 7682,
+    "maxFrameGapMs": 7686,
+    "frames": 77,
+    "longTasks": [
+     [
+      603,
+      7682
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6000,
+    "longestTaskMs": 7554,
+    "maxFrameGapMs": 7559,
+    "frames": 77,
+    "longTasks": [
+     [
+      669,
+      7554
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 21,
+    "frames": 602,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N10": {
+   "immediate": {
+    "longestTaskMs": 8350,
+    "maxFrameGapMs": 8349,
+    "frames": 84,
+    "longTasks": [
+     [
+      595,
+      62
+     ],
+     [
+      657,
+      56
+     ],
+     [
+      714,
+      75
+     ],
+     [
+      790,
+      58
+     ],
+     [
+      849,
+      90
+     ],
+     [
+      940,
+      67
+     ],
+     [
+      1007,
+      65
+     ],
+     [
+      1121,
+      50
+     ],
+     [
+      1216,
+      57
+     ],
+     [
+      1274,
+      69
+     ],
+     [
+      1343,
+      69
+     ],
+     [
+      1412,
+      62
+     ],
+     [
+      1475,
+      52
+     ],
+     [
+      1528,
+      60
+     ],
+     [
+      1588,
+      55
+     ],
+     [
+      1917,
+      8350
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6014,
+    "longestTaskMs": 8227,
+    "maxFrameGapMs": 8226,
+    "frames": 83,
+    "longTasks": [
+     [
+      1048,
+      8227
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 29,
+    "frames": 558,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N11": {
+   "immediate": {
+    "longestTaskMs": 8287,
+    "maxFrameGapMs": 8294,
+    "frames": 77,
+    "longTasks": [
+     [
+      587,
+      8287
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6012,
+    "longestTaskMs": 8435,
+    "maxFrameGapMs": 8442,
+    "frames": 77,
+    "longTasks": [
+     [
+      622,
+      8435
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 23,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N12": {
+   "immediate": {
+    "longestTaskMs": 8839,
+    "maxFrameGapMs": 8840,
+    "frames": 84,
+    "longTasks": [
+     [
+      1000,
+      8839
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6012,
+    "longestTaskMs": 8689,
+    "maxFrameGapMs": 8689,
+    "frames": 83,
+    "longTasks": [
+     [
+      871,
+      8689
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 22,
+    "frames": 590,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N13": {
+   "immediate": {
+    "longestTaskMs": 9004,
+    "maxFrameGapMs": 9004,
+    "frames": 84,
+    "longTasks": [
+     [
+      1211,
+      9004
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6016,
+    "longestTaskMs": 8980,
+    "maxFrameGapMs": 8979,
+    "frames": 83,
+    "longTasks": [
+     [
+      1266,
+      8980
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 37,
+    "frames": 527,
+    "longTasks": [],
+    "gen": null
+   }
+  }
+ },
+ "sphere": {
+  "immediate": {
+   "longestTaskMs": 10002,
+   "maxFrameGapMs": 10005,
+   "frames": 5,
+   "longTasks": [
+    [
+     2,
+     10002
+    ]
+   ],
+   "gen": null
+  },
+  "afterPregen": {
+   "longestTaskMs": 26563,
+   "maxFrameGapMs": 26564,
+   "frames": 5,
+   "longTasks": [
+    [
+     1,
+     26563
+    ]
+   ],
+   "gen": null
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "parallelShaderCompile": true,
+ "chromium": "153.0.8010.12",
+ "summary": {
+  "sceneMsMedian": 3290,
+  "firstFrameMsMedian": 3553,
+  "pregenCpuMs": null,
+  "pregenLongestTaskMs": null,
+  "immediateExitLongestTaskMs": 17238,
+  "afterPregenExitLongestTaskMs": 8980,
+  "hotExitLongestTaskMs": 0,
+  "immediateExitMaxFrameGapMs": 17238,
+  "afterPregenExitMaxFrameGapMs": 8979,
+  "hotExitMaxFrameGapMs": 37,
+  "sphereImmediateLongestTaskMs": 10002,
+  "sphereAfterPregenLongestTaskMs": 26563,
+  "pageErrors": 0
+ },
+ "errors": []
+}

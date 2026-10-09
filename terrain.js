@@ -125,12 +125,20 @@ function builder(W) {
     return { x: flatX(lon), y: yt / s, z: flatZ(lat), nx, ny, nz, c, lon, lat, h };
   }
 
-  // Build the flat mesh. opts: { ring: bool, rest: bool, window: {lonMin, lonMax, latMin, latMax} }
+  // W8g-a: vertex() is a pure function of the lattice point, so one builder keeps every vertex it has made and later buildFlat calls (the ring twice, the
+  // sampler's chunks, the rest) reuse it instead of evaluating the height function again
+  let RINGS = null; const vcache = new Map();
+  const latticeRings = () => RINGS || (RINGS = lats.map(l => ({ lat: l, lons: ringLons(l) })));
+  const latticeVertex = (rings, r, k) => { const key = r * 100000 + k; let v = vcache.get(key); if (v === undefined) { v = vertex(rings[r].lons[k], rings[r].lat); vcache.set(key, v); } return v; };
+  const chunkKeyOf = (lon, lat) => Math.min(11, Math.floor((lat + 90) / CHUNK_DEG)) * 24 + Math.min(23, Math.floor((lon + 180) / CHUNK_DEG));
+
+  // Build the flat mesh. opts: { ring: bool, rest: bool, window: {lonMin, lonMax, latMin, latMax}, chunks: Set of chunk keys (cy * 24 + cx) to keep }
+  // With `chunks`, only the triangles of those chunks are made; each chunk comes out exactly as in the build without it (same triangles in the same order).
   function buildFlat(opts) {
     const win = opts.window || { lonMin: -181, lonMax: 181, latMin: -90, latMax: 90 };
-    const rings = lats.map(l => ({ lat: l, lons: ringLons(l) }));
+    const rings = latticeRings();
     const vmap = new Map(), V = [];
-    const vid = (r, k) => { const key = r * 100000 + k; let i = vmap.get(key); if (i === undefined) { i = V.length; V.push(vertex(rings[r].lons[k], rings[r].lat)); vmap.set(key, i); } return i; };
+    const vid = (r, k) => { const key = r * 100000 + k; let i = vmap.get(key); if (i === undefined) { i = V.length; V.push(latticeVertex(rings, r, k)); vmap.set(key, i); } return i; };
     const clippedV = new Map(), clippedVid = (p, triVerts) => {
       const x = Math.round(p[0] * 1e5) / 1e5, z = Math.round(p[1] * 1e5) / 1e5, key = `${Math.round(x * 1e5)},${Math.round(z * 1e5)}`;
       let i = clippedV.get(key); if (i === undefined) {
@@ -148,6 +156,7 @@ function builder(W) {
       if (inPatch(A[0], A[1]) && inPatch(B[0], B[1]) && inPatch(C[0], C[1])) return;                    // the town patch is the town's
       const lon = (A[0] + B[0] + C[0]) / 3, lat = (A[1] + B[1] + C[1]) / 3;
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
+      if (opts.chunks && !opts.chunks.has(chunkKeyOf(lon, lat))) return;
       const isRing = W.townPatchDistance(lon, lat) < RING_M;
       if (isRing ? !opts.ring : !opts.rest) return;
       if (opts.exitPolygons?.length) {
@@ -189,7 +198,7 @@ function builder(W) {
     // chunks: 15 x 15 degrees by triangle centroid; ring and rest triangles of a chunk share one vertex buffer
     const chunks = new Map();
     for (const t of tris) {
-      const cx = Math.min(23, Math.floor((t.lon + 180) / CHUNK_DEG)), cy = Math.min(11, Math.floor((t.lat + 90) / CHUNK_DEG)), key = cy * 24 + cx;
+      const cx = Math.min(23, Math.floor((t.lon + 180) / CHUNK_DEG)), cy = Math.min(11, Math.floor((t.lat + 90) / CHUNK_DEG)), key = cy * 24 + cx;   // = chunkKeyOf
       let c = chunks.get(key); if (!c) chunks.set(key, c = { cx, cy, ring: [], rest: [] });
       (t.ring ? c.ring : c.rest).push(t);
     }
@@ -280,7 +289,16 @@ function builder(W) {
     return out;
   }
 
-  return { buildFlat, buildCap, buildStubs, exitPolygons, vertex, lats, ringLons, inPatch, flatX, flatZ };
+  // W8g-a: the rest chunks with the given keys, as the global rest build makes them (sorted by key; a key without rest triangles gives no chunk)
+  function buildRestChunks(keys) {
+    const set = new Set(keys), cxs = keys.map(k => k % 24), cys = keys.map(k => Math.floor(k / 24));
+    const lonMin = -180 + Math.min(...cxs) * CHUNK_DEG - 1, lonMax = Math.max(...cxs) === 23 ? 181 : -180 + (Math.max(...cxs) + 1) * CHUNK_DEG + 1;
+    const latMin = -90 + Math.min(...cys) * CHUNK_DEG - 1, latMax = Math.max(...cys) === 11 ? 90 : -90 + (Math.max(...cys) + 1) * CHUNK_DEG + 1;
+    return buildFlat({ ring: false, rest: true, chunks: set, window: { lonMin, lonMax, latMin, latMax } });
+  }
+  const buildRestRow = cy => buildRestChunks(Array.from({ length: 24 }, (_, cx) => cy * 24 + cx));
+
+  return { buildFlat, buildRestChunks, buildRestRow, buildCap, buildStubs, exitPolygons, vertex, lats, ringLons, inPatch, flatX, flatZ, chunkKeyOf };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -309,7 +327,42 @@ function samplerFromChunks(W, chunks) {
   };
 }
 
-const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler, samplerFromChunks };
+// W8g-a (W8_SPEC 13.1 A3): the same lookup as samplerFromChunks over [...ringChunks, ...rest chunks], built one 1-degree cell at a time and only from the chunks
+// that can reach the cell, so a height near the town no longer needs the whole planet meshed. restChunks(cy) returns the rest chunks of a chunk row (made on
+// first use). A cell's list holds the same triangles in the same order as the global index (ring chunks by key, then rest chunks by key; each chunk's own
+// order), so the first triangle that contains the point, and the returned double, are the same. A lattice triangle spans at most 14.5 degrees of longitude
+// (one ring step of 11.6 degrees at 85 deg, 1.25 steps next to a fixed meridian) and one degree of latitude, so two chunk columns and one chunk row around the
+// cell are enough. restChunks(keys) returns the rest chunks with those keys (sorted by key, made on first use).
+function lazySampler(W, ringChunks, restChunks) {
+  const cells = new Map(), key = (i, j) => i * 4096 + j;
+  const ringByKey = ringChunks.map(c => ({ c, key: c.cy * 24 + c.cx }));
+  function cell(i, j) {                                      // i = floor(lon), j = floor(lat)
+    const lon = i + 0.5, lat = j + 0.5, cx = Math.min(23, Math.floor((lon + 180) / CHUNK_DEG)), cy = Math.min(11, Math.floor((lat + 90) / CHUNK_DEG));
+    const near = c => Math.abs(c.cx - cx) <= 2 && Math.abs(c.cy - cy) <= 1, list = [];
+    const scan = c => { for (const idx of [c.ringIndex, c.restIndex]) if (idx) for (let t = 0; t < idx.length; t += 3) {
+      const v = [0, 1, 2].map(k => { const q = idx[t + k]; return [c.lonlat[q * 2], c.lonlat[q * 2 + 1], c.alt[q]]; });
+      if (Math.floor(Math.min(v[0][0], v[1][0], v[2][0])) > i || Math.floor(Math.max(v[0][0], v[1][0], v[2][0])) < i || Math.floor(Math.min(v[0][1], v[1][1], v[2][1])) > j || Math.floor(Math.max(v[0][1], v[1][1], v[2][1])) < j) continue;
+      list.push([].concat(...v));
+    } };
+    for (const { c } of ringByKey) if (near(c)) scan(c);
+    const keys = [];
+    for (let y = Math.max(0, cy - 1); y <= Math.min(11, cy + 1); y++) for (let x = Math.max(0, cx - 2); x <= Math.min(23, cx + 2); x++) keys.push(y * 24 + x);
+    restChunks(keys).forEach(scan);
+    return list;
+  }
+  return (lon, lat) => {
+    const i = Math.floor(lon), j = Math.floor(lat), k = key(i + 200, j + 100);
+    let l = cells.get(k); if (!l) cells.set(k, l = cell(i, j));
+    for (const [x0, y0, h0, x1, y1, h1, x2, y2, h2] of l) {
+      const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2); if (Math.abs(d) < 1e-12) continue;
+      const w1 = ((y1 - y2) * (lon - x2) + (x2 - x1) * (lat - y2)) / d, w2 = ((y2 - y0) * (lon - x2) + (x0 - x2) * (lat - y2)) / d, w3 = 1 - w1 - w2;
+      if (w1 >= -1e-9 && w2 >= -1e-9 && w3 >= -1e-9) return w1 * h0 + w2 * h1 + w3 * h2;
+    }
+    return W.height(lon, lat);
+  };
+}
+
+const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler, samplerFromChunks, lazySampler };
 
 // ---- scene part (needs THREE); the data builder above never touches it
 // THREE.MathUtils.generateUUID draws from Math.random. The rain of scene.js draws from the same stream every frame, so creating terrain
@@ -321,6 +374,26 @@ function withPrivateRandom(fn) {
 }
 
 TERRAIN.withPrivateRandom = withPrivateRandom;
+// W8g-a: a build that can be run in steps. make() returns an iterator (a generator); step() runs it to its next yield, finish() to its end. Every step runs
+// inside the build's own private stream, which starts where withPrivateRandom starts and continues across the steps, so the build draws exactly the numbers
+// one withPrivateRandom(build) call would have drawn. stats: ms of each step.
+TERRAIN.job = function (make, onDone) {
+  let it = null, s = 0x5eed1234, done = false, value;
+  const rand = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const J = { stats: [], get done() { return done; }, get value() { return value; },
+    step() {
+      if (done) return true;
+      const saved = Math.random, t0 = Date.now(); Math.random = rand;
+      try { if (!it) it = make(); const r = it.next(); if (r.done) { done = true; value = r.value; } }
+      finally { Math.random = saved; J.stats.push(Date.now() - t0); }
+      if (done && onDone) onDone(J.stats.reduce((a, b) => a + b, 0));
+      return done;
+    },
+    finish() { while (!J.step()); return value; } };
+  return J;
+};
+// run a generator to its end (the synchronous form of a stepped build)
+TERRAIN.runAll = it => { for (;;) { const r = it.next(); if (r.done) return r.value; } };
 
 TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
@@ -334,20 +407,26 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
   const state = { ring: [], ringFlat: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
-  const geom = (c, index) => {
+  const geom = (c, index, own) => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
-    g.setAttribute('normal', c.nrmAttr || (c.nrmAttr = new THREE.BufferAttribute(c.nrm, 3)));
-    g.setAttribute('color', c.colAttr || (c.colAttr = new THREE.BufferAttribute(c.col, 3)));
+    if (own) {                                                       // its own attribute objects (own GPU buffers) over the shared arrays
+      g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3));
+    } else {
+      g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
+      g.setAttribute('normal', c.nrmAttr || (c.nrmAttr = new THREE.BufferAttribute(c.nrm, 3)));
+      g.setAttribute('color', c.colAttr || (c.colAttr = new THREE.BufferAttribute(c.col, 3)));
+    }
     g.setIndex(new THREE.BufferAttribute(index, 1)); return g;
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
   const t0 = performance.now();
+  // W8g-a: the flat ring and the sphere ring start from the same build (they were two identical buildFlat calls); the sphere ring's meshes keep their own
+  // attribute objects, so disposing them when the exits are cut (setExitRoutes) leaves the flat ring's GPU buffers alone
   const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW });
-  let ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
+  let ringData = flatRingData, stubData = B.buildStubs();
   withPrivateRandom(() => {
     for (const c of flatRingData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring-flat', state.ringFlat, { cx: c.cx, cy: c.cy });
-    for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
+    for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex, true), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
     for (const s of stubData) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(s.uv, 2)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
@@ -375,21 +454,32 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
     return { exits: new Set(exitPolygons.map(q => q.exit)).size, polygons: exitPolygons.length };
   };
 
-  function buildRest() {
-    if (state.restBuilt) return; state.restBuilt = true;
-    const t = performance.now(), restData = B.buildFlat({ ring: false, rest: true }), capData = [true, false].map(north => B.buildCap(north));
+  // W8g-a: the rest chunks by key, each made once (for the rest meshes or, earlier, for the sampler near a point); the same chunk objects as one global build
+  const restChunk = new Map();
+  const restChunks = keys => {
+    const missing = keys.filter(k => !restChunk.has(k));
+    if (missing.length) { for (const k of missing) restChunk.set(k, null); for (const c of B.buildRestChunks(missing)) restChunk.set(c.cy * 24 + c.cx, c); }
+    return keys.slice().sort((a, b) => a - b).map(k => restChunk.get(k)).filter(Boolean);
+  };
+  const restRow = cy => restChunks(Array.from({ length: 24 }, (_, cx) => cy * 24 + cx));
+  // the land beyond the ring as a stepped build (W8_SPEC 13.1 A4): one step per chunk row, then the caps, then the meshes (the meshes in the build's private
+  // stream exactly as the single withPrivateRandom call made them before)
+  const restJob = TERRAIN.job(function* () {
+    const restData = [];
+    for (let cy = 0; cy < 12; cy++) { restData.push(...restRow(cy)); yield; }
+    const capData = [true, false].map(north => B.buildCap(north));
     state.restData = restData;
-    withPrivateRandom(() => {
-      for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
-      capData.forEach((c, k) => {
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
-        const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
-      });
-      if (BEND.seamSplit) BEND.seamSplit(root);                     // W8e-b: the chunks that cross the seam at -85 deg are cut along it
+    for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
+    capData.forEach((c, k) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
+      const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
     });
-    state.stats.restBuildMs = Math.round(performance.now() - t);
-  }
+    if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the chunks that cross the seam at -85 deg are cut along it
+    state.restBuilt = true;
+    state.stats.restBuildMs = restJob.stats.reduce((a, b) => a + b, 0);
+  });
+  function buildRest() { if (!state.restBuilt) restJob.finish(); }
   // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
   const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
   const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -411,10 +501,15 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
   }
   BEND.onChange(apply);
   state.ringData = ringData;
-  // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
-  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...flatRingData, ...state.restData]); } return state.samplerFn; };
+  // height of the rendered mesh over the whole planet (W.height inside the town patch). W8g-a: before the rest exists, built cell by cell from the chunks near
+  // the point (lazySampler: the same values as the global index over [...flatRingData, ...restData], without meshing the planet first); once the rest exists, the global index itself (one pass over its chunks, for the planet-wide builds that ask everywhere)
+  state.sampler = () => (state.restBuilt ? state.samplerFull || (state.samplerFull = samplerFromChunks(W, [...flatRingData, ...state.restData]))
+    : state.samplerLazy || (state.samplerLazy = lazySampler(W, flatRingData, restChunks)));
+  state.restJob = restJob;
+  state.samplerJob = TERRAIN.job(function* () { buildRest(); state.sampler(); });
   state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
+  state.fadeMaterials = [restMat, capMat];                           // W8g-a: they switch between opaque and transparent (setOpacity): two shader programs each
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;
 };

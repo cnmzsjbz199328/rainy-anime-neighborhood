@@ -1629,11 +1629,15 @@ const byPriorityDesc = regions.map((r, i) => ({ r, i })).sort((a, b) => b.r.prio
 const byPriorityAsc = byPriorityDesc.slice().reverse();
 
 // Compile a shape into {contains(lon, lat), paintRow(lat, put(lonA, lonB))}. Painting and point queries use the same densified ring.
+// W8g-a: the quick rejections below only answer where the full test cannot disagree (a margin far above the rounding error); every other point runs the
+// original arithmetic, so contains() is bit for bit the same (tools/height_check.mjs compares it with the pre-w8g-a world.js).
+const SLACK_DEG = 1e-6;
 function compileShape(shape) {
   if (shape.type === 'cap') {
-    const c = vecOf(shape.center), c0 = pt(shape.center), cosR = Math.cos(shape.radiusMeters / R);
+    const c = vecOf(shape.center), c0 = pt(shape.center), cosR = Math.cos(shape.radiusMeters / R), latR = shape.radiusMeters / R / D + SLACK_DEG;
     return {
-      contains: (lon, lat) => dot(vec(lon, lat), c) >= cosR,
+      c, cosR, lat0: c0.lat, latR,                            // regionAt runs the same two tests inline with one shared vec(lon, lat)
+      contains: (lon, lat) => (Math.abs(lat - c0.lat) > latR ? false : dot(vec(lon, lat), c) >= cosR),
       row(lat) {
         const cp = Math.cos(lat * D) * Math.cos(c0.lat * D);
         if (cp < 1e-9) return Math.abs(lat - c0.lat) <= shape.radiusMeters / R / D ? [[-180, 180]] : [];
@@ -1652,9 +1656,10 @@ function compileShape(shape) {
     };
   }
   if (shape.type === 'lat-band') {
-    const N = shape.hemisphere === 'N';
+    const N = shape.hemisphere === 'N', amp = shape.waves.reduce((s, w) => s + Math.abs(w[0]), 0) + SLACK_DEG, lo = shape.base - amp, hi = shape.base + amp;
     return {
-      contains: (lon, lat) => (N ? lat >= shape.edge(lon) : lat <= shape.edge(lon)),
+      // the edge stays within base +- the sum of the wave amplitudes
+      contains: (lon, lat) => (N ? (lat < lo ? false : lat > hi ? true : lat >= shape.edge(lon)) : (lat > -lo ? false : lat < -hi ? true : lat <= shape.edge(lon))),
       band: true,
     };
   }
@@ -1680,15 +1685,25 @@ function compileShape(shape) {
       }
       return xs.sort((p, q) => p - q);
     };
+    // W8g-a: the edges sorted into 0.5 degree latitude buckets (an edge goes into every bucket its latitude span touches). An edge outside the bucket of `lat`
+    // cannot cross that parallel, and the crossing parity does not depend on the order, so the test is the same as over the whole ring.
+    const BK = 0.5, nb = Math.floor((latMax - latMin) / BK) + 1, buckets = Array.from({ length: nb }, () => []);
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = rel[j], b = rel[i];
+      if (a[1] === b[1]) continue;
+      const k0 = Math.floor((Math.min(a[1], b[1]) - latMin) / BK), k1 = Math.floor((Math.max(a[1], b[1]) - latMin) / BK);
+      for (let k = k0; k <= k1; k++) buckets[k].push(a[0], a[1], b[0], b[1]);
+    }
     return {
       contains(lon, lat) {
         if (lat < latMin || lat > latMax) return false;
         const rl = ((lon - cLon + 540) % 360 + 360) % 360 - 180;
         if (rl < relMin || rl > relMax) return false;
         let inside = false;
-        for (let i = 0, j = n - 1; i < n; j = i++) {
-          const a = rel[j], b = rel[i];
-          if ((a[1] > lat) !== (b[1] > lat) && rl < a[0] + (lat - a[1]) / (b[1] - a[1]) * (b[0] - a[0])) inside = !inside;
+        const e = buckets[Math.floor((lat - latMin) / BK)];
+        for (let q = 0; q < e.length; q += 4) {
+          const a0 = e[q], a1 = e[q + 1], b0 = e[q + 2], b1 = e[q + 3];
+          if ((a1 > lat) !== (b1 > lat) && rl < a0 + (lat - a1) / (b1 - a1) * (b0 - a0)) inside = !inside;
         }
         return inside;
       },
@@ -1704,9 +1719,15 @@ function compileShape(shape) {
   throw new Error('unknown shape ' + shape.type);
 }
 const compiled = new Map(regions.map(r => [r.id, compileShape(r.shape)]));
+const testDesc = byPriorityDesc.map(r => compiled.get(r.id));
 
 function regionAt(lon, lat) {
-  for (const r of byPriorityDesc) if (compiled.get(r.id).contains(lon, lat)) return r;
+  let v = null;                                              // vec(lon, lat), made once for the caps
+  for (let i = 0; i < testDesc.length; i++) {
+    const c = testDesc[i];
+    if (c.cosR !== undefined) { if (Math.abs(lat - c.lat0) <= c.latR && dot(v || (v = vec(lon, lat)), c.c) >= c.cosR) return byPriorityDesc[i]; }
+    else if (c.contains(lon, lat)) return byPriorityDesc[i];
+  }
   return DEFAULT_REGION;
 }
 
@@ -1809,6 +1830,20 @@ function polylineDistance(vp, vs) {
   return best;
 }
 const bell = (t, sharp) => { const b = 0.5 * (1 + Math.cos(Math.PI * clamp(t, 0, 1))); return sharp === 1 ? b : Math.pow(b, sharp); };
+// W8g-a: exact pruning of the height function. A peak, ridge, river stretch or platform is skipped only when a bounding cap proves that the point is beyond
+// its reach by more than SLACK (1e-6 rad, about 0.1 mm, far above the rounding error of a dot product); every other point runs the original arithmetic, so
+// height() returns the same doubles as before (checked bit for bit against the pre-w8g-a world.js by tools/height_check.mjs).
+const SLACK = 1e-6;
+const hide = (o, k, v) => { Object.defineProperty(o, k, { value: v, configurable: true }); return v; };   // caches stay out of JSON dumps of the layout
+// smallest-ish cap around points vs[i0 .. i1): centre = normalised sum, radius = the largest angle to a point. A cap under 90 degrees is convex, so the
+// great-circle arcs between its points stay inside it.
+function capOf(vs, i0, i1) {
+  let x = 0, y = 0, z = 0;
+  for (let i = i0; i < i1; i++) { x += vs[i][0]; y += vs[i][1]; z += vs[i][2]; }
+  const c = unit([x, y, z]); let rho = 0;
+  for (let i = i0; i < i1; i++) rho = Math.max(rho, angleBetween(c, vs[i]));
+  return { c, rho, i0, i1 };
+}
 
 let FIELD = null;
 function field() {
@@ -1877,12 +1912,18 @@ const coastDistance = (lon, lat) => sampleGrid(field().sdf, lon, lat);   // metr
 
 function featureHeight(f, lon, lat, vp) {
   if (f.type === 'peak') {
-    const d = arcDistance([lon, lat], [f.lon, f.lat]) / f.radiusMeters;
+    if (!f._c) { hide(f, '_c', vec(f.lon, f.lat)); hide(f, '_cosLim', Math.cos(f.radiusMeters / R + SLACK)); }
+    if (dot(vp, f._c) < f._cosLim) return 0;                                            // beyond the radius: d >= 1
+    const d = R * angleBetween(vp, f._c) / f.radiusMeters;                             // = arcDistance([lon, lat], [f.lon, f.lat]) / radius (vp = vec(lon, lat))
     if (d >= 1) return 0;
     return f.amp * bell((d - f.flat) / (1 - f.flat), f.sharp);
   }
   if (f.type === 'ridge') {
     if (!f._v) f._v = f.points.map(p => vec(p[0], p[1]));
+    if (!f._caps) hide(f, '_caps', f._v.slice(0, -1).map((v, i) => { const q = capOf(f._v, i, i + 2); q.cosLim = Math.cos(q.rho + f.halfWidthMeters / R + SLACK); return q; }));
+    let near = false;
+    for (const q of f._caps) if (dot(vp, q.c) >= q.cosLim) { near = true; break; }
+    if (!near) return 0;                                                                 // every leg is farther than the half width: d >= 1
     const d = polylineDistance(vp, f._v) / f.halfWidthMeters;
     return d >= 1 ? 0 : f.height * bell(d, f.sharp);
   }
@@ -1890,15 +1931,20 @@ function featureHeight(f, lon, lat, vp) {
 }
 
 // Raw terrain before rivers, platforms and the town plain.
-function heightRaw(lon, lat, skip) {
-  const vp = vec(lon, lat), c = coastDistance(lon, lat);
+function heightRaw(lon, lat, skip, vpIn) {
+  const vp = vpIn || vec(lon, lat), c = coastDistance(lon, lat);
   if (c < 0) {
     const r = regionAt(lon, lat), depth = heightField.oceanDepth[r.kind] !== undefined ? heightField.oceanDepth[r.kind] : 2;
     return -depth * smoothstep(0, heightField.coast.shelfMeters, -c);
   }
   // the summit of an absolute-height peak stays free of noise so that it is exactly the highest point
   let quiet = 1;
-  for (const f of heightField.features) if (f.type === 'peak' && f.height !== undefined) { const fr = f.flat * f.radiusMeters; quiet = Math.min(quiet, smoothstep(fr, fr + 10, arcDistance([lon, lat], [f.lon, f.lat]))); }
+  for (const f of heightField.features) if (f.type === 'peak' && f.height !== undefined) {
+    const fr = f.flat * f.radiusMeters;
+    if (!f._qc) { hide(f, '_qc', vec(f.lon, f.lat)); hide(f, '_qCos', Math.cos((fr + 10) / R + SLACK)); }
+    if (dot(vp, f._qc) < f._qCos) continue;                                              // smoothstep(...) = 1 there
+    quiet = Math.min(quiet, smoothstep(fr, fr + 10, R * angleBetween(vp, f._qc)));
+  }
   let h = sampleGrid(field().base, lon, lat) + quiet * noiseAt(lon, lat);
   let m = 0;                                  // peaks and ridges combine by maximum: a ridge joining a summit never stacks on it
   for (const f of heightField.features) if (f !== skip && (f.type === 'peak' || f.type === 'ridge')) m = Math.max(m, featureHeight(f, lon, lat, vp));
@@ -1921,7 +1967,10 @@ function riverGeometry(rv) {
   // bed profile: terrain minus the channel depth, forced to be non-increasing downstream
   const bed = []; let run = Infinity;
   for (let i = 0; i < pts.length; i++) { run = Math.min(run, heightPre(pts[i][0], pts[i][1]) - 0.35); bed.push(run); }
-  rv._dense = { pts, vs, s, bed };
+  // W8g-a: caps around runs of 16 points; riverCarve skips a run that lies beyond reach + 1.5 m (its nearest-point search would ignore it anyway)
+  const reach = rv.width / 2 + 5, chunks = [];
+  for (let i0 = 0; i0 < vs.length; i0 += 16) { const q = capOf(vs, i0, Math.min(vs.length, i0 + 16)); q.cosLim = Math.cos(q.rho + (reach + 1.5) / R + SLACK); chunks.push(q); }
+  rv._dense = { pts, vs, s, bed, chunks };
   return rv._dense;
 }
 function riverCrossing(lon, lat) {
@@ -1933,8 +1982,13 @@ function riverCarve(lon, lat, h) {
   const vp = vec(lon, lat);
   for (const rv of rivers) {
     const G = riverGeometry(rv);
+    // nearest dense point, searching only the runs that can be within reach + 1.5 m: a skipped point is farther than that, so it is neither the minimum nor
+    // a tie with it when the minimum matters (bd <= reach + 1.5), and the first-index rule of the full loop is kept
     let bi = -1, bd = Infinity;
-    for (let i = 0; i < G.vs.length; i++) { const d = R * angleBetween(vp, G.vs[i]); if (d < bd) { bd = d; bi = i; } }
+    for (const ch of G.chunks) {
+      if (dot(vp, ch.c) < ch.cosLim) continue;
+      for (let i = ch.i0; i < ch.i1; i++) { const d = R * angleBetween(vp, G.vs[i]); if (d < bd) { bd = d; bi = i; } }
+    }
     const reach = rv.width / 2 + 5;
     if (bd > reach + 1.5) continue;
     const d = polylineDistance(vp, G.vs);
@@ -1980,23 +2034,27 @@ function prepare() {
     if (lm.id === 'TOWN' || lm.check.maxSlope === undefined || lm.check.maxSlope > 0.15) continue;
     const f = { id: 'plat-' + lm.id, type: 'plain', lon: lm.lon, lat: lm.lat, radiusMeters: lm.radius, falloffMeters: 10 };
     f.height = heightRaw(lm.lon, lm.lat);
+    hide(f, '_c', vec(f.lon, f.lat)); hide(f, '_cosLim', Math.cos((f.radiusMeters + f.falloffMeters) / R + SLACK));
     platforms.push(f); heightField.features.push(f);
   }
 }
 // terrain with landmark platforms, before the river channels and the town plain
 function heightPre(lon, lat) {
   prepare();
-  let h = heightRaw(lon, lat);
+  const vp = vec(lon, lat);
+  let h = heightRaw(lon, lat, undefined, vp);
   for (const f of platforms) {
-    const d = arcDistance([lon, lat], [f.lon, f.lat]);
+    if (dot(vp, f._c) < f._cosLim) continue;                                             // beyond radius + falloff
+    const d = R * angleBetween(vp, f._c);                                                // = arcDistance([lon, lat], [f.lon, f.lat])
     if (d < f.radiusMeters + f.falloffMeters) h = lerp(h, f.height, 1 - smoothstep(f.radiusMeters, f.radiusMeters + f.falloffMeters, d));
   }
   return h;
 }
+const TOWN_FALL = heightField.features.find(f => f.id === 'plain-town').falloffMeters;
 function height(lon, lat) {
   if (insideTownPatch(lon, lat)) return TOWN_BASE_HEIGHT;
   let h = riverCarve(lon, lat, heightPre(lon, lat));
-  const dt = townPatchDistance(lon, lat), fall = heightField.features.find(f => f.id === 'plain-town').falloffMeters;
+  const dt = townPatchDistance(lon, lat), fall = TOWN_FALL;
   if (dt < fall) h = TOWN_BASE_HEIGHT + (h - TOWN_BASE_HEIGHT) * smoothstep(0, fall, dt);
   return h;
 }
@@ -2234,12 +2292,20 @@ function builder(W) {
     return { x: flatX(lon), y: yt / s, z: flatZ(lat), nx, ny, nz, c, lon, lat, h };
   }
 
-  // Build the flat mesh. opts: { ring: bool, rest: bool, window: {lonMin, lonMax, latMin, latMax} }
+  // W8g-a: vertex() is a pure function of the lattice point, so one builder keeps every vertex it has made and later buildFlat calls (the ring twice, the
+  // sampler's chunks, the rest) reuse it instead of evaluating the height function again
+  let RINGS = null; const vcache = new Map();
+  const latticeRings = () => RINGS || (RINGS = lats.map(l => ({ lat: l, lons: ringLons(l) })));
+  const latticeVertex = (rings, r, k) => { const key = r * 100000 + k; let v = vcache.get(key); if (v === undefined) { v = vertex(rings[r].lons[k], rings[r].lat); vcache.set(key, v); } return v; };
+  const chunkKeyOf = (lon, lat) => Math.min(11, Math.floor((lat + 90) / CHUNK_DEG)) * 24 + Math.min(23, Math.floor((lon + 180) / CHUNK_DEG));
+
+  // Build the flat mesh. opts: { ring: bool, rest: bool, window: {lonMin, lonMax, latMin, latMax}, chunks: Set of chunk keys (cy * 24 + cx) to keep }
+  // With `chunks`, only the triangles of those chunks are made; each chunk comes out exactly as in the build without it (same triangles in the same order).
   function buildFlat(opts) {
     const win = opts.window || { lonMin: -181, lonMax: 181, latMin: -90, latMax: 90 };
-    const rings = lats.map(l => ({ lat: l, lons: ringLons(l) }));
+    const rings = latticeRings();
     const vmap = new Map(), V = [];
-    const vid = (r, k) => { const key = r * 100000 + k; let i = vmap.get(key); if (i === undefined) { i = V.length; V.push(vertex(rings[r].lons[k], rings[r].lat)); vmap.set(key, i); } return i; };
+    const vid = (r, k) => { const key = r * 100000 + k; let i = vmap.get(key); if (i === undefined) { i = V.length; V.push(latticeVertex(rings, r, k)); vmap.set(key, i); } return i; };
     const clippedV = new Map(), clippedVid = (p, triVerts) => {
       const x = Math.round(p[0] * 1e5) / 1e5, z = Math.round(p[1] * 1e5) / 1e5, key = `${Math.round(x * 1e5)},${Math.round(z * 1e5)}`;
       let i = clippedV.get(key); if (i === undefined) {
@@ -2257,6 +2323,7 @@ function builder(W) {
       if (inPatch(A[0], A[1]) && inPatch(B[0], B[1]) && inPatch(C[0], C[1])) return;                    // the town patch is the town's
       const lon = (A[0] + B[0] + C[0]) / 3, lat = (A[1] + B[1] + C[1]) / 3;
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
+      if (opts.chunks && !opts.chunks.has(chunkKeyOf(lon, lat))) return;
       const isRing = W.townPatchDistance(lon, lat) < RING_M;
       if (isRing ? !opts.ring : !opts.rest) return;
       if (opts.exitPolygons?.length) {
@@ -2298,7 +2365,7 @@ function builder(W) {
     // chunks: 15 x 15 degrees by triangle centroid; ring and rest triangles of a chunk share one vertex buffer
     const chunks = new Map();
     for (const t of tris) {
-      const cx = Math.min(23, Math.floor((t.lon + 180) / CHUNK_DEG)), cy = Math.min(11, Math.floor((t.lat + 90) / CHUNK_DEG)), key = cy * 24 + cx;
+      const cx = Math.min(23, Math.floor((t.lon + 180) / CHUNK_DEG)), cy = Math.min(11, Math.floor((t.lat + 90) / CHUNK_DEG)), key = cy * 24 + cx;   // = chunkKeyOf
       let c = chunks.get(key); if (!c) chunks.set(key, c = { cx, cy, ring: [], rest: [] });
       (t.ring ? c.ring : c.rest).push(t);
     }
@@ -2389,7 +2456,16 @@ function builder(W) {
     return out;
   }
 
-  return { buildFlat, buildCap, buildStubs, exitPolygons, vertex, lats, ringLons, inPatch, flatX, flatZ };
+  // W8g-a: the rest chunks with the given keys, as the global rest build makes them (sorted by key; a key without rest triangles gives no chunk)
+  function buildRestChunks(keys) {
+    const set = new Set(keys), cxs = keys.map(k => k % 24), cys = keys.map(k => Math.floor(k / 24));
+    const lonMin = -180 + Math.min(...cxs) * CHUNK_DEG - 1, lonMax = Math.max(...cxs) === 23 ? 181 : -180 + (Math.max(...cxs) + 1) * CHUNK_DEG + 1;
+    const latMin = -90 + Math.min(...cys) * CHUNK_DEG - 1, latMax = Math.max(...cys) === 11 ? 90 : -90 + (Math.max(...cys) + 1) * CHUNK_DEG + 1;
+    return buildFlat({ ring: false, rest: true, chunks: set, window: { lonMin, lonMax, latMin, latMax } });
+  }
+  const buildRestRow = cy => buildRestChunks(Array.from({ length: 24 }, (_, cx) => cy * 24 + cx));
+
+  return { buildFlat, buildRestChunks, buildRestRow, buildCap, buildStubs, exitPolygons, vertex, lats, ringLons, inPatch, flatX, flatZ, chunkKeyOf };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -2418,7 +2494,42 @@ function samplerFromChunks(W, chunks) {
   };
 }
 
-const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler, samplerFromChunks };
+// W8g-a (W8_SPEC 13.1 A3): the same lookup as samplerFromChunks over [...ringChunks, ...rest chunks], built one 1-degree cell at a time and only from the chunks
+// that can reach the cell, so a height near the town no longer needs the whole planet meshed. restChunks(cy) returns the rest chunks of a chunk row (made on
+// first use). A cell's list holds the same triangles in the same order as the global index (ring chunks by key, then rest chunks by key; each chunk's own
+// order), so the first triangle that contains the point, and the returned double, are the same. A lattice triangle spans at most 14.5 degrees of longitude
+// (one ring step of 11.6 degrees at 85 deg, 1.25 steps next to a fixed meridian) and one degree of latitude, so two chunk columns and one chunk row around the
+// cell are enough. restChunks(keys) returns the rest chunks with those keys (sorted by key, made on first use).
+function lazySampler(W, ringChunks, restChunks) {
+  const cells = new Map(), key = (i, j) => i * 4096 + j;
+  const ringByKey = ringChunks.map(c => ({ c, key: c.cy * 24 + c.cx }));
+  function cell(i, j) {                                      // i = floor(lon), j = floor(lat)
+    const lon = i + 0.5, lat = j + 0.5, cx = Math.min(23, Math.floor((lon + 180) / CHUNK_DEG)), cy = Math.min(11, Math.floor((lat + 90) / CHUNK_DEG));
+    const near = c => Math.abs(c.cx - cx) <= 2 && Math.abs(c.cy - cy) <= 1, list = [];
+    const scan = c => { for (const idx of [c.ringIndex, c.restIndex]) if (idx) for (let t = 0; t < idx.length; t += 3) {
+      const v = [0, 1, 2].map(k => { const q = idx[t + k]; return [c.lonlat[q * 2], c.lonlat[q * 2 + 1], c.alt[q]]; });
+      if (Math.floor(Math.min(v[0][0], v[1][0], v[2][0])) > i || Math.floor(Math.max(v[0][0], v[1][0], v[2][0])) < i || Math.floor(Math.min(v[0][1], v[1][1], v[2][1])) > j || Math.floor(Math.max(v[0][1], v[1][1], v[2][1])) < j) continue;
+      list.push([].concat(...v));
+    } };
+    for (const { c } of ringByKey) if (near(c)) scan(c);
+    const keys = [];
+    for (let y = Math.max(0, cy - 1); y <= Math.min(11, cy + 1); y++) for (let x = Math.max(0, cx - 2); x <= Math.min(23, cx + 2); x++) keys.push(y * 24 + x);
+    restChunks(keys).forEach(scan);
+    return list;
+  }
+  return (lon, lat) => {
+    const i = Math.floor(lon), j = Math.floor(lat), k = key(i + 200, j + 100);
+    let l = cells.get(k); if (!l) cells.set(k, l = cell(i, j));
+    for (const [x0, y0, h0, x1, y1, h1, x2, y2, h2] of l) {
+      const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2); if (Math.abs(d) < 1e-12) continue;
+      const w1 = ((y1 - y2) * (lon - x2) + (x2 - x1) * (lat - y2)) / d, w2 = ((y2 - y0) * (lon - x2) + (x0 - x2) * (lat - y2)) / d, w3 = 1 - w1 - w2;
+      if (w1 >= -1e-9 && w2 >= -1e-9 && w3 >= -1e-9) return w1 * h0 + w2 * h1 + w3 * h2;
+    }
+    return W.height(lon, lat);
+  };
+}
+
+const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, EXIT_CLASS, builder, sampler, samplerFromChunks, lazySampler };
 
 // ---- scene part (needs THREE); the data builder above never touches it
 // THREE.MathUtils.generateUUID draws from Math.random. The rain of scene.js draws from the same stream every frame, so creating terrain
@@ -2430,6 +2541,26 @@ function withPrivateRandom(fn) {
 }
 
 TERRAIN.withPrivateRandom = withPrivateRandom;
+// W8g-a: a build that can be run in steps. make() returns an iterator (a generator); step() runs it to its next yield, finish() to its end. Every step runs
+// inside the build's own private stream, which starts where withPrivateRandom starts and continues across the steps, so the build draws exactly the numbers
+// one withPrivateRandom(build) call would have drawn. stats: ms of each step.
+TERRAIN.job = function (make, onDone) {
+  let it = null, s = 0x5eed1234, done = false, value;
+  const rand = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const J = { stats: [], get done() { return done; }, get value() { return value; },
+    step() {
+      if (done) return true;
+      const saved = Math.random, t0 = Date.now(); Math.random = rand;
+      try { if (!it) it = make(); const r = it.next(); if (r.done) { done = true; value = r.value; } }
+      finally { Math.random = saved; J.stats.push(Date.now() - t0); }
+      if (done && onDone) onDone(J.stats.reduce((a, b) => a + b, 0));
+      return done;
+    },
+    finish() { while (!J.step()); return value; } };
+  return J;
+};
+// run a generator to its end (the synchronous form of a stepped build)
+TERRAIN.runAll = it => { for (;;) { const r = it.next(); if (r.done) return r.value; } };
 
 TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
@@ -2443,20 +2574,26 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
   const state = { ring: [], ringFlat: [], rest: [], caps: [], stubs: [], restBuilt: false, stats: {} };
-  const geom = (c, index) => {
+  const geom = (c, index, own) => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
-    g.setAttribute('normal', c.nrmAttr || (c.nrmAttr = new THREE.BufferAttribute(c.nrm, 3)));
-    g.setAttribute('color', c.colAttr || (c.colAttr = new THREE.BufferAttribute(c.col, 3)));
+    if (own) {                                                       // its own attribute objects (own GPU buffers) over the shared arrays
+      g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3));
+    } else {
+      g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
+      g.setAttribute('normal', c.nrmAttr || (c.nrmAttr = new THREE.BufferAttribute(c.nrm, 3)));
+      g.setAttribute('color', c.colAttr || (c.colAttr = new THREE.BufferAttribute(c.col, 3)));
+    }
     g.setIndex(new THREE.BufferAttribute(index, 1)); return g;
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
   const t0 = performance.now();
+  // W8g-a: the flat ring and the sphere ring start from the same build (they were two identical buildFlat calls); the sphere ring's meshes keep their own
+  // attribute objects, so disposing them when the exits are cut (setExitRoutes) leaves the flat ring's GPU buffers alone
   const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW });
-  let ringData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW }), stubData = B.buildStubs();
+  let ringData = flatRingData, stubData = B.buildStubs();
   withPrivateRandom(() => {
     for (const c of flatRingData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring-flat', state.ringFlat, { cx: c.cx, cy: c.cy });
-    for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
+    for (const c of ringData) if (c.ringIndex) { const m = add(geom(c, c.ringIndex, true), material, 'ring', state.ring, { cx: c.cx, cy: c.cy }); m.visible = false; }
     for (const s of stubData) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(s.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(s.col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(s.uv, 2)); g.setIndex(new THREE.BufferAttribute(s.index, 1));
@@ -2484,21 +2621,32 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
     return { exits: new Set(exitPolygons.map(q => q.exit)).size, polygons: exitPolygons.length };
   };
 
-  function buildRest() {
-    if (state.restBuilt) return; state.restBuilt = true;
-    const t = performance.now(), restData = B.buildFlat({ ring: false, rest: true }), capData = [true, false].map(north => B.buildCap(north));
+  // W8g-a: the rest chunks by key, each made once (for the rest meshes or, earlier, for the sampler near a point); the same chunk objects as one global build
+  const restChunk = new Map();
+  const restChunks = keys => {
+    const missing = keys.filter(k => !restChunk.has(k));
+    if (missing.length) { for (const k of missing) restChunk.set(k, null); for (const c of B.buildRestChunks(missing)) restChunk.set(c.cy * 24 + c.cx, c); }
+    return keys.slice().sort((a, b) => a - b).map(k => restChunk.get(k)).filter(Boolean);
+  };
+  const restRow = cy => restChunks(Array.from({ length: 24 }, (_, cx) => cy * 24 + cx));
+  // the land beyond the ring as a stepped build (W8_SPEC 13.1 A4): one step per chunk row, then the caps, then the meshes (the meshes in the build's private
+  // stream exactly as the single withPrivateRandom call made them before)
+  const restJob = TERRAIN.job(function* () {
+    const restData = [];
+    for (let cy = 0; cy < 12; cy++) { restData.push(...restRow(cy)); yield; }
+    const capData = [true, false].map(north => B.buildCap(north));
     state.restData = restData;
-    withPrivateRandom(() => {
-      for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
-      capData.forEach((c, k) => {
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
-        const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
-      });
-      if (BEND.seamSplit) BEND.seamSplit(root);                     // W8e-b: the chunks that cross the seam at -85 deg are cut along it
+    for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
+    capData.forEach((c, k) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
+      const m = add(g, capMat, 'cap', state.caps, { north: k === 0 }); m.visible = BEND.get() > 0.98;
     });
-    state.stats.restBuildMs = Math.round(performance.now() - t);
-  }
+    if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the chunks that cross the seam at -85 deg are cut along it
+    state.restBuilt = true;
+    state.stats.restBuildMs = restJob.stats.reduce((a, b) => a + b, 0);
+  });
+  function buildRest() { if (!state.restBuilt) restJob.finish(); }
   // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
   const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
   const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -2520,10 +2668,15 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial) {
   }
   BEND.onChange(apply);
   state.ringData = ringData;
-  // height of the rendered mesh over the whole planet (built on first use, from the chunks of the meshes; W.height inside the town patch)
-  state.sampler = () => { if (!state.samplerFn) { buildRest(); state.samplerFn = samplerFromChunks(W, [...flatRingData, ...state.restData]); } return state.samplerFn; };
+  // height of the rendered mesh over the whole planet (W.height inside the town patch). W8g-a: before the rest exists, built cell by cell from the chunks near
+  // the point (lazySampler: the same values as the global index over [...flatRingData, ...restData], without meshing the planet first); once the rest exists, the global index itself (one pass over its chunks, for the planet-wide builds that ask everywhere)
+  state.sampler = () => (state.restBuilt ? state.samplerFull || (state.samplerFull = samplerFromChunks(W, [...flatRingData, ...state.restData]))
+    : state.samplerLazy || (state.samplerLazy = lazySampler(W, flatRingData, restChunks)));
+  state.restJob = restJob;
+  state.samplerJob = TERRAIN.job(function* () { buildRest(); state.sampler(); });
   state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
   state.apply = apply; state.buildRest = buildRest; state.root = root;
+  state.fadeMaterials = [restMat, capMat];                           // W8g-a: they switch between opaque and transparent (setOpacity): two shader programs each
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps, ...state.stubs].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;
 };
@@ -3794,11 +3947,12 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     return mM.clone();
   };
 
-  function build() {
-    const t0 = Date.now();
+  // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
     H = global.TERRAIN.sampler(W, { lonMin: -16, lonMax: 40, latMin: -72, latMax: -27 }); WS = Object.assign(Object.create(W), { height: H });
-    const root = new THREE.Group(); root.name = 'section'; scene.add(root); S.root = root;
+    const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
+    yield;
     const inkColor = 0x273647;
     // ---- materials
     const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
@@ -3844,6 +3998,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       if (gname) { const g = new THREE.InstancedMesh(K.geometries[gname], glowMat, list.length); g.instanceMatrix = mesh.instanceMatrix; g.computeBoundingSphere(); g.name = 'sec:' + name + ':glow'; root.add(g); objs.glows.push(g); }
       return { mesh, hull };
     };
+    yield;
     S.counts = {};
     for (const [t, list] of Object.entries(all)) {
       S.counts[t] = list.length;
@@ -3872,6 +4027,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
       stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }
 
+    yield;
     // ---- paddies and fallow fields: Voronoi plots on a fine grid, ridges 0.36 m wide and 0.2 m high
     { const P = PLAN.plots, nu = Math.round((P.u1 - P.u0) / P.step), nv = Math.round((P.v1 - P.v0) / P.step);
       const pos = [], col = [], idx = [], wpos = [], wcol = [], widx = [], vinfo = [];
@@ -3904,6 +4060,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const wm = new THREE.Mesh(wg, WATERK.paddy); wm.name = 'sec:paddy-water'; wm.matrixAutoUpdate = false; wm.renderOrder = 2; root.add(wm); objs.water.push(wm); S.stats.paddyWaterTriangles = widx.length / 3;
     }
 
+    yield;
     // ---- sea water: grid over the gulf, fading to transparent at the shoreline; the foam line breathes along it
     { const u0 = -16, u1 = 42, v0 = 36, v1 = 63.5, st = 0.5, nu = Math.round((u1 - u0) / st), nv = Math.round((v1 - v0) / st);
       const pos = [], col = [], shore = [], idx = [], hh = [];
@@ -3959,10 +4116,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const coast = []; for (let u = -16; u <= 42; u += 0.5) { let lo = 34, hi = 50; const f = v => { const [lon, lat] = PLAN.toLL(u, v); return W.coastDistance(lon, lat); }; if (f(lo) <= 0 || f(hi) > 0) continue; for (let n = 0; n < 24; n++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; } const [lon, lat] = PLAN.toLL(u, (lo + hi) / 2); coast.push({ lon, lat, alt: 0.03 }); }
       const csegs = []; poly(coast, 0, csegs); addLines('coast', csegs);
     }
-    S.stats.buildMs = Date.now() - t0;
+    root.visible = true;
     S.built = true;
     return root;
   }
+  const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
 
   // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
   function buildGlobalInk() {
@@ -3992,13 +4150,15 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
 
   // ---------------------------------------------------------------- visibility, hooks, per-frame update
   const lerp3 = (v, a, b) => a + (b - a) * v;
-  function ensure() { if (!S.built) global.TERRAIN.withPrivateRandom(build); return S.root; }
+  function ensure() { if (!S.built) job.finish(); return S.root; }
+  // the panorama outlines as their own job: their own private stream, as their own withPrivateRandom call had (W8g-a builds them ahead of time)
+  const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); });
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || S.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
     for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
-    if (show && BEND.get() >= 0.5 && S.built) global.TERRAIN.withPrivateRandom(buildGlobalInk);
+    if (show && BEND.get() >= 0.5 && S.built) inkJob.finish();
     if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }
   BEND.onChange(visibility);
@@ -4061,7 +4221,8 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   }
 
   const api = {
-    ensure, tick, state: S,
+    ensure, tick, state: S, visibility,
+    jobs: { build: job, ink: inkJob },                     // W8g-a: worldgen.js steps them ahead of time
     setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; visibility(); },
     set(v) {
       if (v.rain !== undefined) { S.settings.rain = !!v.rain; if (ctx.rainObj) ctx.rainObj.visible = S.settings.rain; }
@@ -4421,12 +4582,14 @@ function abutWall(W, rt, ab, deckAlt) {
   return { name: 'abutment wall ' + ab.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true };
 }
 
-function plan(W, H, tc) {
+// W8g-a: plan() as a generator that yields between its larger parts (worldgen.js runs it in steps); plan() below runs it in one go
+function* planSteps(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept)
   const AB = abutments(WS, BR), CH = ringChain(WS), lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north'),
     bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) },
     JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)), head = RK.TOWN_HEAD;
+  yield;
   const optsOf = def => {
     const o = { ...def.opts, terrainColor: tc };
     if (def.exit) o.townHead = head;
@@ -4438,15 +4601,17 @@ function plan(W, H, tc) {
     return o;
   };
   const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
-  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; }
+  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
   // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
   for (const def of ROUTES.filter(branchOf)) {
     const jp = branchOf(def), trunk = byId[jp.trunk], o = optsOf(def);
     o.ramp = { end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } };
     const rt = RK.route(WS, def.segs, o); rt.def = def; byId[def.id] = rt;
+    yield;
   }
   const routes = ROUTES.map(def => byId[def.id]);
   for (const rt of routes) if (rt.def.furnish) furnish(WS, rt, rt.def.furnish);
+  yield;
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
     const o = { ...def, chain: CH[def.id], abut: {} };
@@ -4454,6 +4619,7 @@ function plan(W, H, tc) {
     for (const a of AB.filter(q => q.bridge === def.id)) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
     const b = BR.build(WS, def.ids, o); b.def = def; return b;
   });
+  yield;
   // the road's last cross-section takes the deck's first one vertex by vertex (|o| <= 5 m: the same offsets on both, mirrored where the two run against each other;
   // a deck laid out one circumference east of the road, T01-07+08+09 at J-W3, is moved back by it: bend.js shifts the road there by the same amount)
   // shifted(x, k): the float32 value v k circumferences away from x such that the shader's float32 sum v - k * PERIOD (bend.js, exact for its uniform) is x again, bit for bit
@@ -4484,8 +4650,9 @@ function plan(W, H, tc) {
   }
   return { routes, bridges, stairs, markers, lit, sea, WS, abutments: abuts, junctions };
 }
+function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
-const ROADS = { plan, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
+const ROADS = { plan, planSteps, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -4497,16 +4664,19 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const matrixOfAlt = it => { const f = flatOf(it.lon, it.lat); qE.set(it.lean[0], it.yaw, it.lean[1], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(f.x, (it.alt - BASE) * f.k, f.z), qQ, mS.set(f.k * it.s[0], f.k * it.s[1], f.k * it.s[2])); return mM.clone(); };
   let DATA = null;
 
-  function build() {
-    const t0 = Date.now();
-    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
-    const TB = global.TERRAIN.builder(W); DATA = plan(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
+  // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build() {
+    SEC.ensure();
+    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
+    const TB = global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
     // W8f-c G3: terrain yields only the final road pavement plus 0.3 m reveal, including the W4 T03 chain at N08.
     if (TERR.setExitRoutes) {
       const n08 = global.ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD });
+      yield;
       TERR.setExitRoutes([...DATA.routes.filter(rt => rt.def.exit), { ...n08, def: { exit: 'N08' } }]);
+      yield;
     }
-    const root = new THREE.Group(); root.name = 'roads'; scene.add(root); S.root = root;
+    const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -4600,9 +4770,10 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const b of DATA.bridges) for (const rec of (b.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea, dots); S.dots = dots.length;
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the T01-13 deck faces, its ink and the band are cut where the seam crosses the bridge
-    S.stats.buildMs = Date.now() - t0; S.built = true;
+    root.visible = true; S.built = true;
     return root;
   }
+  const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
 
   function buildTunnel(rt, root, stripMesh, mat) {
     const tn = rt.tunnel, idx = tn.idx, F = rt.flatOf, T = rt.tangent, n = idx.length;
@@ -4638,7 +4809,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
 
   // ---------------------------------------------------------------- visibility, per-frame update, hooks
-  function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build); } return S.root; }
+  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
@@ -4671,7 +4842,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
 
   const api = {
-    ensure, tick, state: S,
+    ensure, tick, state: S, visibility, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
     setLightBand(v) { ensure(); S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
@@ -4836,12 +5007,15 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   };
 
   let DATA = null;
-  function build_() {
-    const t0 = Date.now(), K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
+  // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build_() {
+    SEC.ensure();
+    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
     const RD = global.ROADS_API && global.ROADS_API.ensure && (global.ROADS_API.ensure(), global.ROADS_API.data());
     const centre = []; if (RD) { for (const r of RD.routes) for (const p of r.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const b of RD.bridges) for (const p of b.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const s of RD.stairs) for (const p of s.samples) centre.push({ lon: p.lon, lat: p.lat }); }
     DATA = build(W, [...TERR.ringData, ...TERR.restData], H, { centre: centre.filter((_, i) => i % 2 === 0), clear: 8 }); S.data = DATA;
-    const root = new THREE.Group(); root.name = 'ocean'; scene.add(root); S.root = root;
+    yield;
+    const root = new THREE.Group(); root.name = 'ocean'; root.visible = false; scene.add(root); S.root = root;
     const d = DATA.water, g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(d.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(d.col, 4)); g.setAttribute('aShore', new THREE.BufferAttribute(d.shore, 1));
     const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
@@ -4859,11 +5033,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
       if (type !== 'weedShadow') { const hull = new THREE.InstancedMesh(geo, M.hullMat, list.length); hull.instanceMatrix = mesh.instanceMatrix; hull.count = list.length; hull.computeBoundingSphere(); hull.name = 'ocean:' + type + ':ink'; root.add(hull); objs.hulls.push(hull); }
     }
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the water is cut along the seam
-    S.stats = { ...DATA.stats, buildMs: Date.now() - t0, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
-    S.built = true; return root;
+    S.stats = { ...DATA.stats, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
+    root.visible = true; S.built = true; return root;
   }
+  const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
 
-  function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build_); } return S.root; }
+  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
@@ -4884,7 +5059,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const m of objs.inst) m.visible = near; for (const h of objs.hulls) h.visible = near && g > 0.01;
   }
 
-  const api = { ensure, tick, state: S, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
+  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
   global.OCEAN_API = api;
   return api;
 };
@@ -5054,7 +5229,9 @@ function build(W, H, ctx) {
 const vnoise3 = (x, y, z, s) => { const X = x / s, Y = y / s, Z = z / s, i = Math.floor(X), j = Math.floor(Y), k = Math.floor(Z), fx = X - i, fy = Y - j, fz = Z - k, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz); const h = (a, b, c) => hash(a * 7 + c * 31 + 3, b * 13 + c * 17 + 5); const L = (a, b, t) => a + (b - a) * t; return L(L(L(h(i, j, k), h(i + 1, j, k), u), L(h(i, j + 1, k), h(i + 1, j + 1, k), u), v), L(L(h(i, j, k + 1), h(i + 1, j, k + 1), u), L(h(i, j + 1, k + 1), h(i + 1, j + 1, k + 1), u), v), w); };
 // ---- generic region scatter for the ground-cover rows: jittered grid of true-metre cells over the sphere, noise helpers, distance to a region boundary by probing
 const vnoise = (x, z, s) => { const X = x / s, Z = z / s, i = Math.floor(X), j = Math.floor(Z), fx = X - i, fz = Z - j, u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz); const h = (a, b) => hash(a * 7 + 3, b * 13 + 5); return (h(i, j) * (1 - u) + h(i + 1, j) * u) * (1 - v) + (h(i, j + 1) * (1 - u) + h(i + 1, j + 1) * u) * v; };
-function scatterGrid(cell, latMax, fn) {            // calls fn(lon, lat, x, z, key) for a jittered grid with `cell` true metres between points
+// W8g-a: the larger builders also come as generators that yield every few rows (worldgen.js runs them in steps); the plain functions run them in one go
+const runAll = it => { for (;;) { const r = it.next(); if (r.done) return r.value; } };
+function* scatterGridSteps(cell, latMax, fn, rowsPerStep = 1e9) {   // calls fn(lon, lat, x, z, key) for a jittered grid with `cell` true metres between points
   let lat = -latMax, row = 0;
   while (lat < latMax) {
     const k = 1 / Math.cos(lat * D), dx = cell * k, dlat = cell / (R * D);
@@ -5063,8 +5240,10 @@ function scatterGrid(cell, latMax, fn) {            // calls fn(lon, lat, x, z, 
       fn(ll.lon, ll.lat, x + jx, z, row * 100003 + i);
     }
     lat += dlat; row++;
+    if (row % rowsPerStep === 0) yield;
   }
 }
+const scatterGrid = (cell, latMax, fn) => runAll(scatterGridSteps(cell, latMax, fn));
 function edgeDistance(W, lon, lat, test, maxD) {      // metres to the nearest point where test(region) is false (8 directions, 2 m steps), maxD when none is found
   let best = maxD; for (let a = 0; a < 8; a++) for (let d = 2; d < best; d += 2) { const p = W.destination({ lon, lat }, a * 45 + 22.5, d); if (!test(W.regionAt(p.lon, p.lat))) { best = Math.min(best, d); break; } }
   return best;
@@ -5115,14 +5294,15 @@ function forest(W, H, ctx) {
 
 // ---- BI03 grassland, BI04 desert, TR07: grass tufts in patches (low saturation, dry yellow near the desert), wild flowers, rocks 0.5-2 m, lone trees, cairns beside the dirt tracks,
 // dry shrubs and rock pillars in the desert; the dunes are a separate overlay mesh (dunes()) that never changes height()
-function grassland(W, H, ctx) {
+function grassland(W, H, ctx) { return runAll(grasslandSteps(W, H, ctx)); }
+function* grasslandSteps(W, H, ctx) {
   const avoid = ctx.avoid || [], corridor = ctx.corridor || null, items = [], stats = { tufts: 0, flowers: 0, rocks: 0, bigRocks: 0, trees: 0, cairns: 0, area: 0, dryTufts: 0, shrubs: 0, pillars: 0, desertRocks: 0, desertArea: 0 };
   const nearAvoid = (lon, lat, r) => avoid.some(a => { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D; return dl * dl + dt * dt < (a.r + r) * (a.r + r); });
   const put = (type, lon, lat, alt, o = {}) => items.push({ type, lon, lat, alt, yaw: o.yaw ?? hash(lon * 91, lat * 77) * 6.283, s: o.s || [1, 1, 1], lean: o.lean || [0, 0], tint: o.tint || [1, 1, 1] });
   const tint = (a, b, k) => { const t = a + (b - a) * hash(k, 9), j = (hash(k, 11) - 0.5) * 0.06; return [t + j, t, t - j]; };
   const slopeAt = (lon, lat) => { const e = 1.0 / (R * D); return Math.hypot((H(lon + e / Math.cos(lat * D), lat) - H(lon - e / Math.cos(lat * D), lat)) / 2, (H(lon, lat + e) - H(lon, lat - e)) / 2); };
   const isGrass = r => r.kind === 'grassland', isDesert = r => r.kind === 'desert';
-  scatterGrid(1.4, 75, (lon, lat, x, z, key) => {
+  yield* scatterGridSteps(1.4, 75, (lon, lat, x, z, key) => {
     const reg = W.regionAt(lon, lat), gr = isGrass(reg), de = isDesert(reg); if (!gr && !de) return;
     const h = H(lon, lat); if (h < 0.5 || nearAvoid(lon, lat, 0.9) || (corridor && corridor(lon, lat))) return;
     const steep = slopeAt(lon, lat) > 0.8; if (steep) return;
@@ -5141,7 +5321,7 @@ function grassland(W, H, ctx) {
       if (hash(key, 13) < 0.006) { const sc = 0.4 + 0.9 * hash(key, 14); put('rock', lon, lat, h - 0.1, { s: [sc * 1.2, sc * 1.2, sc * 1.2], tint: tint(0.9, 1.15, key + 7) }); stats.desertRocks++; }
       if (hash(key, 15) < 0.0042) { const hh = 5 + 7 * hash(key, 16), w = 1.0 + 0.8 * hash(key, 17); put('rockPillar', lon, lat, h - 0.1, { s: [w, hh, w], tint: tint(0.9, 1.15, key + 9) }); stats.pillars++; }
     }
-  });
+  }, 40);
   // cairns beside the dirt tracks of T07, T08, T09 (RD05) and T02/T05 country roads in grassland: every ~14 m on the left side
   for (const e of W.roadNetwork.edges.filter(q => ['RD05', 'RD03'].includes(q.class))) {
     const S = W.roadNetwork.samplePath(e, 0.5); for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, e.id.length * 7 + e.id.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
@@ -5150,7 +5330,8 @@ function grassland(W, H, ctx) {
 }
 // dune overlay (BI04): a grid of 0.7 m cells over the desert, each vertex raised by an isotropic dune field of up to 3 m (crest to trough), faded out toward the desert edge, the
 // roads and the landmarks; sand-coloured with a ripple modulation; the terrain mesh and height() are untouched
-function dunes(W, H, ctx) {
+function dunes(W, H, ctx) { return runAll(dunesSteps(W, H, ctx)); }
+function* dunesSteps(W, H, ctx) {
   const avoid = ctx.avoid || [], reg = W.regions.find(q => q.kind === 'desert'), ring = reg.shape.ring, step = 0.7;
   let lon0 = 1e9, lon1 = -1e9, lat0 = 1e9, lat1 = -1e9; for (const p of ring) { lon0 = Math.min(lon0, p[0]); lon1 = Math.max(lon1, p[0]); lat0 = Math.min(lat0, p[1]); lat1 = Math.max(lat1, p[1]); }
   const out = { pos: [], col: [], idx: [] }, vid = new Map(); let maxH = 0, minH = 0, cells = 0;
@@ -5179,9 +5360,12 @@ function dunes(W, H, ctx) {
     out.pos.push(F.x, (h + dh + 0.01 - BASE) * F.k, F.z); out.col.push(c[0], c[1], c[2]); v = out.pos.length / 3 - 1; vid.set(key, v); void lon; return v;
   };
   const nI = Math.ceil((lon1 - lon0) * D * R * Math.cos(((lat0 + lat1) / 2) * D) / step), nJ = Math.ceil((lat1 - lat0) * D * R / step);
-  for (let j = 0; j < nJ; j++) for (let i = 0; i < nI; i++) {
-    const lat = lat0 + (j + 0.5) * step / (R * D), lonU = lon0 + (i + 0.5) * step / (R * D * Math.cos(lat * D)); if (maskAt(lonU, lat) < 0.02) continue;
-    const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1); out.idx.push(a, c, b, b, c, d); cells++;
+  for (let j = 0; j < nJ; j++) {
+    for (let i = 0; i < nI; i++) {
+      const lat = lat0 + (j + 0.5) * step / (R * D), lonU = lon0 + (i + 0.5) * step / (R * D * Math.cos(lat * D)); if (maskAt(lonU, lat) < 0.02) continue;
+      const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1); out.idx.push(a, c, b, b, c, d); cells++;
+    }
+    if (j % 60 === 59) yield;
   }
   return { mesh: out, stats: { cells, maxDune: maxH, minDune: minH, range: maxH - minH, triangles: out.idx.length / 3 } };
 }
@@ -5240,7 +5424,8 @@ function highland(W, H, ctx) {
   });
   return { items, stats };
 }
-function iceField(W, H, ctx) {                                      // BI07 ice undulation, cracks and cliffs as an overlay of 1.0 m cells over both ice caps
+function iceField(W, H, ctx) { return runAll(iceFieldSteps(W, H, ctx)); }
+function* iceFieldSteps(W, H, ctx) {                                // BI07 ice undulation, cracks and cliffs as an overlay of 1.0 m cells over both ice caps
   const avoid = ctx.avoid || [], ICE = lin('#cfe0ee'), ICE2 = lin('#dcebf6'), BLU = lin('#9ec6dc'), CRK = lin('#6aa6bd'), CLF = lin('#b5cfe0');
   const stats = { cliffs: 0, cracks: 0, cells: 0, maxCliff: 0, minUnd: 0, maxUnd: 0 };
   const res = [];
@@ -5260,6 +5445,7 @@ function iceField(W, H, ctx) {                                      // BI07 ice 
       return { h: base + und + cliffH * m + 0.0, color: c, crack, cliff: cliffH, und };
     };
     const g = overlayGrid(W, H, rg, 1.0, fn); res.push(g);
+    yield;
   }
   return { grids: res };
 }
@@ -5327,7 +5513,8 @@ function terraces(W, H, ctx) {
   return out;
 }
 
-const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, SP, COL, SEED };
+const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, SP, COL, SEED,
+  grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps };
 
 // ---------------------------------------------------------------- scene part
 LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -5356,7 +5543,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     return { lon: Math.atan2(dx, dy) / D, lat: -Math.asin(dz / l) / D, alt: l - R };
   }
   function buildMeshes(K, M) {
-    const root = new THREE.Group(); root.name = 'landcover'; scene.add(root); S.root = root;
+    const root = new THREE.Group(); root.name = 'landcover'; root.visible = false; scene.add(root); S.root = root;   // W8g-a: hidden until the build's last step
     objs.twoSided = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const stripMesh = (m, mat, name, normals) => {
       if (!m.idx.length) return null; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(m.pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(m.col, 3)); g.setIndex(m.idx);
@@ -5417,7 +5604,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   // surface cells (continuous across the longitude seam and near the poles).
   const smoothCover=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
   const baked=[], canopyGroups=[]; let canopy=null, weights=null;
-  function buildDistant(K,M){
+  function* buildDistant(K,M){
     weights=new Float32Array(DATA.items.length);const P=K.palette;
     const cells=new Map(),point=(lo,la)=>[R*Math.cos(la*D)*Math.sin(lo*D),R*Math.cos(la*D)*Math.cos(lo*D),-R*Math.sin(la*D)];
     for(const it of DATA.items){const p=point(it.lon,it.lat),key=p.map(x=>Math.floor(x/8)).join(',');let c=cells.get(key);if(!c)cells.set(key,c={n:0,trees:0,cedar:0});c.n++;if(TREE_SET.has(it.type))c.trees++;if(it.type==='cedar')c.cedar++;}
@@ -5430,7 +5617,9 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
         neo.setXYZ(i,...color);
       }baked.push({g,old,neo});
+      if(baked.length%60===0)yield;
     }
+    yield;
     // Each 16 m source tile is split into four local crown patches. Each patch
     // stays at its trees' centroid and uses a single 20-triangle crown.
     for(const ids of INDEX.tiles.values()){
@@ -5478,29 +5667,45 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
     if (segs.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.name = 'cover:ink:forest-edge'; l.matrixAutoUpdate = false; S.root.add(l); objs.lines.push(l); S.edgeSegments = segs.length / 6; }
   }
-  function build_() {
-    const t0 = Date.now(), K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);
+  // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build_() {
+    SEC.ensure();
+    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);   // (asking for the global sampler used to build the rest here; the order is kept)
     const RD = global.ROADS_API && (global.ROADS_API.ensure(), global.ROADS_API.data()); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     if (RD) { for (const r of RD.routes) addPts(r.samples, r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.4 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : 4.6); for (const b of RD.bridges) addPts(b.samples, 5.2); for (const s of RD.stairs) addPts(s.samples, 1.2); }
     if (SEC.state.chain) addPts(SEC.state.chain.samples, 3.0); for (const r of (SEC.state.roadOut || [])) if (r.centre) addPts(r.centre, 2.0);
     for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
+    yield;
     DATA = build(W, H, { avoid, corridor });
+    yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
+    yield;
     DATA.forest = forest(W, H, { avoid, corridor }); DATA.items.push(...DATA.forest.items);
-    DATA.grass = grassland(W, H, { avoid, corridor }); DATA.items.push(...DATA.grass.items);
+    yield;
+    DATA.grass = yield* grasslandSteps(W, H, { avoid, corridor }); DATA.items.push(...DATA.grass.items);
+    yield;
     DATA.high = highland(W, H, { avoid, corridor }); DATA.items.push(...DATA.high.items);
-    DATA.ice = iceField(W, H, { avoid }); DATA.lava = lavaField(W, H, { avoid });
-    { const TB = global.TERRAIN.builder(W); DATA.dunes = dunes(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
+    yield;
+    DATA.ice = yield* iceFieldSteps(W, H, { avoid });
+    yield;
+    DATA.lava = lavaField(W, H, { avoid });
+    yield;
+    { const TB = global.TERRAIN.builder(W); DATA.dunes = yield* dunesSteps(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
+    yield;
     INDEX = indexItems(DATA.items); S.data = DATA;
-    buildMeshes(K, M); buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
-    buildDistant(K, M);   // W8f-b: after the seam cut, so the baked colours are the cut meshes' own attributes
-    S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, buildMs: Date.now() - t0, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
-    S.built = true; return S.root;
+    buildMeshes(K, M);
+    yield;
+    buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
+    yield;
+    yield* buildDistant(K, M);   // W8f-b: after the seam cut, so the baked colours are the cut meshes' own attributes
+    S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
+    S.root.visible = true; S.built = true; return S.root;
   }
-  function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build_); } return S.root; }
+  const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
+  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
   function visibility() { const show = BEND.get() > 0 || TERR.explore || SEC.state.mode; if (show) ensure(); if (S.root) S.root.visible = show; }
   BEND.onChange(visibility);
   TERR.onExplore(visibility);
@@ -5512,7 +5717,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
   }
-  const api = { ensure, tick, state: S, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
+  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
   global.LANDCOVER_API = api;
   return api;
 };
@@ -5927,6 +6132,81 @@ function attach(ctx) {
   return { state: st, DAY, sunDir: (x, z, u) => sunDir(ctx.BEND, x, z, u) };
 }
 global.DAYLIGHT = { attach, DAY, sunDir, frameAt };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// W8g-a (W8_SPEC 13.1 A4, D14): one scheduler for everything the planet builds after the town. The deferred modules hand over their stepped builds
+// (TERRAIN.job) in their old creation order with explicit dependencies: the land beyond the ring, the sampler index, the W4 section and its panorama
+// outlines, the road network, the ocean, the land cover, the landmarks; last come the shader programs of all of it. Once the town's first frame has been
+// on screen for a second the scheduler steps them in idle time, in slices of at most 50 ms of steps (one step is meant to stay under 150 ms). Nothing it
+// builds is shown: each module's own visibility rule is applied the moment its build ends, so the picture of the town does not change, and the objects
+// are created in the order the old on-demand builds created them (scene graph order matters for the drawing order of transparent things).
+// Leaving the town before it is done needs nothing here: the modules' ensure() run the rest of their jobs synchronously (stats: 'sync').
+// No THREE, no DOM beyond requestIdleCallback / setTimeout; the GPU step is a callback.
+(function (global) {
+'use strict';
+const SLICE_MS = 50, START_DELAY_MS = 1000;
+const WORLDGEN = {};
+// opts.steps: [{ name, deps: [names], job (TERRAIN.job), after () (optional, once the job is done) }] in order; opts.gpu: [() => promise|void, ...] one per step
+WORLDGEN.create = function (opts) {
+  const steps = opts.steps.map(s => ({ ...s, deps: s.deps || [], ran: 0, ms: 0, by: null, afterDone: false }));
+  const gpu = { list: opts.gpu || [], next: 0, ms: [], pending: 0, readyAt: null };
+  const S = { firstFrameAt: null, startAt: null, doneAt: null, started: false, done: false, slices: [], longestStep: null, auto: opts.auto !== false };
+  const now = () => Date.now(), byName = Object.fromEntries(steps.map(s => [s.name, s]));
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  // a job finished outside the scheduler (a module's ensure()): the steps it ran itself are the scheduler's, the rest was synchronous
+  function settle(s) {
+    if (!s.job.done || s.afterDone) return;
+    s.afterDone = true; if (!s.by) s.by = s.ran === s.job.stats.length ? 'idle' : 'sync';
+    s.syncMs = sum(s.job.stats.slice(s.ran));
+    if (s.after) s.after();
+  }
+  const ready = s => s.deps.every(d => byName[d].job.done);
+  function nextStep() { for (const s of steps) { settle(s); if (!s.job.done && ready(s)) return s; } return null; }
+  // the expected length of the next piece of work: the job's previous step (a slice does not start a step that would end past its budget)
+  function estimate() { const s = nextStep(); if (s) return s.job.stats.length ? s.job.stats[s.job.stats.length - 1] : 0; return gpu.ms.length ? gpu.ms[gpu.ms.length - 1] : 0; }
+  // one step of work: a job step, or one GPU root; false when everything is done
+  function work() {
+    const s = nextStep();
+    if (s) {
+      const t = now(); s.job.step(); s.ran++; const ms = now() - t; s.ms += ms;
+      if (!S.longestStep || ms > S.longestStep.ms) S.longestStep = { name: s.name, step: s.ran, ms };
+      settle(s); return true;
+    }
+    if (gpu.next < gpu.list.length) {
+      const t = now(), p = gpu.list[gpu.next++](); gpu.ms.push(now() - t);
+      if (p && p.then) { gpu.pending++; p.then(() => { if (--gpu.pending === 0 && gpu.next >= gpu.list.length) gpu.readyAt = now(); }); }
+      else if (gpu.pending === 0 && gpu.next >= gpu.list.length) gpu.readyAt = now();
+      return true;
+    }
+    return false;
+  }
+  const idle = global.requestIdleCallback ? cb => global.requestIdleCallback(cb, { timeout: 120 }) : cb => setTimeout(cb, 0);   // Safari: no requestIdleCallback
+  function slice() {
+    const t0 = now(); let n = 0;
+    while (now() - t0 < SLICE_MS) { if (n && now() - t0 + estimate() > SLICE_MS) break; if (!work()) break; n++; }
+    if (n) S.slices.push(now() - t0);
+    if (nextStep() || gpu.next < gpu.list.length) idle(slice);
+    else { S.done = true; S.doneAt = now(); }
+  }
+  function start() { if (S.started) return; S.started = true; S.startAt = now(); idle(slice); }
+  return {
+    state: S,
+    // called by scene.js after every rendered frame: the first one starts the clock
+    frame() { if (S.firstFrameAt === null) { S.firstFrameAt = now(); if (S.auto) setTimeout(start, START_DELAY_MS); } },
+    start,
+    // finish everything now (tools); the GPU promises may still be pending
+    finish() { while (work()); for (const s of steps) settle(s); if (!S.done) { S.done = true; S.doneAt = now(); } },
+    stats() {
+      for (const s of steps) settle(s);
+      return { started: S.started, done: S.done, startDelayMs: START_DELAY_MS, sliceBudgetMs: SLICE_MS, startAt: S.startAt, doneAt: S.doneAt, firstFrameAt: S.firstFrameAt,
+        slices: S.slices.length, longestSliceMs: S.slices.length ? Math.max(...S.slices) : 0, longestStep: S.longestStep,
+        steps: steps.map(s => ({ name: s.name, done: s.job.done, by: s.by, steps: s.job.stats.length, ms: sum(s.job.stats), longestMs: s.job.stats.length ? Math.max(...s.job.stats) : 0, syncMs: s.syncMs || 0 })),
+        gpu: { roots: gpu.list.length, compiled: gpu.next, ms: gpu.ms, readyAt: gpu.readyAt } };
+    },
+  };
+};
+global.WORLDGEN = WORLDGEN;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -20483,9 +20763,9 @@ function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has(
 // from the anchor is moved to the lon/lat that lies d * R / (R + altitude) along the sphere (the bend lengthens lateral distances at height by (R + altitude) / R, so this keeps
 // every length in true metres, at any latitude), its flat height is (anchor altitude + y - 1.6) / cos(lat), and the normals are turned by the heading. bend.js then rolls it onto the sphere.
 // Animated parts (userData.live) are not baked: they are re-parented into a wrapper at their mapped position with the local scale 1 / cos(lat).
+// W8g-a: a stepped build (TERRAIN.job, one private stream for all of them as before), one step per landmark; between steps the town's own seed and root are back.
 const landmarkGroups=[],landmarkFx=[],landmarkInfo={};let landmarksBuilt=false;
-function buildLandmarks(){if(landmarksBuilt)return;landmarksBuilt=true;const t0=Date.now();
-  TERRAIN.withPrivateRandom(()=>{const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
+const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
     for(const lm of WO.landmarks){if(lm.id==='TOWN')continue;const build=(globalThis.LANDMARKS||{})[lm.id];if(!build)continue;
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);
       const h=WO.height(lm.lon,lm.lat),headDeg=lm.entrances[0]?lm.entrances[0].heading:0,th=Math.PI-headDeg*DD,cth=Math.cos(th),sth=Math.sin(th),own=[];
@@ -20508,9 +20788,9 @@ function buildLandmarks(){if(landmarksBuilt)return;landmarksBuilt=true;const t0=
         bake(g);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
         g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=false;wraps.forEach(w=>{w.visible=false;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
       landmarkInfo[lm.id]={groups:own,heading:headDeg,height:h};
-      landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});}
-    seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);});
-  landmarkInfo.buildMs=Date.now()-t0;}
+      landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});seed=s0;root=scene;yield;}
+    seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;landmarksBuilt=true;});
+function buildLandmarks(){if(!landmarksBuilt)landmarkJob.finish();}
 function landmarksVisible(){const show=BEND.get()>0||terrain.explore||(window.SECTION_API&&window.SECTION_API.state.mode);if(show&&!landmarksBuilt&&Object.keys(globalThis.LANDMARKS||{}).length)buildLandmarks();for(const g of landmarkGroups)g.visible=!!show;return show;}
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
@@ -20532,7 +20812,7 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);worldgen.frame();}requestAnimationFrame(frame);
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
@@ -20549,7 +20829,18 @@ const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,s
 const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
-window.__scene={scene,renderer,camera,sphereCamera,groups,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+// W8g-a (W8_SPEC 13.1 A4): the planet is generated in the background once the town is on screen (worldgen.js), in the order the on-demand builds used,
+// each module's visibility applied as its build ends; then the shader programs of what was built. Leaving the town early finishes the rest synchronously.
+// The terrain's fading materials need both programs (three.js defines OPAQUE for an opaque material): each is flipped, compiled and flipped back in the same task.
+const gpuCompile=get=>()=>{const r=get();if(!r)return null;const list=Array.isArray(r)?r:[r];return Promise.all(list.map(o=>renderer.compileAsync(o,camera,scene)));};
+const gpuTerrain=()=>{const ps=[renderer.compileAsync(terrain.root,camera,scene)];for(const m of terrain.fadeMaterials){const t=m.transparent;m.transparent=!t;m.needsUpdate=true;ps.push(renderer.compileAsync(terrain.root,camera,scene));m.transparent=t;m.needsUpdate=true;}return Promise.all(ps);};
+const worldgen=WORLDGEN.create({steps:[
+  {name:'rest',job:terrain.restJob},{name:'sampler',deps:['rest'],job:terrain.samplerJob},
+  {name:'section',job:section.jobs.build,after:section.visibility},{name:'section-ink',deps:['section'],job:section.jobs.ink,after:section.visibility},
+  {name:'roads',deps:['rest','sampler','section'],job:roads.job,after:roads.visibility},{name:'ocean',deps:['roads'],job:ocean.job,after:ocean.visibility},
+  {name:'landcover',deps:['roads'],job:cover.job,after:cover.visibility},{name:'landmarks',deps:['landcover'],job:landmarkJob}],
+  gpu:[gpuTerrain,...[()=>section.state.root,()=>roads.state.root,()=>ocean.state.root,()=>cover.state.root,()=>landmarkGroups].map(gpuCompile)]});
+window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 })();
 
 </script></body></html>
