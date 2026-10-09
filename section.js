@@ -237,7 +237,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // ---------------------------------------------------------------- visibility, hooks, per-frame update
   const lerp3 = (v, a, b) => a + (b - a) * v;
   function ensure() { if (!S.built) job.finish(); return S.root; }
-  // the panorama outlines as their own job: their own private stream, as their own withPrivateRandom call had (W8g-a builds them ahead of time)
+  // the panorama outlines as their own job: their own private stream, as their own withPrivateRandom call had; still built on the first sphere view (W8g-a)
   const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); });
   function visibility() {
     const show = BEND.get() > 0 || TERR.explore || S.mode;

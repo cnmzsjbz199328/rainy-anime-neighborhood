@@ -257,7 +257,7 @@ if (!process.argv.includes('--no-browser')) {
     info('动态来源（每系统 ≤ 3 处，轻、慢）：水田与海面的雨点涟漪（程序化圆环）、岸边浪花线呼吸（0.9 / 1.3 rad/s 正弦）、树冠摆动（≤ 0.1 m，0.7–0.9 rad/s）');
   });
 
-  await checkAsync('W4-C8', '默认画面：uBend = 0、非断面模式不构建断面，绘制调用与 W3 持平', async ({ info, fail }) => {
+  await checkAsync('W4-C8', '默认画面：uBend = 0、非断面模式不显示断面（W8g-a 起在后台预生成并保持隐藏），绘制调用与 W3 持平', async ({ info, fail }) => {
     const r = await page.evaluate(async () => {
       const S = window.__scene; S.section.setMode(false); S.bend.set(0); S.view.set({ mode: 'free', yaw: 2.5, pitch: 0.5, dist: 34, target: [-7, 1.2, 20] });
       window.__step(40); S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tris: S.renderer.info.render.triangles, rootVisible: S.section.state.root ? S.section.state.root.visible : null };

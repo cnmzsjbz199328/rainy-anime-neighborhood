@@ -1,6 +1,6 @@
 // W8g-a (W8_SPEC 13.1 A4, D14): one scheduler for everything the planet builds after the town. The deferred modules hand over their stepped builds
-// (TERRAIN.job) in their old creation order with explicit dependencies: the land beyond the ring, the sampler index, the W4 section and its panorama
-// outlines, the road network, the ocean, the land cover, the landmarks; last come the shader programs of all of it. Once the town's first frame has been
+// (TERRAIN.job) in their old creation order with explicit dependencies: the land beyond the ring, the sampler index, the W4 section, the road network,
+// the ocean, the land cover, the landmarks; last come the shader programs of all of it. Once the town's first frame has been
 // on screen for a second the scheduler steps them in idle time, in slices of at most 50 ms of steps (one step is meant to stay under 150 ms). Nothing it
 // builds is shown: each module's own visibility rule is applied the moment its build ends, so the picture of the town does not change, and the objects
 // are created in the order the old on-demand builds created them (scene graph order matters for the drawing order of transparent things).

@@ -340,12 +340,13 @@ const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terra
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
 // W8g-a (W8_SPEC 13.1 A4): the planet is generated in the background once the town is on screen (worldgen.js), in the order the on-demand builds used,
 // each module's visibility applied as its build ends; then the shader programs of what was built. Leaving the town early finishes the rest synchronously.
+// The panorama outlines (section.jobs.ink) stay on demand (first sphere view): their lines cross the -85 deg seam uncut, which only the sphere may show.
 // The terrain's fading materials need both programs (three.js defines OPAQUE for an opaque material): each is flipped, compiled and flipped back in the same task.
 const gpuCompile=get=>()=>{const r=get();if(!r)return null;const list=Array.isArray(r)?r:[r];return Promise.all(list.map(o=>renderer.compileAsync(o,camera,scene)));};
 const gpuTerrain=()=>{const ps=[renderer.compileAsync(terrain.root,camera,scene)];for(const m of terrain.fadeMaterials){const t=m.transparent;m.transparent=!t;m.needsUpdate=true;ps.push(renderer.compileAsync(terrain.root,camera,scene));m.transparent=t;m.needsUpdate=true;}return Promise.all(ps);};
 const worldgen=WORLDGEN.create({steps:[
   {name:'rest',job:terrain.restJob},{name:'sampler',deps:['rest'],job:terrain.samplerJob},
-  {name:'section',job:section.jobs.build,after:section.visibility},{name:'section-ink',deps:['section'],job:section.jobs.ink,after:section.visibility},
+  {name:'section',job:section.jobs.build,after:section.visibility},
   {name:'roads',deps:['rest','sampler','section'],job:roads.job,after:roads.visibility},{name:'ocean',deps:['roads'],job:ocean.job,after:ocean.visibility},
   {name:'landcover',deps:['roads'],job:cover.job,after:cover.visibility},{name:'landmarks',deps:['landcover'],job:landmarkJob}],
   gpu:[gpuTerrain,...[()=>section.state.root,()=>roads.state.root,()=>ocean.state.root,()=>cover.state.root,()=>landmarkGroups].map(gpuCompile)]});
