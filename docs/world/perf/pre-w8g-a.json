@@ -1,0 +1,519 @@
+{
+ "tool": "tools/perf_baseline.mjs",
+ "label": "pre-w8g-a",
+ "ref": "pre-w8g-a",
+ "commit": "42354a54ad2dd0340a43f11d856e54e1908b245c",
+ "dirty": false,
+ "date": "2026-10-09T08:52:40.500Z",
+ "renderer": "metal",
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist"
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "windowMs": 5000,
+ "dragFrames": 60,
+ "noGenWaitMs": 6000,
+ "loads": [
+  {
+   "sceneMs": 2209,
+   "firstFrameMs": 2445
+  },
+  {
+   "sceneMs": 2174,
+   "firstFrameMs": 2376
+  },
+  {
+   "sceneMs": 2156,
+   "firstFrameMs": 2357
+  },
+  {
+   "sceneMs": 2170,
+   "firstFrameMs": 2373
+  },
+  {
+   "sceneMs": 2141,
+   "firstFrameMs": 2354
+  },
+  {
+   "sceneMs": 2142,
+   "firstFrameMs": 2355
+  },
+  {
+   "sceneMs": 2133,
+   "firstFrameMs": 2335
+  },
+  {
+   "sceneMs": 2155,
+   "firstFrameMs": 2353
+  },
+  {
+   "sceneMs": 2158,
+   "firstFrameMs": 2351
+  },
+  {
+   "sceneMs": 2148,
+   "firstFrameMs": 2379
+  },
+  {
+   "sceneMs": 2158,
+   "firstFrameMs": 2378
+  },
+  {
+   "sceneMs": 2098,
+   "firstFrameMs": 2286
+  },
+  {
+   "sceneMs": 2113,
+   "firstFrameMs": 2300
+  },
+  {
+   "sceneMs": 2117,
+   "firstFrameMs": 2303
+  },
+  {
+   "sceneMs": 2116,
+   "firstFrameMs": 2306
+  },
+  {
+   "sceneMs": 2118,
+   "firstFrameMs": 2305
+  },
+  {
+   "sceneMs": 2121,
+   "firstFrameMs": 2309
+  },
+  {
+   "sceneMs": 2121,
+   "firstFrameMs": 2308
+  },
+  {
+   "sceneMs": 2113,
+   "firstFrameMs": 2302
+  },
+  {
+   "sceneMs": 2118,
+   "firstFrameMs": 2307
+  },
+  {
+   "sceneMs": 2116,
+   "firstFrameMs": 2304
+  }
+ ],
+ "pregen": {
+  "present": false,
+  "waitedMs": 6016,
+  "worldgen": null,
+  "startDelayMs": null,
+  "longTasks": [],
+  "longestTaskMs": 0,
+  "moduleMs": {
+   "rest": null,
+   "section": null,
+   "roads": null,
+   "ocean": null,
+   "cover": null,
+   "landmarks": null
+  }
+ },
+ "exits": {
+  "N01": {
+   "immediate": {
+    "longestTaskMs": 5437,
+    "maxFrameGapMs": 5442,
+    "frames": 77,
+    "longTasks": [
+     [
+      586,
+      5437
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6013,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5413,
+    "maxFrameGapMs": 5423,
+    "frames": 77,
+    "longTasks": [
+     [
+      588,
+      5413
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N03": {
+   "immediate": {
+    "longestTaskMs": 5475,
+    "maxFrameGapMs": 5477,
+    "frames": 86,
+    "longTasks": [
+     [
+      664,
+      5475
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6010,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5479,
+    "maxFrameGapMs": 5479,
+    "frames": 84,
+    "longTasks": [
+     [
+      671,
+      5479
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N04": {
+   "immediate": {
+    "longestTaskMs": 5434,
+    "maxFrameGapMs": 5434,
+    "frames": 90,
+    "longTasks": [
+     [
+      818,
+      5434
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6014,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5432,
+    "maxFrameGapMs": 5432,
+    "frames": 91,
+    "longTasks": [
+     [
+      810,
+      5432
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 23,
+    "frames": 600,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N08": {
+   "immediate": {
+    "longestTaskMs": 5431,
+    "maxFrameGapMs": 5442,
+    "frames": 65,
+    "longTasks": [
+     [
+      487,
+      5431
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6006,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5409,
+    "maxFrameGapMs": 5415,
+    "frames": 65,
+    "longTasks": [
+     [
+      487,
+      5409
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 20,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N09": {
+   "immediate": {
+    "longestTaskMs": 5444,
+    "maxFrameGapMs": 5449,
+    "frames": 77,
+    "longTasks": [
+     [
+      595,
+      5444
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6015,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5448,
+    "maxFrameGapMs": 5453,
+    "frames": 77,
+    "longTasks": [
+     [
+      602,
+      5448
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N10": {
+   "immediate": {
+    "longestTaskMs": 5391,
+    "maxFrameGapMs": 5391,
+    "frames": 84,
+    "longTasks": [
+     [
+      714,
+      5391
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6008,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5401,
+    "maxFrameGapMs": 5401,
+    "frames": 84,
+    "longTasks": [
+     [
+      717,
+      5401
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 20,
+    "frames": 604,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N11": {
+   "immediate": {
+    "longestTaskMs": 5385,
+    "maxFrameGapMs": 5393,
+    "frames": 77,
+    "longTasks": [
+     [
+      581,
+      5385
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6011,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5409,
+    "maxFrameGapMs": 5419,
+    "frames": 77,
+    "longTasks": [
+     [
+      586,
+      5409
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N12": {
+   "immediate": {
+    "longestTaskMs": 5388,
+    "maxFrameGapMs": 5394,
+    "frames": 85,
+    "longTasks": [
+     [
+      654,
+      5388
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6011,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5408,
+    "maxFrameGapMs": 5413,
+    "frames": 85,
+    "longTasks": [
+     [
+      652,
+      5408
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": null
+   }
+  },
+  "N13": {
+   "immediate": {
+    "longestTaskMs": 5403,
+    "maxFrameGapMs": 5404,
+    "frames": 84,
+    "longTasks": [
+     [
+      786,
+      5403
+     ]
+    ],
+    "gen": null
+   },
+   "afterPregen": {
+    "waitedMs": 6015,
+    "genCpuMs": null,
+    "genLongestTaskMs": null,
+    "longestTaskMs": 5397,
+    "maxFrameGapMs": 5397,
+    "frames": 84,
+    "longTasks": [
+     [
+      767,
+      5397
+     ]
+    ],
+    "gen": null
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 20,
+    "frames": 598,
+    "longTasks": [],
+    "gen": null
+   }
+  }
+ },
+ "sphere": {
+  "immediate": {
+   "longestTaskMs": 5524,
+   "maxFrameGapMs": 5529,
+   "frames": 6,
+   "longTasks": [
+    [
+     3,
+     5524
+    ]
+   ],
+   "gen": null
+  },
+  "afterPregen": {
+   "longestTaskMs": 5501,
+   "maxFrameGapMs": 5506,
+   "frames": 6,
+   "longTasks": [
+    [
+     1,
+     5501
+    ]
+   ],
+   "gen": null
+  }
+ },
+ "machine": {
+  "start": {
+   "freeMemMB": 811,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    4.68,
+    7.63,
+    10.57
+   ],
+   "swap": "total = 9216.00M  used = 7576.44M  free = 1639.56M  (encrypted)"
+  },
+  "end": {
+   "freeMemMB": 2063,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    3.88,
+    6.49,
+    9.21
+   ],
+   "swap": "total = 9216.00M  used = 7528.44M  free = 1687.56M  (encrypted)"
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "parallelShaderCompile": true,
+ "chromium": "153.0.8010.12",
+ "summary": {
+  "sceneMsMedian": 2133,
+  "firstFrameMsMedian": 2335,
+  "pregenCpuMs": null,
+  "pregenLongestTaskMs": null,
+  "pregenCpuMsMedian": null,
+  "pregenCpuMsRange": null,
+  "pregenLongestTaskMsMedian": null,
+  "pregenLongestTaskMsMax": null,
+  "immediateExitLongestTaskMs": 5475,
+  "afterPregenExitLongestTaskMs": 5479,
+  "hotExitLongestTaskMs": 0,
+  "immediateExitMaxFrameGapMs": 5477,
+  "afterPregenExitMaxFrameGapMs": 5479,
+  "hotExitMaxFrameGapMs": 23,
+  "sphereImmediateLongestTaskMs": 5524,
+  "sphereAfterPregenLongestTaskMs": 5501,
+  "pageErrors": 0
+ },
+ "errors": []
+}

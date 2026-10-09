@@ -168,11 +168,15 @@ const byPriorityDesc = regions.map((r, i) => ({ r, i })).sort((a, b) => b.r.prio
 const byPriorityAsc = byPriorityDesc.slice().reverse();
 
 // Compile a shape into {contains(lon, lat), paintRow(lat, put(lonA, lonB))}. Painting and point queries use the same densified ring.
+// W8g-a: the quick rejections below only answer where the full test cannot disagree (a margin far above the rounding error); every other point runs the
+// original arithmetic, so contains() is bit for bit the same (tools/height_check.mjs compares it with the pre-w8g-a world.js).
+const SLACK_DEG = 1e-6;
 function compileShape(shape) {
   if (shape.type === 'cap') {
-    const c = vecOf(shape.center), c0 = pt(shape.center), cosR = Math.cos(shape.radiusMeters / R);
+    const c = vecOf(shape.center), c0 = pt(shape.center), cosR = Math.cos(shape.radiusMeters / R), latR = shape.radiusMeters / R / D + SLACK_DEG;
     return {
-      contains: (lon, lat) => dot(vec(lon, lat), c) >= cosR,
+      c, cosR, lat0: c0.lat, latR,                            // regionAt runs the same two tests inline with one shared vec(lon, lat)
+      contains: (lon, lat) => (Math.abs(lat - c0.lat) > latR ? false : dot(vec(lon, lat), c) >= cosR),
       row(lat) {
         const cp = Math.cos(lat * D) * Math.cos(c0.lat * D);
         if (cp < 1e-9) return Math.abs(lat - c0.lat) <= shape.radiusMeters / R / D ? [[-180, 180]] : [];
@@ -191,9 +195,10 @@ function compileShape(shape) {
     };
   }
   if (shape.type === 'lat-band') {
-    const N = shape.hemisphere === 'N';
+    const N = shape.hemisphere === 'N', amp = shape.waves.reduce((s, w) => s + Math.abs(w[0]), 0) + SLACK_DEG, lo = shape.base - amp, hi = shape.base + amp;
     return {
-      contains: (lon, lat) => (N ? lat >= shape.edge(lon) : lat <= shape.edge(lon)),
+      // the edge stays within base +- the sum of the wave amplitudes
+      contains: (lon, lat) => (N ? (lat < lo ? false : lat > hi ? true : lat >= shape.edge(lon)) : (lat > -lo ? false : lat < -hi ? true : lat <= shape.edge(lon))),
       band: true,
     };
   }
@@ -219,15 +224,25 @@ function compileShape(shape) {
       }
       return xs.sort((p, q) => p - q);
     };
+    // W8g-a: the edges sorted into 0.5 degree latitude buckets (an edge goes into every bucket its latitude span touches). An edge outside the bucket of `lat`
+    // cannot cross that parallel, and the crossing parity does not depend on the order, so the test is the same as over the whole ring.
+    const BK = 0.5, nb = Math.floor((latMax - latMin) / BK) + 1, buckets = Array.from({ length: nb }, () => []);
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = rel[j], b = rel[i];
+      if (a[1] === b[1]) continue;
+      const k0 = Math.floor((Math.min(a[1], b[1]) - latMin) / BK), k1 = Math.floor((Math.max(a[1], b[1]) - latMin) / BK);
+      for (let k = k0; k <= k1; k++) buckets[k].push(a[0], a[1], b[0], b[1]);
+    }
     return {
       contains(lon, lat) {
         if (lat < latMin || lat > latMax) return false;
         const rl = ((lon - cLon + 540) % 360 + 360) % 360 - 180;
         if (rl < relMin || rl > relMax) return false;
         let inside = false;
-        for (let i = 0, j = n - 1; i < n; j = i++) {
-          const a = rel[j], b = rel[i];
-          if ((a[1] > lat) !== (b[1] > lat) && rl < a[0] + (lat - a[1]) / (b[1] - a[1]) * (b[0] - a[0])) inside = !inside;
+        const e = buckets[Math.floor((lat - latMin) / BK)];
+        for (let q = 0; q < e.length; q += 4) {
+          const a0 = e[q], a1 = e[q + 1], b0 = e[q + 2], b1 = e[q + 3];
+          if ((a1 > lat) !== (b1 > lat) && rl < a0 + (lat - a1) / (b1 - a1) * (b0 - a0)) inside = !inside;
         }
         return inside;
       },
@@ -243,9 +258,15 @@ function compileShape(shape) {
   throw new Error('unknown shape ' + shape.type);
 }
 const compiled = new Map(regions.map(r => [r.id, compileShape(r.shape)]));
+const testDesc = byPriorityDesc.map(r => compiled.get(r.id));
 
 function regionAt(lon, lat) {
-  for (const r of byPriorityDesc) if (compiled.get(r.id).contains(lon, lat)) return r;
+  let v = null;                                              // vec(lon, lat), made once for the caps
+  for (let i = 0; i < testDesc.length; i++) {
+    const c = testDesc[i];
+    if (c.cosR !== undefined) { if (Math.abs(lat - c.lat0) <= c.latR && dot(v || (v = vec(lon, lat)), c.c) >= c.cosR) return byPriorityDesc[i]; }
+    else if (c.contains(lon, lat)) return byPriorityDesc[i];
+  }
   return DEFAULT_REGION;
 }
 
@@ -348,6 +369,20 @@ function polylineDistance(vp, vs) {
   return best;
 }
 const bell = (t, sharp) => { const b = 0.5 * (1 + Math.cos(Math.PI * clamp(t, 0, 1))); return sharp === 1 ? b : Math.pow(b, sharp); };
+// W8g-a: exact pruning of the height function. A peak, ridge, river stretch or platform is skipped only when a bounding cap proves that the point is beyond
+// its reach by more than SLACK (1e-6 rad, about 0.1 mm, far above the rounding error of a dot product); every other point runs the original arithmetic, so
+// height() returns the same doubles as before (checked bit for bit against the pre-w8g-a world.js by tools/height_check.mjs).
+const SLACK = 1e-6;
+const hide = (o, k, v) => { Object.defineProperty(o, k, { value: v, configurable: true }); return v; };   // caches stay out of JSON dumps of the layout
+// smallest-ish cap around points vs[i0 .. i1): centre = normalised sum, radius = the largest angle to a point. A cap under 90 degrees is convex, so the
+// great-circle arcs between its points stay inside it.
+function capOf(vs, i0, i1) {
+  let x = 0, y = 0, z = 0;
+  for (let i = i0; i < i1; i++) { x += vs[i][0]; y += vs[i][1]; z += vs[i][2]; }
+  const c = unit([x, y, z]); let rho = 0;
+  for (let i = i0; i < i1; i++) rho = Math.max(rho, angleBetween(c, vs[i]));
+  return { c, rho, i0, i1 };
+}
 
 let FIELD = null;
 function field() {
@@ -416,12 +451,18 @@ const coastDistance = (lon, lat) => sampleGrid(field().sdf, lon, lat);   // metr
 
 function featureHeight(f, lon, lat, vp) {
   if (f.type === 'peak') {
-    const d = arcDistance([lon, lat], [f.lon, f.lat]) / f.radiusMeters;
+    if (!f._c) { hide(f, '_c', vec(f.lon, f.lat)); hide(f, '_cosLim', Math.cos(f.radiusMeters / R + SLACK)); }
+    if (dot(vp, f._c) < f._cosLim) return 0;                                            // beyond the radius: d >= 1
+    const d = R * angleBetween(vp, f._c) / f.radiusMeters;                             // = arcDistance([lon, lat], [f.lon, f.lat]) / radius (vp = vec(lon, lat))
     if (d >= 1) return 0;
     return f.amp * bell((d - f.flat) / (1 - f.flat), f.sharp);
   }
   if (f.type === 'ridge') {
     if (!f._v) f._v = f.points.map(p => vec(p[0], p[1]));
+    if (!f._caps) hide(f, '_caps', f._v.slice(0, -1).map((v, i) => { const q = capOf(f._v, i, i + 2); q.cosLim = Math.cos(q.rho + f.halfWidthMeters / R + SLACK); return q; }));
+    let near = false;
+    for (const q of f._caps) if (dot(vp, q.c) >= q.cosLim) { near = true; break; }
+    if (!near) return 0;                                                                 // every leg is farther than the half width: d >= 1
     const d = polylineDistance(vp, f._v) / f.halfWidthMeters;
     return d >= 1 ? 0 : f.height * bell(d, f.sharp);
   }
@@ -429,15 +470,20 @@ function featureHeight(f, lon, lat, vp) {
 }
 
 // Raw terrain before rivers, platforms and the town plain.
-function heightRaw(lon, lat, skip) {
-  const vp = vec(lon, lat), c = coastDistance(lon, lat);
+function heightRaw(lon, lat, skip, vpIn) {
+  const vp = vpIn || vec(lon, lat), c = coastDistance(lon, lat);
   if (c < 0) {
     const r = regionAt(lon, lat), depth = heightField.oceanDepth[r.kind] !== undefined ? heightField.oceanDepth[r.kind] : 2;
     return -depth * smoothstep(0, heightField.coast.shelfMeters, -c);
   }
   // the summit of an absolute-height peak stays free of noise so that it is exactly the highest point
   let quiet = 1;
-  for (const f of heightField.features) if (f.type === 'peak' && f.height !== undefined) { const fr = f.flat * f.radiusMeters; quiet = Math.min(quiet, smoothstep(fr, fr + 10, arcDistance([lon, lat], [f.lon, f.lat]))); }
+  for (const f of heightField.features) if (f.type === 'peak' && f.height !== undefined) {
+    const fr = f.flat * f.radiusMeters;
+    if (!f._qc) { hide(f, '_qc', vec(f.lon, f.lat)); hide(f, '_qCos', Math.cos((fr + 10) / R + SLACK)); }
+    if (dot(vp, f._qc) < f._qCos) continue;                                              // smoothstep(...) = 1 there
+    quiet = Math.min(quiet, smoothstep(fr, fr + 10, R * angleBetween(vp, f._qc)));
+  }
   let h = sampleGrid(field().base, lon, lat) + quiet * noiseAt(lon, lat);
   let m = 0;                                  // peaks and ridges combine by maximum: a ridge joining a summit never stacks on it
   for (const f of heightField.features) if (f !== skip && (f.type === 'peak' || f.type === 'ridge')) m = Math.max(m, featureHeight(f, lon, lat, vp));
@@ -460,7 +506,10 @@ function riverGeometry(rv) {
   // bed profile: terrain minus the channel depth, forced to be non-increasing downstream
   const bed = []; let run = Infinity;
   for (let i = 0; i < pts.length; i++) { run = Math.min(run, heightPre(pts[i][0], pts[i][1]) - 0.35); bed.push(run); }
-  rv._dense = { pts, vs, s, bed };
+  // W8g-a: caps around runs of 16 points; riverCarve skips a run that lies beyond reach + 1.5 m (its nearest-point search would ignore it anyway)
+  const reach = rv.width / 2 + 5, chunks = [];
+  for (let i0 = 0; i0 < vs.length; i0 += 16) { const q = capOf(vs, i0, Math.min(vs.length, i0 + 16)); q.cosLim = Math.cos(q.rho + (reach + 1.5) / R + SLACK); chunks.push(q); }
+  rv._dense = { pts, vs, s, bed, chunks };
   return rv._dense;
 }
 function riverCrossing(lon, lat) {
@@ -472,8 +521,13 @@ function riverCarve(lon, lat, h) {
   const vp = vec(lon, lat);
   for (const rv of rivers) {
     const G = riverGeometry(rv);
+    // nearest dense point, searching only the runs that can be within reach + 1.5 m: a skipped point is farther than that, so it is neither the minimum nor
+    // a tie with it when the minimum matters (bd <= reach + 1.5), and the first-index rule of the full loop is kept
     let bi = -1, bd = Infinity;
-    for (let i = 0; i < G.vs.length; i++) { const d = R * angleBetween(vp, G.vs[i]); if (d < bd) { bd = d; bi = i; } }
+    for (const ch of G.chunks) {
+      if (dot(vp, ch.c) < ch.cosLim) continue;
+      for (let i = ch.i0; i < ch.i1; i++) { const d = R * angleBetween(vp, G.vs[i]); if (d < bd) { bd = d; bi = i; } }
+    }
     const reach = rv.width / 2 + 5;
     if (bd > reach + 1.5) continue;
     const d = polylineDistance(vp, G.vs);
@@ -519,23 +573,27 @@ function prepare() {
     if (lm.id === 'TOWN' || lm.check.maxSlope === undefined || lm.check.maxSlope > 0.15) continue;
     const f = { id: 'plat-' + lm.id, type: 'plain', lon: lm.lon, lat: lm.lat, radiusMeters: lm.radius, falloffMeters: 10 };
     f.height = heightRaw(lm.lon, lm.lat);
+    hide(f, '_c', vec(f.lon, f.lat)); hide(f, '_cosLim', Math.cos((f.radiusMeters + f.falloffMeters) / R + SLACK));
     platforms.push(f); heightField.features.push(f);
   }
 }
 // terrain with landmark platforms, before the river channels and the town plain
 function heightPre(lon, lat) {
   prepare();
-  let h = heightRaw(lon, lat);
+  const vp = vec(lon, lat);
+  let h = heightRaw(lon, lat, undefined, vp);
   for (const f of platforms) {
-    const d = arcDistance([lon, lat], [f.lon, f.lat]);
+    if (dot(vp, f._c) < f._cosLim) continue;                                             // beyond radius + falloff
+    const d = R * angleBetween(vp, f._c);                                                // = arcDistance([lon, lat], [f.lon, f.lat])
     if (d < f.radiusMeters + f.falloffMeters) h = lerp(h, f.height, 1 - smoothstep(f.radiusMeters, f.radiusMeters + f.falloffMeters, d));
   }
   return h;
 }
+const TOWN_FALL = heightField.features.find(f => f.id === 'plain-town').falloffMeters;
 function height(lon, lat) {
   if (insideTownPatch(lon, lat)) return TOWN_BASE_HEIGHT;
   let h = riverCarve(lon, lat, heightPre(lon, lat));
-  const dt = townPatchDistance(lon, lat), fall = heightField.features.find(f => f.id === 'plain-town').falloffMeters;
+  const dt = townPatchDistance(lon, lat), fall = TOWN_FALL;
   if (dt < fall) h = TOWN_BASE_HEIGHT + (h - TOWN_BASE_HEIGHT) * smoothstep(0, fall, dt);
   return h;
 }

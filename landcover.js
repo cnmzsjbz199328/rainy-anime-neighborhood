@@ -158,7 +158,9 @@ function build(W, H, ctx) {
 const vnoise3 = (x, y, z, s) => { const X = x / s, Y = y / s, Z = z / s, i = Math.floor(X), j = Math.floor(Y), k = Math.floor(Z), fx = X - i, fy = Y - j, fz = Z - k, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz); const h = (a, b, c) => hash(a * 7 + c * 31 + 3, b * 13 + c * 17 + 5); const L = (a, b, t) => a + (b - a) * t; return L(L(L(h(i, j, k), h(i + 1, j, k), u), L(h(i, j + 1, k), h(i + 1, j + 1, k), u), v), L(L(h(i, j, k + 1), h(i + 1, j, k + 1), u), L(h(i, j + 1, k + 1), h(i + 1, j + 1, k + 1), u), v), w); };
 // ---- generic region scatter for the ground-cover rows: jittered grid of true-metre cells over the sphere, noise helpers, distance to a region boundary by probing
 const vnoise = (x, z, s) => { const X = x / s, Z = z / s, i = Math.floor(X), j = Math.floor(Z), fx = X - i, fz = Z - j, u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz); const h = (a, b) => hash(a * 7 + 3, b * 13 + 5); return (h(i, j) * (1 - u) + h(i + 1, j) * u) * (1 - v) + (h(i, j + 1) * (1 - u) + h(i + 1, j + 1) * u) * v; };
-function scatterGrid(cell, latMax, fn) {            // calls fn(lon, lat, x, z, key) for a jittered grid with `cell` true metres between points
+// W8g-a: the larger builders also come as generators that yield every few rows (worldgen.js runs them in steps); the plain functions run them in one go
+const runAll = it => { for (;;) { const r = it.next(); if (r.done) return r.value; } };
+function* scatterGridSteps(cell, latMax, fn, rowsPerStep = 1e9) {   // calls fn(lon, lat, x, z, key) for a jittered grid with `cell` true metres between points
   let lat = -latMax, row = 0;
   while (lat < latMax) {
     const k = 1 / Math.cos(lat * D), dx = cell * k, dlat = cell / (R * D);
@@ -167,8 +169,10 @@ function scatterGrid(cell, latMax, fn) {            // calls fn(lon, lat, x, z, 
       fn(ll.lon, ll.lat, x + jx, z, row * 100003 + i);
     }
     lat += dlat; row++;
+    if (row % rowsPerStep === 0) yield;
   }
 }
+const scatterGrid = (cell, latMax, fn) => runAll(scatterGridSteps(cell, latMax, fn));
 function edgeDistance(W, lon, lat, test, maxD) {      // metres to the nearest point where test(region) is false (8 directions, 2 m steps), maxD when none is found
   let best = maxD; for (let a = 0; a < 8; a++) for (let d = 2; d < best; d += 2) { const p = W.destination({ lon, lat }, a * 45 + 22.5, d); if (!test(W.regionAt(p.lon, p.lat))) { best = Math.min(best, d); break; } }
   return best;
@@ -219,14 +223,15 @@ function forest(W, H, ctx) {
 
 // ---- BI03 grassland, BI04 desert, TR07: grass tufts in patches (low saturation, dry yellow near the desert), wild flowers, rocks 0.5-2 m, lone trees, cairns beside the dirt tracks,
 // dry shrubs and rock pillars in the desert; the dunes are a separate overlay mesh (dunes()) that never changes height()
-function grassland(W, H, ctx) {
+function grassland(W, H, ctx) { return runAll(grasslandSteps(W, H, ctx)); }
+function* grasslandSteps(W, H, ctx) {
   const avoid = ctx.avoid || [], corridor = ctx.corridor || null, items = [], stats = { tufts: 0, flowers: 0, rocks: 0, bigRocks: 0, trees: 0, cairns: 0, area: 0, dryTufts: 0, shrubs: 0, pillars: 0, desertRocks: 0, desertArea: 0 };
   const nearAvoid = (lon, lat, r) => avoid.some(a => { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D; return dl * dl + dt * dt < (a.r + r) * (a.r + r); });
   const put = (type, lon, lat, alt, o = {}) => items.push({ type, lon, lat, alt, yaw: o.yaw ?? hash(lon * 91, lat * 77) * 6.283, s: o.s || [1, 1, 1], lean: o.lean || [0, 0], tint: o.tint || [1, 1, 1] });
   const tint = (a, b, k) => { const t = a + (b - a) * hash(k, 9), j = (hash(k, 11) - 0.5) * 0.06; return [t + j, t, t - j]; };
   const slopeAt = (lon, lat) => { const e = 1.0 / (R * D); return Math.hypot((H(lon + e / Math.cos(lat * D), lat) - H(lon - e / Math.cos(lat * D), lat)) / 2, (H(lon, lat + e) - H(lon, lat - e)) / 2); };
   const isGrass = r => r.kind === 'grassland', isDesert = r => r.kind === 'desert';
-  scatterGrid(1.4, 75, (lon, lat, x, z, key) => {
+  yield* scatterGridSteps(1.4, 75, (lon, lat, x, z, key) => {
     const reg = W.regionAt(lon, lat), gr = isGrass(reg), de = isDesert(reg); if (!gr && !de) return;
     const h = H(lon, lat); if (h < 0.5 || nearAvoid(lon, lat, 0.9) || (corridor && corridor(lon, lat))) return;
     const steep = slopeAt(lon, lat) > 0.8; if (steep) return;
@@ -245,7 +250,7 @@ function grassland(W, H, ctx) {
       if (hash(key, 13) < 0.006) { const sc = 0.4 + 0.9 * hash(key, 14); put('rock', lon, lat, h - 0.1, { s: [sc * 1.2, sc * 1.2, sc * 1.2], tint: tint(0.9, 1.15, key + 7) }); stats.desertRocks++; }
       if (hash(key, 15) < 0.0042) { const hh = 5 + 7 * hash(key, 16), w = 1.0 + 0.8 * hash(key, 17); put('rockPillar', lon, lat, h - 0.1, { s: [w, hh, w], tint: tint(0.9, 1.15, key + 9) }); stats.pillars++; }
     }
-  });
+  }, 40);
   // cairns beside the dirt tracks of T07, T08, T09 (RD05) and T02/T05 country roads in grassland: every ~14 m on the left side
   for (const e of W.roadNetwork.edges.filter(q => ['RD05', 'RD03'].includes(q.class))) {
     const S = W.roadNetwork.samplePath(e, 0.5); for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, e.id.length * 7 + e.id.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
@@ -254,7 +259,8 @@ function grassland(W, H, ctx) {
 }
 // dune overlay (BI04): a grid of 0.7 m cells over the desert, each vertex raised by an isotropic dune field of up to 3 m (crest to trough), faded out toward the desert edge, the
 // roads and the landmarks; sand-coloured with a ripple modulation; the terrain mesh and height() are untouched
-function dunes(W, H, ctx) {
+function dunes(W, H, ctx) { return runAll(dunesSteps(W, H, ctx)); }
+function* dunesSteps(W, H, ctx) {
   const avoid = ctx.avoid || [], reg = W.regions.find(q => q.kind === 'desert'), ring = reg.shape.ring, step = 0.7;
   let lon0 = 1e9, lon1 = -1e9, lat0 = 1e9, lat1 = -1e9; for (const p of ring) { lon0 = Math.min(lon0, p[0]); lon1 = Math.max(lon1, p[0]); lat0 = Math.min(lat0, p[1]); lat1 = Math.max(lat1, p[1]); }
   const out = { pos: [], col: [], idx: [] }, vid = new Map(); let maxH = 0, minH = 0, cells = 0;
@@ -283,9 +289,12 @@ function dunes(W, H, ctx) {
     out.pos.push(F.x, (h + dh + 0.01 - BASE) * F.k, F.z); out.col.push(c[0], c[1], c[2]); v = out.pos.length / 3 - 1; vid.set(key, v); void lon; return v;
   };
   const nI = Math.ceil((lon1 - lon0) * D * R * Math.cos(((lat0 + lat1) / 2) * D) / step), nJ = Math.ceil((lat1 - lat0) * D * R / step);
-  for (let j = 0; j < nJ; j++) for (let i = 0; i < nI; i++) {
-    const lat = lat0 + (j + 0.5) * step / (R * D), lonU = lon0 + (i + 0.5) * step / (R * D * Math.cos(lat * D)); if (maskAt(lonU, lat) < 0.02) continue;
-    const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1); out.idx.push(a, c, b, b, c, d); cells++;
+  for (let j = 0; j < nJ; j++) {
+    for (let i = 0; i < nI; i++) {
+      const lat = lat0 + (j + 0.5) * step / (R * D), lonU = lon0 + (i + 0.5) * step / (R * D * Math.cos(lat * D)); if (maskAt(lonU, lat) < 0.02) continue;
+      const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1); out.idx.push(a, c, b, b, c, d); cells++;
+    }
+    if (j % 60 === 59) yield;
   }
   return { mesh: out, stats: { cells, maxDune: maxH, minDune: minH, range: maxH - minH, triangles: out.idx.length / 3 } };
 }
@@ -344,7 +353,8 @@ function highland(W, H, ctx) {
   });
   return { items, stats };
 }
-function iceField(W, H, ctx) {                                      // BI07 ice undulation, cracks and cliffs as an overlay of 1.0 m cells over both ice caps
+function iceField(W, H, ctx) { return runAll(iceFieldSteps(W, H, ctx)); }
+function* iceFieldSteps(W, H, ctx) {                                // BI07 ice undulation, cracks and cliffs as an overlay of 1.0 m cells over both ice caps
   const avoid = ctx.avoid || [], ICE = lin('#cfe0ee'), ICE2 = lin('#dcebf6'), BLU = lin('#9ec6dc'), CRK = lin('#6aa6bd'), CLF = lin('#b5cfe0');
   const stats = { cliffs: 0, cracks: 0, cells: 0, maxCliff: 0, minUnd: 0, maxUnd: 0 };
   const res = [];
@@ -364,6 +374,7 @@ function iceField(W, H, ctx) {                                      // BI07 ice 
       return { h: base + und + cliffH * m + 0.0, color: c, crack, cliff: cliffH, und };
     };
     const g = overlayGrid(W, H, rg, 1.0, fn); res.push(g);
+    yield;
   }
   return { grids: res };
 }
@@ -431,7 +442,8 @@ function terraces(W, H, ctx) {
   return out;
 }
 
-const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, SP, COL, SEED };
+const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, SP, COL, SEED,
+  grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps };
 
 // ---------------------------------------------------------------- scene part
 LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -460,7 +472,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     return { lon: Math.atan2(dx, dy) / D, lat: -Math.asin(dz / l) / D, alt: l - R };
   }
   function buildMeshes(K, M) {
-    const root = new THREE.Group(); root.name = 'landcover'; scene.add(root); S.root = root;
+    const root = new THREE.Group(); root.name = 'landcover'; root.visible = false; scene.add(root); S.root = root;   // W8g-a: hidden until the build's last step
     objs.twoSided = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const stripMesh = (m, mat, name, normals) => {
       if (!m.idx.length) return null; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(m.pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(m.col, 3)); g.setIndex(m.idx);
@@ -521,7 +533,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   // surface cells (continuous across the longitude seam and near the poles).
   const smoothCover=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
   const baked=[], canopyGroups=[]; let canopy=null, weights=null;
-  function buildDistant(K,M){
+  function* buildDistant(K,M){
     weights=new Float32Array(DATA.items.length);const P=K.palette;
     const cells=new Map(),point=(lo,la)=>[R*Math.cos(la*D)*Math.sin(lo*D),R*Math.cos(la*D)*Math.cos(lo*D),-R*Math.sin(la*D)];
     for(const it of DATA.items){const p=point(it.lon,it.lat),key=p.map(x=>Math.floor(x/8)).join(',');let c=cells.get(key);if(!c)cells.set(key,c={n:0,trees:0,cedar:0});c.n++;if(TREE_SET.has(it.type))c.trees++;if(it.type==='cedar')c.cedar++;}
@@ -534,7 +546,9 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
         neo.setXYZ(i,...color);
       }baked.push({g,old,neo});
+      if(baked.length%60===0)yield;
     }
+    yield;
     // Each 16 m source tile is split into four local crown patches. Each patch
     // stays at its trees' centroid and uses a single 20-triangle crown.
     for(const ids of INDEX.tiles.values()){
@@ -582,29 +596,45 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
     if (segs.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.name = 'cover:ink:forest-edge'; l.matrixAutoUpdate = false; S.root.add(l); objs.lines.push(l); S.edgeSegments = segs.length / 6; }
   }
-  function build_() {
-    const t0 = Date.now(), K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);
+  // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
+  function* build_() {
+    SEC.ensure();
+    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);   // (asking for the global sampler used to build the rest here; the order is kept)
     const RD = global.ROADS_API && (global.ROADS_API.ensure(), global.ROADS_API.data()); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     if (RD) { for (const r of RD.routes) addPts(r.samples, r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.4 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : 4.6); for (const b of RD.bridges) addPts(b.samples, 5.2); for (const s of RD.stairs) addPts(s.samples, 1.2); }
     if (SEC.state.chain) addPts(SEC.state.chain.samples, 3.0); for (const r of (SEC.state.roadOut || [])) if (r.centre) addPts(r.centre, 2.0);
     for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
+    yield;
     DATA = build(W, H, { avoid, corridor });
+    yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
+    yield;
     DATA.forest = forest(W, H, { avoid, corridor }); DATA.items.push(...DATA.forest.items);
-    DATA.grass = grassland(W, H, { avoid, corridor }); DATA.items.push(...DATA.grass.items);
+    yield;
+    DATA.grass = yield* grasslandSteps(W, H, { avoid, corridor }); DATA.items.push(...DATA.grass.items);
+    yield;
     DATA.high = highland(W, H, { avoid, corridor }); DATA.items.push(...DATA.high.items);
-    DATA.ice = iceField(W, H, { avoid }); DATA.lava = lavaField(W, H, { avoid });
-    { const TB = global.TERRAIN.builder(W); DATA.dunes = dunes(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
+    yield;
+    DATA.ice = yield* iceFieldSteps(W, H, { avoid });
+    yield;
+    DATA.lava = lavaField(W, H, { avoid });
+    yield;
+    { const TB = global.TERRAIN.builder(W); DATA.dunes = yield* dunesSteps(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
+    yield;
     INDEX = indexItems(DATA.items); S.data = DATA;
-    buildMeshes(K, M); buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
-    buildDistant(K, M);   // W8f-b: after the seam cut, so the baked colours are the cut meshes' own attributes
-    S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, buildMs: Date.now() - t0, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
-    S.built = true; return S.root;
+    buildMeshes(K, M);
+    yield;
+    buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
+    yield;
+    yield* buildDistant(K, M);   // W8f-b: after the seam cut, so the baked colours are the cut meshes' own attributes
+    S.stats = { ...DATA.stats, forest: DATA.forest.stats, grass: DATA.grass.stats, dunes: DATA.dunes.stats, high: DATA.high.stats, iceCells: DATA.ice.grids.reduce((a, g) => a + g.cells, 0), lavaCells: DATA.lava.grid.cells, edgeSegments: S.edgeSegments, terraceCells: DATA.terrace.cells, terraceWalls: DATA.terrace.walls, terraceBands: DATA.terrace.bands, items: DATA.items.length, treadTriangles: DATA.meshes.tread.idx.length / 3, ridgeTriangles: DATA.meshes.ridge.idx.length / 3, waterTriangles: DATA.meshes.water.idx.length / 3 };
+    S.root.visible = true; S.built = true; return S.root;
   }
-  function ensure() { if (!S.built) { SEC.ensure(); global.TERRAIN.withPrivateRandom(build_); } return S.root; }
+  const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
+  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
   function visibility() { const show = BEND.get() > 0 || TERR.explore || SEC.state.mode; if (show) ensure(); if (S.root) S.root.visible = show; }
   BEND.onChange(visibility);
   TERR.onExplore(visibility);
@@ -616,7 +646,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
   }
-  const api = { ensure, tick, state: S, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
+  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
   global.LANDCOVER_API = api;
   return api;
 };

@@ -2618,3 +2618,40 @@
   - 完整清单见 [W8_SPEC](docs/world/W8_SPEC.md) 第 13 节开头。
 - **计划**：ROADMAP 新增 W8g-a…d 四行，规格写在 W8_SPEC 第 13 节；WORLD_PLAN 增加 D14；WORLD_AGENT_START 增加 W8g 一节；待办池新增 4 条；BORROWING_NOTES 追加 middle-earth、doodleshooter、Sketchbook 三个来源。
 - **本轮范围**：只改文档，未改代码；临时测量脚本放在会话临时目录，未入库。W8g-a 会把测量方法做成 `tools/perf_baseline.mjs`。
+
+### W8g-a 阶段细化（2026-10-09）
+
+- 规格：[W8_SPEC](docs/world/W8_SPEC.md) 第 13.0、13.1、13.5 节；决策 D14（WORLD_PLAN 第 3 节）；无设计卡。分支 `world/W8g-a`，基线标签 `pre-w8g-a` = `42354a5`（W8g 规划文档提交；代码与 `470bd1d` 相同）。
+- 范围：A1 `tools/perf_baseline.mjs`；A2 `world.js` 高度函数提速（逐位相同）；A3 `ringFlat`/`ring` 只算一次、采样器按块懒构建；A4 新模块 `worldgen.js` 统一调度后台预生成。
+- 不做：W8g-b 的道路头、`ringFlat` 去除、`road_check` 口径；W8g-c/d；不改裁切结果，也不改平面/球形各用哪张网格；不改任何像素。
+- 退出标准：T1 A2 逐位相同（新工具 `tools/height_check.mjs`：全球格点及梯度探针、9 个出口前 15 m、20 万随机点，另比地形网格数据）；T2 延后模块 CPU 总耗时 ≤ 2.0 s；T3 预生成期间最长任务 ≤ 150 ms（上限 300）；T4 预生成后冷出城 9 个出口最长任务 ≤ 100 ms；T5 WC12 两种天气 8/8 逐位相同、默认 2374 / 240618 不变，`joint_shots` 基线与当前各 126 张逐位 0 差异。
+- 检查：`world_check`、`terrain_check`、`road_check`、`cover_check`、`section_check`、`ocean_check`、`seam_check`、`bend_check`、`day_check`、`night_check`、`transition_check` C2/C3、`views`、`measure_samples`、`layout_check --png`。
+- 预算：默认视角绘制调用不变（ROADMAP 第 4 节第 6 条）；`index.html` 增量远小于 0.6 MB（只有代码，不嵌预计算数据，除非 T2 达不到）。
+- 停止条件：A2 不能逐位相同；WC12 或 `joint_shots` 出现差异且原因是生成结果变了；T2 压不回；需要改冻结数据。
+- 裁决 1（分步与随机流）：各模块的构建改成生成器，由 `TERRAIN.job` 逐步推进；一个构建只用一条私有随机流，跨步继续，与原来一次 `withPrivateRandom` 抽到的数相同。步骤顺序 = 原按需构建的创建顺序（地形 rest → 采样器 → section → 全景墨线 → roads → ocean → landcover → 地标），所以场景图顺序、对象与材质编号的相对顺序都不变。根对象在构建中隐藏，最后一步恢复为原来的可见，再立即套用模块自己的可见性规则。
+- 裁决 2（采样器的“块”）：rest 未建成前，`sampler()` 按 15° 地形块懒构建，只建查询点周围 5 × 3 块，每个 1° 格子的三角形列表与全球索引同序；rest 建成后直接返回全球索引（同一组数，供全球范围的构建使用）。roads、ocean、landcover 原来通过 `sampler()` 顺带建 rest，现在在同一位置显式调用 `buildRest()`，保持创建顺序。
+- 裁决 3（GPU 部分）：本仓库的 three（r158 系）`renderer.compile(root, camera, scene)` 遍历根下全部对象（含隐藏的），灯光取自场景中可见的灯，所以对每个根调用 `compileAsync` 预编译出的程序与之后渲染用的程序相同。GPU 缓冲上传只能靠绘制，本行不做，只测量。
+- 裁决 4（不预生成的部分）：城镇球面细分副本（`BEND.tessellate`，第一次进球形时建）不预生成：它在城镇自己的 `Math.random` 流里生成 uuid，提前建会改变城镇雨滴的随机序列。全景墨线（只在 uBend ≥ 0.5 时显示）也不预生成：它的线段跨过 −85° 接缝且未切开，只有球形能显示它；第一版曾预生成它，`seam_check` C1 因此在平面状态下看到 4 个跨接缝图元，已改回第一次进球形时建（它仍是单独的 job，用自己的私有随机流）。
+
+### W8g-a 实施与验收（2026-10-09，提交 `96be057`、`090d5ac`，分支 `world/W8g-a`，已合并 main，未推送）
+
+- **A2 高度函数**（`world.js`）：山峰、山脊、河段（每 16 个折点一个包围圆）、平台各有包围圆，`regionAt` 的多边形按 0.5° 纬度分桶、圆形区域先比纬度。只有能证明“够不着”（留 1e-6 rad 余量，远大于舍入误差）时才跳过，其余点照原式计算。`tools/height_check.mjs` 与 `pre-w8g-a` 用 `===` 比较：`W.height`、`regionAt`、`coastDistance` 在 417,507 点（格点与梯度探针 212,157、9 个出口前 15 m 5,350、随机 200,000）全部相同；地形网格数据（ring + rest 304 块、两极帽）逐数组相同。Node 计时：同一批点 `W.height` 3,501 → 480 ms（×7.3），地形网格构建 2,076 → 404 ms。新的头号热点是 `regionAt`（多边形 `contains`，多由 landcover 散布与 `edgeDistance` 调用），其次是 landcover `buildDistant` 的密度采样。
+- **A3**（`terrain.js`）：`ringFlat` 与 `ring` 共用一次 `buildFlat`（后者用自己的属性对象，裁切时释放不影响前者）；构建器缓存顶点。`sampler()` 在 rest 建成前按 15° 块懒构建（只建查询点周围 5 × 3 块，每个 1° 格子的三角形与全球索引同序），rest 建成后返回全球索引；`height_check` 验证懒构建与全球索引在 417,507 点逐位相同，城镇外第一次查询 7 ms（原来要先建全球 rest）。
+- **A4**（新模块 `worldgen.js`）：各模块构建改成生成器，由 `TERRAIN.job` 推进，一个构建一条私有随机流、跨步延续。步骤（安静时一次实测，Metal）：rest 13 步 288 ms（最长 37）、采样器 17、section 5 步 107（最长 61）、roads 20 步 254（最长 44）、ocean 2 步 94（最长 85）、landcover 24 步 818（最长 90）、地标 11 步 100；合计约 1,680 ms。着色器预编译 6 个根、同步部分合计约 44 ms（含地形淡入材质的透明 / 不透明两种程序）。每片预算 50 ms，若下一步按上一步耗时会超出预算就留到下一片。全景墨线与城镇球面细分副本仍按需构建（见阶段细化裁决 4）。
+- **A1**（`tools/perf_baseline.mjs`，新浏览器逐项测量）：输出 `docs/world/perf/pre-w8g-a.json`、`docs/world/perf/w8g-a.json`。两份都在内存较宽松时重测（`machine` 字段记了空闲内存与负载），GPU `ANGLE Metal Renderer: Apple M4`，支持 `KHR_parallel_shader_compile`：
+  - 页面可用（`__scene`）中位数 2,133 → 1,579 ms，城镇首帧 2,335 → 1,767 ms（只建一次环形地形、高度函数变快）。
+  - 冷出城、页面一可用就出发：9 个出口最长任务 5,385–5,475 → 1,725–1,755 ms（此时预生成还没开始，由各模块 `ensure()` 同步跑完：rest 267、section 105、roads 279、ocean 96、landcover 827、地标 106 ms）。
+  - 冷出城、预生成完成后出发：5,385–5,479 ms → 9 个出口都没有 ≥ 50 ms 的长任务，最大帧间隔 28–35 ms。
+  - 热路径（回城再出城）：0 / ≤ 23 ms → 0 / ≤ 21 ms。
+  - 球形按钮：立即 5,524 → 1,862 ms；预生成后 5,501 → 156 ms（剩下的是第一次进球形时建的城镇球面细分副本与全景墨线，见待办池）。
+  - 预生成：首帧后 1 s 开始、约 4.1 s 完成，35 片，最长一片 108 ms；CPU 合计 1,660 ms（9 页中位数，1,648–1,666）；页内最长任务中位数 108 ms、最大 111 ms。各步：rest 13 步 270 ms（最长 34）、采样器 22、section 5 步 108（最长 62）、roads 20 步 250（最长 44）、ocean 2 步 92（最长 84）、landcover 24 步 814（最长 90）、地标 11 步 104（最长 14）；着色器 6 个根，同步部分 9 / 2 / 2 / 1 / 1 / 33 ms。
+- **本机条件**：本轮前半段本机内存很紧（空闲 80–160 MB、交换区 6.6 GB 以上），那时测的基线冷出城在 5.4–17 s 之间乱跳；所以工具改为每项新开浏览器、记录内存与负载、分步耗时取多页中位数，两份 JSON 都在后半段重测。真机：待验证。
+- **证据图**（压缩后 `git add -f` 入库）：`docs/world/w8g/evidence/cold-start.webp`（冷启动 N01、N11、N04、球形）、`joints-N01-N03.webp`、`joints-J-LM08.webp`。
+- **T 目标**：T1 通过（A2 逐位相同）；T2 通过（1,660 ms ≤ 2.0 s，原约 5.4 s）；T3 通过（预生成期间最长任务 111 ms ≤ 150 ms）；T4 通过（预生成后 9 个出口均无 ≥ 50 ms 的长任务；页面一可用就出城的停顿 1.73–1.76 s 如实记录）；T5 通过（见下三条）。
+- **WC12（T5）**：`regress --baseline-ref pre-w8g-a` 与 `--weather lock:rain` 均 8/8 逐位相同（最大通道差 0），默认 2374 / 240618 不变（第一版与最终版 `090d5ac` 各跑一遍，结果相同）。
+- **冷启动截图**（新工具 `tools/cold_shots.mjs`，新开浏览器、不先进球形，SwiftShader 确定性帧）：9 个出口（等预生成完成后拖到出口外 30 m）与球形按钮共 10 张，与 `pre-w8g-a`（同样流程、同步生成）逐位相同 10/10。图在 `docs/world/w8g/cold/`（不入库）。
+- **joint_shots（T5）**：`pre-w8g-a`（基线工作树）与最终版各拍 42 处 × 3 = 126 张，逐字节相同 126/126；两版“树冠团不压路”均通过（164 团，最小间距 0.07 m）。图在 `docs/world/w8g/joints/`（不入库）。
+- **检查**：`world_check` WC1–WC11 11/11；`terrain_check` 7/7；`height_check` 全部通过；`road_check` 12 项、`cover_check` 9 项、`section_check` 8 项（C8 标题按 D14 改为“不显示断面（后台预生成并保持隐藏）”，判据不变：根节点隐藏、默认绘制调用 ≤ +2%）、`ocean_check`、`seam_check` 5/5、`day_check` D1–D4、`night_check` C1–C4、`transition_check` C2、C3、`views` 24 项无页面错误、`measure_samples`、`layout_check --png` C1–C12 全部通过。`bend_check` 唯一失败“关闭模式全部关剔除”（10163 → 40）与 `pre-w8g-a` 完全相同（W8f-c 已记录：40 个 `noBend` 极帽网格），本行未改弯曲系统。`views` 重拍的 `docs/layout/views/*.png` 已还原。
+- **截图审查**（AGENT_PROTOCOLS §4）：冷启动 10 张（`docs/world/w8g/cold/current/`）与总览 `docs/world/w8g/evidence/cold-start.webp` 逐张看过，`joint_shots` 总览抽看 `sheet-01`：物件落地、路灯光池与护栏连续、无 z-fighting、无接缝或洞、球形晴朗；与基线逐位相同，本行没有新的视觉问题。
+- **范围外与遗留**：见待办池「W8g-a 观察」（球面细分副本未预生成、页面一可用就出城仍同步生成、GPU 缓冲上传未预做、`regionAt` 热点）。
+- **过程说明**：一次清理时用 `pkill -f chrome-headless-shell` 结束了本机全部无头 Chromium，可能波及同时运行的其他会话的浏览器检查；之后只按自己的进程号结束。
