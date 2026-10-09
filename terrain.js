@@ -391,10 +391,13 @@ function stripNormals(THREE, pos, index, m, n0, n1) { const g = new THREE.Buffer
 // one mesh per exit head (so the view culls them one by one): its plain cells keep the road's vertex colours and normals (as above); its pure town cells (the first
 // 6 m: town asphalt, N11-N13 the paving colour of 12.4 G6) have their own vertices with the town colour as vertex colour, uv = one texture repeat per 4 m as the town's
 // slabs, normals over those cells alone, and texW = 1: the head material (headMaterial) applies the asphalt grain only there. Each exit keeps only its rows 0 .. K.
-function headGeometry(THREE, heads, colours) {
-  const out = [];
+// W8g-b (ruling 6): an end cap at row K, a wall from the road's last row to the terrain under it (H, the sampler), facing back into the town, capW = 1: where the
+// road ends in the town view (the terrain resumes beyond), its ditch or its raised bed would leave an open slit; the material folds the cap away (uCap = 0) while the
+// network road continues from row K (explore, sphere, section view), so the head and the road beyond still meet with the same vertices.
+function headGeometry(THREE, heads, colours, H, terrainColour) {
+  const out = [], R = 90, D = Math.PI / 180;
   for (const hd of heads) {
-    const st = hd.rt.strip, m = hd.rt.grid.length, K = hd.K, last = hd.rt.samples.length - 1, P = { pos: [], col: [], nrm: [], uv: [], tw: [], idx: [] };
+    const st = hd.rt.strip, m = hd.rt.grid.length, K = hd.K, last = hd.rt.samples.length - 1, P = { pos: [], col: [], nrm: [], uv: [], tw: [], cw: [], idx: [] };
     // (N08: the W4 section draws its strips with up normals, so its head does too)
     const gN = hd.upNormals ? Float32Array.from({ length: st.pos.length }, (_, k) => (k % 3 === 1 ? 1 : 0)) : stripNormals(THREE, st.pos, st.index, m, 0, Math.min(K + 1, last));
     const town = colours[['N11', 'N12', 'N13'].includes(hd.exit) ? 'paving' : 'asphalt'];
@@ -403,25 +406,39 @@ function headGeometry(THREE, heads, colours) {
       const used = [...new Set(cells)].sort((a, b) => a - b), map = new Map(used.map((v, k) => [v, k])), base = P.pos.length / 3;
       let nTown = null;
       if (!normals) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(st.pos, 3)); g.setIndex(cells); g.computeVertexNormals(); nTown = g.getAttribute('normal').array; }
-      for (const v of used) { for (let c = 0; c < 3; c++) { P.pos.push(st.pos[v * 3 + c]); P.col.push(colour ? colour[c] : st.col[v * 3 + c]); P.nrm.push((normals || nTown)[v * 3 + c]); } P.uv.push(st.pos[v * 3] / 4, -st.pos[v * 3 + 2] / 4); P.tw.push(w); }
+      for (const v of used) { for (let c = 0; c < 3; c++) { P.pos.push(st.pos[v * 3 + c]); P.col.push(colour ? colour[c] : st.col[v * 3 + c]); P.nrm.push((normals || nTown)[v * 3 + c]); } P.uv.push(st.pos[v * 3] / 4, -st.pos[v * 3 + 2] / 4); P.tw.push(w); P.cw.push(0); }
       for (const v of cells) P.idx.push(base + map.get(v));
     };
     pushPart(cellsIn(st.index, m, 0, K), gN, null, 0);
     pushPart(cellsIn(st.headIndex || [], m, 0, K), null, town, 1);
+    if (H && K > 0) {                                                    // the end cap
+      const a = K * m, b = (K - 1) * m + Math.floor(m / 2), c0 = a + Math.floor(m / 2), dx = st.pos[b * 3] - st.pos[c0 * 3], dz = st.pos[b * 3 + 2] - st.pos[c0 * 3 + 2], dl = Math.hypot(dx, dz) || 1, base = P.pos.length / 3;
+      for (let j = 0; j < m; j++) {
+        const v = a + j, x = st.pos[v * 3], y = st.pos[v * 3 + 1], z = st.pos[v * 3 + 2], lat = Math.atan(Math.sinh(-z / R)) / D, yt = (H(x / (R * D), lat) - 1.6) / Math.cos(lat * D);
+        const tc = terrainColour ? terrainColour(x / (R * D), lat) : [st.col[v * 3], st.col[v * 3 + 1], st.col[v * 3 + 2]];        // an earth wall: the terrain's own colour, a little darker
+        for (const yy of [y, yt]) { P.pos.push(x, yy, z); P.col.push(tc[0] * 0.85, tc[1] * 0.85, tc[2] * 0.85); P.nrm.push(dx / dl, 0, dz / dl); P.uv.push(0, 0); P.tw.push(0); P.cw.push(hd.exit === 'N08' ? 2 : 1); }   // 2: the W4 section's chain continues N08
+      }
+      for (let j = 0; j + 1 < m; j++) {                                 // both windings (the material draws front faces only): seen from the town side and from beyond
+        const t0 = base + j * 2, b0 = t0 + 1, t1 = t0 + 2, b1 = t0 + 3;
+        P.idx.push(t0, b0, t1, t1, b0, b1, t0, t1, b0, t1, b1, b0);
+      }
+    }
     if (!P.idx.length) continue;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P.pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(P.col, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(P.nrm, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(P.uv, 2)); g.setAttribute('texW', new THREE.Float32BufferAttribute(P.tw, 1)); g.setIndex(P.idx);
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(P.uv, 2)); g.setAttribute('texW', new THREE.Float32BufferAttribute(P.tw, 1)); g.setAttribute('capW', new THREE.Float32BufferAttribute(P.cw, 1)); g.setIndex(P.idx);
     g.computeBoundingSphere(); out.push({ exit: hd.exit, geometry: g, surface: ['N11', 'N12', 'N13'].includes(hd.exit) ? 'paving' : 'asphalt' });
   }
   return out;
 }
 // the material of the heads: toon with vertex colours and the town asphalt's grain, the grain applied only where texW = 1 (a select, not a blend, so a town cell renders
 // as colour x texel exactly like the town's own textured material, and a road cell as its vertex colour exactly like the ground material of the road strips)
-function headMaterial(THREE, makeMaterial, map) {
+function headMaterial(THREE, makeMaterial, map, capU) {
   const mtl = makeMaterial(); mtl.map = map; mtl.polygonOffset = true; mtl.polygonOffsetFactor = -2; mtl.polygonOffsetUnits = -2;
   mtl.onBeforeCompile = shader => {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float texW;\nvarying float vTexW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvTexW = texW;');
+    shader.uniforms.uCap = capU;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float texW;\nattribute float capW;\nuniform vec2 uCap;\nvarying float vTexW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvTexW = texW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nif ((capW > 0.5 && capW < 1.5 && uCap.x < 0.5) || (capW > 1.5 && uCap.y < 0.5)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);');
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vTexW;').replace('#include <map_fragment>', '#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= vTexW > 0.5 ? sampledDiffuseColor : vec4( 1.0 );\n#endif');
   };
   return mtl;
@@ -431,14 +448,14 @@ TERRAIN.cellsIn = cellsIn; TERRAIN.stripNormals = stripNormals;
 // opts.exitHeads(sampler, builder) -> the exit heads (roads.js exitHeads): W8g-b, the town view's exit roads and the ring's cut are made from them at start-up
 TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts = {}) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, restMat, headMat, root;
+  let material, capMat, restMat, headMat, root; const capU = { value: new THREE.Vector2(1, 1) };     // the exit heads' end caps shown (1) while the road beyond is not: x the network's exits, y N08 (the W4 section)
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
     restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
     // W8g-b: the exit heads: the first 6 m in the town's own asphalt colour and grain (N11-N13: the paving colour of 12.4 G6 on the same grain), the rest as the
     // network's road strips (toon, vertex colours, polygon offset -2 / -2 as section.js groundMat), one material for all (headMaterial)
-    headMat = headMaterial(THREE, makeMaterial, townAsphaltMaterial ? townAsphaltMaterial.map : null);
+    headMat = headMaterial(THREE, makeMaterial, townAsphaltMaterial ? townAsphaltMaterial.map : null, capU);
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
   const state = { ring: [], heads: [], rest: [], caps: [], restBuilt: false, stats: {} };
@@ -473,10 +490,12 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
   const exitPolygons = B.exitPolygons(heads);
   const ringData = exitPolygons.length ? B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitPolygons }) : flatRingData;
   state.exitHeads = heads; state.stats.exitClearancePolygons = exitPolygons.length;
+  state.headCaps = () => capU.value.toArray();
+  state.setHeadCaps = (which, on) => { if (which === 'section') capU.value.y = on ? 1 : 0; else capU.value.x = on ? 1 : 0; };   // roads.js / section.js: off while their road continues
   withPrivateRandom(() => {
     for (const c of ringData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
     const townColour = { asphalt: new THREE.Color(townAsphaltMaterial ? townAsphaltMaterial.color : '#46505b').toArray(), paving: new THREE.Color('#8f8a7c').toArray() };
-    for (const part of headGeometry(THREE, heads, townColour)) add(part.geometry, headMat, 'head', state.heads, { exit: part.exit, surface: part.surface });
+    for (const part of headGeometry(THREE, heads, townColour, state.sampler(), (lo, la) => B.vertexColor(lo, la))) add(part.geometry, headMat, 'head', state.heads, { exit: part.exit, surface: part.surface });
   });
   state.stats.ringBuildMs = Math.round(performance.now() - t0);
 

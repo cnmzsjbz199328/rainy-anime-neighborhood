@@ -251,6 +251,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const show = BEND.get() > 0 || TERR.explore || S.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
+    if (TERR.setHeadCaps) TERR.setHeadCaps('section', !(show && S.built));   // W8g-b: N08's end cap, while the T03 chain does not continue it
     if (show && BEND.get() >= 0.5 && S.built) inkJob.finish();
     if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }

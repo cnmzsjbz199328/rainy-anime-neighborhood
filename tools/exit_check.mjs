@@ -29,14 +29,19 @@ const ident = await page.evaluate(async () => {
   for (const h of S.terrain.exitHeads) {
     const st = h.rt.strip, m = h.rt.grid.length, mid = Math.floor(m / 2), a = [st.pos[mid * 3], st.pos[mid * 3 + 2]], b = [st.pos[(h.K * m + mid) * 3], st.pos[(h.K * m + mid) * 3 + 2]], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(d[0], d[1]);
     S.transition.auto = false; S.terrain.setExplore(false); S.terrain.setFade(0); S.view.set({ target: [a[0] + d[0] / l * 7, 1.6, a[1] + d[1] / l * 7], dist: 15, yaw: Math.atan2(-d[0], -d[1]), pitch: 0.62 }); window.__step(2);
-    let undo = only(); const A = shoot(); undo();
-    S.terrain.setExplore(true); S.terrain.setFade(1); window.__step(2); undo = only(); const Bp = shoot(); undo();
+    // (the heads' end caps fold away while the road beyond shows, by design: both renders without them)
+    const caps = () => { S.terrain.setHeadCaps('roads', false); S.terrain.setHeadCaps('section', false); };
+    caps(); let undo = only(); const A = shoot(); undo();
+    S.terrain.setExplore(true); S.terrain.setFade(1); window.__step(2); caps(); undo = only(); const Bp = shoot(); undo();
     let n = 0, cov = 0; for (let i = 0; i < A.length; i += 4) { if (A[i] !== Bp[i] || A[i + 1] !== Bp[i + 1] || A[i + 2] !== Bp[i + 2]) n++; }
     { const c = S.renderer.domElement; void c; }
     out.push({ exit: h.exit, diff: n, cov });
   }
   S.terrain.setExplore(false); S.terrain.setFade(0); S.transition.auto = true; return out;
 });
+const capState = await page.evaluate(() => { const S = window.__scene, out = {}; S.transition.auto = false; S.terrain.setExplore(false); S.terrain.setFade(0); S.roads.visibility(); S.section.visibility(); out.town = S.terrain.headCaps();
+  S.terrain.setExplore(true); S.terrain.setFade(1); out.explore = S.terrain.headCaps(); S.terrain.setExplore(false); S.terrain.setFade(0); S.transition.auto = true; return out; });
+check('B5-6', '道路头端头封口（裁决 6）：城镇视图显示，路网接上时（探索、球形、剖视）收起', capState.town.every(v => v === 1) && capState.explore.every(v => v === 0), [`城镇 ${capState.town.join('/')}，探索 ${capState.explore.join('/')}（路网出口 / N08）`]);
 check('B5-4', '接口几何逐位相同（裁决 3）：固定机位、只显示边缘地形与道路头时，城镇状态与探索状态的画面逐位相同', ident.every(q => q.diff === 0), [ident.map(q => `${q.exit} ${q.diff}`).join('、') + '（不同像素数）']);
 
 const rays = await exitRays(page);

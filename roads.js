@@ -606,6 +606,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
+    if (TERR.setHeadCaps) TERR.setHeadCaps('roads', !(show && S.built));     // W8g-b: the heads' end caps, while this road does not continue them
   }
   BEND.onChange(visibility);
   TERR.onExplore(visibility);
