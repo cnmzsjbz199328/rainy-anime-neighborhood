@@ -252,9 +252,11 @@ check('W5-C9', '出口渐变：9 个出口铺装宽度变化 ≤ 0.6 m/m，中�
     const bins = []; for (const type of ['weed', 'tuft']) for (const it of (e.instances[type] || [])) { let b = 0, bd = Infinity; if (it.station === undefined) e.S.forEach((p, i) => { const d = arc(p, it); if (d < bd) { bd = d; b = i; } }); const bi = Math.floor((it.station !== undefined ? it.station : e.S[b].s) / 5); bins[bi] = (bins[bi] || 0) + 1; }
     const full = Math.floor(L / 5), cnt = Array.from({ length: full }, (_, i) => bins[i] || 0); let mono = true; for (let i = 1; i < cnt.length; i++) if (cnt[i] < cnt[i - 1]) mono = false;
     // W8f-a: the town edge: the asphalt colour of the first row (the lane column at 2.0 m) against the town's asphalt as it renders (#46505b x its texture mean)
-    const c0 = colorAt(st, m, 0, jc), dTown = Math.max(...[0, 1, 2].map(c => Math.abs(c0[c] - RK.TOWN_ASPHALT[c]))), headCells = (st.headIndex || []).length / 6;
-    if (dTown > 0.05) fail(`${e.id} 城镇边缘处与城镇沥青颜色差 ${f(dTown, 3)} > 0.05`); if (!headCells) fail(`${e.id} 出口头没有用城镇沥青材质的格子`);
-    e.townInfo = `城镇边缘色差 ${f(dTown, 3)}，出口头 ${headCells} 格用城镇沥青材质`;
+    // (W8g-b: the alley exits N11-N13 keep the paving of 12.4 G6, so their reference is the town paving, ROADKIT.TOWN_PAVING)
+    const ref = ROADS.ALLEY_EXITS && ROADS.ALLEY_EXITS.includes(e.id) ? RK.TOWN_PAVING : RK.TOWN_ASPHALT, refName = ref === RK.TOWN_ASPHALT ? '城镇沥青' : '城镇巷道铺装';
+    const c0 = colorAt(st, m, 0, jc), dTown = Math.max(...[0, 1, 2].map(c => Math.abs(c0[c] - ref[c]))), headCells = (st.headIndex || []).length / 6;
+    if (dTown > 0.05) fail(`${e.id} 城镇边缘处与${refName}颜色差 ${f(dTown, 3)} > 0.05`); if (!headCells) fail(`${e.id} 出口头没有用${refName}材质的格子`);
+    e.townInfo = `城镇边缘与${refName}色差 ${f(dTown, 3)}，出口头 ${headCells} 格用${refName}材质`;
     if (dw > 0.6) fail(`${e.id} 铺装宽变化 ${f(dw, 2)} m/m > 0.6`); if (dc > 0.25) fail(`${e.id} 中线相邻样点颜色差 ${f(dc, 2)} > 0.25`); if (dy > 0.01) fail(`${e.id} 出口处路面 y = ${f(y0, 3)}，与城镇路面 0.02 相差 ${f(dy, 3)} > 0.01`); if (!mono) fail(`${e.id} 杂草按 5 m 分段不单调：${cnt.join(' ')}`);
     info(`${e.id}：长 ${f(L, 1)} m，铺装宽 ${f(wd[0], 2)} → ${f(wd[Math.min(wd.length - 1, 60)], 2)} m（最大变化 ${f(dw, 2)} m/m），中线颜色差最大 ${f(dc, 2)}，出口路面 y = ${f(y0, 3)} m（城镇 0.02），${e.townInfo}，杂草/草簇每 5 m ${cnt.join(' ') || '（路段短于 5 m）'}${mono ? '' : '（不单调）'}`);
   }
@@ -390,58 +392,9 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
   if (!gateOpen) fail('T11-02 顶端对应的桥栏开口被护栏块占用');
   info(`T11-02 顶端：距 J-LM08 ${f(gateShift, 3)} m；桥栏检修门区间无护栏块；钢梯板内缘与桥面边缘共边（0.00 m）`);
 
-  // Point-in-triangle queries against the generated flat terrain and swept road strips. The exit
-  // road is the first surface at each paved sample; any remaining terrain facet must lie below it.
-  const exitRoutes = PLAN.routes.filter(q => q.def.exit).map(rt => ({ id: rt.def.exit, rt }));
-  { const ch = RK.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD }); exitRoutes.push({ id: 'N08', rt: ch }); }
-  const exitPolygons = TB.exitPolygons(exitRoutes.map(q => ({ ...q.rt, def: { exit: q.id } }))),
-    terrainChunks = TB.buildFlat({ ring: true, rest: true, exitPolygons }), cell = 4, buckets = new Map(), triKey = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
-  const addTri = (A, B, C) => {
-    const xs = [A[0], B[0], C[0]], zs = [A[2], B[2], C[2]], tri = { A, B, C };
-    for (let ix = Math.floor(Math.min(...xs) / cell); ix <= Math.floor(Math.max(...xs) / cell); ix++) for (let iz = Math.floor(Math.min(...zs) / cell); iz <= Math.floor(Math.max(...zs) / cell); iz++) {
-      const k = `${ix},${iz}`; (buckets.get(k) || buckets.set(k, []).get(k)).push(tri);
-    }
-  };
-  for (const c of terrainChunks) for (const ix of [c.ringIndex, c.restIndex]) if (ix) for (let k = 0; k < ix.length; k += 3) {
-    const at = j => [c.pos[j * 3], c.pos[j * 3 + 1], c.pos[j * 3 + 2]];
-    addTri(at(ix[k]), at(ix[k + 1]), at(ix[k + 2]));
-  }
-  const triY = (x, z, tri) => {
-    const [A, B, C] = [tri.A, tri.B, tri.C], den = (B[2] - C[2]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[2] - C[2]);
-    if (Math.abs(den) < 1e-12) return null;
-    const a = ((B[2] - C[2]) * (x - C[0]) + (C[0] - B[0]) * (z - C[2])) / den, b = ((C[2] - A[2]) * (x - C[0]) + (A[0] - C[0]) * (z - C[2])) / den, c = 1 - a - b;
-    return a >= -1e-7 && b >= -1e-7 && c >= -1e-7 ? a * A[1] + b * B[1] + c * C[1] : null;
-  };
-  const groundAt = (x, z) => { for (const tri of buckets.get(triKey(x, z)) || []) { const y = triY(x, z, tri); if (y !== null) return y; } return null; };
-  const roadAt = (rt, i, x, z) => {
-    const st = rt.strip, m = rt.grid.length;
-    for (let r = Math.max(0, i - 1); r <= Math.min(rt.samples.length - 2, i); r++) for (let j = 0; j + 1 < m; j++) {
-      const at = k => [st.pos[k * 3], st.pos[k * 3 + 1], st.pos[k * 3 + 2]], a = r * m + j, b = a + 1, c = a + m, d = c + 1;
-      for (const ids of [[a, c, b], [b, c, d]]) { const y = triY(x, z, { A: at(ids[0]), B: at(ids[1]), C: at(ids[2]) }); if (y !== null) return y; }
-    }
-    return null;
-  };
-  const roadCrossPoint = (rt, i, o) => {
-    const m = rt.grid.length, g = rt.grid; let j = 0; while (j + 2 < m && g[j + 1] < o) j++;
-    const t = Math.max(0, Math.min(1, (o - g[j]) / (g[j + 1] - g[j]))), a = col(rt.strip, m, i, j), b = col(rt.strip, m, i, j + 1);
-    return [0, 1, 2].map(k => a[k] + (b[k] - a[k]) * t);
-  };
-  const lateralAt = (rt, i, o) => {
-    if (rt.lateral) return rt.lateral(i, o * (rt.cf ? rt.cf[i] : 1));
-    const S = rt.samples, a = S[Math.max(0, i - 1)], b = S[Math.min(S.length - 1, i + 1)], brg = W.bearing(a, b), q = W.destination(S[i], brg + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat];
-  };
-  let rayN = 0, noRoad = 0, buried = 0; const noRoadSamples = [], buriedSamples = [];
-  for (const { id, rt } of exitRoutes) {
-    const half = rt.classes.includes('RD01') || rt.classes.includes('RD01T') ? 4.5 : rt.classes.includes('RD03') ? 2.25 : 1.5, before = noRoad;
-    for (let i = 0; i < rt.samples.length && rt.samples[i].s <= 15 + 1e-6; i++) for (let k = 0; k < 5; k++) {
-      const o = rt.paved[i][0] + (rt.paved[i][1] - rt.paved[i][0]) * k / 4, q = roadCrossPoint(rt, i, o), x = q[0], z = q[2], ry = roadAt(rt, i, x, z), gy = groundAt(x, z);
-      rayN++; if (ry === null) { noRoad++; if (noRoadSamples.length < 10) noRoadSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)}`); continue; } if (gy !== null && gy > ry + 1e-4) { buried++; if (buriedSamples.length < 10) buriedSamples.push(`${id}@${f(rt.samples[i].s, 1)}m,o${f(o, 2)} Δ${f(gy - ry, 3)}m`); }
-    }
-    info(`${id}：首 15 m 内每 0.5 m × 5 横向采样；包含出口铺装半宽约 ${f(half, 2)} m，路面未命中 ${noRoad - before}`);
-  }
-  if (noRoad) fail(`${noRoad}/${rayN} 个出口铺装射线没有命中道路网格：${noRoadSamples.join('、')}`);
-  if (buried) fail(`${buried}/${rayN} 个出口铺装采样上方仍有地形三角面遮住道路：${buriedSamples.join('、')}`);
-  info(`9 个出口：${rayN} 条向下采样，未命中道路 ${noRoad}，地形遮挡 ${buried}`);
+  // W8g-b (W8_SPEC 13.2 B5): the exit ray test runs on the meshes the page shows (browser part below, W5-C10 exits: tools/exit_geometry.mjs), no longer on a cut mesh
+  // made here; the columns the terrain is cut by are still checked against the route here: a head's cut follows its strip's outer columns (terrain.js exitPolygons)
+  info('出口射线检查改在页面里对显示中的网格做（见下方 W5-C10-exits）');
 
   // Terrain colour is sampled by the same pure vertex function as the world mesh.
   const outerColour = (rt, i, j) => {
@@ -491,10 +444,10 @@ if (!process.argv.includes('--no-browser')) {
   await page.addInitScript(INIT);
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__scene && window.__scene.roads, null, { timeout: 90000 });
-  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: S.roads.state.built }; });
+  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, visible: !!(S.roads.state.root && S.roads.state.root.visible) }; });
   {
     const info = [], fails = [];
-    if (def.built) fails.push('默认画面已构建道路');
+    if (def.visible) fails.push('默认画面里道路可见');     // (W8g-a/b: the roads may already be built in the background, hidden)
     if (def.calls > 2373 * 1.03) fails.push(`默认视角绘制调用 ${def.calls} 超过 W4 基线 2373 的 +3%`);
     info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，道路未构建（W4 基线 2373 / 239,958，预算 ≤ +3%）`);
     const shots = Object.fromEntries(SHOTS);
@@ -564,6 +517,15 @@ if (!process.argv.includes('--no-browser')) {
     results.push({ id: 'W8f-c-G6-luminance', ok: !fails.length });
     console.log(`${fails.length ? 'FAIL' : 'PASS'} W8f-c-G6 夜间亮度（平面默认出口头 vs 城镇边缘，同机位）`);
     for (const q of rows) console.log(`  ${fails.includes(q) ? '✗' : '·'} ${q.id}: 出口头 ${q.head?.toFixed(1)} / 城镇边缘 ${q.town?.toFixed(1)}，相对差 ${q.delta === undefined ? '—' : (q.delta * 100).toFixed(1) + '%'}（阈值 ≤15%，采样像素 ${q.samples?.join('/')}）${q.error ? '；' + q.error : ''}`);
+  }
+  { // W8g-b: W5-C10 for the exits on the displayed meshes (flat explore and sphere), the heads' first L metres, the whole cross-section
+    const { exitRays } = await import('./exit_geometry.mjs');
+    const r = await exitRays(page), fails = [];
+    for (const st of ['flat', 'sphere']) if (r[st].occluded || r[st].missed) fails.push(`${st}: ${r[st].occluded} 被遮挡、${r[st].missed} 未命中：${r[st].examples.join('；')}`);
+    results.push({ id: 'W5-C10-exits', ok: !fails.length });
+    console.log(`${fails.length ? 'FAIL' : 'PASS'} W5-C10-exits 出口道路头（W8g-b B5）：显示中的网格上，全横断面 9 点 × 每 0.5 m，首个命中都是道路网格（平面探索与球形）`);
+    for (const m of fails) console.log('  ✗ ' + m);
+    for (const st of ['flat', 'sphere']) console.log(`  · ${st}：${r[st].rays} 条，被遮挡 ${r[st].occluded}，未命中 ${r[st].missed}；L 到 24 m 的正式道路（参考，W8g-b 裁决 2）首个命中不是道路 ${r[st].beyondOccluded}/${r[st].beyondRays}`);
   }
   await browser.close();
 }

@@ -74,8 +74,9 @@ globalThis.LMLIB = function (K) {
 const prev = globalThis.LMLIB;
 globalThis.LMLIB = function (K) {
   const L = prev(K);
-  L.groundFn = rec => { const W = globalThis.WORLD, h0 = W.height(rec.lon, rec.lat), head = rec.entrances[0].heading, A = { lon: rec.lon, lat: rec.lat };
-    const f = (x, z) => { const d = Math.hypot(x, z); const p = d < 1e-9 ? A : W.destination(A, head + Math.atan2(-x, z) * 180 / Math.PI, d); return W.height(p.lon, p.lat) - h0; }; f.h0 = h0; f.sea = -h0; return f; };
+  // W8g-b (B3): K.ground is the height of the rendered terrain (scene.js: terrain.sampler()); the anchor altitude of the site comes from the same function
+  L.groundFn = rec => { const W = globalThis.WORLD, G = K.ground || ((lo, la) => W.height(lo, la)), h0 = G(rec.lon, rec.lat), head = rec.entrances[0].heading, A = { lon: rec.lon, lat: rec.lat };
+    const f = (x, z) => { const d = Math.hypot(x, z); const p = d < 1e-9 ? A : W.destination(A, head + Math.atan2(-x, z) * 180 / Math.PI, d); return G(p.lon, p.lat) - h0; }; f.h0 = h0; f.sea = -h0; return f; };
   return L;
 };
 })();

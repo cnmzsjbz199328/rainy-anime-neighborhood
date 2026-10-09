@@ -36,7 +36,8 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
-    H = global.TERRAIN.sampler(W, { lonMin: -16, lonMax: 40, latMin: -72, latMax: -27 }); WS = Object.assign(Object.create(W), { height: H });
+    // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
+    TERR.buildRest(); H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
     yield;
     const inkColor = 0x273647;
@@ -103,15 +104,22 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const nrm = new Float32Array(st.pos.length); for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(st.index, 1)); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.name = 'sec:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
-    stripMesh(CH.strip, groundMat); for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
-    // W8f-a: the first 6 m of exit N08 in the town's own asphalt material (colour and grain, one texture repeat per 4 m)
-    if (CH.strip.headIndex.length && ctx.townAsphalt) { const st = CH.strip, used = [...new Set(st.headIndex)], map = new Map(used.map((v, k) => [v, k])), pos = new Float32Array(used.length * 3), uv = new Float32Array(used.length * 2);
-      used.forEach((v, k) => { for (let c = 0; c < 3; c++) pos[k * 3 + c] = st.pos[v * 3 + c]; uv[k * 2] = st.pos[v * 3] / 4; uv[k * 2 + 1] = -st.pos[v * 3 + 2] / 4; });
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(Uint32Array.from(st.headIndex, v => map.get(v)), 1)); g.computeVertexNormals(); g.computeBoundingSphere();
-      const m = new THREE.Mesh(g, Object.assign(ctx.townAsphalt.clone(), { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.name = 'sec:town-head N08'; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); }
+    // W8g-b: the chain takes the rows of exit N08's head (made at start-up, terrain.js), and is drawn from the head's last row K on (the head, with its first 6 m in
+    // the town's own asphalt, is the start-up mesh); up normals on both sides of the seam, as every strip of the section
+    { const hd = (TERR.exitHeads || []).find(q => q.exit === 'N08'), st = CH.strip, m = CH.grid.length, n = CH.samples.length;
+      if (hd) { const rows = Math.min(hd.K + 2, hd.rt.samples.length, n); for (let k = 0; k < rows * m * 3; k++) { st.pos[k] = hd.rt.strip.pos[k]; st.col[k] = hd.rt.strip.col[k]; } S.chainHead = { K: hd.K, L: hd.L }; }
+      stripMesh(hd ? { ...st, index: Uint32Array.from(global.TERRAIN.cellsIn(st.index, m, hd.K, n - 1)) } : st, groundMat); }
+    for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
     // TR01 town edge: gravel shoulder and grass band along the patch's south edge, in the corridor
+    // (W8g-b, B4: cut where it crosses an exit's footprint, the polygons the ring is cut by: there the exit head is the ground)
     { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
-      stripMesh(global.ROADKIT.sweep(WS, pts, [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]), 'TR01 edge strip'), groundMat); }
+      const prof = [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]);
+      const polys = TERR.builder && TERR.exitHeads ? TERR.builder.exitPolygons(TERR.exitHeads) : [];
+      const inPoly = (x, z) => polys.some(q => { if (x < q.minX || x > q.maxX || z < q.minZ || z > q.maxZ) return false; let c = false; const P = q.polygon; for (let a = 0, b = P.length - 1; a < P.length; b = a++) if ((P[a][1] > z) !== (P[b][1] > z) && x < (P[b][0] - P[a][0]) * (z - P[a][1]) / (P[b][1] - P[a][1]) + P[a][0]) c = !c; return c; });
+      const covered = (p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], br = W.bearing(a, b); return [0, -1, -2, -3.5].some(o => { const q = o ? W.destination(p, br - 90, -o) : p, f = flatOf(q.lon, q.lat); return inPoly(f.x, f.z); }); };
+      let run = [];
+      const flush = () => { if (run.length > 1) stripMesh(global.ROADKIT.sweep(WS, run, prof, 'TR01 edge strip'), groundMat); run = []; };
+      pts.forEach((p, i) => { if (covered(p, i)) flush(); else run.push(p); }); flush(); }
 
     yield;
     // ---- paddies and fallow fields: Voronoi plots on a fine grid, ridges 0.36 m wide and 0.2 m high
@@ -243,7 +251,6 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const show = BEND.get() > 0 || TERR.explore || S.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
-    for (const m of TERR.stubs) if (m.userData.terrain.exit === 'N08') m.visible = !(show && S.built);   // the RD03 start is replaced by T03-01
     if (show && BEND.get() >= 0.5 && S.built) inkJob.finish();
     if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
   }

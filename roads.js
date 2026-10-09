@@ -191,11 +191,11 @@ function routeNode(NET, sg, which) { const e = NET.edges.find(q => q.id === sg.i
 // a point of an edge about `d` metres from one of its nodes
 function nearNode(W, edgeId, node, d = 1) { const NET = W.roadNetwork, e = NET.edges.find(q => q.id === edgeId), P = NET.samplePath(e, 0.5); let best = P[0], bd = Infinity; for (const p of P) { const q = Math.abs(W.arcDistance(p, node) - d); if (q < bd) { bd = q; best = p; } } return best; }
 // the abutments: for every end of a bridge, the route that ends there, the fillet and the deck grade the approach climbs to
-function abutments(W, BR) {
+function abutments(W, BR, routeIds) {                // routeIds (W8g-b): only the abutments of these routes (each abutment depends on its own node only)
   const NET = W.roadNetwork, out = [];
   for (const bd of BRIDGES) for (const be of ['start', 'end']) {
     const node = be === 'start' ? NET.edges.find(q => q.id === bd.ids[0]).from : NET.edges.find(q => q.id === bd.ids[bd.ids.length - 1]).to;
-    const rd = ROUTES.find(r => [routeNode(NET, r.segs[0], 'start'), routeNode(NET, r.segs[r.segs.length - 1], 'end')].includes(node)); if (!rd) continue;
+    const rd = ROUTES.find(r => [routeNode(NET, r.segs[0], 'start'), routeNode(NET, r.segs[r.segs.length - 1], 'end')].includes(node)); if (!rd || (routeIds && !routeIds.includes(rd.id))) continue;
     const re = routeNode(NET, rd.segs[0], 'start') === node ? 'start' : 'end', N0 = NET.nodeById[node];
     const road = chainPoints(W, rd.segs, re === 'end'), bridge = chainPoints(W, bd.ids.map(id => ({ id })), be === 'end');
     out.push({ node, bridge: bd.id, bEnd: be, route: rd.id, rEnd: re, fillet: transition(W, N0, road, bridge), grade: BR.DECK.slope });
@@ -333,31 +333,76 @@ function abutWall(W, rt, ab, deckAlt) {
   return { name: 'abutment wall ' + ab.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true };
 }
 
-// W8g-a: plan() as a generator that yields between its larger parts (worldgen.js runs it in steps); plan() below runs it in one go
-function* planSteps(W, H, tc) {
+// W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept).
+// `junctions` limits the junction plans (W8g-b: the exit heads need only the two junctions that exits meet); each plan depends on its own junction only.
+function routeContext(WS, junctions = JUNCTIONS, routeIds) {
+  const RK = global.ROADKIT, BR = global.BRIDGE, lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north');
+  return { AB: abutments(WS, BR, routeIds), CH: ringChain(WS), lm09Turn, JP: junctions.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)) };
+}
+// the options of a route (plan() and the exit heads share it, so that a head is swept exactly like its route)
+const ALLEY_EXITS = ['N11', 'N12', 'N13'];
+function routeOpts(def, ctx, tc) {
+  const RK = global.ROADKIT, { AB, CH, lm09Turn, JP } = ctx, o = { ...def.opts, terrainColor: tc };
+  if (def.exit) o.townHead = ALLEY_EXITS.includes(def.exit) ? RK.TOWN_HEAD_PAVING : RK.TOWN_HEAD;      // W8g-b: the alley exits keep the paving of 12.4 G6
+  if (CH[def.id]) o.chain = CH[def.id];
+  if (def.id === 'N01-west') o.turns = [lm09Turn];
+  for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
+  const mo = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (mo.length) o.mouths = mo;
+  const jb = JP.find(j => j.branch === def.id); if (jb) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
+  return o;
+}
+// branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
+const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
+
+// ---- W8g-b (W8_SPEC 13.2 B1): the exit heads. The town view shows the first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
+// edge)), made at start-up from the same route() call as the network's: a route no longer than L + HEAD_MARGIN is made whole (abutment, ramp and taper of its
+// far end included); a longer one is cut there (route option `until`; its abutment only keeps its columns, gridAbut). The network road later takes the head's
+// rows 0 .. K + 1 (K: the head's last row) as its own (applyHead), so the two meet with the same vertices; normals at the seam come from the same triangles on
+// both sides (headGeometry / the strip of roads.js). N08 is the W4 section's T03 chain (made whole). Each head: { exit, id, rt, L, K, whole }.
+const HEAD_MARGIN = 12, HEAD_CUT = 6;   // a route within L + 12 m is made whole (N01 / N03: their abutment's approach reaches back into the head); a longer one is cut at L + 6 m
+function exitHeads(W, H, tc) {
+  const RK = global.ROADKIT, NET = W.roadNetwork, WS = Object.assign(Object.create(W), { height: H }), exits = ROUTES.filter(r => r.exit), ids = exits.map(r => r.id);
+  const ctx = routeContext(WS, JUNCTIONS.filter(J => ids.includes(J.trunk) || ids.includes(J.branch)), ids), byId = {}, out = [];
+  const len = id => NET.edgeLength(NET.edges.find(e => e.id === id)), lastRow = (S, L) => { let k = 0; while (k + 1 < S.length && S[k + 1].s <= L + 1e-9) k++; return k; };
+  const branchOf = def => ctx.JP.find(j => j.branch === def.id);
+  for (const def of [...exits.filter(d => !branchOf(d)), ...exits.filter(branchOf)]) {
+    const L = Math.min(15, len(def.segs[0].id)), total = def.segs.reduce((a, q) => a + len(q.id), 0), whole = total <= L + HEAD_MARGIN + 1e-9, o = routeOpts(def, ctx, tc), jp = branchOf(def);
+    if (whole && jp) o.ramp = branchRamp(jp, byId[jp.trunk]);
+    if (!whole) { o.until = L + HEAD_CUT; if (o.abut) { delete o.abut; o.gridAbut = true; } delete o.taperEnd; }
+    const rt = RK.route(WS, def.segs, o); rt.def = def; if (whole) byId[def.id] = rt;
+    out.push({ exit: def.exit, id: def.id, rt, L, K: lastRow(rt.samples, L), whole });
+  }
+  { const L = Math.min(15, len('T03-01')), ch = RK.chain(WS, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD, until: L + HEAD_CUT }); out.push({ exit: 'N08', id: 'T03-chain', rt: ch, L, K: lastRow(ch.samples, L), whole: false, upNormals: true }); }
+  return out;
+}
+// the network's road takes the head's rows 0 .. K + 1: position, colour, surface altitude (things stand on it), paving and footprint; returns the largest change
+function applyHead(rt, head) {
+  const m = rt.grid.length, h = head.rt, rows = Math.min(head.K + 2, h.samples.length, rt.samples.length);
+  if (h.grid.length !== m || h.grid.some((v, j) => v !== rt.grid[j])) throw new Error(`exit head ${head.exit}: columns differ from the route's`);
+  let d = 0;
+  for (let k = 0; k < rows * m * 3; k++) { d = Math.max(d, Math.abs(rt.strip.pos[k] - h.strip.pos[k])); rt.strip.pos[k] = h.strip.pos[k]; rt.strip.col[k] = h.strip.col[k]; }
+  if (rt.colAlt && h.colAlt) for (let k = 0; k < rows * m; k++) rt.colAlt[k] = h.colAlt[k];
+  for (let i = 0; i < rows; i++) { rt.paved[i] = h.paved[i].slice(); if (rt.footprint && h.footprint) rt.footprint[i] = h.footprint[i].slice(); }
+  rt.head = { exit: head.exit, L: head.L, K: head.K, rows, maxChange: d };
+  return d;
+}
+// geometry of a strip between rows r0 and r1 (cells of `index` whose rows all lie in [r0, r1]); normals from the cells of `index` in [n0, n1] (W8g-b: the head and the
+// road beyond it take their seam normals from the same cells on both sides of the seam row)
+function stripCells(index, m, r0, r1) { const out = []; for (let t = 0; t < index.length; t += 3) { const a = index[t], b = index[t + 1], c = index[t + 2], lo = Math.floor(Math.min(a, b, c) / m), hi = Math.floor(Math.max(a, b, c) / m); if (lo >= r0 && hi <= r1) out.push(a, b, c); } return out; }
+
+function* planSteps(W, H, tc, heads) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
-  // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept)
-  const AB = abutments(WS, BR), CH = ringChain(WS), lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north'),
-    bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) },
-    JP = JUNCTIONS.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)), head = RK.TOWN_HEAD;
+  const ctx = routeContext(WS), { AB, CH, lm09Turn, JP } = ctx,
+    bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) };
+  void lm09Turn;
   yield;
-  const optsOf = def => {
-    const o = { ...def.opts, terrainColor: tc };
-    if (def.exit) o.townHead = head;
-    if (CH[def.id]) o.chain = CH[def.id];
-    if (def.id === 'N01-west') o.turns = [lm09Turn];
-    for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
-    const mo = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (mo.length) o.mouths = mo;
-    const jb = JP.find(j => j.branch === def.id); if (jb) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
-    return o;
-  };
-  const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
-  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
-  // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
+  const optsOf = def => routeOpts(def, ctx, tc);
+  const byId = {}, branchOf = def => JP.find(j => j.branch === def.id), headOf = def => heads && def.exit && heads.find(q => q.exit === def.exit);
+  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (headOf(def)) applyHead(rt, headOf(def)); byId[def.id] = rt; yield; }
   for (const def of ROUTES.filter(branchOf)) {
     const jp = branchOf(def), trunk = byId[jp.trunk], o = optsOf(def);
-    o.ramp = { end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } };
-    const rt = RK.route(WS, def.segs, o); rt.def = def; byId[def.id] = rt;
+    o.ramp = branchRamp(jp, trunk);
+    const rt = RK.route(WS, def.segs, o); rt.def = def; if (headOf(def)) applyHead(rt, headOf(def)); byId[def.id] = rt;
     yield;
   }
   const routes = ROUTES.map(def => byId[def.id]);
@@ -401,9 +446,9 @@ function* planSteps(W, H, tc) {
   }
   return { routes, bridges, stairs, markers, lit, sea, WS, abutments: abuts, junctions };
 }
-function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
+function plan(W, H, tc, heads) { const it = planSteps(W, H, tc, heads); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
-const ROADS = { plan, planSteps, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
+const ROADS = { plan, planSteps, exitHeads, applyHead, stripCells, routeContext, routeOpts, HEAD_MARGIN, ALLEY_EXITS, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -419,14 +464,8 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   function* build() {
     SEC.ensure();
     TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
-    const TB = global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertex(lo, la).c); S.data = DATA;
-    // W8f-c G3: terrain yields only the final road pavement plus 0.3 m reveal, including the W4 T03 chain at N08.
-    if (TERR.setExitRoutes) {
-      const n08 = global.ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD });
-      yield;
-      TERR.setExitRoutes([...DATA.routes.filter(rt => rt.def.exit), { ...n08, def: { exit: 'N08' } }]);
-      yield;
-    }
+    // W8g-b: the exit routes take the rows of the heads made at start-up (terrain.js cut the ring under them then); the network draws them from the head's last row
+    const TB = TERR.builder || global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertexColor(lo, la), TERR.exitHeads); S.data = DATA;
     const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
@@ -444,22 +483,24 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     // ---- strips: route surfaces (up normals, ground material) and bridge girder faces (computed normals)
     const stripMesh = (st, mat) => {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(st.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(st.col, 3)); g.setIndex(new THREE.BufferAttribute(st.index, 1));
-      if (st.normals) g.computeVertexNormals(); else { const nrm = new Float32Array(st.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); }
+      if (st.normal) g.setAttribute('normal', new THREE.BufferAttribute(st.normal, 3));
+      else if (st.normals) g.computeVertexNormals(); else { const nrm = new Float32Array(st.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); }
       g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.name = 'road:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
-    for (const rt of DATA.routes) stripMesh({ ...rt.strip, normals: true }, M.groundMat);
+    // W8g-b: an exit route from its head's last row K on (the head is the start-up mesh of terrain.js); normals over the cells from row K - 1, the same as the head's at K
+    const TT = global.TERRAIN;
+    for (const rt of DATA.routes) {
+      if (!rt.head) { stripMesh({ ...rt.strip, normals: true }, M.groundMat); continue; }
+      const m = rt.grid.length, n = rt.samples.length, K = rt.head.K, cells = TT.cellsIn(rt.strip.index, m, K, n - 1);
+      if (cells.length) stripMesh({ ...rt.strip, index: Uint32Array.from(cells), normal: TT.stripNormals(THREE, rt.strip.pos, rt.strip.index, m, K - 1, n - 1) }, M.groundMat);
+    }
     for (const b of DATA.bridges) for (const st of b.strips) stripMesh(st, bridgeMat);
-    // W8f-a: the first 6 m of the town exits in the town's own asphalt material (colour and grain; uv: one texture repeat per 4 m as the town's slabs), the junction paving
-    // (biased over the trunk's shoulder it lies on) and the abutment walls
-    // each kind is one mesh (one draw call): the heads of the eight exits, the five pavings, the six walls
+    // the junction paving (biased over the trunk's shoulder it lies on) and the abutment walls, each kind one mesh (one draw call): the five pavings, the six walls
+    // (W8g-b: the first 6 m of the exits in the town's own asphalt are part of the start-up heads, terrain.js)
     const merge = (name, parts, withUV) => { const pos = [], col = [], uv = [], idx = []; for (const q of parts) { const base = pos.length / 3; for (let k = 0; k < q.pos.length; k++) pos.push(q.pos[k]); for (let k = 0; k < q.col.length; k++) col.push(q.col[k]); if (withUV) for (let k = 0; k < q.pos.length; k += 3) uv.push(q.pos[k] / 4, -q.pos[k + 2] / 4); for (const v of q.index) idx.push(base + v); }
       return { name, pos: Float32Array.from(pos), col: Float32Array.from(col), uv: withUV ? Float32Array.from(uv) : null, index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true }; };
-    const headMat = ctx.townAsphalt ? Object.assign(ctx.townAsphalt.clone(), { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }) : M.groundMat;
-    const heads = DATA.routes.filter(rt => rt.strip.headIndex && rt.strip.headIndex.length).map(rt => { const st = rt.strip, used = [...new Set(st.headIndex)], map = new Map(used.map((v, k) => [v, k])), pos = new Float32Array(used.length * 3), col = new Float32Array(used.length * 3);
-      used.forEach((v, k) => { for (let c = 0; c < 3; c++) { pos[k * 3 + c] = st.pos[v * 3 + c]; col[k * 3 + c] = st.col[v * 3 + c]; } }); return { pos, col, index: Uint32Array.from(st.headIndex, v => map.get(v)) }; });
-    if (heads.length) { const h = merge('town heads', heads, true), m = stripMesh(h, headMat); m.geometry.setAttribute('uv', new THREE.BufferAttribute(h.uv, 2)); }
     const pavingMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -6 });
-    S.materials.pavingMat = pavingMat; S.materials.headMat = headMat;
+    S.materials.pavingMat = pavingMat;
     if (DATA.junctions.length) stripMesh({ ...merge('junction paving', DATA.junctions.map(j => j.strip)), normals: false }, pavingMat);      // up normals: an even surface, no facets
     if (DATA.abutments.length) stripMesh(merge('abutment walls', DATA.abutments.map(a => a.wall)), bridgeMat);
 
@@ -565,7 +606,6 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
     if (show) ensure();
     if (S.root) S.root.visible = show;
-    if (S.built) for (const m of TERR.stubs) if (ROADS.ROUTES.some(r => r.exit === m.userData.terrain.exit)) m.visible = !show;     // the exit starts are replaced by the swept roads
   }
   BEND.onChange(visibility);
   TERR.onExplore(visibility);
