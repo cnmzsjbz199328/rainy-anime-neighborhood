@@ -56,3 +56,26 @@ BI01、BI05 写"雨点涟漪沿用城镇水洼系统"。城镇现在是每个水
 - 除已提前实施的 W9a 外，其他借鉴项仍在对应阶段（W3–W9）实施；不因此启动星球地貌或天气代码。
 - 实施时，水面、植物、雨的材质一起设计 W2 的弯曲参数；默认城镇的雨和回归截图必须保持一致（带开关）。
 - 每项实施后按各阶段的检查记录性能成本，不用 SwiftShader 数字代替真机。
+
+## 2026-10-09 追加：W8g（统一世界体系）
+
+三个来源都只读了代码和文档，没有在浏览器运行。按本项目的墨线、淡彩、纸纹重新实现，不复制代码。
+
+| 来源 | 许可 | 内容 |
+| --- | --- | --- |
+| [earthwalker17/map-of-middle-earth](https://github.com/earthwalker17/map-of-middle-earth) | MIT | three.js WebGPU/TSL 制作的中土立体模型：地形、河流、植被、24 个地标，用于确定性拍摄影片。主要读了 `docs/ARCHITECTURE.md`、`src/terrain/cdlod.ts`、`src/core/quality.ts`、`data/qa/perf-baseline.json` |
+| [iifor/doodleshooter](https://github.com/iifor/doodleshooter) | 无许可证：只借思路 | 圆珠笔画在横线纸上的第一人称射击游戏，全部程序生成。读了 `src/render.js`、`src/level.js` |
+| [swift502/Sketchbook](https://github.com/swift502/Sketchbook) | MIT，2023 年已归档 | three.js 加 cannon.js 的第三人称游乐场：整个世界来自一个 glTF，物体标签同时生成碰撞体、出生点和路径 |
+
+| 手法 | 来源 | 用于 | 注意 |
+| --- | --- | --- | --- |
+| 唯一高度接口；地标以“印章”数据叠加到同一张高度图；河道优先 | middle-earth `HeightField`、`stamps.ts` | W8g-b 的一个高度来源、城镇与出口作为同一体系的一部分 | 我们只统一“贴地几何读谁”，不重做城镇地面 |
+| 把重的、确定性的计算放到离线烘焙，运行时只读 | middle-earth `tools/bake` | W8g-a：`riverCarve` 热点；必要时由 `build.py` 预计算格点高度 | 单文件体积预算 0.6 MB；必须保持逐位相同 |
+| 远景树冠壳：树冠颜色和覆盖率烘焙进地形，树在屏幕上约 9 → 5 px 时“沉入”壳；降画质只减少棵数，从不缩小树冠 | middle-earth `canopyShell.ts`、VegetationSystem | W8g-c、W8g-d：取代“缩放长出来” | 我们的 E1/E2（森林地面烘焙、树冠团）已有一半 |
+| 远近层级按屏幕投影像素选择，只取决于相机，不带滞后；村镇灯光缩小后合成一个光点 | middle-earth LandmarkSystem、EmissionSystem | W8g-c 的选择规则；印证 W8c 光带 | 画面与到达路径无关，截图可复现 |
+| 画质分档时写明目标设备；`perf-baseline.json` 记录启动各阶段耗时与各视角帧时间 | middle-earth `quality.ts`、`perf-baseline.json` | W8g-a、W8g-d 的 `perf_baseline` | 它启动约 9.8 s，在 Intel 核显上每帧 45–68 ms，这对影片工具可以接受，我们不照搬这些数字 |
+| 屏幕空间描边（逆深度二阶差分，远近线宽一致）、排线固定在世界表面、纸纹 | doodleshooter `render.js` | 待办池：可选原型 | 会改画风，需用户决定 |
+| 静态几何按材质合并；两张地图共用一套构建器 | doodleshooter `level.js` | 待办池：降低绘制调用 | — |
+| 一个世界描述同时派生渲染、碰撞和出生点 | Sketchbook `World.ts` | W9b 漫游扩展到城镇外 | 代码太旧，不引用 |
+
+不借鉴：WebGPU 与 TSL（本项目是 WebGL 离线单文件）；CDLOD（中土为 1600 × 960 km 设计，我们全球只有约 7.7 万个地形三角形）；启动时整体加载并显示载入画面；cannon.js 物理。

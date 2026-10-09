@@ -2603,3 +2603,18 @@
 - WC12-M：`regress --baseline-ref pre-w8f-c --mask-patch-margin 24` 及 `--weather lock:rain` 均 8/8 通过；遮罩外最大通道差 0。两种天气未遮罩原始差异像素（阈值 >2）相同：default 7,260；far 32,305；storeCorner 1,209；intersection 2,490；top 33,560；roamStreet 2,102；cafeFront 与 cafeInterior 皆 0；这些差异均被 24 px 遮罩覆盖。默认绘制调用 2374 → 2374，三角形 239958 → 240618（+660）。
 - 当前浏览器复核：`day_check` D1–D4 通过；`road_check`（12 项）、G6 亮度检查和 `landmark_check LM09`（4 项）通过。`night_check` 本次复跑 C1 通过，C2 长时间停在浏览器像素分析，人工结束；`transition_check --c2` 的模式/缩放/反向切换断言逐项通过，但 Chromium 在关闭阶段挂住；`--c3` 本次在 DOMContentLoaded 90 s 超时，未进入断言。首轮 W8f-c 的 `bend_check` 唯一失败为“关闭模式全部关剔除”：40 个材质标记 `noBend` 的极帽网格仍保留 `frustumCulled`；`bend.js` 的 `noBend` 跳过逻辑与基线相同，着色位置/法线、四视角剔除与不剔除画面哈希均通过。未改弯曲系统。`landmark_check LM08` 沿用上述 W8e-c 既有动态像素问题。
 - 截图审查：比较表 `docs/world/w8f-c/compare/` 中 42 个连接点均查看。J-P1/J-LM08 转向连续；LM09-north 曲线平顺且入口坪退到车道外；N04/N09/N10 浅绿覆面消失；RD05 路肩与地形融合并在端头收口；桥台虚线颜色连续；9 个平面出口均有标线道路头。其余 32 处正常衔接未见变差。视觉缺陷清单：道路网格落在采样地面、1180 条出口射线无地形遮挡；未见 z-fighting、贯穿道路的洞、接缝裂开或标线断裂；页面检查无控制台错误。证据图：`J-P1.jpg`、`LM09-north.jpg`、`N04.jpg`、`E-N13.jpg`、`N03.jpg`，均在 `docs/world/w8f-c/evidence/`。
+
+### W8g 规划（2026-10-09）
+
+- **起因**：用户反馈城镇出口接缝和首次出城卡顿。用户决定 D14：城镇与星球只用一套运行时体系；画面上不出现“逐步长出来”；性能充裕的设备看得更远，较弱设备只减少数量。
+- **实测**（main `470bd1d`，Apple M4，headless Chromium Metal）：
+  - 冷启动后首次出城出现一个 6,141 ms 的长任务；回城后再出城，最大帧间隔 18 ms。
+  - 约 97% 是 CPU 生成：地形采样器 1,722 ms，植被 1,674 ms，道路 1,320 ms；首帧着色器编译和 GPU 上传 147 ms。
+  - Node 剖析：`W.height` 占 3.3 s 中的 2.5 s，其中 `riverCarve` 1.56 s。
+- **两套体系的证据**：
+  - 平面模式下，出口前 15 m 有 13 / 1180 个铺装采样点被不裁切的 `ringFlat` 盖住（N01、N03，最多 1.9 cm）；`road_check` 只检查了裁切后的网格。
+  - 道路头与正式道路宽度不一致：N11–N13 为 3 m 对 4.5 m；N01、N03 为 9 m 对 8.43–9.87 m。
+  - 植被的“长出来”来自 30–80 m 显示圈外缘的缩放淡入（landcover.js 第 572 行），与数据加载无关。
+  - 完整清单见 [W8_SPEC](docs/world/W8_SPEC.md) 第 13 节开头。
+- **计划**：ROADMAP 新增 W8g-a…d 四行，规格写在 W8_SPEC 第 13 节；WORLD_PLAN 增加 D14；WORLD_AGENT_START 增加 W8g 一节；待办池新增 4 条；BORROWING_NOTES 追加 middle-earth、doodleshooter、Sketchbook 三个来源。
+- **本轮范围**：只改文档，未改代码；临时测量脚本放在会话临时目录，未入库。W8g-a 会把测量方法做成 `tools/perf_baseline.mjs`。
