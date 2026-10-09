@@ -29,7 +29,9 @@ const chunks = B.buildFlat({ ring: true, rest: true });
 // include that covered footprint as the road surface so the W3 world-coverage totals remain comparable.
 const fullChunks = B.buildFlat({ ring: true, rest: true, exitClearance: false });
 const caps = [B.buildCap(true), B.buildCap(false)];
-const stubs = B.buildStubs();
+// W8g-b: the 9 exit heads (roads.js exitHeads, made at start-up on the rendered terrain's height) replace the grey-box exit starts
+globalThis.ROADKIT = require(path.join(root, 'roadkit.js')); globalThis.BRIDGE = require(path.join(root, 'bridge.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
+const ROADS = require(path.join(root, 'roads.js')), HS = T.lazySampler(W, B.samplerCell), heads = ROADS.exitHeads(W, HS, (lo, la) => B.vertexColor(lo, la)), headPolys = B.exitPolygons(heads);
 const buildMs = Date.now() - tb;
 
 // flat list of triangles with lon/lat/alt of their vertices
@@ -54,7 +56,7 @@ const totalVerts = chunks.reduce((s, c) => s + c.vertexCount, 0) + caps.reduce((
 const ringTris = tris.filter(t => t.ring).length, restTris = tris.length - ringTris, capTris = caps.reduce((s, c) => s + c.index.length / 3, 0);
 
 check('W3-C0', '网格规模在预算内（≤ 90k 三角形、≤ 50k 顶点；环内 ≤ 12k 三角形）', ({ info, fail }) => {
-  info(`地形块 ${chunks.length}，环内三角形 ${ringTris}，其余三角形 ${restTris}，极帽 ${capTris}，合计 ${ringTris + restTris + capTris} 个三角形、${totalVerts} 个顶点（含块边界重复）；出口起点 ${stubs.length} 条 ${stubs.reduce((s, q) => s + q.index.length / 3, 0)} 个三角形；构建 ${buildMs} ms（Node）`);
+  info(`地形块 ${chunks.length}，环内三角形 ${ringTris}，其余三角形 ${restTris}，极帽 ${capTris}，合计 ${ringTris + restTris + capTris} 个三角形、${totalVerts} 个顶点（含块边界重复）；出口道路头 ${heads.length} 条（W8g-b，路网正式道路的前 L 米）；构建 ${buildMs} ms（Node）`);
   if (ringTris + restTris + capTris > 90000) fail('三角形超过 90k');
   if (totalVerts > 50000) fail('顶点超过 50k');
   if (ringTris > 12000) fail('环内三角形超过 12k');
@@ -231,27 +233,28 @@ check('W3-C5', '城镇边缘：补丁边界顶点在边线上、高度 1.6；补
   if (minRing < 1.6 - 0.02) fail(`补丁外 15 m 内有顶点低于 1.6 m：${minRing}，底座侧面可能外露`);
 });
 
-// ---- W3-C6: exit starts
-check('W3-C6', '9 个出口起点：首点在出口节点上、贴地 0.02 m、宽度与等级一致、不进入补丁', ({ info, fail }) => {
-  const want = { RD01: 9, RD03: 4.5, RD05: 3 }, ids = new Set();
-  for (const s of stubs) {
-    ids.add(s.exit);
-    const node = W.roadNetwork.nodeById[s.exit], p0 = s.samples[0], d0 = W.arcDistance({ lon: p0.lon, lat: p0.lat }, node);
-    let lift = 0, wErr = 0, inside = 0;
-    const m = s.grid?.length || 2;
-    s.samples.forEach((p, k) => {
-      const c = Math.cos(p.lat * D); lift = Math.max(lift, Math.abs(p.y * c - (p.h - BASE) - 0.02));
-      const L = [s.pos[(k * m) * 3], s.pos[(k * m) * 3 + 2]], Rr = [s.pos[(k * m + m - 1) * 3], s.pos[(k * m + m - 1) * 3 + 2]];
-      wErr = Math.max(wErr, Math.abs(Math.hypot(L[0] - Rr[0], L[1] - Rr[1]) * c - want[s.class]));
-      if (k > 0 && B.inPatch(p.lon, p.lat) && W.townPatchDistance(p.lon, p.lat) === 0 && Math.abs(Math.abs(p.lon) - P.lonMax) > 1e-9 && Math.abs(Math.abs(p.lat) - P.latMax) > 1e-9) inside++;
-    });
-    info(`${s.exit}（${s.edge} ${s.class}）：长 ${f(s.length, 1)} m，首点距出口 ${f(d0, 4)} m，贴地抬高误差 ${lift.toExponential(1)} m，宽度误差 ${wErr.toExponential(1)} m`);
-    if (d0 > 0.05) fail(`${s.exit} 首点距出口 ${d0} > 0.05 m`);
-    if (lift > 1e-4) fail(`${s.exit} 贴地抬高不是 0.02 m`);
-    if (wErr > 0.01) fail(`${s.exit} 宽度与 ${s.class} 不符`);
-    if (inside) fail(`${s.exit} 有 ${inside} 个采样点进入补丁`);
+// ---- W3-C6: exit heads (W8g-b)
+check('W3-C6', '9 个出口道路头（W8g-b）：首点在出口节点上、外缘贴在渲染地形上、城镇边缘铺装宽等于正式道路、长度为 G6 的 L、不进入补丁、边缘地形在其下裁切', ({ info, fail }) => {
+  const want = { N01: 9, N03: 9 }, ids = new Set(), NET = W.roadNetwork;
+  for (const h of heads) {
+    ids.add(h.exit);
+    const rt = h.rt, m = rt.grid.length, node = NET.nodeById[h.exit], p0 = rt.samples[0], d0 = W.arcDistance({ lon: p0.lon, lat: p0.lat }, node);
+    const firstEdge = NET.edges.find(e => (h.exit === 'N08' ? e.id === 'T03-01' : e.id === rt.def.segs[0].id)), L = Math.min(15, NET.edgeLength(firstEdge));
+    const unflat = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D }), col = (i, j) => [rt.strip.pos[(i * m + j) * 3], rt.strip.pos[(i * m + j) * 3 + 1], rt.strip.pos[(i * m + j) * 3 + 2]];
+    let onGround = 0, inside = 0;
+    for (let i = 0; i <= h.K; i++) for (const j of [0, m - 1]) { const q = col(i, j), ll = unflat(q[0], q[2]), y = q[1] * Math.cos(ll.lat * D) + BASE; onGround = Math.max(onGround, Math.abs(y - HS(ll.lon, ll.lat))); }
+    rt.samples.slice(1, h.K + 1).forEach(p => { if (B.inPatch(p.lon, p.lat) && W.townPatchDistance(p.lon, p.lat) === 0 && Math.abs(Math.abs(p.lon) - P.lonMax) > 1e-9 && Math.abs(Math.abs(p.lat) - P.latMax) > 1e-9) inside++; });
+    const gi = o => rt.grid.findIndex(g => Math.abs(g - o) < 1e-6), a = col(0, gi(rt.paved[0][0])), b = col(0, gi(rt.paved[0][1])), width = W.arcDistance(unflat(a[0], a[2]), unflat(b[0], b[2])), cuts = headPolys.filter(q => q.exit === h.exit).length;
+    const w0 = want[h.exit] || 4.5;
+    info(`${h.exit}（${h.id}）：L ${f(h.L, 2)} m（G6 ${f(L, 2)} m），${h.K + 1} 行，首点距出口 ${f(d0, 4)} m，外缘到渲染地形 ${f(onGround, 4)} m，城镇边缘铺装宽 ${f(width, 3)} m，裁切多边形 ${cuts}`);
+    if (d0 > 0.05) fail(`${h.exit} 首点距出口 ${d0} > 0.05 m`);
+    if (Math.abs(h.L - L) > 1e-9) fail(`${h.exit} 长度 ${h.L} 不等于 G6 的 ${L}`);
+    if (onGround > 0.011) fail(`${h.exit} 外缘离渲染地形 ${f(onGround, 4)} m > 0.01 m`);
+    if (Math.abs(width - w0) > 0.1) fail(`${h.exit} 城镇边缘铺装宽 ${f(width, 3)} m，应为 ${w0} m`);
+    if (inside) fail(`${h.exit} 有 ${inside} 个采样点进入补丁`);
+    if (!cuts) fail(`${h.exit} 边缘地形没有在道路头下裁切`);
   }
-  if (ids.size !== 9) fail(`出口起点 ${ids.size} 条，应为 9`);
+  if (ids.size !== 9) fail(`出口道路头 ${ids.size} 条，应为 9`);
 });
 
 const failed = results.filter(r => !r.ok).length;

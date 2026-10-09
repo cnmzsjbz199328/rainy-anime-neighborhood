@@ -79,6 +79,7 @@ let landmarkKit=null;
     setRoot:r=>{root=r;},rand:k=>()=>((k=(k*1664525+1013904223)>>>0)/4294967296)};
   for(const b of LAYOUT.buildings){const build=(globalThis.BUILDINGS||{})[b.module];if(!build)continue;const beforeModuleSeed=seed;const fx=build(kit,b);if(b.module==='B05-P01')seed=beforeModuleSeed;if(fx&&fx.update)buildingFx.push(fx.update);
     for(const p of b.parts)if(groups[p.group])bake(groups[p.group]);}
+  kit.ground=(lon,lat)=>terrain.sampler()(lon,lat);   // W8g-b (B3): the rendered terrain's height for the landmarks' anchors and entrance pads
   landmarkKit=kit;seed=s0;root=scene;}
 // Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
 // curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
@@ -277,7 +278,7 @@ const landmarkGroups=[],landmarkFx=[],landmarkInfo={};let landmarksBuilt=false;
 const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
     for(const lm of WO.landmarks){if(lm.id==='TOWN')continue;const build=(globalThis.LANDMARKS||{})[lm.id];if(!build)continue;
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);
-      const h=WO.height(lm.lon,lm.lat),headDeg=lm.entrances[0]?lm.entrances[0].heading:0,th=Math.PI-headDeg*DD,cth=Math.cos(th),sth=Math.sin(th),own=[];
+      const h=landmarkKit.ground(lm.lon,lm.lat),headDeg=lm.entrances[0]?lm.entrances[0].heading:0,th=Math.PI-headDeg*DD,cth=Math.cos(th),sth=Math.sin(th),own=[];
       // local point -> [flat x, flat y, flat z, 1 / cos(lat), k]
       const map=(x,y,z)=>{const d0=Math.hypot(x,z),yt=Math.max(-1.6,h+y-1.6),kk=RR/(RR+yt),d=d0*kk;let lon=lm.lon,lat=lm.lat;
         if(d0>1e-9){const q=WO.destination({lon:lm.lon,lat:lm.lat},headDeg+Math.atan2(-x,z)/DD,d);lat=q.lat;lon=lm.lon+(((q.lon-lm.lon+540)%360)-180);}
@@ -325,7 +326,8 @@ rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i]
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND,matT('#46505b','asphalt'));
+// W8g-b: the 9 exit heads (the first metres of each exit's own road, roads.js) are made with the terrain at start-up: the town view shows them, the ring is cut under them
+const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND,matT('#46505b','asphalt'),{exitHeads:(H,B)=>ROADS.exitHeads(WORLD,H,(lo,la)=>B.vertexColor(lo,la))});
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),

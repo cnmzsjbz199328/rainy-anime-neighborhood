@@ -77,7 +77,7 @@ console.log(`${rowFail.length ? 'FAIL' : 'PASS'} 按行构建的 rest（${rows.l
 const tg = Date.now(), globalS = TOLD.samplerFromChunks(OLD, mo.chunks), tgMs = Date.now() - tg;
 const B3 = TERRAIN.builder(NEW), ringL = B3.buildFlat({ ring: true, rest: false, window: TERRAIN.RING_WINDOW }), made = new Map();
 const restChunks = keys => { const miss = keys.filter(k => !made.has(k)); if (miss.length) { for (const k of miss) made.set(k, null); for (const c of B3.buildRestChunks(miss)) made.set(c.cy * 24 + c.cx, c); } return keys.slice().sort((a, b) => a - b).map(k => made.get(k)).filter(Boolean); };
-const tl = Date.now(), lazyS = TERRAIN.lazySampler(NEW, ringL, restChunks);
+const tl = Date.now(), lazyS = TERRAIN.lazySampler(NEW, B3.samplerCell); void restChunks; void ringL;
 const nearTown = lazyS(3, -40); const firstMs = Date.now() - tl;
 const sFail = [];
 pts.forEach(([lon, lat], i) => { if (lat > 89.999 || lat < -89.999) return; const a = globalS(lon, lat), b = lazyS(lon, lat); if (!same(a, b)) sFail.push({ i, lon, lat, global: a, lazy: b }); });

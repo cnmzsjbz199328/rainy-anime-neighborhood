@@ -135,7 +135,10 @@ function build(W, H, ctx) {
   // which has its own), and a bamboo fence every 2 m 3.9 m out (open where a road leaves)
   const edge = { pos: [], col: [], idx: [] }; const P = W.TOWN_PATCH, X = R * P.lonMax * D, Zs = -R * Math.asinh(Math.tan(P.latMax * D)), Zn = -R * Math.asinh(Math.tan(P.latMin * D));
   const exits = W.roadNetwork.nodes.filter(n => n.kind === 'town-exit').map(n => ({ ...flatOf(n.lon, n.lat), id: n.id }));
-  const nearExit = (x, z, r) => exits.some(e => Math.hypot(x - e.x, z - e.z) < r * e.k);
+  // W8g-b (B4): with the footprints of the exit roads (ctx.exitPolys, the polygons the ring is cut by, along the whole exit routes), a row is open where any of its points
+  // lies on a road; without them (tools), within 6 m of an exit node as before
+  const EP = ctx.exitPolys || null, onRoad = (x, z) => EP.some(q => { if (x < q.minX || x > q.maxX || z < q.minZ || z > q.maxZ) return false; let c = false; const Q = q.polygon; for (let a = 0, b = Q.length - 1; a < Q.length; b = a++) if ((Q[a][1] > z) !== (Q[b][1] > z) && x < (Q[b][0] - Q[a][0]) * (z - Q[a][1]) / (Q[b][1] - Q[a][1]) + Q[a][0]) c = !c; return c; });
+  const nearExit = (x, z, r, nrm, k) => (EP ? [0, 1, 2, 3.5, 3.9 + 1].some(o => onRoad(x + nrm[0] * o * k, z + nrm[1] * o * k)) : exits.some(e => Math.hypot(x - e.x, z - e.z) < r * e.k));
   const sidesDef = [[[-X, Zs], [X, Zs], [0, -1]], [[X, Zs], [X, Zn], [1, 0]], [[X, Zn], [-X, Zn], [0, 1]], [[-X, Zn], [-X, Zs], [-1, 0]]];
   const offs = [[0, 0.03, COL.ridge], [0.1, 0.05, [0.6, 0.6, 0.65]], [0.9, 0.04, lin('#6a6458')], [1.0, 0.03, lin('#585349')], [1.1, 0, lin('#3f6a50')], [3.2, 0, lin('#4f7d5b')], [3.5, 0, lin('#3f6a50')]];
   for (const [a, b, nrm] of sidesDef) {
@@ -143,7 +146,7 @@ function build(W, H, ctx) {
     let prevRow = null;
     for (let i = 0; i <= n; i++) {
       const x = a[0] + tx * len * i / n, z = a[1] + tz * len * i / n, ll = llOf(x, z), k = flatOf(ll.lon, ll.lat).k;
-      const skip = nearExit(x, z, 6) || (ctx.corridor && ctx.corridor(llOf(x + nrm[0] * 6, z + nrm[1] * 6).lon, llOf(x + nrm[0] * 6, z + nrm[1] * 6).lat));
+      const skip = nearExit(x, z, 6, nrm, k) || (ctx.corridor && ctx.corridor(llOf(x + nrm[0] * 6, z + nrm[1] * 6).lon, llOf(x + nrm[0] * 6, z + nrm[1] * 6).lat));
       if (skip) { prevRow = null; continue; }
       const row = offs.map(([o, lift, c]) => { const px = x + nrm[0] * o * k, pz = z + nrm[1] * o * k, q = llOf(px, pz); return pushV(edge, px, pz, H(q.lon, q.lat) + lift, c); });
       if (prevRow) for (let j = 0; j + 1 < row.length; j++) edge.idx.push(prevRow[j], row[j], prevRow[j + 1], prevRow[j + 1], row[j], row[j + 1]);
@@ -602,12 +605,16 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);   // (asking for the global sampler used to build the rest here; the order is kept)
     const RD = global.ROADS_API && (global.ROADS_API.ensure(), global.ROADS_API.data()); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
-    if (RD) { for (const r of RD.routes) addPts(r.samples, r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.4 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : 4.6); for (const b of RD.bridges) addPts(b.samples, 5.2); for (const s of RD.stairs) addPts(s.samples, 1.2); }
-    if (SEC.state.chain) addPts(SEC.state.chain.samples, 3.0); for (const r of (SEC.state.roadOut || [])) if (r.centre) addPts(r.centre, 2.0);
+    // W8g-b (B4): a road keeps plants beyond its whole cross-section (the footprint of roads.js: paved + shoulder + ditch, per sample), plus the same 0.8 m as before
+    const addFoot = rt => rt.samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: Math.max(Math.abs(rt.footprint[i][2]), Math.abs(rt.footprint[i][3])) + 0.8 }); });
+    if (RD) { for (const r of RD.routes) addFoot(r); for (const b of RD.bridges) addPts(b.samples, 5.2); for (const s of RD.stairs) addPts(s.samples, 1.2); }
+    if (SEC.state.chain) addFoot(SEC.state.chain); for (const r of (SEC.state.roadOut || [])) if (r.centre) addPts(r.centre, 2.0);
     for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, corridor });
+    // the exit routes' footprints as the cut polygons of terrain.js (whole routes: a road that runs along the edge, N04, keeps the town edge strip off it beyond its head)
+    const exitPolys = TERR.builder ? TERR.builder.exitPolygons([...(RD ? RD.routes.filter(r => r.def.exit) : []), ...(SEC.state.chain ? [SEC.state.chain] : [])].map(rt => ({ rt, K: rt.samples.length - 1, exit: rt.def ? rt.def.exit : 'N08' }))) : null;
+    DATA = build(W, H, { avoid, corridor, exitPolys });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
