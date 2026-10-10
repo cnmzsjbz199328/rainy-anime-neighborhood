@@ -11,6 +11,10 @@
 // W8g-c (L4): six fixed views with all the vegetation (forest close-up, farmland and coast on the flat night map; the sphere at d = 70, 140, 400): each after the
 //   transition and the background generation, the camera orbiting the target slowly for VIEW_MS (so the per-frame selection of landcover.js runs every frame):
 //   frame interval median and p95, draw calls, triangles. --views-only measures the start-up page and these views only (no cold exits).
+// W8g-d (D4): --quality high|low|auto loads the page with ?quality=; --tiers high,low runs everything once per tier into one file (result.tiers) and adds a
+//   page in auto (the tier it picks on this machine and the frame median it measured). Each view also records the land cover's own draw calls and triangles
+//   (rendered with and without it), the start-up page the JS heap once the background generation is done.
+//   node tools/perf_baseline.mjs --tiers high,low --label w8g-d
 // Output: docs/world/perf/<label>.json (plain text, tracked). The CPU parts compare across machines; the frame figures are this machine only.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -20,7 +24,7 @@ import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), args = process.argv.slice(2), arg = (n, d) => { const i = args.indexOf(n); return i < 0 ? d : args[i + 1]; };
-const ref = arg('--ref', null), soft = args.includes('--swiftshader');
+const ref = arg('--ref', null), soft = args.includes('--swiftshader'), tiersArg = arg('--tiers', null); let currentQ = arg('--quality', null);
 const label = arg('--label', ref || 'current'), outFile = path.resolve(root, arg('--out', `docs/world/perf/${label}.json`));
 const require = createRequire(import.meta.url), L = require(path.join(root, 'layout.js'));
 const EXITS = ['N01', 'N03', 'N04', 'N08', 'N09', 'N10', 'N11', 'N12', 'N13'].filter(id => !arg('--exits') || arg('--exits').split(',').includes(id));
@@ -32,7 +36,7 @@ const VIEWS = [['forest-near-flat', { lon: -15, lat: -40, mode: 'flat', dist: 12
 
 let pw; try { pw = await import('playwright'); } catch { const g = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(); pw = await import(pathToFileURL(path.join(g, 'playwright', 'index.mjs')).href); }
 const chromium = pw.chromium || pw.default.chromium;
-const flags = soft ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : ['--use-angle=metal', '--ignore-gpu-blocklist'];
+const flags = [...(soft ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : ['--use-angle=metal', '--ignore-gpu-blocklist']), '--enable-precise-memory-info'];
 
 // the build to measure: the current index.html, or a git ref built in a temporary worktree
 let html = path.join(root, 'index.html'), cleanup = () => {}, commit, dirty = false;
@@ -63,7 +67,7 @@ async function open() {
   page.close = () => browser.close();
   page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.addInitScript(INIT);
-  await page.goto(pathToFileURL(html).href, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.goto(pathToFileURL(html).href + (currentQ ? `?quality=${currentQ}` : ''), { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.__perf.firstFrame !== null && window.__scene && window.__scene.view, null, { timeout: 120000, polling: 16 });
   page.errors = errors; return page;
 }
@@ -109,29 +113,33 @@ async function viewPerf(page, v) {
       if (t0 === null) { t0 = now; f0 = P.frames.length; lt0 = P.lt.length; }
       n++; S.view.set({ yaw: v.yaw + 0.003 * n });
       if (now - t0 < ms) { requestAnimationFrame(step); return; }
-      setTimeout(() => { const fr = P.frames.slice(f0), gaps = fr.slice(1).map((t, i) => t - fr[i]).sort((a, b) => a - b), at = p => (gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] : null), info = S.renderer.info.render, C = S.cover.state;
+      setTimeout(() => { const fr = P.frames.slice(f0), gaps = fr.slice(1).map((t, i) => t - fr[i]).sort((a, b) => a - b), at = p => (gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] : null), info = { ...S.renderer.info.render }, C = S.cover.state;
+        let cover = null; if (C.root) { const was = C.root.visible; S.renderer.render(S.scene, S.camera); const on = { ...S.renderer.info.render }; C.root.visible = false; S.renderer.render(S.scene, S.camera); const off = { ...S.renderer.info.render }; C.root.visible = was; cover = { calls: on.calls - off.calls, triangles: on.triangles - off.triangles }; }
         res({ frames: fr.length, medianMs: +at(0.5).toFixed(2), p95Ms: +at(0.95).toFixed(2), maxMs: +(gaps.length ? gaps[gaps.length - 1] : 0).toFixed(2), longTasks: P.lt.slice(lt0).length, calls: info.calls, triangles: info.triangles,
-          instances: C.loaded ?? null, lod: C.lod ? { near: C.lod.near, far: C.lod.far, fading: C.lod.fading, groups: C.lod.groups } : null }); }, 50); };
+          instances: C.loaded ?? null, cover, tier: S.quality ? S.quality.tier() : null, lod: C.lod ? { near: C.lod.near, far: C.lod.far, fading: C.lod.fading, groups: C.lod.groups } : null }); }, 50); };
     requestAnimationFrame(step); }), [v, VIEW_MS]);
 }
 
-const result = { tool: 'tools/perf_baseline.mjs', label, ref: ref || null, commit, dirty, date: new Date().toISOString(), renderer: soft ? 'swiftshader' : 'metal', flags, viewport: [1280, 800],
-  windowMs: WINDOW_MS, dragFrames: DRAG_FRAMES, noGenWaitMs: NO_GEN_WAIT_MS, loads: [], pregen: null, exits: {}, sphere: {} };
+const meta = { tool: 'tools/perf_baseline.mjs', label, ref: ref || null, commit, dirty, date: new Date().toISOString(), renderer: soft ? 'swiftshader' : 'metal', flags, viewport: [1280, 800],
+  windowMs: WINDOW_MS, dragFrames: DRAG_FRAMES, noGenWaitMs: NO_GEN_WAIT_MS };
+let result = null;
+const fresh = () => ({ ...meta, quality: currentQ, loads: [], pregen: null, exits: {}, sphere: {} });
 // the machine's state (memory pressure on this machine makes the frame figures noisy: kept with the result)
 const machine = () => { let swap = null; try { swap = execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' }).trim(); } catch {} return { freeMemMB: Math.round(os.freemem() / 1048576), totalMemMB: Math.round(os.totalmem() / 1048576), loadAvg: os.loadavg().map(v => +v.toFixed(2)), swap }; };
-result.machine = { start: machine() };
 const genOf = page => page.evaluate(() => { const P = window.__perf, G = window.__scene.worldgen ? window.__scene.worldgen.stats() : null; if (!G) return { cpuMs: null, longestTaskMs: null };
   const to = G.doneAt ? performance.now() - (Date.now() - G.doneAt) : performance.now(), lts = P.lt.filter(([s]) => s > P.firstFrame + 50 && s <= to + 50);
   return { cpuMs: G.steps.reduce((a, s) => a + s.ms, 0), longestTaskMs: lts.length ? Math.max(...lts.map(q => q[1])) : 0 }; });
 const loadOf = page => page.evaluate(() => ({ sceneMs: Math.round(window.__perf.sceneAt), firstFrameMs: Math.round(window.__perf.firstFrame) }));
 let errors = [];
-try {
+async function measure() {
+  result = fresh(); result.machine = { start: machine() }; errors = [];
   // one page for the start-up and the background generation in detail, then its own cold exit is not used
   { const page = await open(); result.loads.push(await loadOf(page));
     result.gpu = await page.evaluate(() => { const gl = window.__scene.renderer.getContext(), e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); });
     result.parallelShaderCompile = await page.evaluate(() => !!window.__scene.renderer.getContext().getExtension('KHR_parallel_shader_compile'));
     result.chromium = version;
     const gen = await hasGen(page), w = await waitGen(page);
+    result.jsHeapMB = await page.evaluate(() => (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576 * 10) / 10 : null));      // W8g-d D4: once the background generation is done
     result.pregen = await page.evaluate(([gen, w]) => { const P = window.__perf, S = window.__scene, G = gen ? S.worldgen.stats() : null, from = P.firstFrame, to = G && G.doneAt ? performance.now() - (Date.now() - G.doneAt) : performance.now();
       const lts = P.lt.filter(([s]) => s > from + 50 && s <= to + 50);
       return { present: gen, waitedMs: w.waitedMs, worldgen: G, startDelayMs: G ? G.startDelayMs : null, longTasks: lts, longestTaskMs: lts.length ? Math.max(...lts.map(q => q[1])) : 0,
@@ -154,7 +162,6 @@ try {
   if (!viewsOnly) { const page = await open(); result.loads.push(await loadOf(page)); result.sphere.immediate = await drive(page, { kind: 'sphere' }); errors.push(...page.errors); await page.close(); }
   if (!viewsOnly) { const page = await open(); result.loads.push(await loadOf(page)); await waitGen(page); await page.waitForTimeout(500); result.sphere.afterPregen = await drive(page, { kind: 'sphere' }); errors.push(...page.errors); await page.close(); }
   if (!viewsOnly) console.log(`球形按钮：立即 最长任务 ${result.sphere.immediate.longestTaskMs} ms / 最大帧间隔 ${result.sphere.immediate.maxFrameGapMs} ms；预生成后 ${result.sphere.afterPregen.longestTaskMs} / ${result.sphere.afterPregen.maxFrameGapMs} ms`);
-} finally { cleanup(); }
 const ex = Object.values(result.exits), max = (list, f) => list.length ? Math.max(...list.map(f)) : null, med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 result.summary = {
   sceneMsMedian: med(result.loads.map(q => q.sceneMs)), firstFrameMsMedian: med(result.loads.map(q => q.firstFrameMs)),
@@ -166,10 +173,22 @@ result.summary = {
   immediateExitMaxFrameGapMs: max(ex, r => r.immediate.maxFrameGapMs), afterPregenExitMaxFrameGapMs: max(ex, r => r.afterPregen.maxFrameGapMs), hotExitMaxFrameGapMs: max(ex, r => r.hot.maxFrameGapMs),
   sphereImmediateLongestTaskMs: viewsOnly ? null : result.sphere.immediate.longestTaskMs, sphereAfterPregenLongestTaskMs: viewsOnly ? null : result.sphere.afterPregen.longestTaskMs,
   viewsMedianMsMax: result.views ? Math.max(...Object.values(result.views).map(r => r.medianMs)) : null, viewsP95MsMax: result.views ? Math.max(...Object.values(result.views).map(r => r.p95Ms)) : null,
-  pageErrors: errors.length,
+  jsHeapMB: result.jsHeapMB ?? null, pageErrors: errors.length,
 };
 result.errors = [...new Set(errors)].slice(0, 10);
 result.machine.end = machine();
+return result;
+}
+// one run per tier (or one run as before), then the page in auto
+const tiers = {}; let auto = null;
+try {
+  for (const q of (tiersArg ? tiersArg.split(',') : [currentQ])) { currentQ = q; await measure(); tiers[q || 'default'] = result; if (q) console.log(`档位 ${q}：摘要 ` + JSON.stringify(result.summary)); }
+  if (tiersArg) { currentQ = 'auto'; const page = await open(); await page.waitForTimeout(500);
+    auto = await page.evaluate(() => new Promise(res => { const Q = window.__scene.quality, t0 = performance.now(); if (!Q) return res(null);
+      const tick = () => { if (Q.state.decided || performance.now() - t0 > 15000) res({ mode: Q.state.mode, tier: Q.state.tier, decided: Q.state.decided, probeFrames: Q.state.probe.length, probeMedianMs: Q.state.probeMedianMs }); else requestAnimationFrame(tick); }; tick(); }));
+    await page.close(); console.log('auto：' + JSON.stringify(auto)); }
+} finally { cleanup(); }
+if (tiersArg) result = { ...meta, gpu: result.gpu, parallelShaderCompile: result.parallelShaderCompile, chromium: result.chromium, tiers, auto, summary: Object.fromEntries(Object.entries(tiers).map(([k, r]) => [k, r.summary])) };
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, JSON.stringify(result, null, 1) + '\n');
 console.log(`GPU：${result.gpu}；提交 ${commit.slice(0, 7)}${dirty ? '（工作区有改动）' : ''}`);

@@ -497,7 +497,12 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   // scale of the display frame x pixels per metre / distance to the camera). Trees: near model (with its ink hull) -> far model at 40 px -> canopy group at 6 px;
   // everything else fades out at about 2 px. The hand-overs are dithered: each instance carries a window [lo, hi) of an 8 x 8 ordered dither, the pixels whose
   // threshold falls outside are discarded; near [l, 1) and far [0, l) are complementary, the hull uses its near model's window, a fading object [0, f).
-  const LOD = { nearFar: [36, 44], farCanopy: [5, 7], fadeOut: [1.5, 2.5] };
+  let lastKey = '';
+  const LOD = { tier: 'high', nearFar: [36, 44], farCanopy: [5, 7], fadeOut: [1.5, 2.5], density: 1, canopyDetail: 1 };
+  // W8g-d: the tier's three parameters (quality.js): the density of the instances, the thresholds above, the canopy groups' detail
+  const Q = ctx.quality || null;
+  function applyTier() { if (!Q) return; const p = Q.params(); Object.assign(LOD, { tier: Q.tier(), nearFar: p.nearFar, farCanopy: p.farCanopy, fadeOut: p.fadeOut, density: p.density, canopyDetail: p.canopyDetail }); lastKey = ''; }
+  if (Q) { applyTier(); Q.onChange(applyTier); }
   const LOD_GLSL = 'varying vec2 vLodWin;\nfloat lodBayer(vec2 fc) { ivec2 p = ivec2(fc) & ivec2(7); int a = p.x ^ p.y; return (float(((a & 1) << 5) | ((p.y & 1) << 4) | ((a & 2) << 2) | ((p.y & 2) << 1) | ((a & 4) >> 1) | ((p.y & 4) >> 2)) + 0.5) / 64.0; }';
   function lodDither(shader) {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aWin;\nvarying vec2 vLodWin;').replace('void main() {', 'void main() {\n\tvLodWin = aWin;');
@@ -538,11 +543,11 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   // the local scale k of the flat frame and the size in true metres (the near model's height or width, whichever is larger)
   let LT = null;
   function prepareLod() {
-    const n = INDEX.type.length, f = INDEX.f, T = { n, mat: new Float32Array(n * 16), col: new Float32Array(n * 3), F: new Float64Array(n * 3), P: new Float64Array(n * 3), k: new Float64Array(n), size: new Float64Array(n), near: new Array(n), far: new Array(n), group: new Int32Array(n).fill(-1) };
+    const n = INDEX.type.length, f = INDEX.f, T = { n, keep: new Float32Array(n), mat: new Float32Array(n * 16), col: new Float32Array(n * 3), F: new Float64Array(n * 3), P: new Float64Array(n * 3), k: new Float64Array(n), size: new Float64Array(n), near: new Array(n), far: new Array(n), group: new Int32Array(n).fill(-1) };
     for (let i = 0; i < n; i++) {
       const o = i * 12, x = f[o], z = f[o + 1], k = 1 / Math.cos(Math.atan(Math.sinh(-z / R))), y = (f[o + 2] - BASE) * k, type = INDEX.types[INDEX.type[i]], near = objs.inst[type] || null;
       qE.set(f[o + 10], f[o + 3], f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, y, z), qQ, mS.set(k * f[o + 4], k * f[o + 5], k * f[o + 6])); T.mat.set(mM.elements, i * 16);
-      T.col[i * 3] = f[o + 7]; T.col[i * 3 + 1] = f[o + 8]; T.col[i * 3 + 2] = f[o + 9];
+      T.col[i * 3] = f[o + 7]; T.col[i * 3 + 1] = f[o + 8]; T.col[i * 3 + 2] = f[o + 9]; T.keep[i] = hash(x * 3.1, z * 2.7);      // W8g-d: the instance's place in the thinning order
       T.F[i * 3] = x; T.F[i * 3 + 1] = y; T.F[i * 3 + 2] = z; const p = BEND.point(x, y, z, 1); T.P[i * 3] = p[0]; T.P[i * 3 + 1] = p[1]; T.P[i * 3 + 2] = p[2]; T.k[i] = k;
       T.near[i] = near; T.far[i] = objs.inst[type + '_far'] || null; T.size[i] = near ? Math.max(near.h * f[o + 5], near.w * Math.max(f[o + 4], f[o + 6])) : 0;
     }
@@ -582,20 +587,22 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     // the instance colour turns it to the mean leaf colour of the group's own trees (cedar groups darker, bamboo lighter)
     const geo=K.builder().add(new THREE.IcosahedronGeometry(1,0),P.leafA,{p:[0,1,0],top:P.leafC}).build(),leafA=lin(P.leafA),rel=t=>lin(P[{treeRound:'leafA',cedar:'cedar',pine:'pine',bamboo:'bamboo'}[t]]).map((c,j)=>c/leafA[j]);
     // W8g-c: the group's crown at full size (no sqrt(fade) scaling any more), shown through the dither window its trees hand over to it (at 6 px)
-    const cap=Math.max(1,canopyGroups.length);canopy=new THREE.InstancedMesh(lodGeometry(geo,cap),objs.lodMaterials.tree,cap);canopy.name='cover:canopy-proxy';canopy.count=0;canopy.visible=false;canopy.frustumCulled=false;canopy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);canopy.boundingSphere=new THREE.Sphere();S.root.add(canopy);
-    canopyGroups.forEach((g,i)=>{const j=.75+.5*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));
+    // (W8g-d: the canopy groups' detail is a tier parameter: this 20-face crown in the high tier, an 8-face one in the low tier; one mesh each, the other stays empty)
+    const cap=Math.max(1,canopyGroups.length),geoLo=K.builder().add(new THREE.OctahedronGeometry(1,0),P.leafA,{p:[0,1,0],top:P.leafC}).build();
+    const makeCanopy=(g,name)=>{const m=new THREE.InstancedMesh(lodGeometry(g,cap),objs.lodMaterials.tree,cap);m.name=name;m.count=0;m.visible=false;m.frustumCulled=false;m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);m.boundingSphere=new THREE.Sphere();S.root.add(m);return m;};
+    canopy=makeCanopy(geo,'cover:canopy-proxy');const canopyLo=makeCanopy(geoLo,'cover:canopy-proxy-low');
+    canopyGroups.forEach((g,i)=>{const j=.75+.5*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));canopyLo.setColorAt(i,tintC.setRGB(...g.tint));
       const k=g.F.k;qQ.identity();mM.compose(mP.set(g.F.x,(g.h-BASE)*k,g.F.z),qQ,mS.set(k*g.scale,k*2.4,k*g.scale));g.mat=Float32Array.from(mM.elements);for(const m of g.members)LT.group[m]=i;});
-    objs.canopy={mesh:canopy,win:canopy.geometry.attributes.aWin,r:canopy.geometry.boundingSphere.radius,idx:new Int32Array(cap)};
+    const entry=m=>({mesh:m,win:m.geometry.attributes.aWin,r:m.geometry.boundingSphere.radius,idx:new Int32Array(cap)});objs.canopies={1:entry(canopy),0:entry(canopyLo)};objs.canopy=objs.canopies[LOD.canopyDetail];canopy=objs.canopy.mesh;
     S.distant={groups:canopyGroups.length,triangles:canopyGroups.length*20,bakedVertices:baked.reduce((n,b)=>n+b.neo.count,0)};
   }
   // W8g-c: the selection, from the camera alone (position, field of view, height of the drawing buffer; the bend and the seam shift fix the display frame):
   // no hysteresis, no load ring, no history. Every call that sees a new camera rebuilds the instance buffers from the table in its own order.
   const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
-  let lastKey = '';
   function select(camera, force) {
     if (!LT) return;
     const u = BEND.get(), H = ctx.renderer ? ctx.renderer.domElement.height : 800, wrap = BEND.wrapUniform ? BEND.wrapUniform.value.x : 0, cp = camera.position;
-    const key = [cp.x, cp.y, cp.z, camera.fov, H, u, wrap].join(',');
+    const key = [cp.x, cp.y, cp.z, camera.fov, H, u, wrap, LOD.tier].join(',');
     if (!force && key === lastKey) return; lastKey = key;
     const PPM = H / (2 * Math.tan(camera.fov * D / 2)), cx = cp.x, cy = cp.y, cz = cp.z, T = LT, NF = LOD.nearFar, FC = LOD.farCanopy, FO = LOD.fadeOut;
     const list = Object.values(objs.inst); for (const o of list) { o.n = 0; o.bmin = [Infinity, Infinity, Infinity]; o.bmax = [-Infinity, -Infinity, -Infinity]; o.smax = 0; }
@@ -609,7 +616,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       total++;
     };
     for (let i = 0; i < T.n; i++) {
-      const near = T.near[i]; if (!near) continue;
+      const near = T.near[i]; if (!near || T.keep[i] >= LOD.density) continue;      // W8g-d: the low tier keeps the instances whose hash is below its density
       const fx = T.F[i * 3], sx = fx + BEND.shift(fx), dx = sx + (T.P[i * 3] - sx) * u - cx, dy = T.F[i * 3 + 1] + (T.P[i * 3 + 1] - T.F[i * 3 + 1]) * u - cy, dz = T.F[i * 3 + 2] + (T.P[i * 3 + 2] - T.F[i * 3 + 2]) * u - cz;
       const px = T.size[i] * (T.k[i] + (1 - T.k[i]) * u) * PPM / Math.max(0.01, Math.sqrt(dx * dx + dy * dy + dz * dz));
       if (T.far[i]) {
@@ -628,6 +635,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       if (o.hull) o.hull.count = n;
     }
     let nGroups = 0;
+    if (objs.canopies) { objs.canopy = objs.canopies[LOD.canopyDetail]; canopy = objs.canopy.mesh; const other = objs.canopies[1 - LOD.canopyDetail].mesh; other.count = 0; other.visible = false; }
     if (canopy) {
       const M = canopy.instanceMatrix.array, C = canopy.instanceColor.array, Wn = objs.canopy.win.array, bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];
       for (let gi = 0; gi < canopyGroups.length; gi++) { const g = canopyGroups[gi], s = share[gi] / g.members.length; if (s <= 0) continue; const n = nGroups++;
@@ -636,7 +644,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       canopy.count = nGroups; canopy.visible = nGroups > 0;
       if (nGroups) { canopy.instanceMatrix.needsUpdate = true; canopy.instanceColor.needsUpdate = true; objs.canopy.win.needsUpdate = true; canopy.boundingSphere.center.set((bmin[0] + bmax[0]) / 2, (bmin[1] + bmax[1]) / 2, (bmin[2] + bmax[2]) / 2); canopy.boundingSphere.radius = Math.hypot(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2]) / 2 + objs.canopy.r * 4 * 11.5; }
     }
-    S.loaded = total; S.counts = counts; S.lod = { ppm: PPM, near: nNear, far: nFar, fading: nFade, groups: nGroups, thresholds: LOD };
+    S.loaded = total; S.counts = counts; S.lod = { tier: LOD.tier, ppm: PPM, near: nNear, far: nFar, fading: nFade, groups: nGroups, thresholds: LOD };
   }
   function buildLines() {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }

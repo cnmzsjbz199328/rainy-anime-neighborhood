@@ -7,17 +7,20 @@
 //      hand-over frames in docs/world/w8g/lod/; the ink hull's width at the near -> far hand-over (<= 1 px wherever the hulls show, ruling 2)
 //   --veg adds, for reference, the same dolly measured on the vegetation layer alone (each step rendered with and without the land cover; the step-to-step change
 //      of their difference), which separates the hand-overs from the camera's own motion
-//   L4 performance: the six views of tools/perf_baseline.mjs (docs/world/perf/w8g-c.json; pre-w8g-c.json for the comparison): median <= 17 ms, p95 <= 25 ms
+//   L4 performance: the six views of tools/perf_baseline.mjs (docs/world/perf/w8g-d.json, the tier under test, else w8g-c.json; pre-w8g-c.json for the
+//      comparison): median <= 17 ms, p95 <= 25 ms
+//   D3 (W8g-d): the six views at identical cameras in both tiers (?quality=high / low): the low tier's land cover triangles <= 60 % of high's, its draw calls <= high's
+// The tier under test is QUALITY (tools/browser.mjs puts it in every page; default high).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { launchChromium } from './browser.mjs';
+import { launchChromium, QUALITY_TIER } from './browser.mjs';
 import { INIT } from './road_views.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), args = process.argv.slice(2), arg = (n, d) => { const i = args.indexOf(n); return i < 0 ? d : args[i + 1]; };
-const VEG = args.includes('--veg'), baseRef = arg('--base', 'pre-w8g-c'), only = arg('--only', 'L1,L2,L3,L4').split(','), STEPS = +arg('--steps', 150), outDir = path.join(root, 'docs/world/w8g/lod');
+const VEG = args.includes('--veg'), baseRef = arg('--base', 'pre-w8g-c'), only = arg('--only', 'L1,L2,L3,L4,D3').split(','), STEPS = +arg('--steps', 150), outDir = path.join(root, 'docs/world/w8g/lod');
 const FARM = [-71.8 / 90 * 180 / Math.PI, Math.atan(Math.sinh(12.3 / 90)) * 180 / Math.PI];      // the places of tools/distant_check.mjs
 const PLACES = [['forest', -15, -40], ['farm', FARM[0], FARM[1]], ['grass', 90, -42]];
 const MODES = [['flat', 0.6], ['sphere', 1.0]];                                                  // [mode, pitch]
@@ -25,10 +28,10 @@ const results = []; let errors = [];
 const report = (id, ok, title, lines = []) => { results.push({ id, ok }); console.log(`${ok === null ? 'INFO' : ok ? 'PASS' : 'FAIL'} ${id} ${title}`); for (const l of lines) console.log('  · ' + l); };
 
 const browser = await launchChromium();
-async function open(file) {
+async function open(file, query = '') {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 }); page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/deprecated|GPU stall|ReadPixels/.test(m.text())) errors.push(m.text()); });
-  await page.addInitScript(INIT); await page.goto(pathToFileURL(file).href, { waitUntil: 'domcontentloaded', timeout: 180000 });
+  await page.addInitScript(INIT); await page.goto(pathToFileURL(file).href + query, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__scene && window.__scene.view, null, { timeout: 180000 });
   await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.cover.ensure(); S.section.ensure(); S.roads.ensure(); if (S.ocean) S.ocean.ensure(); S.landmarks.build(); });
   return page;
@@ -37,7 +40,7 @@ async function open(file) {
 const placeFn = `(([lo, la, d, mode, pitch]) => { const S = window.__scene, q = WORLD.lonLatToTown(lo, la); S.view.set({ target: [q.x, 1.2, q.z], dist: d, yaw: 0.4, pitch });
   S.transition.setMode(mode); S.transition.step(3); window.__step(1); const c = S.camera; for (const m of [S.cover, S.section, S.roads, S.ocean]) if (m) m.tick(1.2, c); S.renderer.render(S.scene, c); })`;
 
-const cur = await open(path.join(root, 'index.html'));
+const cur = only.some(k => ['L1', 'L2', 'L3'].includes(k)) ? await open(path.join(root, 'index.html')) : null;
 
 // ---------------------------------------------------------------- L1
 if (only.includes('L1')) {
@@ -130,15 +133,27 @@ if (only.includes('L3')) {
 // ---------------------------------------------------------------- L4
 if (only.includes('L4')) {
   const read = f => { try { return JSON.parse(fs.readFileSync(path.join(root, 'docs/world/perf', f), 'utf8')); } catch { return null; } };
-  const curP = read('w8g-c.json'), baseP = read('pre-w8g-c.json');
+  const dP = read('w8g-d.json'), curP = dP && dP.tiers ? { ...dP.tiers[QUALITY_TIER], gpu: dP.gpu, commit: dP.commit, dirty: dP.dirty } : read('w8g-c.json'), baseP = read('pre-w8g-c.json');
   if (!curP || !curP.views) report('L4', false, '性能：先运行 node tools/perf_baseline.mjs --label w8g-c（与 --ref pre-w8g-c）');
   else {
     const lines = [], fails = [];
     for (const [name, v] of Object.entries(curP.views)) { const b = baseP && baseP.views ? baseP.views[name] : null, ok = v.medianMs <= 17 && v.p95Ms <= 25; if (!ok) fails.push(name);
       lines.push(`${name}：中位数 ${v.medianMs} ms、p95 ${v.p95Ms} ms，${v.calls} 次绘制调用、${v.triangles} 个三角形、${v.instances} 个实例${b ? `（基线 ${b.medianMs} / ${b.p95Ms} ms，${b.calls} 次、${b.triangles} 个三角形、${b.instances} 个实例）` : ''}${ok ? '' : ' —— 未达目标'}`); }
     lines.push(`GPU ${curP.gpu}；${curP.commit.slice(0, 7)}${curP.dirty ? '（工作区有改动）' : ''}`);
-    report('L4', fails.length === 0, '性能：6 个固定机位帧间隔中位数 ≤ 17 ms、p95 ≤ 25 ms（数据来自 docs/world/perf/w8g-c.json）', lines);
+    report('L4', fails.length === 0, `性能（档位 ${QUALITY_TIER}）：6 个固定机位帧间隔中位数 ≤ 17 ms、p95 ≤ 25 ms（数据来自 docs/world/perf/${dP && dP.tiers ? 'w8g-d' : 'w8g-c'}.json）`, lines);
   }
+}
+// ---------------------------------------------------------------- D3
+if (only.includes('D3')) {
+  const VIEWS = [['forest-near-flat', -15, -40, 'flat', 12, 0, 0.45], ['farm-flat', FARM[0], FARM[1], 'flat', 30, 2.5, 0.55], ['coast-flat', -15, -54, 'flat', 30, 0, 0.55], ['sphere-70', -15, -40, 'sphere', 70, 0, 1.2], ['sphere-140', -15, -40, 'sphere', 140, 0, 1.2], ['sphere-400', -15, -40, 'sphere', 400, 0, 1.2]];
+  const cost = (page, v) => page.evaluate(([lo, la, mode, dist, yaw, pitch]) => { const S = window.__scene, q = WORLD.lonLatToTown(lo, la); S.view.set({ target: [q.x, 1.2, q.z], dist, yaw, pitch }); S.transition.setMode(mode); S.transition.step(3); window.__step(1);
+    const c = S.camera; for (const m of [S.cover, S.section, S.roads, S.ocean]) if (m) m.tick(1.2, c); const R = S.cover.state.root; S.renderer.render(S.scene, c); const on = { ...S.renderer.info.render }; R.visible = false; S.renderer.render(S.scene, c); const off = { ...S.renderer.info.render }; R.visible = true;
+    return { tier: S.quality.tier(), calls: on.calls - off.calls, triangles: on.triangles - off.triangles, frameCalls: on.calls, instances: S.cover.state.loaded, pos: c.position.toArray() }; }, v.slice(1));
+  const hi = await open(path.join(root, 'index.html'), '?quality=high'), lo = await open(path.join(root, 'index.html'), '?quality=low'), lines = []; let ok = true;
+  for (const v of VIEWS) { const a = await cost(hi, v), b = await cost(lo, v), same = a.pos.every((x, i) => x === b.pos[i]), good = b.triangles <= 0.6 * a.triangles && b.calls <= a.calls && b.frameCalls <= a.frameCalls && same && a.tier === 'high' && b.tier === 'low'; ok = ok && good;
+    lines.push(`${v[0]}：高档 ${a.calls} 次 / ${a.triangles} 三角形 / ${a.instances} 实例，低档 ${b.calls} 次 / ${b.triangles} 三角形 / ${b.instances} 实例（${(b.triangles / Math.max(1, a.triangles) * 100).toFixed(0)}%）；整帧 ${a.frameCalls} → ${b.frameCalls} 次${same ? '' : '（相机不同）'}${good ? '' : ' —— 未达'}`); }
+  report('D3', ok, '低档口径（W8g-d）：同一相机下低档地表覆盖三角形 ≤ 高档 60%，绘制调用不超过高档', lines);
+  await hi.close(); await lo.close();
 }
 report('页面错误', errors.length === 0, errors.length ? errors.slice(0, 3).join(' | ') : '无');
 await browser.close();
