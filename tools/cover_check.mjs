@@ -196,12 +196,20 @@ if (!process.argv.includes('--no-browser')) {
   if (def.built) fails.push('默认画面已构建田地'); if (def.calls > 2374 * 1.03) fails.push(`默认视角绘制调用 ${def.calls} 超过基线 2374 的 +3%`);
   info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，田地未构建（基线 2374 / 239,958）`);
   const shots = Object.fromEntries(SHOTS);
+  // W8g-c (W8_SPEC 13.3 C2): no load ring and no 110 m cut-off any more; every drawn instance must be at least the fade-out size on screen
+  // the land cover's draw calls: one per instance type and one per ink hull, plus the plot meshes. W6 had 40 (fields) / 60 (forest) / 70 (the rest) with the
+  // load ring; since W8g-c every type above the pixel threshold draws wherever the camera is, at most about 80 calls in all (the frame has 8,000-11,000)
+  const CALLS = 80;
+  const smallOf = page => page.evaluate(() => { const S = window.__scene, LC = window.LANDCOVER_API, T = LC.lodTable(), c = S.camera.position, u = S.bend.get(), PPM = S.renderer.domElement.height / (2 * Math.tan(S.camera.fov * Math.PI / 360)), lo = LC.lod.fadeOut[0]; let n = 0, min = Infinity;
+      for (const o of Object.values(LC.objects.inst)) for (let q = 0; q < o.mesh.count; q++) { const i = o.idx[q], fx = T.F[i * 3], sx = fx + S.bend.shift(fx), d = Math.hypot(sx + (T.P[i * 3] - sx) * u - c.x, T.F[i * 3 + 1] + (T.P[i * 3 + 1] - T.F[i * 3 + 1]) * u - c.y, T.F[i * 3 + 2] + (T.P[i * 3 + 2] - T.F[i * 3 + 2]) * u - c.z), px = T.size[i] * (T.k[i] + (1 - T.k[i]) * u) * PPM / d; min = Math.min(min, px); if (px < lo - 1e-6) n++; }
+      return { n, min, lo }; });
   for (const [label, name] of [['地面', 'farm-paddy-ground'], ['半空', 'farm-mixed-aerial'], ['全景', 'farm-panorama-town']]) {
     const on = await renderShot(page, shots[name]), off = (await renderShot(page, shots[name], { noCover: true })).info;
     const loaded = await page.evaluate(() => window.__scene.cover.stats().loaded);
-    info.push(`${label}（${name}）：整帧 ${on.info.calls} 次调用 / ${on.info.triangles} 三角形；不含田地 ${off.calls} / ${off.triangles}；田地新增 ${on.info.calls - off.calls} 次调用 / ${on.info.triangles - off.triangles} 三角形；加载的实例 ${loaded}（SwiftShader，真机待验证）`);
-    if (label === '全景' && loaded !== 0) fails.push('全景距离加载了实例');
-    if (on.info.calls - off.calls > 40) fails.push(`${label}田地绘制调用 ${on.info.calls - off.calls} > 40`);
+    const small = await smallOf(page);
+    info.push(`${label}（${name}）：整帧 ${on.info.calls} 次调用 / ${on.info.triangles} 三角形；不含田地 ${off.calls} / ${off.triangles}；田地新增 ${on.info.calls - off.calls} 次调用 / ${on.info.triangles - off.triangles} 三角形；显示的实例 ${loaded}，屏幕尺寸最小 ${small.min.toFixed(2)} px（淡出下限 ${small.lo} px）（SwiftShader，真机待验证）`);
+    if (small.n) fails.push(`${label} 画了 ${small.n} 个屏幕尺寸小于淡出下限的实例`);
+    if (on.info.calls - off.calls > CALLS) fails.push(`${label}田地绘制调用 ${on.info.calls - off.calls} > ${CALLS}`);
   }
   { // W6c: visible trees at the densest views (ground, aerial) against 3000, and the section's trees not double counted
     let worst = 0, worstName = '', worstCalls = 0;
@@ -211,13 +219,13 @@ if (!process.argv.includes('--no-browser')) {
       if (trees > worst) { worst = trees; worstName = name; } worstCalls = Math.max(worstCalls, on.info.calls - off.calls);
     }
     info.push(`可见树最多 ${worst}（${worstName}，上限 3000）；森林新增绘制调用最多 ${worstCalls}`);
-    if (worst > 3000) fails.push('可见树 > 3000'); if (worstCalls > 60) fails.push(`森林绘制调用 ${worstCalls} > 60`);
+    if (worst > 3000) fails.push('可见树 > 3000'); if (worstCalls > CALLS) fails.push(`森林绘制调用 ${worstCalls} > ${CALLS}`);
   }
   { // W6d / W6e: cost of the other ground systems at the three distances (ground, aerial, panorama), and the dynamics of the grass, mist and sand
     for (const [label, names] of [['草原与沙漠', ['grass-ground', 'grass-aerial', 'desert-ground', 'desert-aerial', 'desert-panorama-west']], ['冰、熔岩、山地', ['ice-ground', 'ice-aerial', 'lava-ground', 'lava-aerial', 'mountain-ground', 'mountain-aerial', 'highland-panorama-north']]]) {
       let worstCalls = 0, worstTri = 0; const rows = [];
-      for (const name of names) { const on = await renderShot(page, shots[name]), off = (await renderShot(page, shots[name], { noCover: true })).info, loaded = await page.evaluate(() => window.__scene.cover.stats().loaded); rows.push(`${name}：+${on.info.calls - off.calls} 次调用 / +${on.info.triangles - off.triangles} 三角形 / 加载 ${loaded} 个实例`); worstCalls = Math.max(worstCalls, on.info.calls - off.calls); worstTri = Math.max(worstTri, on.info.triangles - off.triangles); if (/panorama/.test(name) && loaded) fails.push(`${name} 加载了实例`); }
-      info.push(`${label}：${rows.join('；')}（SwiftShader，真机待验证）`); if (worstCalls > 70) fails.push(`${label}绘制调用 ${worstCalls} > 70`);
+      for (const name of names) { const on = await renderShot(page, shots[name]), off = (await renderShot(page, shots[name], { noCover: true })).info, loaded = await page.evaluate(() => window.__scene.cover.stats().loaded); rows.push(`${name}：+${on.info.calls - off.calls} 次调用 / +${on.info.triangles - off.triangles} 三角形 / 加载 ${loaded} 个实例`); worstCalls = Math.max(worstCalls, on.info.calls - off.calls); worstTri = Math.max(worstTri, on.info.triangles - off.triangles); const sm = await smallOf(page); if (sm.n) fails.push(`${name} 画了 ${sm.n} 个屏幕尺寸小于淡出下限的实例`); }
+      info.push(`${label}：${rows.join('；')}（SwiftShader，真机待验证）`); if (worstCalls > CALLS) fails.push(`${label}绘制调用 ${worstCalls} > ${CALLS}`);
     }
   }
   const diff = async (a, b) => page.evaluate(async ([a, b]) => { const load = async u => { const i = new Image(); i.src = u; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const q = c.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, c.width, c.height).data; }; const A = await load(a), B = await load(b); let n = 0; for (let k = 0; k < A.length; k += 4) if (Math.abs(A[k] - B[k]) + Math.abs(A[k + 1] - B[k + 1]) + Math.abs(A[k + 2] - B[k + 2]) > 6) n++; return n; }, [a, b]);
@@ -226,10 +234,10 @@ if (!process.argv.includes('--no-browser')) {
     info.push(`动态 ${label}（${name}，t = ${t1} 与 ${t2} s）：差异像素 ${n}`); if (n <= 0) fails.push(`${label} 距离下田地没有动态`);
   }
   const stt = await page.evaluate(() => window.__scene.cover.stats());
-  info.push(`田地：全部实例 ${stt.items}（只在相机周围加载），田块网格 ${stt.treadTriangles} + ${stt.ridgeTriangles} + ${stt.waterTriangles} 三角形，梯田 ${stt.terraceCells} 格；首次构建 ${stt.buildMs} ms`);
+  info.push(`田地：全部实例 ${stt.items}（按屏幕像素选层级，W8g-c），田块网格 ${stt.treadTriangles} + ${stt.ridgeTriangles} + ${stt.waterTriangles} 三角形，梯田 ${stt.terraceCells} 格；首次构建 ${stt.buildMs} ms`);
   if (errors.length) fails.push('页面错误：' + errors.join(' | '));
   results.push({ id: 'W6-C3', ok: !fails.length });
-  console.log(`${fails.length ? 'FAIL' : 'PASS'} W6-C3 预算与动态：默认画面不变、全景不加载实例、田地绘制调用 ≤ 40、动态、无页面错误`);
+  console.log(`${fails.length ? 'FAIL' : 'PASS'} W6-C3 预算与动态：默认画面不变、只画屏幕尺寸不小于淡出下限的实例（W8g-c 起取代“全景不加载实例”）、地表覆盖绘制调用 ≤ 80（W8g-c 起取代 40 / 60 / 70）、动态、无页面错误`);
   for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m);
   await browser.close();
 }

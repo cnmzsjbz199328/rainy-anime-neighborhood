@@ -8,6 +8,9 @@
 //   - the sphere button, cold: (a) at once and (b) after the background generation.
 // Real GPU timing: headless Chromium with ANGLE on Metal (the GPU string is written to the result); --swiftshader for the deterministic software renderer.
 //   node tools/perf_baseline.mjs [--ref pre-w8g-a] [--label <name>] [--out docs/world/perf/<label>.json] [--exits N01,N03] [--swiftshader]
+// W8g-c (L4): six fixed views with all the vegetation (forest close-up, farmland and coast on the flat night map; the sphere at d = 70, 140, 400): each after the
+//   transition and the background generation, the camera orbiting the target slowly for VIEW_MS (so the per-frame selection of landcover.js runs every frame):
+//   frame interval median and p95, draw calls, triangles. --views-only measures the start-up page and these views only (no cold exits).
 // Output: docs/world/perf/<label>.json (plain text, tracked). The CPU parts compare across machines; the frame figures are this machine only.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,7 +24,11 @@ const ref = arg('--ref', null), soft = args.includes('--swiftshader');
 const label = arg('--label', ref || 'current'), outFile = path.resolve(root, arg('--out', `docs/world/perf/${label}.json`));
 const require = createRequire(import.meta.url), L = require(path.join(root, 'layout.js'));
 const EXITS = ['N01', 'N03', 'N04', 'N08', 'N09', 'N10', 'N11', 'N12', 'N13'].filter(id => !arg('--exits') || arg('--exits').split(',').includes(id));
-const WINDOW_MS = 5000, DRAG_FRAMES = 60, NO_GEN_WAIT_MS = 6000;
+const WINDOW_MS = 5000, DRAG_FRAMES = 60, NO_GEN_WAIT_MS = 6000, VIEW_MS = 3000, viewsOnly = args.includes('--views-only');
+const FARM = [-71.8 / 90 * 180 / Math.PI, Math.atan(Math.sinh(12.3 / 90)) * 180 / Math.PI];      // the farmland place of tools/distant_check.mjs
+const VIEWS = [['forest-near-flat', { lon: -15, lat: -40, mode: 'flat', dist: 12, yaw: 0, pitch: 0.45 }], ['farm-flat', { lon: FARM[0], lat: FARM[1], mode: 'flat', dist: 30, yaw: 2.5, pitch: 0.55 }],
+  ['coast-flat', { lon: -15, lat: -54, mode: 'flat', dist: 30, yaw: 0, pitch: 0.55 }], ['sphere-70', { lon: -15, lat: -40, mode: 'sphere', dist: 70, yaw: 0, pitch: 1.2 }],
+  ['sphere-140', { lon: -15, lat: -40, mode: 'sphere', dist: 140, yaw: 0, pitch: 1.2 }], ['sphere-400', { lon: -15, lat: -40, mode: 'sphere', dist: 400, yaw: 0, pitch: 1.2 }]];
 
 let pw; try { pw = await import('playwright'); } catch { const g = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(); pw = await import(pathToFileURL(path.join(g, 'playwright', 'index.mjs')).href); }
 const chromium = pw.chromium || pw.default.chromium;
@@ -92,6 +99,22 @@ async function drive(page, run) {
 const exitTarget = id => { const n = L.roadNodes.find(q => q.id === id), h = L.BASE.half, side = Math.abs(n.x) >= Math.abs(n.z) ? [Math.sign(n.x), 0] : [0, Math.sign(n.z)];
   void h; return [n.x + 30 * side[0], 1.2, n.z + 30 * side[1]]; };
 
+// one fixed view: set it, wait 3.5 s (the 2 s transition and the selection settle), then orbit for VIEW_MS and keep the frame intervals
+async function viewPerf(page, v) {
+  return page.evaluate(([v, ms]) => new Promise(res => {
+    const S = window.__scene, P = window.__perf, q = WORLD.lonLatToTown(v.lon, v.lat); S.weather.lock('clear');
+    S.view.set({ target: [q.x, 1.2, q.z], dist: v.dist, yaw: v.yaw, pitch: v.pitch }); S.transition.setMode(v.mode);
+    const start = performance.now(); let t0 = null, f0 = 0, lt0 = 0, n = 0;
+    const step = () => { const now = performance.now(); if (now - start < 3500) { requestAnimationFrame(step); return; }
+      if (t0 === null) { t0 = now; f0 = P.frames.length; lt0 = P.lt.length; }
+      n++; S.view.set({ yaw: v.yaw + 0.003 * n });
+      if (now - t0 < ms) { requestAnimationFrame(step); return; }
+      setTimeout(() => { const fr = P.frames.slice(f0), gaps = fr.slice(1).map((t, i) => t - fr[i]).sort((a, b) => a - b), at = p => (gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] : null), info = S.renderer.info.render, C = S.cover.state;
+        res({ frames: fr.length, medianMs: +at(0.5).toFixed(2), p95Ms: +at(0.95).toFixed(2), maxMs: +(gaps.length ? gaps[gaps.length - 1] : 0).toFixed(2), longTasks: P.lt.slice(lt0).length, calls: info.calls, triangles: info.triangles,
+          instances: C.loaded ?? null, lod: C.lod ? { near: C.lod.near, far: C.lod.far, fading: C.lod.fading, groups: C.lod.groups } : null }); }, 50); };
+    requestAnimationFrame(step); }), [v, VIEW_MS]);
+}
+
 const result = { tool: 'tools/perf_baseline.mjs', label, ref: ref || null, commit, dirty, date: new Date().toISOString(), renderer: soft ? 'swiftshader' : 'metal', flags, viewport: [1280, 800],
   windowMs: WINDOW_MS, dragFrames: DRAG_FRAMES, noGenWaitMs: NO_GEN_WAIT_MS, loads: [], pregen: null, exits: {}, sphere: {} };
 // the machine's state (memory pressure on this machine makes the frame figures noisy: kept with the result)
@@ -114,7 +137,10 @@ try {
       return { present: gen, waitedMs: w.waitedMs, worldgen: G, startDelayMs: G ? G.startDelayMs : null, longTasks: lts, longestTaskMs: lts.length ? Math.max(...lts.map(q => q[1])) : 0,
         moduleMs: { rest: S.terrain.stats.restBuildMs ?? null, section: S.section.state.stats.buildMs ?? null, roads: S.roads.state.stats.buildMs ?? null, ocean: S.ocean.state.stats.buildMs ?? null, cover: S.cover.state.stats.buildMs ?? null, landmarks: S.landmarks.info.buildMs ?? null } }; }, [gen, w]);
     errors.push(...page.errors); await page.close(); }
-  for (const id of EXITS) {
+  { const page = await open(); await waitGen(page); await page.waitForTimeout(500); result.views = {};
+    for (const [name, v] of VIEWS) { result.views[name] = await viewPerf(page, v); const r = result.views[name]; console.log(`${name}：帧间隔中位数 ${r.medianMs} ms、p95 ${r.p95Ms} ms（${r.frames} 帧），${r.calls} 次绘制调用、${r.triangles} 个三角形，实例 ${r.instances}`); }
+    errors.push(...page.errors); await page.close(); }
+  if (!viewsOnly) for (const id of EXITS) {
     const to = exitTarget(id), r = {};
     { const page = await open(); result.loads.push(await loadOf(page)); r.immediate = await drive(page, { kind: 'target', to }); errors.push(...page.errors); await page.close(); }
     { const page = await open(); result.loads.push(await loadOf(page)); const w = await waitGen(page); await page.waitForTimeout(500);
@@ -125,9 +151,9 @@ try {
     result.exits[id] = r;
     console.log(`${id}：立即出城 最长任务 ${r.immediate.longestTaskMs} ms / 最大帧间隔 ${r.immediate.maxFrameGapMs} ms；预生成后 ${r.afterPregen.longestTaskMs} / ${r.afterPregen.maxFrameGapMs} ms；热路径 ${r.hot.longestTaskMs} / ${r.hot.maxFrameGapMs} ms`);
   }
-  { const page = await open(); result.loads.push(await loadOf(page)); result.sphere.immediate = await drive(page, { kind: 'sphere' }); errors.push(...page.errors); await page.close(); }
-  { const page = await open(); result.loads.push(await loadOf(page)); await waitGen(page); await page.waitForTimeout(500); result.sphere.afterPregen = await drive(page, { kind: 'sphere' }); errors.push(...page.errors); await page.close(); }
-  console.log(`球形按钮：立即 最长任务 ${result.sphere.immediate.longestTaskMs} ms / 最大帧间隔 ${result.sphere.immediate.maxFrameGapMs} ms；预生成后 ${result.sphere.afterPregen.longestTaskMs} / ${result.sphere.afterPregen.maxFrameGapMs} ms`);
+  if (!viewsOnly) { const page = await open(); result.loads.push(await loadOf(page)); result.sphere.immediate = await drive(page, { kind: 'sphere' }); errors.push(...page.errors); await page.close(); }
+  if (!viewsOnly) { const page = await open(); result.loads.push(await loadOf(page)); await waitGen(page); await page.waitForTimeout(500); result.sphere.afterPregen = await drive(page, { kind: 'sphere' }); errors.push(...page.errors); await page.close(); }
+  if (!viewsOnly) console.log(`球形按钮：立即 最长任务 ${result.sphere.immediate.longestTaskMs} ms / 最大帧间隔 ${result.sphere.immediate.maxFrameGapMs} ms；预生成后 ${result.sphere.afterPregen.longestTaskMs} / ${result.sphere.afterPregen.maxFrameGapMs} ms`);
 } finally { cleanup(); }
 const ex = Object.values(result.exits), max = (list, f) => list.length ? Math.max(...list.map(f)) : null, med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 result.summary = {
@@ -138,7 +164,8 @@ result.summary = {
   pregenLongestTaskMsMedian: result.pregen.present ? med(ex.map(r => r.afterPregen.genLongestTaskMs)) : null, pregenLongestTaskMsMax: result.pregen.present ? Math.max(...ex.map(r => r.afterPregen.genLongestTaskMs), result.pregen.longestTaskMs) : null,
   immediateExitLongestTaskMs: max(ex, r => r.immediate.longestTaskMs), afterPregenExitLongestTaskMs: max(ex, r => r.afterPregen.longestTaskMs), hotExitLongestTaskMs: max(ex, r => r.hot.longestTaskMs),
   immediateExitMaxFrameGapMs: max(ex, r => r.immediate.maxFrameGapMs), afterPregenExitMaxFrameGapMs: max(ex, r => r.afterPregen.maxFrameGapMs), hotExitMaxFrameGapMs: max(ex, r => r.hot.maxFrameGapMs),
-  sphereImmediateLongestTaskMs: result.sphere.immediate.longestTaskMs, sphereAfterPregenLongestTaskMs: result.sphere.afterPregen.longestTaskMs,
+  sphereImmediateLongestTaskMs: viewsOnly ? null : result.sphere.immediate.longestTaskMs, sphereAfterPregenLongestTaskMs: viewsOnly ? null : result.sphere.afterPregen.longestTaskMs,
+  viewsMedianMsMax: result.views ? Math.max(...Object.values(result.views).map(r => r.medianMs)) : null, viewsP95MsMax: result.views ? Math.max(...Object.values(result.views).map(r => r.p95Ms)) : null,
   pageErrors: errors.length,
 };
 result.errors = [...new Set(errors)].slice(0, 10);

@@ -5641,14 +5641,6 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     items.forEach((it, i) => { const band = Math.floor(it.lat / bandDeg), lonBin = Math.floor(it.lon * Math.cos((band + 0.5) * bandDeg * D) / bandDeg), key = band * 100000 + lonBin; let t = tiles.get(key); if (!t) tiles.set(key, t = []); t.push(i); });
     return { f, types, typeId, tiles, bandDeg, type: items.map(it => typeId[it.type]) };
   }
-  function camLL(camera) {
-    const u = BEND.get(); if (u < 0.5) {
-      const ll = W.townToLonLat(camera.position.x, camera.position.z); ll.lon = ((ll.lon + 180) % 360 + 360) % 360 - 180;   // W8e-b: the flat map runs to 275 deg, the table is in -180..180
-      return { ...ll, alt: Math.max(0, camera.position.y - Math.max(0, ((TERR.sampler()(ll.lon,ll.lat) ?? BASE)-BASE)/Math.cos(ll.lat*D))) };
-    }
-    const dx = camera.position.x, dy = camera.position.y + R, dz = camera.position.z, l = Math.hypot(dx, dy, dz);
-    return { lon: Math.atan2(dx, dy) / D, lat: -Math.asin(dz / l) / D, alt: l - R };
-  }
   function buildMeshes(K, M) {
     const root = new THREE.Group(); root.name = 'landcover'; root.visible = false; scene.add(root); S.root = root;   // W8g-a: hidden until the build's last step
     objs.twoSided = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -5676,43 +5668,69 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     if (DATA.edge && DATA.edge.idx.length) { const e = DATA.edge; for (let i = 0; i < e.idx.length; i += 3) { const a = e.idx[i] * 3, b = e.idx[i + 1] * 3, c = e.idx[i + 2] * 3, ny = (e.pos[b + 2] - e.pos[a + 2]) * (e.pos[c] - e.pos[a]) - (e.pos[b] - e.pos[a]) * (e.pos[c + 2] - e.pos[a + 2]); if (ny < 0) { const tmp = e.idx[i + 1]; e.idx[i + 1] = e.idx[i + 2]; e.idx[i + 2] = tmp; } } stripMesh(e, M.groundMat, 'cover:town-edge'); }
     if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
   }
-  // instanced meshes: one per type with a capacity; filled from the tiles around the camera
+  // W8g-c (W8_SPEC 13.3): the level of every instance follows its size on screen (px = the larger of the model's height and width x the instance scale x the local
+  // scale of the display frame x pixels per metre / distance to the camera). Trees: near model (with its ink hull) -> far model at 40 px -> canopy group at 6 px;
+  // everything else fades out at about 2 px. The hand-overs are dithered: each instance carries a window [lo, hi) of an 8 x 8 ordered dither, the pixels whose
+  // threshold falls outside are discarded; near [l, 1) and far [0, l) are complementary, the hull uses its near model's window, a fading object [0, f).
+  const LOD = { nearFar: [36, 44], farCanopy: [5, 7], fadeOut: [1.5, 2.5] };
+  const LOD_GLSL = 'varying vec2 vLodWin;\nfloat lodBayer(vec2 fc) { ivec2 p = ivec2(fc) & ivec2(7); int a = p.x ^ p.y; return (float(((a & 1) << 5) | ((p.y & 1) << 4) | ((a & 2) << 2) | ((p.y & 2) << 1) | ((a & 4) >> 1) | ((p.y & 4) >> 2)) + 0.5) / 64.0; }';
+  function lodDither(shader) {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aWin;\nvarying vec2 vLodWin;').replace('void main() {', 'void main() {\n\tvLodWin = aWin;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + LOD_GLSL).replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n\t{ float lodT = lodBayer(gl_FragCoord.xy); if (lodT < vLodWin.x || lodT >= vLodWin.y) discard; }');
+  }
+  // the land cover's own copies of the section's materials (the W4 section keeps its materials as they are): the material's own shader edit, then the dither
+  const ditherCopy = (base, name) => { const m = base.clone(), own = base._bendUserCompile; m.onBeforeCompile = function (shader, renderer) { if (own) own.call(base, shader, renderer); lodDither(shader); }; m.customProgramCacheKey = () => 'bend|lod|' + name; return m; };
+  // a geometry of its own (the kit's attributes shared) with the per-instance window: the section's instanced meshes use the same kit geometries
+  const lodGeometry = (geo, cap) => { const g = new THREE.BufferGeometry(); for (const [k, a] of Object.entries(geo.attributes)) g.setAttribute(k, a); if (geo.index) g.setIndex(geo.index); for (const gr of geo.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+    if (!geo.boundingSphere) geo.computeBoundingSphere(); g.boundingSphere = geo.boundingSphere.clone(); g.setAttribute('aWin', new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2).setUsage(THREE.DynamicDrawUsage)); return g; };
+  // instanced meshes: one per type (and per tree level), with room for every instance of the type
   function buildInstances(K, M) {
-    const cap = { iceBlock: 200, ventCone: 30, lichenPatch: 300, tubeHole: 4, dryShrub: 400, rockPillar: 40, cairn: 60, treeRound_: 1, shrub: 1800, fern: 2200, mossRock: 500, rock: 300, logMoss: 150, log: 100, fenceBamboo: 400, seedling: 7000, tuft: 2500, weed: 2500, flower: 600, shrubLow: 500, rack: 600, scarecrow: 300, hutFarm: 200, hutRusty: 200, oldMachine: 150, rackFallen: 250, teaRow: 1500 };
     const NOHULL = ['seedling', 'tuft', 'weed', 'flower', 'teaRow'];
-    const TREES = ['treeRound', 'cedar', 'pine', 'bamboo'], NEAR = { treeRound: 700, cedar: 450, pine: 250, bamboo: 200 }, FAR = { treeRound: 600, cedar: 450, pine: 200, bamboo: 150 };   // near + far <= 3000 visible trees (BI02)
-    const make = (key, type, geo, c, mat, hmat) => {
-      const total = INDEX.type.filter(t => INDEX.types[t] === type).length, cc = Math.min(c, Math.max(1, total));
-      const mesh = new THREE.InstancedMesh(geo, mat, cc); mesh.name = 'cover:' + key; mesh.count = 0; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      for (let i = 0; i < cc; i++) mesh.setColorAt(i, tintC.setRGB(1, 1, 1)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage); S.root.add(mesh);
-      const o = { mesh, hull: null, cap: cc, total };
-      if (hmat) { const hull = new THREE.InstancedMesh(geo, hmat, cc); hull.instanceMatrix = mesh.instanceMatrix; hull.count = 0; hull.frustumCulled = false; hull.name = 'cover:' + key + ':ink'; S.root.add(hull); o.hull = hull; objs.hulls.push(hull); }
-      objs.inst[key] = o;
-    };
+    const TREES = ['treeRound', 'cedar', 'pine', 'bamboo'];
     // grass sways a little (ground detail of BI03): the same slow wave as the trees, on the blades only (the lowest 0.8 m), phase by instance position
     const SWAYG = 'float sw = smoothstep(0.05, 0.7, position.y); transformed.x += sin(uTime * 1.3 + instanceMatrix[3].x * 0.9 + instanceMatrix[3].z * 0.6) * 0.07 * sw; transformed.z += cos(uTime * 1.1 + instanceMatrix[3].z * 0.8) * 0.05 * sw;';
     const grassMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
-    grassMat.onBeforeCompile = shader => { shader.uniforms.uTime = TIMEU; shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAYG); };
-    grassMat.customProgramCacheKey = () => 'bend|grassSway';
+    grassMat.onBeforeCompile = shader => { shader.uniforms.uTime = TIMEU; shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAYG); lodDither(shader); };
+    grassMat.customProgramCacheKey = () => 'bend|grassSway|lod';
+    const LM = objs.lodMaterials = { tree: ditherCopy(M.treeMat, 'tree'), treeHull: ditherCopy(M.treeHullMat, 'treeHull'), flora: ditherCopy(M.floraMat, 'flora'), hull: ditherCopy(M.hullMat, 'hull'), grass: grassMat };
+    const make = (key, type, geo, mat, hmat) => {
+      const total = INDEX.type.filter(t => INDEX.types[t] === type).length, cap = Math.max(1, total), g = lodGeometry(geo, cap);
+      const mesh = new THREE.InstancedMesh(g, mat, cap); mesh.name = 'cover:' + key; mesh.count = 0; mesh.visible = false; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      for (let i = 0; i < cap; i++) mesh.setColorAt(i, tintC.setRGB(1, 1, 1)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage); mesh.boundingSphere = new THREE.Sphere(); S.root.add(mesh);
+      if (!geo.boundingBox) geo.computeBoundingBox(); const bb = geo.boundingBox;
+      const o = { mesh, hull: null, cap, total, win: g.attributes.aWin, idx: new Int32Array(cap), n: 0, h: bb.max.y - Math.min(0, bb.min.y), w: Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z), r: g.boundingSphere.radius };
+      if (hmat) { const hull = new THREE.InstancedMesh(g, hmat, cap); hull.instanceMatrix = mesh.instanceMatrix; hull.count = 0; hull.visible = false; hull.frustumCulled = false; hull.name = 'cover:' + key + ':ink'; hull.boundingSphere = mesh.boundingSphere; S.root.add(hull); o.hull = hull; objs.hulls.push(hull); }
+      objs.inst[key] = o;
+    };
     for (const type of INDEX.types) {
-      if (TREES.includes(type)) { make(type, type, K.geometries[type], NEAR[type], M.treeMat, M.treeHullMat); make(type + '_far', type, K.geometries[type + '_far'], FAR[type], M.treeMat, null); continue; }
+      if (TREES.includes(type)) { make(type, type, K.geometries[type], LM.tree, LM.treeHull); make(type + '_far', type, K.geometries[type + '_far'], LM.tree, null); continue; }
       const geo = K.geometries[type] || (type === 'teaRow' ? teaGeo(K) : null); if (!geo) continue;
-      const total = INDEX.type.filter(t => INDEX.types[t] === type).length, c = Math.min(cap[type] || 800, Math.max(1, total));
-      const mesh = new THREE.InstancedMesh(geo, ['tuft', 'weed', 'fern'].includes(type) ? grassMat : M.floraMat, c); mesh.name = 'cover:' + type; mesh.count = 0; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      for (let i = 0; i < c; i++) mesh.setColorAt(i, tintC.setRGB(1, 1, 1)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage); S.root.add(mesh);
-      const o = { mesh, hull: null, cap: c, total };
-      if (!NOHULL.includes(type)) { const hull = new THREE.InstancedMesh(geo, M.hullMat, c); hull.instanceMatrix = mesh.instanceMatrix; hull.count = 0; hull.frustumCulled = false; hull.name = 'cover:' + type + ':ink'; S.root.add(hull); o.hull = hull; objs.hulls.push(hull); }
-      objs.inst[type] = o;
+      make(type, type, geo, ['tuft', 'weed', 'fern'].includes(type) ? grassMat : LM.flora, NOHULL.includes(type) ? null : LM.hull);
     }
+    prepareLod();
+  }
+  // the per-instance part of the selection, once: the matrix (no fade in it any more, W8g-c C1), the colour, the flat and the sphere position of the origin,
+  // the local scale k of the flat frame and the size in true metres (the near model's height or width, whichever is larger)
+  let LT = null;
+  function prepareLod() {
+    const n = INDEX.type.length, f = INDEX.f, T = { n, mat: new Float32Array(n * 16), col: new Float32Array(n * 3), F: new Float64Array(n * 3), P: new Float64Array(n * 3), k: new Float64Array(n), size: new Float64Array(n), near: new Array(n), far: new Array(n), group: new Int32Array(n).fill(-1) };
+    for (let i = 0; i < n; i++) {
+      const o = i * 12, x = f[o], z = f[o + 1], k = 1 / Math.cos(Math.atan(Math.sinh(-z / R))), y = (f[o + 2] - BASE) * k, type = INDEX.types[INDEX.type[i]], near = objs.inst[type] || null;
+      qE.set(f[o + 10], f[o + 3], f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, y, z), qQ, mS.set(k * f[o + 4], k * f[o + 5], k * f[o + 6])); T.mat.set(mM.elements, i * 16);
+      T.col[i * 3] = f[o + 7]; T.col[i * 3 + 1] = f[o + 8]; T.col[i * 3 + 2] = f[o + 9];
+      T.F[i * 3] = x; T.F[i * 3 + 1] = y; T.F[i * 3 + 2] = z; const p = BEND.point(x, y, z, 1); T.P[i * 3] = p[0]; T.P[i * 3 + 1] = p[1]; T.P[i * 3 + 2] = p[2]; T.k[i] = k;
+      T.near[i] = near; T.far[i] = objs.inst[type + '_far'] || null; T.size[i] = near ? Math.max(near.h * f[o + 5], near.w * Math.max(f[o + 4], f[o + 6])) : 0;
+    }
+    LT = T;
   }
   function teaGeo(K) { const b = K.builder(); b.add(new THREE.BoxGeometry(1, 1, 1), '#3f6a4e', { p: [0, 0.4, 0], s: [1.0, 0.8, 2.0], top: '#4c7a58', noise: 0.08 }); K.geometries.teaRow = b.build(); return K.geometries.teaRow; }
   const TREE_SET = new Set(['treeRound', 'cedar', 'pine', 'bamboo']);
   // W8f-b: density is sampled from the authoritative instance table, in 3D
   // surface cells (continuous across the longitude seam and near the poles).
   const smoothCover=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
-  const baked=[], canopyGroups=[]; let canopy=null, weights=null;
+  const baked=[], canopyGroups=[]; let canopy=null;
   function* buildDistant(K,M){
-    weights=new Float32Array(DATA.items.length);const P=K.palette;
+    const P=K.palette;
     const cells=new Map(),point=(lo,la)=>[R*Math.cos(la*D)*Math.sin(lo*D),R*Math.cos(la*D)*Math.cos(lo*D),-R*Math.sin(la*D)];
     for(const it of DATA.items){const p=point(it.lon,it.lat),key=p.map(x=>Math.floor(x/8)).join(',');let c=cells.get(key);if(!c)cells.set(key,c={n:0,trees:0,cedar:0});c.n++;if(TREE_SET.has(it.type))c.trees++;if(it.type==='cedar')c.cedar++;}
     const density=(lo,la)=>{const p=point(lo,la).map(x=>x/8),a=p.map(Math.floor);let trees=0,small=0,cedar=0;
@@ -5738,37 +5756,62 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     // The crown of treeRound_far (leafA rising to leafC, the trees' own material), so the hand-over to the loaded trees keeps the colour;
     // the instance colour turns it to the mean leaf colour of the group's own trees (cedar groups darker, bamboo lighter)
     const geo=K.builder().add(new THREE.IcosahedronGeometry(1,0),P.leafA,{p:[0,1,0],top:P.leafC}).build(),leafA=lin(P.leafA),rel=t=>lin(P[{treeRound:'leafA',cedar:'cedar',pine:'pine',bamboo:'bamboo'}[t]]).map((c,j)=>c/leafA[j]);
-    canopy=new THREE.InstancedMesh(geo,M.treeMat,Math.max(1,canopyGroups.length));canopy.name='cover:canopy-proxy';canopy.frustumCulled=false;canopy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);S.root.add(canopy);
-    canopyGroups.forEach((g,i)=>{const j=.75+.5*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));});
+    // W8g-c: the group's crown at full size (no sqrt(fade) scaling any more), shown through the dither window its trees hand over to it (at 6 px)
+    const cap=Math.max(1,canopyGroups.length);canopy=new THREE.InstancedMesh(lodGeometry(geo,cap),objs.lodMaterials.tree,cap);canopy.name='cover:canopy-proxy';canopy.count=0;canopy.visible=false;canopy.frustumCulled=false;canopy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);canopy.boundingSphere=new THREE.Sphere();S.root.add(canopy);
+    canopyGroups.forEach((g,i)=>{const j=.75+.5*hash(i,17);g.tint=g.members.reduce((a,m)=>rel(DATA.items[m].type).map((c,q)=>a[q]+c*j/g.members.length),[0,0,0]);canopy.setColorAt(i,tintC.setRGB(...g.tint));
+      const k=g.F.k;qQ.identity();mM.compose(mP.set(g.F.x,(g.h-BASE)*k,g.F.z),qQ,mS.set(k*g.scale,k*2.4,k*g.scale));g.mat=Float32Array.from(mM.elements);for(const m of g.members)LT.group[m]=i;});
+    objs.canopy={mesh:canopy,win:canopy.geometry.attributes.aWin,r:canopy.geometry.boundingSphere.radius,idx:new Int32Array(cap)};
     S.distant={groups:canopyGroups.length,triangles:canopyGroups.length*20,bakedVertices:baked.reduce((n,b)=>n+b.neo.count,0)};
   }
-  function updateDistant(){
-    if(!canopy)return;let count=0;
-    for(let gi=0;gi<canopyGroups.length;gi++){const g=canopyGroups[gi],detail=g.members.reduce((n,i)=>n+weights[i],0)/g.members.length,fade=1-detail;if(fade<=.001)continue;
-      const k=g.F.k,sc=g.scale*Math.sqrt(fade);qQ.identity();mM.compose(mP.set(g.F.x,(g.h-BASE)*k,g.F.z),qQ,mS.set(k*sc,k*2.4*Math.sqrt(fade),k*sc));canopy.setMatrixAt(count,mM);canopy.setColorAt(count,tintC.setRGB(...g.tint));count++;
-    }canopy.count=count;canopy.instanceMatrix.needsUpdate=true;canopy.instanceColor.needsUpdate=true;canopy.computeBoundingSphere();
-  }
-  function load(camera, force) {
-    const ll = camLL(camera); if (!ll || ll.alt >= 110) { if(weights)weights.fill(0); for (const o of Object.values(objs.inst)) { o.mesh.count = 0; if (o.hull) o.hull.count = 0; } S.loaded = 0; S.last = null; updateDistant(); return; }
-    if (!force && S.last && Math.abs(S.last.lon - ll.lon) * Math.cos(ll.lat * D) * R * D < 1e-9 && Math.abs(S.last.lat - ll.lat) * R * D < 1e-9 && Math.abs(S.last.alt - ll.alt) < 1e-9 && S.last.bend === BEND.get()) return;
-    S.last = { ...ll, bend: BEND.get() };if(weights)weights.fill(0);
-    const radius = Math.min(80, Math.max(30, 20 + ll.alt * 1.2)), band = INDEX.bandDeg, b0 = Math.floor((ll.lat - radius / (R * D)) / band), b1 = Math.floor((ll.lat + radius / (R * D)) / band);
-    const counts = {}; for (const key of Object.keys(objs.inst)) counts[key] = 0; let total = 0;
-    const cx = flatOf(ll.lon, ll.lat);
-    for (let b = b0; b <= b1; b++) {
-      const cosb = Math.cos((b + 0.5) * band * D), l0 = Math.floor((ll.lon - radius / (R * D * cosb)) * cosb / band), l1 = Math.floor((ll.lon + radius / (R * D * cosb)) * cosb / band);
-      for (let lb = l0; lb <= l1; lb++) { const tile = INDEX.tiles.get(b * 100000 + lb); if (!tile) continue;
-        for (const i of tile) {
-          const o = i * 12, x = INDEX.f[o], z = INDEX.f[o + 1], k = 1 / Math.cos(Math.atan(Math.sinh(-z / R))); const dx = (x - cx.x) / k, dz = (z - cx.z) / k; if (dx * dx + dz * dz > radius * radius) continue;
-          let type = INDEX.types[INDEX.type[i]]; if (TREE_SET.has(type)) { const d3 = Math.hypot(dx, dz, ll.alt); if (d3 >= 26) type += '_far'; } const inst = objs.inst[type]; if (!inst || counts[type] >= inst.cap) continue;
-          const fade=(1-smoothCover(radius-10,radius,Math.hypot(dx,dz)))*(1-smoothCover(90,110,ll.alt));if(fade<=0)continue;if(weights)weights[i]=fade;
-          qE.set(INDEX.f[o + 10], INDEX.f[o + 3], INDEX.f[o + 11], 'YXZ'); qQ.setFromEuler(qE); mM.compose(mP.set(x, (INDEX.f[o + 2] - BASE) * k, z), qQ, mS.set(k * INDEX.f[o + 4]*fade, k * INDEX.f[o + 5]*fade, k * INDEX.f[o + 6]*fade));
-          const n = counts[type]++; inst.mesh.setMatrixAt(n, mM); inst.mesh.setColorAt(n, tintC.setRGB(INDEX.f[o + 7], INDEX.f[o + 8], INDEX.f[o + 9])); total++;
-        } }
+  // W8g-c: the selection, from the camera alone (position, field of view, height of the drawing buffer; the bend and the seam shift fix the display frame):
+  // no hysteresis, no load ring, no history. Every call that sees a new camera rebuilds the instance buffers from the table in its own order.
+  const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+  let lastKey = '';
+  function select(camera, force) {
+    if (!LT) return;
+    const u = BEND.get(), H = ctx.renderer ? ctx.renderer.domElement.height : 800, wrap = BEND.wrapUniform ? BEND.wrapUniform.value.x : 0, cp = camera.position;
+    const key = [cp.x, cp.y, cp.z, camera.fov, H, u, wrap].join(',');
+    if (!force && key === lastKey) return; lastKey = key;
+    const PPM = H / (2 * Math.tan(camera.fov * D / 2)), cx = cp.x, cy = cp.y, cz = cp.z, T = LT, NF = LOD.nearFar, FC = LOD.farCanopy, FO = LOD.fadeOut;
+    const list = Object.values(objs.inst); for (const o of list) { o.n = 0; o.bmin = [Infinity, Infinity, Infinity]; o.bmax = [-Infinity, -Infinity, -Infinity]; o.smax = 0; }
+    const share = canopyGroups.length ? new Float64Array(canopyGroups.length) : null; let total = 0, nNear = 0, nFar = 0, nFade = 0;
+    const put = (o, i, lo, hi) => {
+      const n = o.n++, M = o.mesh.instanceMatrix.array, C = o.mesh.instanceColor.array, Wn = o.win.array, a = i * 16, b = n * 16;
+      for (let q = 0; q < 16; q++) M[b + q] = T.mat[a + q];
+      C[n * 3] = T.col[i * 3]; C[n * 3 + 1] = T.col[i * 3 + 1]; C[n * 3 + 2] = T.col[i * 3 + 2]; Wn[n * 2] = lo; Wn[n * 2 + 1] = hi; o.idx[n] = i;
+      for (let q = 0; q < 3; q++) { const v = T.mat[a + 12 + q]; if (v < o.bmin[q]) o.bmin[q] = v; if (v > o.bmax[q]) o.bmax[q] = v; }
+      const sc = Math.hypot(T.mat[a], T.mat[a + 1], T.mat[a + 2], T.mat[a + 4], T.mat[a + 5], T.mat[a + 6], T.mat[a + 8], T.mat[a + 9], T.mat[a + 10]); if (sc > o.smax) o.smax = sc;
+      total++;
+    };
+    for (let i = 0; i < T.n; i++) {
+      const near = T.near[i]; if (!near) continue;
+      const fx = T.F[i * 3], sx = fx + BEND.shift(fx), dx = sx + (T.P[i * 3] - sx) * u - cx, dy = T.F[i * 3 + 1] + (T.P[i * 3 + 1] - T.F[i * 3 + 1]) * u - cy, dz = T.F[i * 3 + 2] + (T.P[i * 3 + 2] - T.F[i * 3 + 2]) * u - cz;
+      const px = T.size[i] * (T.k[i] + (1 - T.k[i]) * u) * PPM / Math.max(0.01, Math.sqrt(dx * dx + dy * dy + dz * dz));
+      if (T.far[i]) {
+        const lam = clamp01((NF[1] - px) / (NF[1] - NF[0])) + clamp01((FC[1] - px) / (FC[1] - FC[0]));
+        if (lam < 1) { put(near, i, lam, 1); nNear++; }
+        if (lam > 0 && lam < 2) { put(T.far[i], i, lam <= 1 ? 0 : lam - 1, lam <= 1 ? lam : 1); nFar++; }
+        if (share && T.group[i] >= 0 && lam > 1) share[T.group[i]] += lam - 1;
+      } else { const f = clamp01((px - FO[0]) / (FO[1] - FO[0])); if (f > 0) { put(near, i, 0, f); if (f < 1) nFade++; } }
     }
-    // Transparent hull sorting also uses these bounds; stale centres made identical views path-dependent.
-    for (const [type, o] of Object.entries(objs.inst)) { o.mesh.count = counts[type]; if (o.hull) o.hull.count = counts[type]; o.mesh.instanceMatrix.needsUpdate = true; if (o.mesh.instanceColor) o.mesh.instanceColor.needsUpdate = true; o.mesh.computeBoundingSphere(); if (o.hull) o.hull.computeBoundingSphere(); }
-    S.loaded = total; S.counts = counts;updateDistant();
+    const counts = {};
+    for (const [key, o] of Object.entries(objs.inst)) {
+      const m = o.mesh, n = o.n; counts[key] = n; m.count = n; m.visible = n > 0;
+      if (n) { m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, n * 16); m.instanceMatrix.needsUpdate = true; m.instanceColor.clearUpdateRanges(); m.instanceColor.addUpdateRange(0, n * 3); m.instanceColor.needsUpdate = true; o.win.clearUpdateRanges(); o.win.addUpdateRange(0, n * 2); o.win.needsUpdate = true;
+        // the bounds of the drawn instances (the transparent hulls are sorted by their centre): from the selection only, so equal cameras give equal bounds
+        m.boundingSphere.center.set((o.bmin[0] + o.bmax[0]) / 2, (o.bmin[1] + o.bmax[1]) / 2, (o.bmin[2] + o.bmax[2]) / 2); m.boundingSphere.radius = Math.hypot(o.bmax[0] - o.bmin[0], o.bmax[1] - o.bmin[1], o.bmax[2] - o.bmin[2]) / 2 + o.r * o.smax; }
+      if (o.hull) o.hull.count = n;
+    }
+    let nGroups = 0;
+    if (canopy) {
+      const M = canopy.instanceMatrix.array, C = canopy.instanceColor.array, Wn = objs.canopy.win.array, bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];
+      for (let gi = 0; gi < canopyGroups.length; gi++) { const g = canopyGroups[gi], s = share[gi] / g.members.length; if (s <= 0) continue; const n = nGroups++;
+        M.set(g.mat, n * 16); C[n * 3] = g.tint[0]; C[n * 3 + 1] = g.tint[1]; C[n * 3 + 2] = g.tint[2]; Wn[n * 2] = 0; Wn[n * 2 + 1] = s; objs.canopy.idx[n] = gi;
+        for (let q = 0; q < 3; q++) { bmin[q] = Math.min(bmin[q], g.mat[12 + q]); bmax[q] = Math.max(bmax[q], g.mat[12 + q]); } }
+      canopy.count = nGroups; canopy.visible = nGroups > 0;
+      if (nGroups) { canopy.instanceMatrix.needsUpdate = true; canopy.instanceColor.needsUpdate = true; objs.canopy.win.needsUpdate = true; canopy.boundingSphere.center.set((bmin[0] + bmax[0]) / 2, (bmin[1] + bmax[1]) / 2, (bmin[2] + bmax[2]) / 2); canopy.boundingSphere.radius = Math.hypot(bmax[0] - bmin[0], bmax[1] - bmin[1], bmax[2] - bmin[2]) / 2 + objs.canopy.r * 4 * 11.5; }
+    }
+    S.loaded = total; S.counts = counts; S.lod = { ppm: PPM, near: nNear, far: nFar, fading: nFade, groups: nGroups, thresholds: LOD };
   }
   function buildLines() {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
@@ -5824,11 +5867,12 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
     for(const b of baked){const desired=(BEND.get()>0||TERR.explore)?b.neo:b.old;if(b.g.attributes.color!==desired)b.g.setAttribute('color',desired);}
     if (!S.built || !S.root.visible) return;
-    load(camera, false);
+    select(camera, false);
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
-    const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
+    const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01 && h.count > 0; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
+    { const LM = objs.lodMaterials, M = SEC.state.materials; if (LM) { LM.hull.opacity = M.hullMat.opacity; LM.treeHull.opacity = M.treeHullMat.opacity; } }     // the copies follow the section's ink weight
   }
-  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, objects: objs, reload: camera => load(camera, true), stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
+  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, objects: objs, reload: camera => select(camera, true), lod: LOD, groups: () => canopyGroups, lodTable: () => LT, stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
   global.LANDCOVER_API = api;
   return api;
 };
