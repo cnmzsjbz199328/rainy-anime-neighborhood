@@ -1,0 +1,1050 @@
+{
+ "tool": "tools/perf_baseline.mjs",
+ "label": "pre-w8g-c",
+ "ref": "pre-w8g-c",
+ "commit": "ce978d6b2ad1b1a270e2a4b8bff0b1d85448f43d",
+ "dirty": false,
+ "date": "2026-10-10T00:46:22.067Z",
+ "renderer": "metal",
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist"
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "windowMs": 5000,
+ "dragFrames": 60,
+ "noGenWaitMs": 6000,
+ "loads": [
+  {
+   "sceneMs": 1877,
+   "firstFrameMs": 2101
+  },
+  {
+   "sceneMs": 1675,
+   "firstFrameMs": 1863
+  },
+  {
+   "sceneMs": 1678,
+   "firstFrameMs": 1867
+  },
+  {
+   "sceneMs": 1675,
+   "firstFrameMs": 1862
+  },
+  {
+   "sceneMs": 1667,
+   "firstFrameMs": 1855
+  },
+  {
+   "sceneMs": 1687,
+   "firstFrameMs": 1874
+  },
+  {
+   "sceneMs": 1673,
+   "firstFrameMs": 1862
+  },
+  {
+   "sceneMs": 1678,
+   "firstFrameMs": 1865
+  },
+  {
+   "sceneMs": 1663,
+   "firstFrameMs": 1850
+  },
+  {
+   "sceneMs": 1657,
+   "firstFrameMs": 1843
+  },
+  {
+   "sceneMs": 1675,
+   "firstFrameMs": 1863
+  },
+  {
+   "sceneMs": 1679,
+   "firstFrameMs": 1866
+  },
+  {
+   "sceneMs": 1676,
+   "firstFrameMs": 1866
+  },
+  {
+   "sceneMs": 1675,
+   "firstFrameMs": 1864
+  },
+  {
+   "sceneMs": 1683,
+   "firstFrameMs": 1873
+  },
+  {
+   "sceneMs": 1677,
+   "firstFrameMs": 1865
+  },
+  {
+   "sceneMs": 1668,
+   "firstFrameMs": 1856
+  },
+  {
+   "sceneMs": 1681,
+   "firstFrameMs": 1869
+  },
+  {
+   "sceneMs": 1662,
+   "firstFrameMs": 1848
+  },
+  {
+   "sceneMs": 1685,
+   "firstFrameMs": 1872
+  },
+  {
+   "sceneMs": 1680,
+   "firstFrameMs": 1867
+  }
+ ],
+ "pregen": {
+  "present": true,
+  "waitedMs": 3883,
+  "worldgen": {
+   "started": true,
+   "done": true,
+   "startDelayMs": 1000,
+   "sliceBudgetMs": 50,
+   "startAt": 1791593185593,
+   "doneAt": 1791593188539,
+   "firstFrameAt": 1791593184591,
+   "slices": 33,
+   "longestSliceMs": 91,
+   "longestStep": {
+    "name": "landcover",
+    "step": 15,
+    "ms": 91
+   },
+   "steps": [
+    {
+     "name": "rest",
+     "done": true,
+     "by": "idle",
+     "steps": 13,
+     "ms": 266,
+     "longestMs": 33,
+     "syncMs": 0
+    },
+    {
+     "name": "sampler",
+     "done": true,
+     "by": "idle",
+     "steps": 1,
+     "ms": 19,
+     "longestMs": 19,
+     "syncMs": 0
+    },
+    {
+     "name": "section",
+     "done": true,
+     "by": "idle",
+     "steps": 5,
+     "ms": 85,
+     "longestMs": 41,
+     "syncMs": 0
+    },
+    {
+     "name": "roads",
+     "done": true,
+     "by": "idle",
+     "steps": 18,
+     "ms": 164,
+     "longestMs": 35,
+     "syncMs": 0
+    },
+    {
+     "name": "ocean",
+     "done": true,
+     "by": "idle",
+     "steps": 2,
+     "ms": 96,
+     "longestMs": 88,
+     "syncMs": 0
+    },
+    {
+     "name": "landcover",
+     "done": true,
+     "by": "idle",
+     "steps": 24,
+     "ms": 834,
+     "longestMs": 91,
+     "syncMs": 0
+    },
+    {
+     "name": "landmarks",
+     "done": true,
+     "by": "idle",
+     "steps": 11,
+     "ms": 105,
+     "longestMs": 15,
+     "syncMs": 0
+    }
+   ],
+   "gpu": {
+    "roots": 6,
+    "compiled": 6,
+    "ms": [
+     8,
+     3,
+     2,
+     1,
+     1,
+     34
+    ],
+    "readyAt": 1791593188563
+   }
+  },
+  "startDelayMs": 1000,
+  "longTasks": [
+   [
+    3115,
+    51
+   ],
+   [
+    3582,
+    61
+   ],
+   [
+    3765,
+    51
+   ],
+   [
+    4032,
+    61
+   ],
+   [
+    4132,
+    87
+   ],
+   [
+    4381,
+    53
+   ],
+   [
+    4482,
+    59
+   ],
+   [
+    4715,
+    77
+   ],
+   [
+    4832,
+    50
+   ],
+   [
+    4932,
+    62
+   ],
+   [
+    5031,
+    85
+   ],
+   [
+    5232,
+    91
+   ],
+   [
+    5433,
+    67
+   ],
+   [
+    5763,
+    52
+   ],
+   [
+    5881,
+    54
+   ],
+   [
+    5998,
+    50
+   ]
+  ],
+  "longestTaskMs": 91,
+  "moduleMs": {
+   "rest": 260,
+   "section": 85,
+   "roads": 164,
+   "ocean": 96,
+   "cover": 834,
+   "landmarks": 105
+  }
+ },
+ "exits": {
+  "N01": {
+   "immediate": {
+    "longestTaskMs": 1628,
+    "maxFrameGapMs": 1638,
+    "frames": 410,
+    "longTasks": [
+     [
+      586,
+      1628
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 268
+      },
+      {
+       "name": "section",
+       "syncMs": 107
+      },
+      {
+       "name": "roads",
+       "syncMs": 166
+      },
+      {
+       "name": "ocean",
+       "syncMs": 98
+      },
+      {
+       "name": "landcover",
+       "syncMs": 822
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 102
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 3767,
+    "genCpuMs": 1570,
+    "genLongestTaskMs": 91,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 28,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N03": {
+   "immediate": {
+    "longestTaskMs": 1653,
+    "maxFrameGapMs": 1656,
+    "frames": 406,
+    "longTasks": [
+     [
+      651,
+      1653
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 268
+      },
+      {
+       "name": "section",
+       "syncMs": 109
+      },
+      {
+       "name": "roads",
+       "syncMs": 167
+      },
+      {
+       "name": "ocean",
+       "syncMs": 96
+      },
+      {
+       "name": "landcover",
+       "syncMs": 828
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 102
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 3884,
+    "genCpuMs": 1567,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 31,
+    "frames": 604,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N04": {
+   "immediate": {
+    "longestTaskMs": 1634,
+    "maxFrameGapMs": 1637,
+    "frames": 400,
+    "longTasks": [
+     [
+      772,
+      1634
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 267
+      },
+      {
+       "name": "section",
+       "syncMs": 109
+      },
+      {
+       "name": "roads",
+       "syncMs": 164
+      },
+      {
+       "name": "ocean",
+       "syncMs": 95
+      },
+      {
+       "name": "landcover",
+       "syncMs": 826
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 103
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 4038,
+    "genCpuMs": 1573,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 30,
+    "frames": 592,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 21,
+    "frames": 604,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N08": {
+   "immediate": {
+    "longestTaskMs": 1629,
+    "maxFrameGapMs": 1639,
+    "frames": 410,
+    "longTasks": [
+     [
+      483,
+      1629
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 269
+      },
+      {
+       "name": "section",
+       "syncMs": 106
+      },
+      {
+       "name": "roads",
+       "syncMs": 167
+      },
+      {
+       "name": "ocean",
+       "syncMs": 95
+      },
+      {
+       "name": "landcover",
+       "syncMs": 822
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 103
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 4044,
+    "genCpuMs": 1594,
+    "genLongestTaskMs": 92,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 30,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N09": {
+   "immediate": {
+    "longestTaskMs": 1625,
+    "maxFrameGapMs": 1633,
+    "frames": 410,
+    "longTasks": [
+     [
+      585,
+      1625
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 268
+      },
+      {
+       "name": "section",
+       "syncMs": 105
+      },
+      {
+       "name": "roads",
+       "syncMs": 166
+      },
+      {
+       "name": "ocean",
+       "syncMs": 95
+      },
+      {
+       "name": "landcover",
+       "syncMs": 824
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 103
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 4034,
+    "genCpuMs": 1589,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 30,
+    "frames": 604,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N10": {
+   "immediate": {
+    "longestTaskMs": 1650,
+    "maxFrameGapMs": 1650,
+    "frames": 396,
+    "longTasks": [
+     [
+      723,
+      1650
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 268
+      },
+      {
+       "name": "section",
+       "syncMs": 121
+      },
+      {
+       "name": "roads",
+       "syncMs": 166
+      },
+      {
+       "name": "ocean",
+       "syncMs": 92
+      },
+      {
+       "name": "landcover",
+       "syncMs": 824
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 104
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 3952,
+    "genCpuMs": 1568,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 33,
+    "frames": 594,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 21,
+    "frames": 604,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N11": {
+   "immediate": {
+    "longestTaskMs": 1627,
+    "maxFrameGapMs": 1637,
+    "frames": 410,
+    "longTasks": [
+     [
+      584,
+      1627
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 269
+      },
+      {
+       "name": "section",
+       "syncMs": 108
+      },
+      {
+       "name": "roads",
+       "syncMs": 164
+      },
+      {
+       "name": "ocean",
+       "syncMs": 92
+      },
+      {
+       "name": "landcover",
+       "syncMs": 827
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 103
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 3938,
+    "genCpuMs": 1571,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 29,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N12": {
+   "immediate": {
+    "longestTaskMs": 1638,
+    "maxFrameGapMs": 1644,
+    "frames": 408,
+    "longTasks": [
+     [
+      654,
+      1638
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 269
+      },
+      {
+       "name": "section",
+       "syncMs": 107
+      },
+      {
+       "name": "roads",
+       "syncMs": 164
+      },
+      {
+       "name": "ocean",
+       "syncMs": 96
+      },
+      {
+       "name": "landcover",
+       "syncMs": 832
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 102
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 3902,
+    "genCpuMs": 1571,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 29,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 19,
+    "frames": 606,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  },
+  "N13": {
+   "immediate": {
+    "longestTaskMs": 1641,
+    "maxFrameGapMs": 1641,
+    "frames": 386,
+    "longTasks": [
+     [
+      784,
+      1641
+     ]
+    ],
+    "gen": {
+     "done": true,
+     "sync": [
+      {
+       "name": "rest",
+       "syncMs": 268
+      },
+      {
+       "name": "section",
+       "syncMs": 108
+      },
+      {
+       "name": "roads",
+       "syncMs": 164
+      },
+      {
+       "name": "ocean",
+       "syncMs": 92
+      },
+      {
+       "name": "landcover",
+       "syncMs": 830
+      },
+      {
+       "name": "landmarks",
+       "syncMs": 103
+      }
+     ]
+    }
+   },
+   "afterPregen": {
+    "waitedMs": 3887,
+    "genCpuMs": 1579,
+    "genLongestTaskMs": 90,
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 33,
+    "frames": 584,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   },
+   "hot": {
+    "longestTaskMs": 0,
+    "maxFrameGapMs": 23,
+    "frames": 596,
+    "longTasks": [],
+    "gen": {
+     "done": true,
+     "sync": []
+    }
+   }
+  }
+ },
+ "sphere": {
+  "immediate": {
+   "longestTaskMs": 1768,
+   "maxFrameGapMs": 1772,
+   "frames": 380,
+   "longTasks": [
+    [
+     1,
+     1768
+    ],
+    [
+     2635,
+     84
+    ]
+   ],
+   "gen": {
+    "done": true,
+    "sync": [
+     {
+      "name": "rest",
+      "syncMs": 268
+     },
+     {
+      "name": "section",
+      "syncMs": 109
+     },
+     {
+      "name": "roads",
+      "syncMs": 167
+     },
+     {
+      "name": "ocean",
+      "syncMs": 93
+     },
+     {
+      "name": "landcover",
+      "syncMs": 831
+     },
+     {
+      "name": "landmarks",
+      "syncMs": 101
+     }
+    ]
+   }
+  },
+  "afterPregen": {
+   "longestTaskMs": 154,
+   "maxFrameGapMs": 159,
+   "frames": 580,
+   "longTasks": [
+    [
+     4,
+     154
+    ],
+    [
+     1025,
+     83
+    ]
+   ],
+   "gen": {
+    "done": true,
+    "sync": []
+   }
+  }
+ },
+ "machine": {
+  "start": {
+   "freeMemMB": 783,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    4.1,
+    10.37,
+    15.54
+   ],
+   "swap": "total = 9216.00M  used = 7739.50M  free = 1476.50M  (encrypted)"
+  },
+  "end": {
+   "freeMemMB": 1545,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    3.57,
+    5.86,
+    11.65
+   ],
+   "swap": "total = 9216.00M  used = 7731.50M  free = 1484.50M  (encrypted)"
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "parallelShaderCompile": true,
+ "chromium": "153.0.8010.12",
+ "views": {
+  "forest-near-flat": {
+   "frames": 366,
+   "medianMs": 14.1,
+   "p95Ms": 17.9,
+   "maxMs": 19.3,
+   "longTasks": 0,
+   "calls": 1296,
+   "triangles": 502972,
+   "instances": 235,
+   "lod": null
+  },
+  "farm-flat": {
+   "frames": 364,
+   "medianMs": 14.4,
+   "p95Ms": 17.6,
+   "maxMs": 19,
+   "longTasks": 0,
+   "calls": 556,
+   "triangles": 331580,
+   "instances": 687,
+   "lod": null
+  },
+  "coast-flat": {
+   "frames": 364,
+   "medianMs": 13.8,
+   "p95Ms": 18.2,
+   "maxMs": 19.3,
+   "longTasks": 0,
+   "calls": 471,
+   "triangles": 370920,
+   "instances": 201,
+   "lod": null
+  },
+  "sphere-70": {
+   "frames": 224,
+   "medianMs": 25.3,
+   "p95Ms": 28.5,
+   "maxMs": 30,
+   "longTasks": 0,
+   "calls": 6356,
+   "triangles": 974220,
+   "instances": 1169,
+   "lod": null
+  },
+  "sphere-140": {
+   "frames": 157,
+   "medianMs": 36.8,
+   "p95Ms": 40.6,
+   "maxMs": 41.9,
+   "longTasks": 0,
+   "calls": 11331,
+   "triangles": 1215951,
+   "instances": 0,
+   "lod": null
+  },
+  "sphere-400": {
+   "frames": 155,
+   "medianMs": 37.8,
+   "p95Ms": 41.2,
+   "maxMs": 43.6,
+   "longTasks": 0,
+   "calls": 11455,
+   "triangles": 1227571,
+   "instances": 0,
+   "lod": null
+  }
+ },
+ "summary": {
+  "sceneMsMedian": 1676,
+  "firstFrameMsMedian": 1865,
+  "pregenCpuMs": 1569,
+  "pregenLongestTaskMs": 91,
+  "pregenCpuMsMedian": 1571,
+  "pregenCpuMsRange": [
+   1567,
+   1594
+  ],
+  "pregenLongestTaskMsMedian": 90,
+  "pregenLongestTaskMsMax": 92,
+  "immediateExitLongestTaskMs": 1653,
+  "afterPregenExitLongestTaskMs": 0,
+  "hotExitLongestTaskMs": 0,
+  "immediateExitMaxFrameGapMs": 1656,
+  "afterPregenExitMaxFrameGapMs": 33,
+  "hotExitMaxFrameGapMs": 23,
+  "sphereImmediateLongestTaskMs": 1768,
+  "sphereAfterPregenLongestTaskMs": 154,
+  "viewsMedianMsMax": 37.8,
+  "viewsP95MsMax": 41.2,
+  "pageErrors": 0
+ },
+ "errors": []
+}
