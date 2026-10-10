@@ -1,8 +1,8 @@
 // W8g-b exit checks (W8_SPEC 13.2 B5) on the page's own meshes. Run after `python3 build.py`:  node tools/exit_check.mjs
 //   B5-1 ray occlusion: tools/exit_geometry.mjs exitRays, flat and sphere state, every exit head's L metres (ruling 2 of the W8g-b breakdown); L .. 24 m for information
 //   B5-2 seams: head row K = the road beyond it (position <= 0.001 m, normal), road surface to the cut terrain edge <= 0.01 m
-//   B5-3 widths at s = 0, 7, 14 m: the town and the explore view show the same head mesh; widths printed (N11-N13 4.5 m at the town edge)
-//   B5-4 interface identity (ruling 3): per exit, a fixed camera; only the ring and the heads shown; town state and explore state render bit for bit the same
+//   B5-3 widths at s = 0, 7, 14 m: every view shows the same head mesh; widths printed (N11-N13 4.5 m at the town edge)
+//   B5-4 retired in W10a (it compared the town and the explore state, which no longer exist)
 //   B5-5 plants: no tree crown (canopy groups and tree instances) reaches into a road's whole cross-section (footprint outer edge)
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -21,28 +21,12 @@ await page.waitForFunction(() => window.__scene && window.__scene.view, null, { 
 await page.evaluate(() => window.__step(2));
 
 // B5-4 first, on the fresh page (nothing of the planet shown yet)
-const ident = await page.evaluate(async () => {
-  const S = window.__scene, out = [];
-  const shoot = () => { S.renderer.render(S.scene, S.camera); const c = S.renderer.domElement, g = document.createElement('canvas'); g.width = c.width; g.height = c.height; const q = g.getContext('2d'); q.drawImage(c, 0, 0); return q.getImageData(0, 0, g.width, g.height).data; };
-  const only = () => { const keep = new Set([S.terrain.root, ...S.terrain.ring, ...S.terrain.heads]); const saved = []; S.scene.children.forEach(o => { if (o.isLight) return; saved.push([o, o.visible]); o.visible = o === S.terrain.root; });
-    S.terrain.root.children.forEach(o => { saved.push([o, o.visible]); o.visible = keep.has(o); }); return () => saved.forEach(([o, v]) => { o.visible = v; }); };
-  for (const h of S.terrain.exitHeads) {
-    const st = h.rt.strip, m = h.rt.grid.length, mid = Math.floor(m / 2), a = [st.pos[mid * 3], st.pos[mid * 3 + 2]], b = [st.pos[(h.K * m + mid) * 3], st.pos[(h.K * m + mid) * 3 + 2]], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(d[0], d[1]);
-    S.transition.auto = false; S.terrain.setExplore(false); S.terrain.setFade(0); S.view.set({ target: [a[0] + d[0] / l * 7, 1.6, a[1] + d[1] / l * 7], dist: 15, yaw: Math.atan2(-d[0], -d[1]), pitch: 0.62 }); window.__step(2);
-    // (the heads' end caps fold away while the road beyond shows, by design: both renders without them)
-    const caps = () => { S.terrain.setHeadCaps('roads', false); S.terrain.setHeadCaps('section', false); };
-    caps(); let undo = only(); const A = shoot(); undo();
-    S.terrain.setExplore(true); S.terrain.setFade(1); window.__step(2); caps(); undo = only(); const Bp = shoot(); undo();
-    let n = 0, cov = 0; for (let i = 0; i < A.length; i += 4) { if (A[i] !== Bp[i] || A[i + 1] !== Bp[i + 1] || A[i + 2] !== Bp[i + 2]) n++; }
-    { const c = S.renderer.domElement; void c; }
-    out.push({ exit: h.exit, diff: n, cov });
-  }
-  S.terrain.setExplore(false); S.terrain.setFade(0); S.transition.auto = true; return out;
-});
-const capState = await page.evaluate(() => { const S = window.__scene, out = {}; S.transition.auto = false; S.terrain.setExplore(false); S.terrain.setFade(0); S.roads.visibility(); S.section.visibility(); out.town = S.terrain.headCaps();
-  S.terrain.setExplore(true); S.terrain.setFade(1); out.explore = S.terrain.headCaps(); S.terrain.setExplore(false); S.terrain.setFade(0); S.transition.auto = true; return out; });
-check('B5-6', '道路头端头封口（裁决 6）：城镇视图显示，路网接上时（探索、球形、剖视）收起', capState.town.every(v => v === 1) && capState.explore.every(v => v === 0), [`城镇 ${capState.town.join('/')}，探索 ${capState.explore.join('/')}（路网出口 / N08）`]);
-check('B5-4', '接口几何逐位相同（裁决 3）：固定机位、只显示边缘地形与道路头时，城镇状态与探索状态的画面逐位相同', ident.every(q => q.diff === 0), [ident.map(q => `${q.exit} ${q.diff}`).join('、') + '（不同像素数）']);
+// W10a: one display rule. B5-4 (the town and the explore state rendered bit for bit the same) is retired with the two states (unify_check U3 checks that
+// every module shows in every view); B5-6: the network road continues every head in every view, so the end caps stay folded in all of them
+const capState = await page.evaluate(() => { const S = window.__scene, out = {}; S.transition.auto = false;
+  for (const [k, v] of [['town', { mapMode: 'flat', target: [-7, 1.2, 20], dist: 34 }], ['far', { mapMode: 'flat', target: [-90, 1.2, 60], dist: 30 }], ['sphere', { mapMode: 'sphere', dist: 140 }]]) { S.view.set(v); S.transition.step(3); window.__step(2); out[k] = S.terrain.headCaps(); }
+  S.view.set({ mapMode: 'flat', target: [-7, 1.2, 20], dist: 34 }); S.transition.step(3); S.transition.auto = true; return out; });
+check('B5-6', '道路头端头封口（裁决 6，W10a 改写）：路网在所有视图都接着道路头，城镇、平面远处、球形三种状态都收起', Object.values(capState).every(c => c.every(v => v === 0)), [Object.entries(capState).map(([k, c]) => `${k} ${c.join('/')}`).join('，') + '（路网出口 / N08）']);
 
 const rays = await exitRays(page);
 for (const st of ['flat', 'sphere']) { const r = rays[st];
@@ -52,7 +36,7 @@ for (const st of ['flat', 'sphere']) { const r = rays[st];
 const seams = await exitSeams(page);
 check('B5-2', '接缝：道路头最后一行与后续路段顶点 ≤ 0.001 m、颜色相同、法线相同；路面到裁切后地形边缘（道路条带外缘，裁决 5）的高差 ≤ 0.01 m', seams.every(q => q.dPos <= 0.001 && q.dCol === 0 && (q.dNrm === null || q.dNrm === 0) && q.dEdge <= 0.01),
   seams.map(q => `${q.exit}：L ${f(q.L, 2)} m（K = ${q.K}${q.whole ? '，整条路线' : '，截断后'}），接缝位置差 ${f(q.dPos, 6)} m，颜色差 ${f(q.dCol, 6)}，法线差 ${q.dNrm === null ? '（无后续路面或上向法线）' : f(q.dNrm, 6)}，路面到地形边缘 ${f(q.dEdge, 4)} m，建路网时接手的行与截断计算相差 ${f(q.maxChange, 6)} m`));
-check('B5-3', '宽度：城镇视图与探索视图是同一个道路头网格（差 0）；s = 0 / 7 / 14 m 处铺装宽', seams.every(q => q.widths.length && (!['N11', 'N12', 'N13'].includes(q.exit) || Math.abs(q.widths[0].w - 4.5) <= 0.01)),
+check('B5-3', '宽度：所有视图是同一个道路头网格（差 0）；s = 0 / 7 / 14 m 处铺装宽', seams.every(q => q.widths.length && (!['N11', 'N12', 'N13'].includes(q.exit) || Math.abs(q.widths[0].w - 4.5) <= 0.01)),
   seams.map(q => `${q.exit}：${q.widths.map(w => `s = ${f(w.s, 1)} m ${f(w.w, 3)} m`).join('，')}`));
 
 const veg = await page.evaluate(() => {

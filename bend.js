@@ -183,7 +183,19 @@ function testWrapped(fr, s, bent) {
   for (const k of a === b ? [a] : [a, b]) { tmpSphere2.copy(s); tmpSphere2.center.x += k; if (bent) bendSphere(tmpSphere2); if (fr.intersectsSphere(tmpSphere2)) return true; }
   return false;
 }
+const worldBox = new THREE.Box3(), shiftedBox = new THREE.Box3();
 FR.intersectsObject = function (object) {
+  // W10a: the flat map draws the whole world, so on it a plain mesh or line set is tested by its world box as well as its sphere: a road, coast or field
+  // strip many times longer than wide no longer draws whenever its sphere grazes the view. Each end at its own wrap shift, as testWrapped; noWrap ones unshifted.
+  if (uniform.value === 0 && !object.isInstancedMesh && object.geometry && !noBend(object)) {
+    const fixed = noWrap(object);
+    if (fixed ? !origObject.call(this, object) : !testWrapped(this, worldSphere(object, tmpSphere), false)) return false;
+    const g = object.geometry; if (!g.boundingBox) g.computeBoundingBox();
+    worldBox.copy(g.boundingBox).applyMatrix4(object.matrixWorld);
+    const a = fixed ? 0 : shiftOf(worldBox.min.x), b = fixed ? 0 : shiftOf(worldBox.max.x);
+    for (const k of a === b ? [a] : [a, b]) { shiftedBox.copy(worldBox); shiftedBox.min.x += k; shiftedBox.max.x += k; if (this.intersectsBox(shiftedBox)) return true; }
+    return false;
+  }
   if (!object.geometry || noBend(object)) return origObject.call(this, object);
   if (uniform.value > 0 && cullMode === 'bound') return noWrap(object) ? this.intersectsSphere(bendSphere(worldSphere(object, tmpSphere))) : testWrapped(this, worldSphere(object, tmpSphere), true);
   if (uniform.value === 0 && wrapU.value.x > 0 && !noWrap(object)) {

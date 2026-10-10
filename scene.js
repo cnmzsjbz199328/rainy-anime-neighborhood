@@ -60,16 +60,24 @@ function panel(axis,at,t,[u0,u1,y0,y1],holes,c,parent=root){const us=[...new Set
 // exact) and one batch per ink layer: a whole building costs a few dozen draw calls. Objects under a node
 // flagged userData.live (animated drips, steam) are left alone; userData.layer (e.g. 'roof') keeps its own
 // batches, tagged with the layer, so review tools can lift a roof or storey off.
-function bake(g){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert(),buckets=new Map(),done=[],bb=new THREE.Box3();
+// W10a: tint (the landmarks, which have no measured footprints) drops the walking-height split and gives every plain toon colour (opaque, no emissive,
+// offset or shader edit of its own) one batch per texture: the colour moves into the vertex colours of a shared white copy (colour x texel is unchanged).
+const tintMats={};
+const plainToon=m=>m.isMeshToonMaterial&&!m.transparent&&!m.vertexColors&&!m.polygonOffset&&m.emissive.getHex()===0&&!m._bendUserCompile&&!Object.keys(m.userData).length;
+function tintMat(m){const k=['T',m.map&&m.map.uuid,m.gradientMap&&m.gradientMap.uuid,m.side,m.flatShading,m.alphaTest,m.fog,m.depthTest,m.depthWrite].join('|');
+  if(!tintMats[k]){const t=m.clone();t.color.setRGB(1,1,1);t.vertexColors=true;tintMats[k]=t;}return tintMats[k];}
+function bake(g,tint=false){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert(),buckets=new Map(),done=[],bb=new THREE.Box3();
   g.traverse(o=>{if(!(o.isMesh||o.isLineSegments))return;for(let p=o;p&&p!==g;p=p.parent)if(p.userData.live)return;
     let layer='';for(let p=o;p&&p!==g;p=p.parent)if(p.userData.layer){layer=p.userData.layer;break;}
-    const m=o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;bb.setFromObject(o,true);const band=bb.max.y>.3&&bb.min.y<1.8;
-    const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,list:[]});buckets.get(k).list.push(o);done.push(o);});
-  for(const {line,m,layer,list} of buckets.values()){const P=[],N=[],U=[];
+    const tm=tint&&o.isMesh&&plainToon(o.material)?tintMat(o.material):null,m=tm||o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;let band=false;if(!tint){bb.setFromObject(o,true);band=bb.max.y>.3&&bb.min.y<1.8;}
+    const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,tinted:!!tm,list:[]});buckets.get(k).list.push(o);done.push(o);});
+  for(const {line,m,layer,tinted,list} of buckets.values()){const P=[],N=[],U=[],C=[];
     for(const o of list){let q=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();q.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld));
-      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}q.dispose();}
+      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}
+      if(tinted){const c=o.material.color;for(let i=0;i<n;i++)C.push(c.r,c.g,c.b);}q.dispose();}
     const q=new THREE.BufferGeometry();q.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
     if(!line){q.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));q.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));}
+    if(tinted)q.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
     const b=line?new THREE.LineSegments(q,m):new THREE.Mesh(q,m);if(layer)b.userData.layer=layer;g.add(b);}
   for(const o of done)o.removeFromParent();}
 const buildingFx=[];
@@ -230,7 +238,7 @@ const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6
 function rainBounds(){const h=rainBox/2,center=roam?roam.position:target;rb=[center.x-h,center.z-h,center.x+h,center.z+h];}
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
-const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);scene.add(rainObj);
+const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
 const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat,rings});
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
@@ -256,7 +264,7 @@ for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.re
 function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
 let roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);terrain.setFade(0);scene.fog.density=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
@@ -268,13 +276,14 @@ const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.do
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);e.preventDefault();}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',()=>keys.clear());
 function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joystickValue[0],z=(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joystickValue[1],m=Math.hypot(x,z);if(m>1){x/=m;z/=m;}return[x,z];}
 // Planet landmarks (W7): landmarks/<id>.js registers LANDMARKS[id](kit, record) and draws in its own local frame (origin = site anchor, +Z towards the first entrance,
-// +X to the left of +Z, 1 unit = 1 m). They are built the first time the planet is shown (inside the terrain's private random stream, so the town's rain is untouched) and
+// +X to the left of +Z, 1 unit = 1 m). They are built at start-up (worldgen.js; inside the terrain's private random stream, so the town's rain is untouched) and
 // then mapped vertex by vertex into the flat Mercator frame of the terrain (docs/world/W7_SPEC.md section 2): a local point (x, y, z) at distance d and bearing heading + atan2(-x, z)
 // from the anchor is moved to the lon/lat that lies d * R / (R + altitude) along the sphere (the bend lengthens lateral distances at height by (R + altitude) / R, so this keeps
 // every length in true metres, at any latitude), its flat height is (anchor altitude + y - 1.6) / cos(lat), and the normals are turned by the heading. bend.js then rolls it onto the sphere.
 // Animated parts (userData.live) are not baked: they are re-parented into a wrapper at their mapped position with the local scale 1 / cos(lat).
 // W8g-a: a stepped build (TERRAIN.job, one private stream for all of them as before), one step per landmark; between steps the town's own seed and root are back.
-const landmarkGroups=[],landmarkFx=[],landmarkInfo={};let landmarksBuilt=false;
+// W10a: each module group is baked with tint (bake above): one batch per texture for the plain colours, so the landmarks cost 172 draw calls instead of 445.
+const landmarkGroups=[],landmarkFx=[],landmarkInfo={};
 const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
     for(const lm of WO.landmarks){if(lm.id==='TOWN')continue;const build=(globalThis.LANDMARKS||{})[lm.id];if(!build)continue;
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);
@@ -295,16 +304,14 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
           const w=new THREE.Group();w.name=name+':live';w.position.set(m[0],m[1],m[2]);w.rotation.y=th;w.scale.set(m[3]*m[4],m[3],m[3]*m[4]);
           // keep the object's own orientation and place it at the wrapper origin
           const q=new THREE.Quaternion();o.getWorldQuaternion(q);const sc=new THREE.Vector3();o.getWorldScale(sc);o.parent.remove(o);o.position.set(0,0,0);o.quaternion.copy(q);o.scale.copy(sc);w.add(o);scene.add(w);return w;});
-        bake(g);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
-        g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=false;wraps.forEach(w=>{w.visible=false;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
+        bake(g,true);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
+        g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=true;wraps.forEach(w=>{w.visible=true;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
       landmarkInfo[lm.id]={groups:own,heading:headDeg,height:h};
       landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});seed=s0;root=scene;yield;}
-    seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;landmarksBuilt=true;});
-function buildLandmarks(){if(!landmarksBuilt)landmarkJob.finish();}
-function landmarksVisible(){const show=BEND.get()>0||terrain.explore||(window.SECTION_API&&window.SECTION_API.state.mode);if(show&&!landmarksBuilt&&Object.keys(globalThis.LANDMARKS||{}).length)buildLandmarks();for(const g of landmarkGroups)g.visible=!!show;return show;}
+    seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;});
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
-  if(TR.auto&&!section.state.mode){terrain.setFade(TRANSITION.visibilityOf(dist,townDistance()));terrain.setExplore(townDistance()>0);scene.fog.density=TR.fog0*TRANSITION.fogOf(BEND.get());}
+  if(TR.auto&&!section.state.mode){scene.fog.density=TR.fog0*TRANSITION.fogOf(BEND.get());}
   const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';if(!available&&section.state.mode)section.setMode(false);
 }
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
@@ -322,11 +329,11 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);worldgen.frame();}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-// W8g-b: the 9 exit heads (the first metres of each exit's own road, roads.js) are made with the terrain at start-up: the town view shows them, the ring is cut under them
+// W8g-b: the 9 exit heads (the first metres of each exit's own road, roads.js) are made with the terrain at start-up and the ring is cut under them (W10c replaces them)
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND,matT('#46505b','asphalt'),{exitHeads:(H,B)=>ROADS.exitHeads(WORLD,H,(lo,la)=>B.vertexColor(lo,la))});
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
@@ -340,17 +347,22 @@ const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,s
 const quality=QUALITY.create();const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer,quality},BEND,terrain,section);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
-// W8g-a (W8_SPEC 13.1 A4): the planet is generated in the background once the town is on screen (worldgen.js), in the order the on-demand builds used,
-// each module's visibility applied as its build ends; then the shader programs of what was built. Leaving the town early finishes the rest synchronously.
-// The panorama outlines (section.jobs.ink) stay on demand (first sphere view): their lines cross the -85 deg seam uncut, which only the sphere may show.
-// The terrain's fading materials need both programs (three.js defines OPAQUE for an opaque material): each is flipped, compiled and flipped back in the same task.
-const gpuCompile=get=>()=>{const r=get();if(!r)return null;const list=Array.isArray(r)?r:[r];return Promise.all(list.map(o=>renderer.compileAsync(o,camera,scene)));};
-const gpuTerrain=()=>{const ps=[renderer.compileAsync(terrain.root,camera,scene)];for(const m of terrain.fadeMaterials){const t=m.transparent;m.transparent=!t;m.needsUpdate=true;ps.push(renderer.compileAsync(terrain.root,camera,scene));m.transparent=t;m.needsUpdate=true;}return Promise.all(ps);};
-const worldgen=WORLDGEN.create({gate:()=>quality.state.decided,steps:[
-  {name:'rest',job:terrain.restJob},{name:'sampler',deps:['rest'],job:terrain.samplerJob},
-  {name:'section',job:section.jobs.build,after:section.visibility},
-  {name:'roads',deps:['rest','sampler','section'],job:roads.job,after:roads.visibility},{name:'ocean',deps:['roads'],job:ocean.job,after:ocean.visibility},
-  {name:'landcover',deps:['roads'],job:cover.job,after:cover.visibility},{name:'landmarks',deps:['landcover'],job:landmarkJob}],
-  gpu:[gpuTerrain,...[()=>section.state.root,()=>roads.state.root,()=>ocean.state.root,()=>cover.state.root,()=>landmarkGroups].map(gpuCompile)]});
-window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+// W10a (W10_SPEC 2.4): the whole world is built before the first frame (worldgen.js), behind the loading screen of build.py; the canvas stays hidden
+// until the first frame, which is the complete world. No module is built on demand and none is shown or hidden by view.
+renderer.domElement.style.visibility='hidden';
+const loading=document.getElementById('loading');
+const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('progress').value=value;loading.querySelector('p').textContent=label;},steps:[
+  {name:'rest',label:'正在铺设地形',job:terrain.restJob},
+  {name:'sampler',deps:['rest'],job:terrain.samplerJob},
+  {name:'section',deps:['sampler'],label:'正在绘制田野',job:section.jobs.build},
+  {name:'ink',deps:['section'],job:section.jobs.ink},
+  {name:'roads',deps:['section'],label:'正在连接道路',job:roads.job},
+  {name:'ocean',deps:['roads'],label:'正在绘制海岸',job:ocean.job},
+  {name:'landcover',deps:['ocean'],label:'正在种植森林',job:cover.job},
+  {name:'landmarks',deps:['landcover'],label:'正在安放村落',job:landmarkJob}
+]});
+worldgen.start().then(()=>{
+window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+requestAnimationFrame(frame);
+}).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

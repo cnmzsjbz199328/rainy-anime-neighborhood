@@ -393,7 +393,7 @@ function stripNormals(THREE, pos, index, m, n0, n1) { const g = new THREE.Buffer
 // slabs, normals over those cells alone, and texW = 1: the head material (headMaterial) applies the asphalt grain only there. Each exit keeps only its rows 0 .. K.
 // W8g-b (ruling 6): an end cap at row K, a wall from the road's last row to the terrain under it (H, the sampler), facing back into the town, capW = 1: where the
 // road ends in the town view (the terrain resumes beyond), its ditch or its raised bed would leave an open slit; the material folds the cap away (uCap = 0) while the
-// network road continues from row K (explore, sphere, section view), so the head and the road beyond still meet with the same vertices.
+// network road continues from row K (W10a: in every view, so the cap stays folded until W10c removes heads and caps), so the head and the road beyond meet with the same vertices.
 function headGeometry(THREE, heads, colours, H, terrainColour) {
   const out = [], R = 90, D = Math.PI / 180;
   for (const hd of heads) {
@@ -445,14 +445,13 @@ function headMaterial(THREE, makeMaterial, map, capU) {
 }
 TERRAIN.cellsIn = cellsIn; TERRAIN.stripNormals = stripNormals;
 
-// opts.exitHeads(sampler, builder) -> the exit heads (roads.js exitHeads): W8g-b, the town view's exit roads and the ring's cut are made from them at start-up
+// opts.exitHeads(sampler, builder) -> the exit heads (roads.js exitHeads): W8g-b, the first metres of the exit roads and the ring's cut are made from them at start-up (W10c replaces them)
 TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts = {}) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, restMat, headMat, root; const capU = { value: new THREE.Vector2(1, 1) };     // the exit heads' end caps shown (1) while the road beyond is not: x the network's exits, y N08 (the W4 section)
+  let material, capMat, headMat, root; const capU = { value: new THREE.Vector2(0, 0) };     // the exit heads' end caps (x the network's exits, y N08): W10a, the road beyond always shows, so they stay folded (0) until W10c removes the heads
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
-    restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
     // W8g-b: the exit heads: the first 6 m in the town's own asphalt colour and grain (N11-N13: the paving colour of 12.4 G6 on the same grain), the rest as the
     // network's road strips (toon, vertex colours, polygon offset -2 / -2 as section.js groundMat), one material for all (headMaterial)
     headMat = headMaterial(THREE, makeMaterial, townAsphaltMaterial ? townAsphaltMaterial.map : null, capU);
@@ -491,7 +490,6 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
   const ringData = exitPolygons.length ? B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitPolygons }) : flatRingData;
   state.exitHeads = heads; state.stats.exitClearancePolygons = exitPolygons.length;
   state.headCaps = () => capU.value.toArray();
-  state.setHeadCaps = (which, on) => { if (which === 'section') capU.value.y = on ? 1 : 0; else capU.value.x = on ? 1 : 0; };   // roads.js / section.js: off while their road continues
   withPrivateRandom(() => {
     for (const c of ringData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
     const townColour = { asphalt: new THREE.Color(townAsphaltMaterial ? townAsphaltMaterial.color : '#46505b').toArray(), paving: new THREE.Color('#8f8a7c').toArray() };
@@ -506,7 +504,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
     for (let cy = 0; cy < 12; cy++) { restData.push(...restRow(cy)); yield; }
     const capData = [true, false].map(north => B.buildCap(north));
     state.restData = restData;
-    for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
+    for (const c of restData) if (c.restIndex) add(geom(c, c.restIndex), material, 'rest', state.rest, { cx: c.cx, cy: c.cy });     // W10a: the ring and the rest share one material and one display rule
     capData.forEach((c, k) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
@@ -516,31 +514,18 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
     state.restBuilt = true;
     state.stats.restBuildMs = restJob.stats.reduce((a, b) => a + b, 0);
   });
-  function buildRest() { if (!state.restBuilt) restJob.finish(); }
-  // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
-  const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
-  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  const exploreListeners = [];
-  state.explore = false;
-  state.onExplore = fn => exploreListeners.push(fn);
-  state.setExplore = on => { if (on === state.explore) return; state.explore = on; for (const fn of exploreListeners) fn(); };
-  state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
-  function apply() {
-    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;          // (W8g-b: the ring and the exit heads are the same in every view)
-    if (restOn) buildRest();
-    for (const m of state.rest) m.visible = restOn;
-    if (state.restBuilt) setOpacity(restMat, u > 0 ? 1 : state.fade.rest);
-    const cf = smooth(0.98, 1, u);
-    for (const m of state.caps) m.visible = cf > 0;
-    if (state.restBuilt) setOpacity(capMat, cf);
+  // the polar caps (sphere coordinates, noBend) blend in over the last 2 % of the bend: part of the projection, not a view rule; opaque at 1, so the opaque
+  // pass and its sorting stay as they are once the sphere is complete (a flip between opaque and transparent needs a new program: needsUpdate)
+  function applyCaps() {
+    const u = BEND.get(), t = Math.max(0, Math.min(1, (u - 0.98) / 0.02)), o = t * t * (3 - 2 * t);
+    for (const m of state.caps) m.visible = t > 0;
+    if (capMat.transparent !== (o < 1)) { capMat.transparent = o < 1; capMat.needsUpdate = true; } capMat.opacity = o;
   }
-  BEND.onChange(apply);
+  BEND.onChange(applyCaps);
   state.ringData = ringData;
   state.restJob = restJob;
-  state.samplerJob = TERRAIN.job(function* () { buildRest(); state.sampler(); });
-  state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
-  state.apply = apply; state.buildRest = buildRest; state.root = root; state.builder = B;   // (B keeps its vertex cache: roads.js colours its verges with it)
-  state.fadeMaterials = [restMat, capMat];                           // W8g-a: they switch between opaque and transparent (setOpacity): two shader programs each
+  state.samplerJob = TERRAIN.job(function* () { state.sampler(); });   // after restJob (worldgen.js deps): the global sampler index over the ring and the rest
+  state.root = root; state.builder = B;   // (B keeps its vertex cache: roads.js colours its verges with it)
   state.stats.triangles = () => [...state.ring, ...state.heads, ...state.rest, ...state.caps].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;
 };

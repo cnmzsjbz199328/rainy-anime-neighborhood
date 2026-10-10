@@ -16,7 +16,7 @@ async function open(w = 800, h = 500) {
   await page.addInitScript(INIT); await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__scene && window.__scene.transition, null, { timeout: 90000 }); await page.evaluate(() => window.__step(3)); return page;
 }
-const state = page => page.evaluate(() => { const S = window.__scene, c = S.camera; return { bend: S.bend.get(), fog: S.scene.fog.density, fade: S.terrain.fade.rest, pos: c.position.toArray(), up: c.up.toArray(), far: c.far }; });
+const state = page => page.evaluate(() => { const S = window.__scene, c = S.camera; return { bend: S.bend.get(), fog: S.scene.fog.density, terrainVisible: S.terrain.rest.every(m=>m.visible), pos: c.position.toArray(), up: c.up.toArray(), far: c.far }; });
 const shot = page => page.evaluate(() => { const S = window.__scene; S.renderer.render(S.scene, S.camera); return S.renderer.domElement.toDataURL('image/png'); });
 const diff = (page, a, b) => page.evaluate(async ([a, b]) => { const load = async u => { const i = new Image(); i.src = u; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const q = c.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, c.width, c.height).data; }; const A = await load(a), B = await load(b); let n = 0, mx = 0, sum = 0; for (let k = 0; k < A.length; k += 4) { const d = Math.max(Math.abs(A[k] - B[k]), Math.abs(A[k + 1] - B[k + 1]), Math.abs(A[k + 2] - B[k + 2])); if (d > 2) n++; if (d > mx) mx = d; sum += Math.abs(A[k] - B[k]) + Math.abs(A[k + 1] - B[k + 1]) + Math.abs(A[k + 2] - B[k + 2]); } return { over: n, max: mx, mean: sum / (A.length / 4) / 3, total: A.length / 4 }; }, [a, b]);
 
@@ -40,7 +40,7 @@ if (want('c2')) {
     S.view.set({target:[window.WORLD.lonLatToTown(-126.9,0).x,1.2,0]});check('规范经度目标（接缝以西）显示在东段',Math.abs(S.view.get().target[0]-(window.WORLD.lonLatToTown(-126.9,0).x+S.bend.PERIOD))<1e-4);
     T.setMode('sphere');T.step(3);
     T.auto=false;S.bend.set(.37);S.view.set({dist:9});T.step(2);check('手工测试钩子',S.bend.get()===.37);T.auto=true;T.setMode('flat');T.step(2);
-    S.view.set({target:[20,1.2,65],dist:25});T.step(2);check('农田 d=25 保留目标',S.view.get().target[0]===20&&S.view.get().target[2]===65&&S.view.get().dist===25&&S.terrain.fade.rest>0);
+    S.view.set({target:[20,1.2,65],dist:25});T.step(2);check('农田 d=25 保留目标',S.view.get().target[0]===20&&S.view.get().target[2]===65&&S.view.get().dist===25&&S.terrain.rest.every(m=>m.visible));
     S.view.set({mode:'roam'});check('农田禁漫游',S.view.get().mode==='free');S.section.setMode(true);check('农田禁剖视',!S.section.state.mode);
     S.view.set({target:[0,1.2,0],mode:'roam'});check('城镇可漫游',S.view.get().mode==='roam');T.setMode('sphere');check('切换先退出漫游',S.view.get().mode==='free');T.step(2);S.section.setMode(true);check('球形禁剖视',!S.section.state.mode);
     T.setMode('flat');T.step(2);S.section.setMode(true);check('城镇可剖视',S.section.state.mode);T.setMode('sphere');check('切换先退出剖视',!S.section.state.mode);
@@ -63,7 +63,7 @@ if (want('c2')) {
 // ---- C3
 if (want('c3')) {
   const r = await page.evaluate(async () => {
-    const S = window.__scene, T = S.transition.api, B = S.bend, W = window.WORLD, R = B.R, D = Math.PI / 180; S.terrain.buildRest(); const samp = S.terrain.sampler();
+    const S = window.__scene, T = S.transition.api, B = S.bend, W = window.WORLD, R = B.R, D = Math.PI / 180;  const samp = S.terrain.sampler();
     let s = 12345; const rnd = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
     let worstAng = 0, minClear = 1e9, minRaw = 1e9, lifted = 0; const cam = S.camera;
     for (let i = 0; i < 1000; i++) {
@@ -81,13 +81,13 @@ if (want('c3')) {
 }
 // ---- C5: pure visibility and two-second easing (no render-history dependencies)
 if(want('c5')){
-  const r=await page.evaluate(()=>{const T=window.__scene.transition.api;let max=0;for(let i=1;i<=120;i++)max=Math.max(max,T.bendOf(i/120)-T.bendOf((i-1)/120));return{max,ends:[T.bendOf(0),T.bendOf(1)],town:T.visibilityOf(25,0),field:T.visibilityOf(25,24),far:[T.farOf('flat'),T.farOf('sphere')]};});
-  out(r.max<.02&&r.ends[0]===0&&r.ends[1]===1&&r.town===0&&r.field===1&&r.far[0]===400&&r.far[1]===600,'W8e-a C5 纯函数淡入与 2 秒缓动',[JSON.stringify(r)]);
+  const r=await page.evaluate(()=>{const T=window.__scene.transition.api;let max=0;for(let i=1;i<=120;i++)max=Math.max(max,T.bendOf(i/120)-T.bendOf((i-1)/120));return{max,ends:[T.bendOf(0),T.bendOf(1)],far:[T.farOf('flat'),T.farOf('sphere')]};});
+  out(r.max<.02&&r.ends[0]===0&&r.ends[1]===1&&r.far[0]===400&&r.far[1]===600,'W8e-a C5 2 秒缓动（W10a 地形始终显示，U3 检查）',[JSON.stringify(r)]);
 }
 if(args.includes('--shots')){
  const dir=path.join(root,'docs/world/w8e');fs.mkdirSync(dir,{recursive:true});const ps=await open(1280,800);
  async function save(name){fs.writeFileSync(path.join(dir,name+'.png'),Buffer.from((await shot(ps)).split(',')[1],'base64'));}
- const farm=await ps.evaluate(()=>{const S=window.__scene,W=window.WORLD;S.cover.ensure();const cells=S.cover.data().cells.filter(c=>c.kind==='water'&&c.area>18&&c.group==='farm'&&W.townPatchDistance(c.seed.lon,c.seed.lat)>6&&W.townPatchDistance(c.seed.lon,c.seed.lat)<30),cell=cells[Math.floor(cells.length*.3)],q=W.lonLatToTown(cell.seed.lon,cell.seed.lat);window.__farm=[q.x,1.2,q.z];S.view.set({target:window.__farm,dist:25,yaw:2.5,pitch:.65});window.__step(4);return window.__farm;});console.log('farm target',JSON.stringify(farm));await save('flat-farm-close');
+ const farm=await ps.evaluate(()=>{const S=window.__scene,W=window.WORLD;const cells=S.cover.data().cells.filter(c=>c.kind==='water'&&c.area>18&&c.group==='farm'&&W.townPatchDistance(c.seed.lon,c.seed.lat)>6&&W.townPatchDistance(c.seed.lon,c.seed.lat)<30),cell=cells[Math.floor(cells.length*.3)],q=W.lonLatToTown(cell.seed.lon,cell.seed.lat);window.__farm=[q.x,1.2,q.z];S.view.set({target:window.__farm,dist:25,yaw:2.5,pitch:.65});window.__step(4);return window.__farm;});console.log('farm target',JSON.stringify(farm));await save('flat-farm-close');
  await ps.evaluate(()=>{const S=window.__scene;S.view.set({target:[0,1.2,0],dist:300,yaw:2.5,pitch:.95});S.transition.setMode('sphere');});
  for(let i=1;i<=4;i++){await ps.evaluate(()=>{window.__scene.transition.step(.5);window.__step(1);});await save('town-to-sphere-'+i);}
  await ps.evaluate(()=>{const S=window.__scene;S.transition.step(2);S.view.set({target:window.__farm,dist:25,yaw:2.5,pitch:.65});window.__step(4);});await save('sphere-farm-close');

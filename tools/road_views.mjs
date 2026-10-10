@@ -90,7 +90,7 @@ export const SHOTS = [
 export async function renderShot(page, v, opts = {}) {
   return await page.evaluate(([v, opts]) => {
     const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, B = S.bend, cam = S.camera, SEC = S.section, RD = S.roads;
-    B.set(1); SEC.setMode(true); SEC.ensure(); RD.ensure(); S.landmarks.build(); const OC = S.ocean; if (OC) OC.ensure(); const LC = S.cover; if (LC) LC.ensure();
+    B.set(1); SEC.setMode(true); const OC = S.ocean, LC = S.cover;
     SEC.set({ rain: v.rain !== false, light: v.light || 'rainy', ink: v.ink || 'auto' });
     const fog0 = S.scene.fog.density, DATA = RD.data();
     const flat = (lon, lat) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];

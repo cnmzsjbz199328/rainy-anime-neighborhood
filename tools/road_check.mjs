@@ -447,9 +447,10 @@ if (!process.argv.includes('--no-browser')) {
   const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, visible: !!(S.roads.state.root && S.roads.state.root.visible) }; });
   {
     const info = [], fails = [];
-    if (def.visible) fails.push('默认画面里道路可见');     // (W8g-a/b: the roads may already be built in the background, hidden)
-    if (def.calls > 2373 * 1.03) fails.push(`默认视角绘制调用 ${def.calls} 超过 W4 基线 2373 的 +3%`);
-    info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，道路未构建（W4 基线 2373 / 239,958，预算 ≤ +3%）`);
+    // W10a (W10_SPEC 2.4, 6): the network is built before the first frame and shows in every view; the default view's budget is pre-w10a 2,374 + 10 %
+    if (!def.visible) fails.push('默认画面里没有道路（W10a：首帧前生成、所有视图显示）');
+    if (def.calls > 2611) fails.push(`默认视角绘制调用 ${def.calls} 超过 W10 预算 2611`);
+    info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，世界已完整构建（W10 预算 ≤2611）`);
     const shots = Object.fromEntries(SHOTS);
     for (const [label, name] of [['地面', 'rd01-exit-ground'], ['半空', 'bridge-east-strait-aerial'], ['全景', 'panorama-back-east']]) {
       const v = shots[name], on = await renderShot(page, v), off = await page.evaluate(() => { window.__scene.roads.state.root.visible = false; return true; });
@@ -479,13 +480,13 @@ if (!process.argv.includes('--no-browser')) {
     if (st.band.drawCalls > 20) fails.push('光带绘制调用 > 20');
     if (errors.length) fails.push('页面错误：' + errors.join(' | '));
     results.push({ id: 'W5-C11', ok: !fails.length });
-    console.log(`${fails.length ? 'FAIL' : 'PASS'} W5-C11 预算与页面：默认画面不变、光带 ≤ 20 次绘制、无页面错误（W8f-a 前编号 W5-C10）`);
+    console.log(`${fails.length ? 'FAIL' : 'PASS'} W5-C11 预算与页面：默认画面显示路网且在 W10 预算内、光带 ≤ 20 次绘制、无页面错误（W8f-a 前编号 W5-C10）`);
     for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m);
   }
   {
     const rows = await page.evaluate(async () => {
       const S = window.__scene, W = window.WORLD, L = window.LAYOUT, THREE = window.THREE, R = 90, D = Math.PI / 180;
-      S.bend.set(0); S.transition.setMode('flat'); S.terrain.setExplore(false); S.roads.ensure();
+      S.bend.set(0); S.transition.setMode('flat');
       const flat = (lon, lat) => [R * lon * D, (W.height(lon, lat) - 1.6 + 0.02) / Math.cos(lat * D), -R * Math.asinh(Math.tan(lat * D))];
       const pathFromExit = node => { const edge = W.roadNetwork.edges.find(e => e.from === node.id || e.to === node.id), length = W.roadNetwork.edgeLength(edge); let samples = W.roadNetwork.samplePath(edge, 0.5); if (edge.to === node.id) samples = samples.slice().reverse().map(p => ({ ...p, s: length - p.s })); return { edge, samples }; };
       const point = (samples, s, o) => {
@@ -499,7 +500,10 @@ if (!process.argv.includes('--no-browser')) {
       for (const node of W.roadNetwork.nodes.filter(n => n.kind === 'town-exit')) {
         const { samples } = pathFromExit(node);
         const center = flat(node.lon, node.lat); S.view.set({ mode: 'free', mapMode: 'flat', target: [center[0], 0, center[2]], yaw: 0, pitch: 1.42, dist: 14 });
-        S.terrain.setExplore(false); if (S.roads.state.root) S.roads.state.root.visible = false; window.__step(1); S.renderer.render(S.scene, S.camera);
+        // G6 compares the head's surface with the town's. Since W10a the network and the landmarks show in every view: the network's lamp pools (additive
+        // light, W8c) lie over some heads and LM09's platform over N11's (W10d), so both are hidden for the measurement, as they were before W10a
+        const hide = [S.roads.state.root, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])].filter(Boolean);
+        hide.forEach(g => { g.visible = false; }); window.__step(1); S.renderer.render(S.scene, S.camera); hide.forEach(g => { g.visible = true; });
         canvas.width = S.renderer.domElement.width; canvas.height = S.renderer.domElement.height; ctx.drawImage(S.renderer.domElement, 0, 0);
         const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
         const pixelMean = points => { let sum = 0, count = 0; for (const p of points) { const v = new THREE.Vector3(...p).project(S.camera), x = Math.round((v.x * 0.5 + 0.5) * canvas.width), y = Math.round((-v.y * 0.5 + 0.5) * canvas.height); if (x < 1 || y < 1 || x >= canvas.width - 1 || y >= canvas.height - 1 || v.z < -1 || v.z > 1) continue; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const k = ((y + dy) * canvas.width + x + dx) * 4; sum += 0.2126 * pixels[k] + 0.7152 * pixels[k + 1] + 0.0722 * pixels[k + 2]; count++; } } return { mean: count ? sum / count : 0, count }; };

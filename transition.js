@@ -11,9 +11,6 @@ const TR = {
   smoothstep: sm,
   bendOf: phase => sm(0, 1, phase),
   patchDistance: (x, z, half) => Math.hypot(Math.max(0, Math.abs(x)-half), Math.max(0, Math.abs(z)-half)),
-  visibilityOf: (d, away) => Math.max(sm(60, 150, d), sm(0, 24, away)),
-  terrainOf: d => sm(60, 150, d),
-  capsOf: u => sm(0.98, 1, u),
   fogOf: u => 1 - u,
   // camera far plane: the old 400 m while the view is the old one, 600 m for the planet (the far side of the sphere is behind the horizon, the target is up to 400 m away)
   farOf: mode => mode === 'sphere' ? 600 : 400,

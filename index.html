@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>雨音街角 · 手绘雨夜社区</title><meta name="description" content="可以旋转与缩放的手绘雨夜社区微缩模型"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#252e43}canvas{display:block;cursor:grab}canvas:active{cursor:grabbing}</style></head><body><script>
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>雨音街角 · 手绘雨夜社区</title><meta name="description" content="可以旋转与缩放的手绘雨夜社区微缩模型"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#252e43}canvas{display:block;cursor:grab}canvas:active{cursor:grabbing}#loading{position:fixed;inset:0;z-index:100;background:#252e43;color:#e6dfce;display:grid;place-content:center;text-align:center;font:16px sans-serif}#loading progress{width:240px;accent-color:#9baea1}</style></head><body><div id="loading" role="status" aria-live="polite"><p>正在准备雨音街角</p><progress max="1" value="0" aria-label="世界加载进度"></progress></div><script>
 console.warn('Scripts "build/three.js" and "build/three.min.js" are deprecated with r150+, and will be removed with r160. Please use ES Modules or alternatives: https://threejs.org/docs/index.html#manual/en/introduction/Installation'),
 /**
  * @license
@@ -193,7 +193,19 @@ function testWrapped(fr, s, bent) {
   for (const k of a === b ? [a] : [a, b]) { tmpSphere2.copy(s); tmpSphere2.center.x += k; if (bent) bendSphere(tmpSphere2); if (fr.intersectsSphere(tmpSphere2)) return true; }
   return false;
 }
+const worldBox = new THREE.Box3(), shiftedBox = new THREE.Box3();
 FR.intersectsObject = function (object) {
+  // W10a: the flat map draws the whole world, so on it a plain mesh or line set is tested by its world box as well as its sphere: a road, coast or field
+  // strip many times longer than wide no longer draws whenever its sphere grazes the view. Each end at its own wrap shift, as testWrapped; noWrap ones unshifted.
+  if (uniform.value === 0 && !object.isInstancedMesh && object.geometry && !noBend(object)) {
+    const fixed = noWrap(object);
+    if (fixed ? !origObject.call(this, object) : !testWrapped(this, worldSphere(object, tmpSphere), false)) return false;
+    const g = object.geometry; if (!g.boundingBox) g.computeBoundingBox();
+    worldBox.copy(g.boundingBox).applyMatrix4(object.matrixWorld);
+    const a = fixed ? 0 : shiftOf(worldBox.min.x), b = fixed ? 0 : shiftOf(worldBox.max.x);
+    for (const k of a === b ? [a] : [a, b]) { shiftedBox.copy(worldBox); shiftedBox.min.x += k; shiftedBox.max.x += k; if (this.intersectsBox(shiftedBox)) return true; }
+    return false;
+  }
   if (!object.geometry || noBend(object)) return origObject.call(this, object);
   if (uniform.value > 0 && cullMode === 'bound') return noWrap(object) ? this.intersectsSphere(bendSphere(worldSphere(object, tmpSphere))) : testWrapped(this, worldSphere(object, tmpSphere), true);
   if (uniform.value === 0 && wrapU.value.x > 0 && !noWrap(object)) {
@@ -2560,7 +2572,7 @@ function stripNormals(THREE, pos, index, m, n0, n1) { const g = new THREE.Buffer
 // slabs, normals over those cells alone, and texW = 1: the head material (headMaterial) applies the asphalt grain only there. Each exit keeps only its rows 0 .. K.
 // W8g-b (ruling 6): an end cap at row K, a wall from the road's last row to the terrain under it (H, the sampler), facing back into the town, capW = 1: where the
 // road ends in the town view (the terrain resumes beyond), its ditch or its raised bed would leave an open slit; the material folds the cap away (uCap = 0) while the
-// network road continues from row K (explore, sphere, section view), so the head and the road beyond still meet with the same vertices.
+// network road continues from row K (W10a: in every view, so the cap stays folded until W10c removes heads and caps), so the head and the road beyond meet with the same vertices.
 function headGeometry(THREE, heads, colours, H, terrainColour) {
   const out = [], R = 90, D = Math.PI / 180;
   for (const hd of heads) {
@@ -2612,14 +2624,13 @@ function headMaterial(THREE, makeMaterial, map, capU) {
 }
 TERRAIN.cellsIn = cellsIn; TERRAIN.stripNormals = stripNormals;
 
-// opts.exitHeads(sampler, builder) -> the exit heads (roads.js exitHeads): W8g-b, the town view's exit roads and the ring's cut are made from them at start-up
+// opts.exitHeads(sampler, builder) -> the exit heads (roads.js exitHeads): W8g-b, the first metres of the exit roads and the ring's cut are made from them at start-up (W10c replaces them)
 TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts = {}) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, restMat, headMat, root; const capU = { value: new THREE.Vector2(1, 1) };     // the exit heads' end caps shown (1) while the road beyond is not: x the network's exits, y N08 (the W4 section)
+  let material, capMat, headMat, root; const capU = { value: new THREE.Vector2(0, 0) };     // the exit heads' end caps (x the network's exits, y N08): W10a, the road beyond always shows, so they stay folded (0) until W10c removes the heads
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
-    restMat = material.clone();                                    // own material so the land around the town can fade in (W8a) without touching the ring's
     // W8g-b: the exit heads: the first 6 m in the town's own asphalt colour and grain (N11-N13: the paving colour of 12.4 G6 on the same grain), the rest as the
     // network's road strips (toon, vertex colours, polygon offset -2 / -2 as section.js groundMat), one material for all (headMaterial)
     headMat = headMaterial(THREE, makeMaterial, townAsphaltMaterial ? townAsphaltMaterial.map : null, capU);
@@ -2658,7 +2669,6 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
   const ringData = exitPolygons.length ? B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitPolygons }) : flatRingData;
   state.exitHeads = heads; state.stats.exitClearancePolygons = exitPolygons.length;
   state.headCaps = () => capU.value.toArray();
-  state.setHeadCaps = (which, on) => { if (which === 'section') capU.value.y = on ? 1 : 0; else capU.value.x = on ? 1 : 0; };   // roads.js / section.js: off while their road continues
   withPrivateRandom(() => {
     for (const c of ringData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
     const townColour = { asphalt: new THREE.Color(townAsphaltMaterial ? townAsphaltMaterial.color : '#46505b').toArray(), paving: new THREE.Color('#8f8a7c').toArray() };
@@ -2673,7 +2683,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
     for (let cy = 0; cy < 12; cy++) { restData.push(...restRow(cy)); yield; }
     const capData = [true, false].map(north => B.buildCap(north));
     state.restData = restData;
-    for (const c of restData) if (c.restIndex) { const m = add(geom(c, c.restIndex), restMat, 'rest', state.rest, { cx: c.cx, cy: c.cy }); m.visible = BEND.get() > 0 || state.fade.rest > 0; }
+    for (const c of restData) if (c.restIndex) add(geom(c, c.restIndex), material, 'rest', state.rest, { cx: c.cx, cy: c.cy });     // W10a: the ring and the rest share one material and one display rule
     capData.forEach((c, k) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(c.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(c.nrm, 3)); g.setAttribute('color', new THREE.BufferAttribute(c.col, 3)); g.setIndex(new THREE.BufferAttribute(c.index, 1));
@@ -2683,31 +2693,18 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
     state.restBuilt = true;
     state.stats.restBuildMs = restJob.stats.reduce((a, b) => a + b, 0);
   });
-  function buildRest() { if (!state.restBuilt) restJob.finish(); }
-  // opacity of a material that is opaque at 1 (the opaque pass and its sorting stay exactly as before while the fade is complete)
-  const setOpacity = (m, o) => { const t = o < 1; if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; } m.opacity = o; };
-  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  const exploreListeners = [];
-  state.explore = false;
-  state.onExplore = fn => exploreListeners.push(fn);
-  state.setExplore = on => { if (on === state.explore) return; state.explore = on; for (const fn of exploreListeners) fn(); };
-  state.fade = { rest: 0 };                                          // W8a: 0..1 visibility of the land around the town while the town is still flat (uBend = 0)
-  function apply() {
-    const u = BEND.get(), restOn = u > 0 || state.fade.rest > 0;          // (W8g-b: the ring and the exit heads are the same in every view)
-    if (restOn) buildRest();
-    for (const m of state.rest) m.visible = restOn;
-    if (state.restBuilt) setOpacity(restMat, u > 0 ? 1 : state.fade.rest);
-    const cf = smooth(0.98, 1, u);
-    for (const m of state.caps) m.visible = cf > 0;
-    if (state.restBuilt) setOpacity(capMat, cf);
+  // the polar caps (sphere coordinates, noBend) blend in over the last 2 % of the bend: part of the projection, not a view rule; opaque at 1, so the opaque
+  // pass and its sorting stay as they are once the sphere is complete (a flip between opaque and transparent needs a new program: needsUpdate)
+  function applyCaps() {
+    const u = BEND.get(), t = Math.max(0, Math.min(1, (u - 0.98) / 0.02)), o = t * t * (3 - 2 * t);
+    for (const m of state.caps) m.visible = t > 0;
+    if (capMat.transparent !== (o < 1)) { capMat.transparent = o < 1; capMat.needsUpdate = true; } capMat.opacity = o;
   }
-  BEND.onChange(apply);
+  BEND.onChange(applyCaps);
   state.ringData = ringData;
   state.restJob = restJob;
-  state.samplerJob = TERRAIN.job(function* () { buildRest(); state.sampler(); });
-  state.setFade = f => { f = Math.max(0, Math.min(1, f)); if (f !== state.fade.rest) { state.fade.rest = f; apply(); } return f; };
-  state.apply = apply; state.buildRest = buildRest; state.root = root; state.builder = B;   // (B keeps its vertex cache: roads.js colours its verges with it)
-  state.fadeMaterials = [restMat, capMat];                           // W8g-a: they switch between opaque and transparent (setOpacity): two shader programs each
+  state.samplerJob = TERRAIN.job(function* () { state.sampler(); });   // after restJob (worldgen.js deps): the global sampler index over the ring and the rest
+  state.root = root; state.builder = B;   // (B keeps its vertex cache: roads.js colours its verges with it)
   state.stats.triangles = () => [...state.ring, ...state.heads, ...state.rest, ...state.caps].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   return state;
 };
@@ -3970,8 +3967,8 @@ else global.WATER = WATER;
 // W4 sample section (ST03): town edge -> paddies -> fallow fields -> forest edge -> forest -> grass -> coast -> shallow sea, built from
 // world.js through section_plan.js, with the road kit (roadkit.js), the object kit (flora.js) and the water shader (water.js).
 // All geometry is stored in flat Mercator coordinates and rolled onto the sphere by bend.js (see docs/world/W3_SPEC.md section 2): every
-// instance is scaled by 1/cos(lat) so that bend.js shrinks it back to its true size. The section is built lazily the first time it is
-// shown (uBend > 0 or the 'section' view mode), so the default town costs nothing. Test hooks: window.__scene.section.
+// instance is scaled by 1/cos(lat) so that bend.js shrinks it back to its true size. The section is built at start-up (worldgen.js,
+// W10a) and shown in every view. Test hooks: window.__scene.section.
 (function (global) {
 'use strict';
 const R = 90, D = Math.PI / 180, BASE = 1.6;
@@ -4006,7 +4003,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
     // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
-    TERR.buildRest(); H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
+    H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
     yield;
     const inkColor = 0x273647;
@@ -4185,10 +4182,10 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   }
   const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
 
-  // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
+  // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), a start-up step of their own (cut along the seam like everything else)
   function buildGlobalInk() {
     if (S.globalInk) return; S.globalInk = true;
-    const t0 = Date.now(), root = new THREE.Group(), step = 1; root.name = 'globalInk'; S.root.add(root); S.globalInkGroup = root;   // own group: shown only while uBend >= 0.5, so the picture never depends on whether it was built earlier (W8a)
+    const t0 = Date.now(), root = new THREE.Group(), step = 1; root.name = 'globalInk'; S.root.add(root); S.globalInkGroup = root;   // own group; its lines show by the camera's altitude (ink.panorama in tick())
     const nx = 360 / step, ny = 170 / step;
     const sample = (fn) => { const g = new Float32Array((nx + 1) * (ny + 1)); for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) g[j * (nx + 1) + i] = fn(-180 + i * step, -85 + j * step); return g; };
     const contour = (grid, level, altOff) => {
@@ -4211,21 +4208,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     S.stats.globalInkMs = Date.now() - t0;
   }
 
-  // ---------------------------------------------------------------- visibility, hooks, per-frame update
+  // ---------------------------------------------------------------- hooks, per-frame update
   const lerp3 = (v, a, b) => a + (b - a) * v;
-  function ensure() { if (!S.built) job.finish(); return S.root; }
-  // the panorama outlines as their own job: their own private stream, as their own withPrivateRandom call had; still built on the first sphere view (W8g-a)
-  const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); });
-  function visibility() {
-    const show = BEND.get() > 0 || TERR.explore || S.mode;
-    if (show) ensure();
-    if (S.root) S.root.visible = show;
-    if (TERR.setHeadCaps) TERR.setHeadCaps('section', !(show && S.built));   // W8g-b: N08's end cap, while the T03 chain does not continue it
-    if (show && BEND.get() >= 0.5 && S.built) inkJob.finish();
-    if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
-  }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
+  // the panorama outlines as their own job (their own private stream, as before); W10a: built at start-up and cut along the -85 deg seam like every other
+  // layer, so the flat map may show them too (by the camera's altitude, as on the sphere)
+  const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); BEND.seamSplit(S.globalInkGroup); });
 
   // ink layer by the camera's altitude above the surface (not by the distance to the section: a person standing in it is 'ground' everywhere)
   function distance(camera) {
@@ -4284,9 +4271,9 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   }
 
   const api = {
-    ensure, tick, state: S, visibility,
+    tick, state: S,
     jobs: { build: job, ink: inkJob },                     // W8g-a: worldgen.js steps them ahead of time
-    setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; visibility(); },
+    setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; },
     set(v) {
       if (v.rain !== undefined) { S.settings.rain = !!v.rain; if (ctx.rainObj) ctx.rainObj.visible = S.settings.rain; }
       if (v.light) { S.settings.light = v.light; applyLight(); }
@@ -4313,7 +4300,7 @@ else global.SECTION = SECTION;
 // Planet road network, batch W5a (W5_SPEC): RD01 trunk road with its town-exit transitions, RD02 bridges (bridge.js), the RD01 tunnel portals, the exits
 // of the other classes (RD03 N04/N09/N10, RD05 N11-N13), street furniture of RD01/RD02 and the night light band (lightband.js).
 // Pure part: plan(W, H) builds all data from world.js and a ground height function (no THREE, no DOM; tools/road_check.mjs runs it under Node).
-// Scene part: attach(...) makes the meshes the first time the planet is shown (uBend > 0 or the 'section' view mode), so the default town costs nothing.
+// Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a); the network shows in every view.
 // Geometry is stored in flat Mercator coordinates and rolled onto the sphere by bend.js (docs/world/W3_SPEC.md section 2); instances are scaled by
 // 1/cos(lat) so that bend.js shrinks them back to their true size. Test hooks: window.__scene.roads.
 (function (global) {
@@ -4666,7 +4653,7 @@ function routeOpts(def, ctx, tc) {
 // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
 const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
 
-// ---- W8g-b (W8_SPEC 13.2 B1): the exit heads. The town view shows the first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
+// ---- W8g-b (W8_SPEC 13.2 B1): the exit heads (W10c replaces them). The first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
 // edge)), made at start-up from the same route() call as the network's: a route no longer than L + HEAD_MARGIN is made whole (abutment, ramp and taper of its
 // far end included); a longer one is cut there (route option `until`; its abutment only keeps its columns, gridAbut). The network road later takes the head's
 // rows 0 .. K + 1 (K: the head's last row) as its own (applyHead), so the two meet with the same vertices; normals at the seam come from the same triangles on
@@ -4774,8 +4761,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
 
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
-    SEC.ensure();
-    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
     // W8g-b: the exit routes take the rows of the heads made at start-up (terrain.js cut the ring under them then); the network draws them from the head's last row
     const TB = TERR.builder || global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertexColor(lo, la), TERR.exitHeads); S.data = DATA;
     const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
@@ -4912,17 +4898,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     }
   }
 
-  // ---------------------------------------------------------------- visibility, per-frame update, hooks
-  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
-  function visibility() {
-    const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
-    if (show) ensure();
-    if (S.root) S.root.visible = show;
-    if (TERR.setHeadCaps) TERR.setHeadCaps('roads', !(show && S.built));     // W8g-b: the heads' end caps, while this road does not continue them
-  }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
-
+  // ---------------------------------------------------------------- per-frame update, hooks
   function tick(t, camera) {
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
@@ -4946,9 +4922,9 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
 
   const api = {
-    ensure, tick, state: S, visibility, job,                 // W8g-a: worldgen.js steps the job ahead of time
+    tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
-    setLightBand(v) { ensure(); S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
+    setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
     data: () => DATA, objects: objs,
   };
@@ -4964,7 +4940,7 @@ else global.ROADS = ROADS;
 // BI01 ocean and TR02 coast over the whole planet (W6a). Pure part: build(W, chunks, H, roads) makes, from the terrain lattice that W3 built, the water surface
 // (every triangle with a vertex below sea level, at sea level, with a signed water depth per vertex so that the foam line lands exactly on the coast), the coast line
 // (the sea-level contour of the terrain triangles), rocks on rocky shores and in the shallows, driftwood on beaches, seaweed shadows, and sea walls with tetrapods
-// beside the places where a road reaches the shore. Scene part: attach(...) makes the meshes the first time the planet is shown (uBend > 0 or the 'section' view).
+// beside the places where a road reaches the shore. Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a).
 // Geometry is stored in flat Mercator coordinates (docs/world/W3_SPEC.md section 2) and rolled onto the sphere by bend.js; instances are scaled by 1/cos(lat).
 (function (global) {
 'use strict';
@@ -5113,9 +5089,8 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   let DATA = null;
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    SEC.ensure();
-    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
-    const RD = global.ROADS_API && global.ROADS_API.ensure && (global.ROADS_API.ensure(), global.ROADS_API.data());
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
+    const RD = global.ROADS_API && global.ROADS_API.data();
     const centre = []; if (RD) { for (const r of RD.routes) for (const p of r.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const b of RD.bridges) for (const p of b.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const s of RD.stairs) for (const p of s.samples) centre.push({ lon: p.lon, lat: p.lat }); }
     DATA = build(W, [...TERR.ringData, ...TERR.restData], H, { centre: centre.filter((_, i) => i % 2 === 0), clear: 8 }); S.data = DATA;
     yield;
@@ -5138,21 +5113,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     }
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the water is cut along the seam
     S.stats = { ...DATA.stats, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
+    // the section's own corridor sea and its corridor coast line give way to the global water (one layer, one line)
+    for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = false;
+    for (const l of SEC.objects.lines.coast) l.userData.hidden = true;
     root.visible = true; S.built = true; return root;
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
-
-  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
-  function visibility() {
-    const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
-    if (show) ensure();
-    if (S.root) S.root.visible = show;
-    // the section's own corridor sea and its corridor coast line give way to the global water (one layer, one line)
-    if (S.built && show) { for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = false; for (const l of SEC.objects.lines.coast) l.userData.hidden = true; }
-    else if (S.built) for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = true;
-  }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
 
   function tick(t, camera) {
     uniforms.uTime.value = t; uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get());     // W8e-c: no ripples in the clear daytime of the sphere
@@ -5163,7 +5129,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const m of objs.inst) m.visible = near; for (const h of objs.hulls) h.visible = near && g > 0.01;
   }
 
-  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
+  const api = { tick, state: S, job, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
   global.OCEAN_API = api;
   return api;
 };
@@ -5177,7 +5143,7 @@ else global.OCEAN = OCEAN;
 // Batch W6b (this file): BI05 paddies and dry fields, TR04 fallow fields, BI06 terraces with tea rows, TR01 town edges (fences along the patch edge), with the instanced
 // small things of the fields (seedlings, racks, scarecrows, sheds, weeds). The same machinery (global instance table, 16 m tiles, loading around the camera) is used by
 // the later rows (forest, grassland, desert, highland).
-// Pure part: build(W, H, avoid) returns the data (no THREE, no DOM). Scene part: attach(...) makes the meshes the first time the planet is shown.
+// Pure part: build(W, H, avoid) returns the data (no THREE, no DOM). Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a).
 // Geometry is stored in flat Mercator coordinates (docs/world/W3_SPEC.md section 2) and rolled onto the sphere by bend.js; instances are scaled by 1/cos(lat).
 (function (global) {
 'use strict';
@@ -5746,7 +5712,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
         if(reg.kind==='forest'){const shade=Math.min(1,.9*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
         neo.setXYZ(i,...color);
-      }baked.push({g,old,neo});
+      }g.setAttribute('color',neo);baked.push({g,neo});     // W10a: the one colour of the floor in every view
       if(baked.length%60===0)yield;
     }
     yield;
@@ -5827,9 +5793,8 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    SEC.ensure();
-    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);   // (asking for the global sampler used to build the rest here; the order is kept)
-    const RD = global.ROADS_API && (global.ROADS_API.ensure(), global.ROADS_API.data()); const avoid = [];
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);
+    const RD = global.ROADS_API && global.ROADS_API.data(); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     // W8g-b (B4): a road keeps plants beyond its whole cross-section (the footprint of roads.js: paved + shoulder + ditch, per sample), plus the same 0.8 m as before
     const addFoot = rt => rt.samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: Math.max(Math.abs(rt.footprint[i][2]), Math.abs(rt.footprint[i][3])) + 0.8 }); });
@@ -5867,20 +5832,15 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     S.root.visible = true; S.built = true; return S.root;
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
-  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
-  function visibility() { const show = BEND.get() > 0 || TERR.explore || SEC.state.mode; if (show) ensure(); if (S.root) S.root.visible = show; }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
   function tick(t, camera) {
     TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
-    for(const b of baked){const desired=(BEND.get()>0||TERR.explore)?b.neo:b.old;if(b.g.attributes.color!==desired)b.g.setAttribute('color',desired);}
     if (!S.built || !S.root.visible) return;
     select(camera, false);
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01 && h.count > 0; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
     { const LM = objs.lodMaterials, M = SEC.state.materials; if (LM) { LM.hull.opacity = M.hullMat.opacity; LM.treeHull.opacity = M.treeHullMat.opacity; } }     // the copies follow the section's ink weight
   }
-  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, objects: objs, reload: camera => select(camera, true), lod: LOD, groups: () => canopyGroups, lodTable: () => LT, stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
+  const api = { tick, state: S, job, data: () => DATA, objects: objs, reload: camera => select(camera, true), lod: LOD, groups: () => canopyGroups, lodTable: () => LT, stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
   global.LANDCOVER_API = api;
   return api;
 };
@@ -5903,9 +5863,6 @@ const TR = {
   smoothstep: sm,
   bendOf: phase => sm(0, 1, phase),
   patchDistance: (x, z, half) => Math.hypot(Math.max(0, Math.abs(x)-half), Math.max(0, Math.abs(z)-half)),
-  visibilityOf: (d, away) => Math.max(sm(60, 150, d), sm(0, 24, away)),
-  terrainOf: d => sm(60, 150, d),
-  capsOf: u => sm(0.98, 1, u),
   fogOf: u => 1 - u,
   // camera far plane: the old 400 m while the view is the old one, 600 m for the planet (the far side of the sphere is behind the horizon, the target is up to 400 m away)
   farOf: mode => mode === 'sphere' ? 600 : 400,
@@ -6298,75 +6255,43 @@ global.DAYLIGHT = { attach, DAY, sunDir, frameAt };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
-// W8g-a (W8_SPEC 13.1 A4, D14): one scheduler for everything the planet builds after the town. The deferred modules hand over their stepped builds
-// (TERRAIN.job) in their old creation order with explicit dependencies: the land beyond the ring, the sampler index, the W4 section, the road network,
-// the ocean, the land cover, the landmarks; last come the shader programs of all of it. Once the town's first frame has been
-// on screen for a second the scheduler steps them in idle time, in slices of at most 50 ms of steps (one step is meant to stay under 150 ms). Nothing it
-// builds is shown: each module's own visibility rule is applied the moment its build ends, so the picture of the town does not change, and the objects
-// are created in the order the old on-demand builds created them (scene graph order matters for the drawing order of transparent things).
-// Leaving the town before it is done needs nothing here: the modules' ensure() run the rest of their jobs synchronously (stats: 'sync').
-// No THREE, no DOM beyond requestIdleCallback / setTimeout; the GPU step is a callback.
+// W10a (W10_SPEC 2.4): one start-up pipeline. The whole world is built before the first frame, behind the loading screen: the modules hand over their
+// stepped builds (TERRAIN.job) with explicit dependencies (the land beyond the ring, the sampler index, the W4 section and its panorama outlines, the
+// road network, the ocean, the land cover, the landmarks) and run them in that order, one step at a time. Between steps the pipeline yields to the
+// browser (a MessageChannel message: no timer clamping), so the progress bar moves and input stays alive. The first frame is the complete world.
+// No THREE; the DOM only through the progress callback.
 (function (global) {
 'use strict';
-const SLICE_MS = 50, START_DELAY_MS = 1000;
 const WORLDGEN = {};
-// opts.steps: [{ name, deps: [names], job (TERRAIN.job), after () (optional, once the job is done) }] in order; opts.gpu: [() => promise|void, ...] one per step
+// opts.steps: [{ name, deps: [names], label, job (TERRAIN.job) }] in order; opts.progress(fraction, label) for the loading screen
 WORLDGEN.create = function (opts) {
-  const steps = opts.steps.map(s => ({ ...s, deps: s.deps || [], ran: 0, ms: 0, by: null, afterDone: false }));
-  const gpu = { list: opts.gpu || [], next: 0, ms: [], pending: 0, readyAt: null };
-  const S = { firstFrameAt: null, startAt: null, doneAt: null, started: false, done: false, slices: [], longestStep: null, auto: opts.auto !== false };
-  const gate = opts.gate || (() => true);          // W8g-d: auto quality measures the town's first 90 frames; the background work waits for it (explicit tiers: no wait)
-  const now = () => Date.now(), byName = Object.fromEntries(steps.map(s => [s.name, s]));
-  const sum = a => a.reduce((x, y) => x + y, 0);
-  // a job finished outside the scheduler (a module's ensure()): the steps it ran itself are the scheduler's, the rest was synchronous
-  function settle(s) {
-    if (!s.job.done || s.afterDone) return;
-    s.afterDone = true; if (!s.by) s.by = s.ran === s.job.stats.length ? 'idle' : 'sync';
-    s.syncMs = sum(s.job.stats.slice(s.ran));
-    if (s.after) s.after();
-  }
-  const ready = s => s.deps.every(d => byName[d].job.done);
-  function nextStep() { for (const s of steps) { settle(s); if (!s.job.done && ready(s)) return s; } return null; }
-  // the expected length of the next piece of work: the job's previous step (a slice does not start a step that would end past its budget)
-  function estimate() { const s = nextStep(); if (s) return s.job.stats.length ? s.job.stats[s.job.stats.length - 1] : 0; return gpu.ms.length ? gpu.ms[gpu.ms.length - 1] : 0; }
-  // one step of work: a job step, or one GPU root; false when everything is done
-  function work() {
-    const s = nextStep();
-    if (s) {
-      const t = now(); s.job.step(); s.ran++; const ms = now() - t; s.ms += ms;
-      if (!S.longestStep || ms > S.longestStep.ms) S.longestStep = { name: s.name, step: s.ran, ms };
-      settle(s); return true;
+  const steps = opts.steps, byName = Object.fromEntries(steps.map(s => [s.name, s]));
+  const state = { started: false, done: false, startAt: null, doneAt: null, firstFrameAt: null, firstCompleteFrameMs: null };
+  const progress = (f, label) => { if (opts.progress) opts.progress(f, label); };
+  let promise = null;
+  async function run() {
+    const channel = new MessageChannel(); let resume = null;
+    channel.port1.onmessage = () => resume();
+    const yieldUI = () => new Promise(r => { resume = r; channel.port2.postMessage(0); });
+    state.started = true; state.startAt = Date.now();
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      for (const d of s.deps || []) if (!byName[d] || !byName[d].job.done) throw new Error('worldgen: ' + s.name + ' needs ' + d);
+      progress(i / steps.length, s.label || '正在铺设世界'); await yieldUI();
+      while (!s.job.done) { s.job.step(); await yieldUI(); }
     }
-    if (gpu.next < gpu.list.length) {
-      const t = now(), p = gpu.list[gpu.next++](); gpu.ms.push(now() - t);
-      if (p && p.then) { gpu.pending++; p.then(() => { if (--gpu.pending === 0 && gpu.next >= gpu.list.length) gpu.readyAt = now(); }); }
-      else if (gpu.pending === 0 && gpu.next >= gpu.list.length) gpu.readyAt = now();
-      return true;
-    }
-    return false;
+    channel.port1.close(); channel.port2.close();
+    state.done = true; state.doneAt = Date.now(); progress(1, '即将进入雨音街角');
   }
-  const idle = global.requestIdleCallback ? cb => global.requestIdleCallback(cb, { timeout: 120 }) : cb => setTimeout(cb, 0);   // Safari: no requestIdleCallback
-  function slice() {
-    const t0 = now(); let n = 0;
-    while (now() - t0 < SLICE_MS) { if (n && now() - t0 + estimate() > SLICE_MS) break; if (!work()) break; n++; }
-    if (n) S.slices.push(now() - t0);
-    if (nextStep() || gpu.next < gpu.list.length) idle(slice);
-    else { S.done = true; S.doneAt = now(); }
-  }
-  function start() { if (S.started) return; S.started = true; S.startAt = now(); idle(slice); }
   return {
-    state: S,
-    // called by scene.js after every rendered frame: the first one starts the clock
-    frame() { if (S.firstFrameAt === null) { S.firstFrameAt = now(); const go = () => (gate() ? start() : setTimeout(go, 100)); if (S.auto) setTimeout(go, START_DELAY_MS); } },
-    start,
-    // finish everything now (tools); the GPU promises may still be pending
-    finish() { while (work()); for (const s of steps) settle(s); if (!S.done) { S.done = true; S.doneAt = now(); } },
+    state,
+    // the pipeline's promise (one run, however often it is asked for)
+    start() { return promise || (promise = run()); },
+    // called by scene.js after every rendered frame; true for the first one (the complete world: scene.js lifts the loading screen)
+    frame() { if (state.firstFrameAt !== null) return false; state.firstFrameAt = Date.now(); state.firstCompleteFrameMs = performance.now(); return true; },
     stats() {
-      for (const s of steps) settle(s);
-      return { started: S.started, done: S.done, startDelayMs: START_DELAY_MS, sliceBudgetMs: SLICE_MS, startAt: S.startAt, doneAt: S.doneAt, firstFrameAt: S.firstFrameAt,
-        slices: S.slices.length, longestSliceMs: S.slices.length ? Math.max(...S.slices) : 0, longestStep: S.longestStep,
-        steps: steps.map(s => ({ name: s.name, done: s.job.done, by: s.by, steps: s.job.stats.length, ms: sum(s.job.stats), longestMs: s.job.stats.length ? Math.max(...s.job.stats) : 0, syncMs: s.syncMs || 0 })),
-        gpu: { roots: gpu.list.length, compiled: gpu.next, ms: gpu.ms, readyAt: gpu.readyAt } };
+      const sum = a => a.reduce((x, y) => x + y, 0);
+      return { ...state, steps: steps.map(s => ({ name: s.name, done: s.job.done, steps: s.job.stats.length, ms: sum(s.job.stats), longestMs: Math.max(0, ...s.job.stats) })) };
     },
   };
 };
@@ -6376,10 +6301,11 @@ global.WORLDGEN = WORLDGEN;
 </script><script>
 // W8g-d (W8_SPEC 13.4, D14): quality tiers. Two tiers, high and low, and auto. A tier has three parameters only: the density of the land cover's
 // instances (a deterministic thinning by instance hash, no scaling), the pixel thresholds of the near / far display (W8g-c C2)
-// and the detail of the canopy groups. The town's default view shows no land cover, so it is the same in both tiers.
+// and the detail of the canopy groups. (W10a: the town's default view shows the land cover around the town too, so the tiers differ there as well.)
 // Choice: the URL (?quality=high|low|auto) first, then a tier a test tool put in window.__QUALITY before the page ran, else auto.
-// auto: once the page is usable, the frame intervals of the town's default view over 90 frames; a median above 20 ms picks low. While running, it only
-// steps down (never up), and only when the camera has not moved for 5 s and the median of those 5 s is above 25 ms.
+// auto: the frame intervals of the first 90 frames of the default view (W10a: the complete world, the first frame comes after the start-up build); a median
+// above 20 ms picks low. While running, it only steps down (never up), and only when the camera has not moved for 5 s and the median of those 5 s is
+// above 25 ms.
 // No THREE, no DOM beyond location.
 (function (global) {
 'use strict';
@@ -20765,16 +20691,24 @@ function panel(axis,at,t,[u0,u1,y0,y1],holes,c,parent=root){const us=[...new Set
 // exact) and one batch per ink layer: a whole building costs a few dozen draw calls. Objects under a node
 // flagged userData.live (animated drips, steam) are left alone; userData.layer (e.g. 'roof') keeps its own
 // batches, tagged with the layer, so review tools can lift a roof or storey off.
-function bake(g){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert(),buckets=new Map(),done=[],bb=new THREE.Box3();
+// W10a: tint (the landmarks, which have no measured footprints) drops the walking-height split and gives every plain toon colour (opaque, no emissive,
+// offset or shader edit of its own) one batch per texture: the colour moves into the vertex colours of a shared white copy (colour x texel is unchanged).
+const tintMats={};
+const plainToon=m=>m.isMeshToonMaterial&&!m.transparent&&!m.vertexColors&&!m.polygonOffset&&m.emissive.getHex()===0&&!m._bendUserCompile&&!Object.keys(m.userData).length;
+function tintMat(m){const k=['T',m.map&&m.map.uuid,m.gradientMap&&m.gradientMap.uuid,m.side,m.flatShading,m.alphaTest,m.fog,m.depthTest,m.depthWrite].join('|');
+  if(!tintMats[k]){const t=m.clone();t.color.setRGB(1,1,1);t.vertexColors=true;tintMats[k]=t;}return tintMats[k];}
+function bake(g,tint=false){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert(),buckets=new Map(),done=[],bb=new THREE.Box3();
   g.traverse(o=>{if(!(o.isMesh||o.isLineSegments))return;for(let p=o;p&&p!==g;p=p.parent)if(p.userData.live)return;
     let layer='';for(let p=o;p&&p!==g;p=p.parent)if(p.userData.layer){layer=p.userData.layer;break;}
-    const m=o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;bb.setFromObject(o,true);const band=bb.max.y>.3&&bb.min.y<1.8;
-    const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,list:[]});buckets.get(k).list.push(o);done.push(o);});
-  for(const {line,m,layer,list} of buckets.values()){const P=[],N=[],U=[];
+    const tm=tint&&o.isMesh&&plainToon(o.material)?tintMat(o.material):null,m=tm||o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;let band=false;if(!tint){bb.setFromObject(o,true);band=bb.max.y>.3&&bb.min.y<1.8;}
+    const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,tinted:!!tm,list:[]});buckets.get(k).list.push(o);done.push(o);});
+  for(const {line,m,layer,tinted,list} of buckets.values()){const P=[],N=[],U=[],C=[];
     for(const o of list){let q=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();q.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld));
-      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}q.dispose();}
+      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}
+      if(tinted){const c=o.material.color;for(let i=0;i<n;i++)C.push(c.r,c.g,c.b);}q.dispose();}
     const q=new THREE.BufferGeometry();q.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
     if(!line){q.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));q.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));}
+    if(tinted)q.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
     const b=line?new THREE.LineSegments(q,m):new THREE.Mesh(q,m);if(layer)b.userData.layer=layer;g.add(b);}
   for(const o of done)o.removeFromParent();}
 const buildingFx=[];
@@ -20935,7 +20869,7 @@ const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6
 function rainBounds(){const h=rainBox/2,center=roam?roam.position:target;rb=[center.x-h,center.z-h,center.x+h,center.z+h];}
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
-const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);scene.add(rainObj);
+const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
 const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat,rings});
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
@@ -20961,7 +20895,7 @@ for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.re
 function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
 let roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);terrain.setFade(0);scene.fog.density=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
@@ -20973,13 +20907,14 @@ const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.do
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);e.preventDefault();}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',()=>keys.clear());
 function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joystickValue[0],z=(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joystickValue[1],m=Math.hypot(x,z);if(m>1){x/=m;z/=m;}return[x,z];}
 // Planet landmarks (W7): landmarks/<id>.js registers LANDMARKS[id](kit, record) and draws in its own local frame (origin = site anchor, +Z towards the first entrance,
-// +X to the left of +Z, 1 unit = 1 m). They are built the first time the planet is shown (inside the terrain's private random stream, so the town's rain is untouched) and
+// +X to the left of +Z, 1 unit = 1 m). They are built at start-up (worldgen.js; inside the terrain's private random stream, so the town's rain is untouched) and
 // then mapped vertex by vertex into the flat Mercator frame of the terrain (docs/world/W7_SPEC.md section 2): a local point (x, y, z) at distance d and bearing heading + atan2(-x, z)
 // from the anchor is moved to the lon/lat that lies d * R / (R + altitude) along the sphere (the bend lengthens lateral distances at height by (R + altitude) / R, so this keeps
 // every length in true metres, at any latitude), its flat height is (anchor altitude + y - 1.6) / cos(lat), and the normals are turned by the heading. bend.js then rolls it onto the sphere.
 // Animated parts (userData.live) are not baked: they are re-parented into a wrapper at their mapped position with the local scale 1 / cos(lat).
 // W8g-a: a stepped build (TERRAIN.job, one private stream for all of them as before), one step per landmark; between steps the town's own seed and root are back.
-const landmarkGroups=[],landmarkFx=[],landmarkInfo={};let landmarksBuilt=false;
+// W10a: each module group is baked with tint (bake above): one batch per texture for the plain colours, so the landmarks cost 172 draw calls instead of 445.
+const landmarkGroups=[],landmarkFx=[],landmarkInfo={};
 const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
     for(const lm of WO.landmarks){if(lm.id==='TOWN')continue;const build=(globalThis.LANDMARKS||{})[lm.id];if(!build)continue;
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);
@@ -21000,16 +20935,14 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
           const w=new THREE.Group();w.name=name+':live';w.position.set(m[0],m[1],m[2]);w.rotation.y=th;w.scale.set(m[3]*m[4],m[3],m[3]*m[4]);
           // keep the object's own orientation and place it at the wrapper origin
           const q=new THREE.Quaternion();o.getWorldQuaternion(q);const sc=new THREE.Vector3();o.getWorldScale(sc);o.parent.remove(o);o.position.set(0,0,0);o.quaternion.copy(q);o.scale.copy(sc);w.add(o);scene.add(w);return w;});
-        bake(g);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
-        g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=false;wraps.forEach(w=>{w.visible=false;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
+        bake(g,true);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
+        g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=true;wraps.forEach(w=>{w.visible=true;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
       landmarkInfo[lm.id]={groups:own,heading:headDeg,height:h};
       landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});seed=s0;root=scene;yield;}
-    seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;landmarksBuilt=true;});
-function buildLandmarks(){if(!landmarksBuilt)landmarkJob.finish();}
-function landmarksVisible(){const show=BEND.get()>0||terrain.explore||(window.SECTION_API&&window.SECTION_API.state.mode);if(show&&!landmarksBuilt&&Object.keys(globalThis.LANDMARKS||{}).length)buildLandmarks();for(const g of landmarkGroups)g.visible=!!show;return show;}
+    seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;});
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
-  if(TR.auto&&!section.state.mode){terrain.setFade(TRANSITION.visibilityOf(dist,townDistance()));terrain.setExplore(townDistance()>0);scene.fog.density=TR.fog0*TRANSITION.fogOf(BEND.get());}
+  if(TR.auto&&!section.state.mode){scene.fog.density=TR.fog0*TRANSITION.fogOf(BEND.get());}
   const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';if(!available&&section.state.mode)section.setMode(false);
 }
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
@@ -21027,11 +20960,11 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);if(landmarksVisible())for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);worldgen.frame();}requestAnimationFrame(frame);
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));for(const r of rings){let p=(t*.6+r.phase)%1;r.a.scale.setScalar(.02+p*.48);r.a.material.opacity=(1-p)*.24;}{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of phased){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-// W8g-b: the 9 exit heads (the first metres of each exit's own road, roads.js) are made with the terrain at start-up: the town view shows them, the ring is cut under them
+// W8g-b: the 9 exit heads (the first metres of each exit's own road, roads.js) are made with the terrain at start-up and the ring is cut under them (W10c replaces them)
 const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND,matT('#46505b','asphalt'),{exitHeads:(H,B)=>ROADS.exitHeads(WORLD,H,(lo,la)=>B.vertexColor(lo,la))});
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
@@ -21045,19 +20978,24 @@ const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,s
 const quality=QUALITY.create();const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer,quality},BEND,terrain,section);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
-// W8g-a (W8_SPEC 13.1 A4): the planet is generated in the background once the town is on screen (worldgen.js), in the order the on-demand builds used,
-// each module's visibility applied as its build ends; then the shader programs of what was built. Leaving the town early finishes the rest synchronously.
-// The panorama outlines (section.jobs.ink) stay on demand (first sphere view): their lines cross the -85 deg seam uncut, which only the sphere may show.
-// The terrain's fading materials need both programs (three.js defines OPAQUE for an opaque material): each is flipped, compiled and flipped back in the same task.
-const gpuCompile=get=>()=>{const r=get();if(!r)return null;const list=Array.isArray(r)?r:[r];return Promise.all(list.map(o=>renderer.compileAsync(o,camera,scene)));};
-const gpuTerrain=()=>{const ps=[renderer.compileAsync(terrain.root,camera,scene)];for(const m of terrain.fadeMaterials){const t=m.transparent;m.transparent=!t;m.needsUpdate=true;ps.push(renderer.compileAsync(terrain.root,camera,scene));m.transparent=t;m.needsUpdate=true;}return Promise.all(ps);};
-const worldgen=WORLDGEN.create({gate:()=>quality.state.decided,steps:[
-  {name:'rest',job:terrain.restJob},{name:'sampler',deps:['rest'],job:terrain.samplerJob},
-  {name:'section',job:section.jobs.build,after:section.visibility},
-  {name:'roads',deps:['rest','sampler','section'],job:roads.job,after:roads.visibility},{name:'ocean',deps:['roads'],job:ocean.job,after:ocean.visibility},
-  {name:'landcover',deps:['roads'],job:cover.job,after:cover.visibility},{name:'landmarks',deps:['landcover'],job:landmarkJob}],
-  gpu:[gpuTerrain,...[()=>section.state.root,()=>roads.state.root,()=>ocean.state.root,()=>cover.state.root,()=>landmarkGroups].map(gpuCompile)]});
-window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,build:buildLandmarks,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+// W10a (W10_SPEC 2.4): the whole world is built before the first frame (worldgen.js), behind the loading screen of build.py; the canvas stays hidden
+// until the first frame, which is the complete world. No module is built on demand and none is shown or hidden by view.
+renderer.domElement.style.visibility='hidden';
+const loading=document.getElementById('loading');
+const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('progress').value=value;loading.querySelector('p').textContent=label;},steps:[
+  {name:'rest',label:'正在铺设地形',job:terrain.restJob},
+  {name:'sampler',deps:['rest'],job:terrain.samplerJob},
+  {name:'section',deps:['sampler'],label:'正在绘制田野',job:section.jobs.build},
+  {name:'ink',deps:['section'],job:section.jobs.ink},
+  {name:'roads',deps:['section'],label:'正在连接道路',job:roads.job},
+  {name:'ocean',deps:['roads'],label:'正在绘制海岸',job:ocean.job},
+  {name:'landcover',deps:['ocean'],label:'正在种植森林',job:cover.job},
+  {name:'landmarks',deps:['landcover'],label:'正在安放村落',job:landmarkJob}
+]});
+worldgen.start().then(()=>{
+window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+requestAnimationFrame(frame);
+}).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();
 
 </script></body></html>

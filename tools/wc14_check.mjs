@@ -32,7 +32,7 @@ async function open(html, w = 1280, h = 800) {
 const shot = page => page.evaluate(() => { const S = window.__scene; S.renderer.render(S.scene, S.camera); return S.renderer.domElement.toDataURL('image/png'); });
 // the camera straight above (lon, lat), `fromCentre` metres from the planet's centre, the section's panorama light preset and ink (what the W5-W7 tools did by hand); works on builds without landmarks / weather
 const place = (page, lon, lat, fromCentre) => page.evaluate(([lon, lat, dd]) => { const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, cam = S.camera;
-  S.bend.set(1); S.section.setMode(true); S.section.ensure(); S.roads.ensure(); if (S.landmarks) S.landmarks.build(); if (S.ocean) S.ocean.ensure(); if (S.cover) S.cover.ensure();
+  S.bend.set(1); S.section.setMode(true);
   S.section.set({ rain: false, light: 'panorama', ink: 'panorama' }); const cp = Math.cos(lat * D), dir = new T.Vector3(cp * Math.sin(lon * D), cp * Math.cos(lon * D), -Math.sin(lat * D)), north = new T.Vector3(-Math.sin(lat * D) * Math.sin(lon * D), -Math.sin(lat * D) * Math.cos(lon * D), -cp), c = new T.Vector3(0, -R, 0);
   cam.near = 0.1; cam.far = 700; cam.position.copy(c).addScaledVector(dir, dd); cam.up.copy(north); cam.lookAt(c); cam.fov = 36; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); S.scene.fog.density = 0;
   for (let i = 0; i < 2; i++) { S.section.tick(1.2, cam); S.roads.tick(1.2, cam); if (S.ocean) S.ocean.tick(1.2, cam); if (S.cover) S.cover.tick(1.2, cam); } S.section.forceLod(cam); }, [lon, lat, fromCentre]);

@@ -5,13 +5,13 @@
 //     the first surface hit must be a road mesh (the start-up heads, the network's road meshes, the section's T03 / T11 strips). Candidates: every visible opaque
 //     non-instanced mesh with an identity world matrix outside the town's own objects. Also reports, for information, the network road from L to 24 m (ruling 2).
 //   exitSeams(page): the seam between each head and the road beyond it (positions, normals of row K), the step from the road surface to the cut terrain edge, widths.
-export const prepare = page => page.evaluate(() => { const S = window.__scene; if (S.worldgen) S.worldgen.finish(); S.terrain.buildRest(); S.section.ensure(); S.roads.ensure(); S.ocean.ensure(); S.cover.ensure(); S.landmarks.build(); return true; });
+export const prepare = () => Promise.resolve(true);   // W10a: the whole world is built before the first frame (worldgen.js), nothing to finish here
 
 export async function exitRays(page, { beyond = 24 } = {}) {
   await prepare(page);
   return page.evaluate(([beyond]) => {
     const S = window.__scene, T = window.THREE, B = S.bend, out = {};
-    const setState = st => { S.transition.auto = false; if (st === 'sphere') { S.transition.setMode('sphere'); S.transition.step(3); } else { S.transition.setMode('flat'); S.transition.step(3); S.bend.set(0); } S.terrain.setExplore(true); S.terrain.setFade(1); window.__step ? window.__step(2) : 0; };
+    const setState = st => { S.transition.auto = false; if (st === 'sphere') { S.transition.setMode('sphere'); S.transition.step(3); } else { S.transition.setMode('flat'); S.transition.step(3); S.bend.set(0); }  window.__step ? window.__step(2) : 0; };
     // left out: the town's own objects, and the landmarks' (things that stand at a road, like the lamp posts; LM09's entrance lane overlays the road on purpose, W8f-c G2)
     const townSet = new Set(); for (const r of S.town.roots) r.traverse(o => townSet.add(o)); for (const lm of Object.values(S.landmarks.info)) if (lm && lm.groups) for (const g of lm.groups) g.traverse(o => townSet.add(o));
     const shown = o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };

@@ -2,7 +2,7 @@
 // Batch W6b (this file): BI05 paddies and dry fields, TR04 fallow fields, BI06 terraces with tea rows, TR01 town edges (fences along the patch edge), with the instanced
 // small things of the fields (seedlings, racks, scarecrows, sheds, weeds). The same machinery (global instance table, 16 m tiles, loading around the camera) is used by
 // the later rows (forest, grassland, desert, highland).
-// Pure part: build(W, H, avoid) returns the data (no THREE, no DOM). Scene part: attach(...) makes the meshes the first time the planet is shown.
+// Pure part: build(W, H, avoid) returns the data (no THREE, no DOM). Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a).
 // Geometry is stored in flat Mercator coordinates (docs/world/W3_SPEC.md section 2) and rolled onto the sphere by bend.js; instances are scaled by 1/cos(lat).
 (function (global) {
 'use strict';
@@ -571,7 +571,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
         if(reg.kind==='forest'){const shade=Math.min(1,.9*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
         neo.setXYZ(i,...color);
-      }baked.push({g,old,neo});
+      }g.setAttribute('color',neo);baked.push({g,neo});     // W10a: the one colour of the floor in every view
       if(baked.length%60===0)yield;
     }
     yield;
@@ -652,9 +652,8 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    SEC.ensure();
-    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);   // (asking for the global sampler used to build the rest here; the order is kept)
-    const RD = global.ROADS_API && (global.ROADS_API.ensure(), global.ROADS_API.data()); const avoid = [];
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);
+    const RD = global.ROADS_API && global.ROADS_API.data(); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     // W8g-b (B4): a road keeps plants beyond its whole cross-section (the footprint of roads.js: paved + shoulder + ditch, per sample), plus the same 0.8 m as before
     const addFoot = rt => rt.samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: Math.max(Math.abs(rt.footprint[i][2]), Math.abs(rt.footprint[i][3])) + 0.8 }); });
@@ -692,20 +691,15 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     S.root.visible = true; S.built = true; return S.root;
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
-  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
-  function visibility() { const show = BEND.get() > 0 || TERR.explore || SEC.state.mode; if (show) ensure(); if (S.root) S.root.visible = show; }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
   function tick(t, camera) {
     TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
-    for(const b of baked){const desired=(BEND.get()>0||TERR.explore)?b.neo:b.old;if(b.g.attributes.color!==desired)b.g.setAttribute('color',desired);}
     if (!S.built || !S.root.visible) return;
     select(camera, false);
     if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01 && h.count > 0; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
     { const LM = objs.lodMaterials, M = SEC.state.materials; if (LM) { LM.hull.opacity = M.hullMat.opacity; LM.treeHull.opacity = M.treeHullMat.opacity; } }     // the copies follow the section's ink weight
   }
-  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, objects: objs, reload: camera => select(camera, true), lod: LOD, groups: () => canopyGroups, lodTable: () => LT, stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
+  const api = { tick, state: S, job, data: () => DATA, objects: objs, reload: camera => select(camera, true), lod: LOD, groups: () => canopyGroups, lodTable: () => LT, stats: () => ({ ...S.stats, loaded: S.loaded, counts: S.counts }) };
   global.LANDCOVER_API = api;
   return api;
 };
