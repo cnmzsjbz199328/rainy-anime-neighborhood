@@ -186,6 +186,15 @@ try {
   if (tiersArg) { currentQ = 'auto'; const page = await open(); await page.waitForTimeout(500);
     auto = await page.evaluate(() => new Promise(res => { const Q = window.__scene.quality, t0 = performance.now(); if (!Q) return res(null);
       const tick = () => { if (Q.state.decided || performance.now() - t0 > 15000) res({ mode: Q.state.mode, tier: Q.state.tier, decided: Q.state.decided, probeFrames: Q.state.probe.length, probeMedianMs: Q.state.probeMedianMs }); else requestAnimationFrame(tick); }; tick(); }));
+    // the running rule: moving never steps down; a still camera whose 5 s median is above 25 ms does (the sphere at d = 140 on this machine is ~37 ms, see W8g-c L4)
+    if (auto) auto.run = await page.evaluate(() => new Promise(res => { const S = window.__scene, Q = S.quality, q = WORLD.lonLatToTown(-15, -40); S.view.set({ target: [q.x, 1.2, q.z], dist: 140, yaw: 0, pitch: 1.2 }); S.transition.setMode('sphere');
+      const t0 = performance.now(); let n = 0, moving = null;
+      const tick = () => { const t = performance.now() - t0; n++;
+        if (t < 6500) { S.view.set({ yaw: 0.004 * n }); requestAnimationFrame(tick); return; }                     // 6.5 s orbiting (the 2 s transition included)
+        if (moving === null) moving = Q.state.tier;
+        if (t < 13500) { requestAnimationFrame(tick); return; }                                                   // 7 s still
+        res({ tierAfterMoving: moving, tierAfterStill: Q.state.tier, dropped: Q.state.dropped, changes: Q.state.changes }); };
+      requestAnimationFrame(tick); }));
     await page.close(); console.log('auto：' + JSON.stringify(auto)); }
 } finally { cleanup(); }
 if (tiersArg) result = { ...meta, gpu: result.gpu, parallelShaderCompile: result.parallelShaderCompile, chromium: result.chromium, tiers, auto, summary: Object.fromEntries(Object.entries(tiers).map(([k, r]) => [k, r.summary])) };
