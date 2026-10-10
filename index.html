@@ -4076,16 +4076,9 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       if (hd) { const rows = Math.min(hd.K + 2, hd.rt.samples.length, n); for (let k = 0; k < rows * m * 3; k++) { st.pos[k] = hd.rt.strip.pos[k]; st.col[k] = hd.rt.strip.col[k]; } S.chainHead = { K: hd.K, L: hd.L }; }
       stripMesh(hd ? { ...st, index: Uint32Array.from(global.TERRAIN.cellsIn(st.index, m, hd.K, n - 1)) } : st, groundMat); }
     for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
-    // TR01 town edge: gravel shoulder and grass band along the patch's south edge, in the corridor
-    // (W8g-b, B4: cut where it crosses an exit's footprint, the polygons the ring is cut by: there the exit head is the ground)
-    { const pts = []; for (let lon = -9; lon <= 8.001; lon += 0.25) pts.push({ lon, lat: -W.TOWN_PATCH.latMax - 0.02, s: lon });
-      const prof = [[0, 0.03, 'gravelD'], [0.1, 0.05, 'lip'], [0.9, 0.04, 'gravel'], [1.0, 0.03, 'gravelD'], [1.1, 0.0, 'grassD'], [3.2, 0, 'grass'], [3.5, 0, 'grassD']].map(([o, l, c]) => [-o, l, c]);
-      const polys = TERR.builder && TERR.exitHeads ? TERR.builder.exitPolygons(TERR.exitHeads) : [];
-      const inPoly = (x, z) => polys.some(q => { if (x < q.minX || x > q.maxX || z < q.minZ || z > q.maxZ) return false; let c = false; const P = q.polygon; for (let a = 0, b = P.length - 1; a < P.length; b = a++) if ((P[a][1] > z) !== (P[b][1] > z) && x < (P[b][0] - P[a][0]) * (z - P[a][1]) / (P[b][1] - P[a][1]) + P[a][0]) c = !c; return c; });
-      const covered = (p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], br = W.bearing(a, b); return [0, -1, -2, -3.5].some(o => { const q = o ? W.destination(p, br - 90, -o) : p, f = flatOf(q.lon, q.lat); return inPoly(f.x, f.z); }); };
-      let run = [];
-      const flush = () => { if (run.length > 1) stripMesh(global.ROADKIT.sweep(WS, run, prof, 'TR01 edge strip'), groundMat); run = []; };
-      pts.forEach((p, i) => { if (covered(p, i)) flush(); else run.push(p); }); flush(); }
+    // (W10a rework, user review 2026-10-10: the section's own TR01 gravel and grass strip is gone. It was swept 3.5 m inwards from the patch's south
+    // edge, so it lay inside the town (z 44.0-48.0) under the street, 2 cm below the carriageway with polygon offset -2 / -2, and showed through R02 as a
+    // green block whenever the street was seen obliquely, more so from afar. The town edge belongs to W10d: one footprint and its TR01 edge band.)
 
     yield;
     // ---- paddies and fallow fields: Voronoi plots on a fine grid, ridges 0.36 m wide and 0.2 m high

@@ -6,6 +6,7 @@
 //                capacity is added: nothing is generated after the first frame
 //     U3-display in all three states every module root, every landmark group and every terrain chunk is visible (the views differ only by bend, light,
 //                weather and the pixel / altitude rules inside the modules)
+//     U3-town    no world layer lies on the town's own streets, nor within 5 cm under them with a polygon offset (added after the user's N08 review)
 //   U1, U2, U4-U7 belong to W10b-W10g and are reported as not implemented until then.
 // Real GPU (ANGLE Metal, as the timing tools): the checks are structural, the renderer does not change them.
 import fs from 'node:fs';
@@ -56,6 +57,28 @@ try {
   const same = r => JSON.stringify(r.nodes) === JSON.stringify(first.nodes);
   check('U3-stable', rows.every(same), `首帧后 ${Math.round((Date.now() - start) / 1000)} s、${rows.length} 次采样（城镇 / 平面远处 / 球形轮换）：网格与实例容量${rows.every(same) ? '不变' : '有变化：' + rows.filter(r => !same(r)).map(r => r.mode + ' ' + r.nodes.length).join('、')}`);
   check('U3-display', rows.every(r => r.visible && r.terrain), `三种状态下模块根、全景墨线组、地标组与地形分块都可见${rows.every(r => r.visible && r.terrain) ? '' : '（有隐藏：' + rows.filter(r => !(r.visible && r.terrain)).map(r => r.mode).join('、') + '）'}`);
+  // U3-town (W10a rework after the user's review of N08, 2026-10-10): with every module shown in the town view, none may lie on the town's own streets.
+  // On every town carriageway (layout.js roads, every 0.5 m, 9 points across; alleys on a 0.5 m grid) a vertical ray must meet a town surface first, and no
+  // world ground layer with a polygon offset may lie within 5 cm below it (an offset lets a layer that is under the street win when it is seen obliquely).
+  // The exit heads and the town's last 0.25 m are left out: that joint is the heads' by design until W10c replaces them (U1, U2).
+  const town = await page.evaluate(() => {
+    const S = window.__scene, T = window.THREE, L = window.LAYOUT, world = new Set(), heads = new Set(S.terrain.heads);
+    for (const r of [S.section.state.root, S.cover.state.root, S.ocean.state.root, S.roads.state.root, ...S.terrain.ring, ...S.terrain.rest, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])]) r.traverse(o => world.add(o));
+    const patch = new T.Box3(new T.Vector3(-50, -5, -50), new T.Vector3(50, 5, 50)), box = new T.Box3(), meshes = [];
+    S.scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || heads.has(o)) return; for (let q = o; q; q = q.parent) if (!q.visible) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); if (box.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).intersectsBox(patch)) meshes.push(o); });
+    const pts = [];
+    for (const e of L.roads) { const w = L.ROAD_TYPES[e.type].carriageway; for (let i = 0; i + 1 < e.nodes.length; i++) { const a = L.roadNodes.find(n => n.id === e.nodes[i]), b = L.roadNodes.find(n => n.id === e.nodes[i + 1]), len = Math.hypot(b.x - a.x, b.z - a.z), d = [(b.x - a.x) / len, (b.z - a.z) / len];
+      for (let s = 0; s <= len; s += 0.5) for (let k = -4; k <= 4; k++) { const o = k / 4 * (w / 2 - 0.25); pts.push([a.x + d[0] * s - d[1] * o, a.z + d[1] * s + d[0] * o]); } } }
+    for (const a of L.alleys) for (let x = a.rect[0] + 0.25; x < a.rect[2]; x += 0.5) for (let z = a.rect[1] + 0.25; z < a.rect[3]; z += 0.5) pts.push([x, z]);
+    const name = o => { let n = o.name; for (let q = o.parent; !n && q; q = q.parent) n = q.name; return n || o.type; };
+    const rc = new T.Raycaster(), bad = {}; let n = 0, nBad = 0;
+    // (the last 0.25 m before the patch edge is the joint with the exit heads: W10c)
+    for (const [x, z] of pts) { if (Math.abs(x) > 47.75 || Math.abs(z) > 47.75) continue; n++; rc.set(new T.Vector3(x, 30, z), new T.Vector3(0, -1, 0)); const hits = rc.intersectObjects(meshes, false); if (!hits.length) continue;
+      const top = hits[0], wrong = world.has(top.object) ? [top] : hits.slice(1).filter(h => world.has(h.object) && top.point.y - h.point.y < 0.05 && (Array.isArray(h.object.material) ? h.object.material : [h.object.material]).some(m => m.polygonOffset));
+      if (wrong.length) { nBad++; for (const h of wrong) { const k = name(h.object); (bad[k] = bad[k] || { n: 0, at: [] }).n++; if (bad[k].at.length < 3) bad[k].at.push(`(${x.toFixed(1)}, ${z.toFixed(1)})`); } } }
+    return { n, nBad, bad };
+  });
+  check('U3-town', town.nBad === 0, `城镇车行道与巷道 ${town.n} 点，被世界图层盖住或下方 5 cm 内埋着带偏移的世界地面层 ${town.nBad} 点${town.nBad ? '：' + Object.entries(town.bad).map(([k, v]) => `${k} ${v.n}（${v.at.join('、')}）`).join('；') : ''}`);
   check('U3-errors', !errors.length, errors.join('；') || '无页面错误');
   console.log('TODO U1、U2、U4–U7 属于 W10b–W10g，尚未实施（不算通过）');
 } finally { await browser.close(); }
