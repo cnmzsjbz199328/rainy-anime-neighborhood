@@ -14,5 +14,13 @@ export async function launchChromium() {
   }
   const chromium = pw.chromium || pw.default.chromium;
   // SwiftShader keeps WebGL available on machines without a GPU (CI, containers).
-  return chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  // W8g-d (W8_SPEC 13.4 D2): the check tools always name the quality tier (quality.js reads window.__QUALITY when the URL has no ?quality=):
+  // high unless QUALITY=low (or auto) is set in the environment
+  const quality = QUALITY_TIER, put = q => { window.__QUALITY = q; };
+  const newPage = browser.newPage.bind(browser), newContext = browser.newContext.bind(browser);
+  browser.newPage = async (...a) => { const p = await newPage(...a); await p.addInitScript(put, quality); return p; };
+  browser.newContext = async (...a) => { const c = await newContext(...a); await c.addInitScript(put, quality); return c; };
+  return browser;
 }
+export const QUALITY_TIER = ['high', 'low', 'auto'].includes(process.env.QUALITY) ? process.env.QUALITY : 'high';

@@ -15,6 +15,7 @@ WORLDGEN.create = function (opts) {
   const steps = opts.steps.map(s => ({ ...s, deps: s.deps || [], ran: 0, ms: 0, by: null, afterDone: false }));
   const gpu = { list: opts.gpu || [], next: 0, ms: [], pending: 0, readyAt: null };
   const S = { firstFrameAt: null, startAt: null, doneAt: null, started: false, done: false, slices: [], longestStep: null, auto: opts.auto !== false };
+  const gate = opts.gate || (() => true);          // W8g-d: auto quality measures the town's first 90 frames; the background work waits for it (explicit tiers: no wait)
   const now = () => Date.now(), byName = Object.fromEntries(steps.map(s => [s.name, s]));
   const sum = a => a.reduce((x, y) => x + y, 0);
   // a job finished outside the scheduler (a module's ensure()): the steps it ran itself are the scheduler's, the rest was synchronous
@@ -56,7 +57,7 @@ WORLDGEN.create = function (opts) {
   return {
     state: S,
     // called by scene.js after every rendered frame: the first one starts the clock
-    frame() { if (S.firstFrameAt === null) { S.firstFrameAt = now(); if (S.auto) setTimeout(start, START_DELAY_MS); } },
+    frame() { if (S.firstFrameAt === null) { S.firstFrameAt = now(); const go = () => (gate() ? start() : setTimeout(go, 100)); if (S.auto) setTimeout(go, START_DELAY_MS); } },
     start,
     // finish everything now (tools); the GPU promises may still be pending
     finish() { while (work()); for (const s of steps) settle(s); if (!S.done) { S.done = true; S.doneAt = now(); } },
