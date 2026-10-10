@@ -33,7 +33,7 @@ async function open(file, query = '') {
   page.on('console', m => { if (m.type() === 'error' && !/deprecated|GPU stall|ReadPixels/.test(m.text())) errors.push(m.text()); });
   await page.addInitScript(INIT); await page.goto(pathToFileURL(file).href + query, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__scene && window.__scene.view, null, { timeout: 180000 });
-  await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.cover.ensure(); S.section.ensure(); S.roads.ensure(); if (S.ocean) S.ocean.ensure(); S.landmarks.build(); });
+  await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); });
   return page;
 }
 // put the camera at a place (flat or sphere, the transition finished), run the modules' ticks at a fixed time, render once

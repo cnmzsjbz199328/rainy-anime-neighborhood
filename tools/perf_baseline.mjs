@@ -15,6 +15,9 @@
 //   page in auto (the tier it picks on this machine and the frame median it measured). Each view also records the land cover's own draw calls and triangles
 //   (rendered with and without it), the start-up page the JS heap once the background generation is done.
 //   node tools/perf_baseline.mjs --tiers high,low --label w8g-d
+// W10a (W10_SPEC 5, 6): the world is built before the first frame (worldgen.js), so the start-up page records the first complete frame (navigation start ->
+//   the first frame, which is the whole world) and the long tasks before it; --loads <n> measures n fresh pages for the medians. The town's default view
+//   (town-default, rain, camera still) is the first fixed view. The background-generation and cold-exit parts stay for --ref builds before W10a.
 // Output: docs/world/perf/<label>.json (plain text, tracked). The CPU parts compare across machines; the frame figures are this machine only.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -28,9 +31,10 @@ const ref = arg('--ref', null), soft = args.includes('--swiftshader'), tiersArg 
 const label = arg('--label', ref || 'current'), outFile = path.resolve(root, arg('--out', `docs/world/perf/${label}.json`));
 const require = createRequire(import.meta.url), L = require(path.join(root, 'layout.js'));
 const EXITS = ['N01', 'N03', 'N04', 'N08', 'N09', 'N10', 'N11', 'N12', 'N13'].filter(id => !arg('--exits') || arg('--exits').split(',').includes(id));
-const WINDOW_MS = 5000, DRAG_FRAMES = 60, NO_GEN_WAIT_MS = 6000, VIEW_MS = 3000, viewsOnly = args.includes('--views-only');
+const WINDOW_MS = 5000, DRAG_FRAMES = 60, NO_GEN_WAIT_MS = 6000, VIEW_MS = 3000, viewsOnly = args.includes('--views-only'), LOADS = Math.max(1, +arg('--loads', 1));
 const FARM = [-71.8 / 90 * 180 / Math.PI, Math.atan(Math.sinh(12.3 / 90)) * 180 / Math.PI];      // the farmland place of tools/distant_check.mjs
-const VIEWS = [['forest-near-flat', { lon: -15, lat: -40, mode: 'flat', dist: 12, yaw: 0, pitch: 0.45 }], ['farm-flat', { lon: FARM[0], lat: FARM[1], mode: 'flat', dist: 30, yaw: 2.5, pitch: 0.55 }],
+// town-default: the page's own default view (target (-7, 20), d = 34), in the rain and still, as a viewer first sees it; the others orbit slowly in clear weather
+const VIEWS = [['town-default', { lon: -7 / 90 * 180 / Math.PI, lat: -Math.atan(Math.sinh(20 / 90)) * 180 / Math.PI, mode: 'flat', dist: 34, yaw: 2.5, pitch: 0.5, weather: 'rain', still: true }], ['forest-near-flat', { lon: -15, lat: -40, mode: 'flat', dist: 12, yaw: 0, pitch: 0.45 }], ['farm-flat', { lon: FARM[0], lat: FARM[1], mode: 'flat', dist: 30, yaw: 2.5, pitch: 0.55 }],
   ['coast-flat', { lon: -15, lat: -54, mode: 'flat', dist: 30, yaw: 0, pitch: 0.55 }], ['sphere-70', { lon: -15, lat: -40, mode: 'sphere', dist: 70, yaw: 0, pitch: 1.2 }],
   ['sphere-140', { lon: -15, lat: -40, mode: 'sphere', dist: 140, yaw: 0, pitch: 1.2 }], ['sphere-400', { lon: -15, lat: -40, mode: 'sphere', dist: 400, yaw: 0, pitch: 1.2 }]];
 
@@ -55,7 +59,8 @@ const INIT = `(() => {
   const P = window.__perf = { lt: [], frames: [], firstFrame: null, sceneAt: null };
   try { new PerformanceObserver(l => { for (const e of l.getEntries()) P.lt.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
   const raf = window.requestAnimationFrame.bind(window);
-  window.requestAnimationFrame = cb => raf(ts => { cb(ts); const t = performance.now(); P.frames.push(t); if (P.firstFrame === null) P.firstFrame = t; });
+  // only the page's own render loop (scene.js function frame) counts: the tools' own requestAnimationFrame ticks would add a second, near-zero interval per frame
+  window.requestAnimationFrame = cb => raf(ts => { cb(ts); if (cb.name !== 'frame') return; const t = performance.now(); P.frames.push(t); if (P.firstFrame === null) P.firstFrame = t; });
   let sc; Object.defineProperty(window, '__scene', { configurable: true, get() { return sc; }, set(v) { sc = v; P.sceneAt = performance.now(); } });
 })();`;
 
@@ -77,7 +82,7 @@ async function waitGen(page) {
   return page.evaluate(([noGenWait]) => new Promise(res => {
     const S = window.__scene, G = S.worldgen, t0 = performance.now(), v0 = S.view.get(); let n = 0;
     const tick = () => { n++; S.view.set({ yaw: v0.yaw + 0.002 * n }); const t = performance.now() - t0;
-      if ((G && G.state.done && G.stats().gpu.readyAt) || (!G && t > noGenWait) || t > 60000) { S.view.set({ yaw: v0.yaw }); res({ waitedMs: Math.round(t), done: G ? G.state.done : null }); } else requestAnimationFrame(tick); };
+      if ((G && G.state.done && (!G.stats().gpu || G.stats().gpu.readyAt)) || (!G && t > noGenWait) || t > 60000) { S.view.set({ yaw: v0.yaw }); res({ waitedMs: Math.round(t), done: G ? G.state.done : null }); } else requestAnimationFrame(tick); };
     requestAnimationFrame(tick); }), [NO_GEN_WAIT_MS]);
 }
 // move the target frame by frame from where it is to `to` (DRAG_FRAMES frames), then keep rendering; returns the longest task and the largest frame gap in WINDOW_MS
@@ -106,12 +111,12 @@ const exitTarget = id => { const n = L.roadNodes.find(q => q.id === id), h = L.B
 // one fixed view: set it, wait 3.5 s (the 2 s transition and the selection settle), then orbit for VIEW_MS and keep the frame intervals
 async function viewPerf(page, v) {
   return page.evaluate(([v, ms]) => new Promise(res => {
-    const S = window.__scene, P = window.__perf, q = WORLD.lonLatToTown(v.lon, v.lat); S.weather.lock('clear');
+    const S = window.__scene, P = window.__perf, q = WORLD.lonLatToTown(v.lon, v.lat); S.weather.lock(v.weather || 'clear');
     S.view.set({ target: [q.x, 1.2, q.z], dist: v.dist, yaw: v.yaw, pitch: v.pitch }); S.transition.setMode(v.mode);
     const start = performance.now(); let t0 = null, f0 = 0, lt0 = 0, n = 0;
     const step = () => { const now = performance.now(); if (now - start < 3500) { requestAnimationFrame(step); return; }
       if (t0 === null) { t0 = now; f0 = P.frames.length; lt0 = P.lt.length; }
-      n++; S.view.set({ yaw: v.yaw + 0.003 * n });
+      n++; if (!v.still) S.view.set({ yaw: v.yaw + 0.003 * n });
       if (now - t0 < ms) { requestAnimationFrame(step); return; }
       setTimeout(() => { const fr = P.frames.slice(f0), gaps = fr.slice(1).map((t, i) => t - fr[i]).sort((a, b) => a - b), at = p => (gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] : null), info = { ...S.renderer.info.render }, C = S.cover.state;
         let cover = null; if (C.root) { const was = C.root.visible; S.renderer.render(S.scene, S.camera); const on = { ...S.renderer.info.render }; C.root.visible = false; S.renderer.render(S.scene, S.camera); const off = { ...S.renderer.info.render }; C.root.visible = was; cover = { calls: on.calls - off.calls, triangles: on.triangles - off.triangles }; }
@@ -129,7 +134,13 @@ const machine = () => { let swap = null; try { swap = execFileSync('sysctl', ['-
 const genOf = page => page.evaluate(() => { const P = window.__perf, G = window.__scene.worldgen ? window.__scene.worldgen.stats() : null; if (!G) return { cpuMs: null, longestTaskMs: null };
   const to = G.doneAt ? performance.now() - (Date.now() - G.doneAt) : performance.now(), lts = P.lt.filter(([s]) => s > P.firstFrame + 50 && s <= to + 50);
   return { cpuMs: G.steps.reduce((a, s) => a + s.ms, 0), longestTaskMs: lts.length ? Math.max(...lts.map(q => q[1])) : 0 }; });
-const loadOf = page => page.evaluate(() => ({ sceneMs: Math.round(window.__perf.sceneAt), firstFrameMs: Math.round(window.__perf.firstFrame) }));
+// W10a: firstCompleteFrameMs is the first frame of a build that generates everything before it (null for older builds); the long tasks before that frame:
+// the longest one while the pipeline runs (the loading screen's progress stays alive) and the synchronous script start before it
+const loadOf = page => page.evaluate(() => { const P = window.__perf, G = window.__scene.worldgen, st = G && G.state, complete = st && st.firstCompleteFrameMs !== undefined ? st.firstCompleteFrameMs : null;
+  const startAt = complete !== null && st.startAt ? st.startAt - performance.timeOrigin : null, before = P.lt.filter(([s]) => s < P.firstFrame);
+  const during = startAt === null ? [] : before.filter(([s]) => s >= startAt - 1), scriptTask = startAt === null ? [] : before.filter(([s]) => s < startAt - 1);
+  return { sceneMs: Math.round(P.sceneAt), firstFrameMs: Math.round(P.firstFrame), firstCompleteFrameMs: complete === null ? null : Math.round(complete), worldgenStartMs: startAt === null ? null : Math.round(startAt),
+    startupScriptTaskMs: scriptTask.length ? Math.max(...scriptTask.map(q => q[1])) : null, pipelineLongestTaskMs: startAt === null ? null : (during.length ? Math.max(...during.map(q => q[1])) : 0) }; });
 let errors = [];
 async function measure() {
   result = fresh(); result.machine = { start: machine() }; errors = [];
@@ -145,6 +156,9 @@ async function measure() {
       return { present: gen, waitedMs: w.waitedMs, worldgen: G, startDelayMs: G ? G.startDelayMs : null, longTasks: lts, longestTaskMs: lts.length ? Math.max(...lts.map(q => q[1])) : 0,
         moduleMs: { rest: S.terrain.stats.restBuildMs ?? null, section: S.section.state.stats.buildMs ?? null, roads: S.roads.state.stats.buildMs ?? null, ocean: S.ocean.state.stats.buildMs ?? null, cover: S.cover.state.stats.buildMs ?? null, landmarks: S.landmarks.info.buildMs ?? null } }; }, [gen, w]);
     errors.push(...page.errors); await page.close(); }
+  for (let i = 1; i < LOADS; i++) { const page = await open(); result.loads.push(await loadOf(page)); errors.push(...page.errors); await page.close(); }
+  { const L0 = result.loads, med = a => { const s = a.filter(v => v !== null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+    console.log(`启动（${L0.length} 次冷启动）：首个完整画面中位数 ${med(L0.map(q => q.firstCompleteFrameMs))} ms（${L0.map(q => q.firstCompleteFrameMs).join(' / ')}），管线开始 ${med(L0.map(q => q.worldgenStartMs))} ms，管线中最长任务 ${med(L0.map(q => q.pipelineLongestTaskMs))} ms，脚本启动任务 ${med(L0.map(q => q.startupScriptTaskMs))} ms`); }
   { const page = await open(); await waitGen(page); await page.waitForTimeout(500); result.views = {};
     for (const [name, v] of VIEWS) { result.views[name] = await viewPerf(page, v); const r = result.views[name]; console.log(`${name}：帧间隔中位数 ${r.medianMs} ms、p95 ${r.p95Ms} ms（${r.frames} 帧），${r.calls} 次绘制调用、${r.triangles} 个三角形，实例 ${r.instances}`); }
     errors.push(...page.errors); await page.close(); }
@@ -164,7 +178,7 @@ async function measure() {
   if (!viewsOnly) console.log(`球形按钮：立即 最长任务 ${result.sphere.immediate.longestTaskMs} ms / 最大帧间隔 ${result.sphere.immediate.maxFrameGapMs} ms；预生成后 ${result.sphere.afterPregen.longestTaskMs} / ${result.sphere.afterPregen.maxFrameGapMs} ms`);
 const ex = Object.values(result.exits), max = (list, f) => list.length ? Math.max(...list.map(f)) : null, med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 result.summary = {
-  sceneMsMedian: med(result.loads.map(q => q.sceneMs)), firstFrameMsMedian: med(result.loads.map(q => q.firstFrameMs)),
+  sceneMsMedian: med(result.loads.map(q => q.sceneMs)), firstFrameMsMedian: med(result.loads.map(q => q.firstFrameMs)), firstCompleteFrameMsMedian: med(result.loads.map(q => q.firstCompleteFrameMs).filter(v => v !== null)), pipelineLongestTaskMsMax: max(result.loads.filter(q => q.pipelineLongestTaskMs !== null), q => q.pipelineLongestTaskMs),
   pregenCpuMs: result.pregen.worldgen ? result.pregen.worldgen.steps.reduce((a, s) => a + s.ms, 0) : null,
   pregenLongestTaskMs: result.pregen.present ? result.pregen.longestTaskMs : null,
   pregenCpuMsMedian: result.pregen.present ? med(ex.map(r => r.afterPregen.genCpuMs)) : null, pregenCpuMsRange: result.pregen.present ? [Math.min(...ex.map(r => r.afterPregen.genCpuMs)), Math.max(...ex.map(r => r.afterPregen.genCpuMs))] : null,

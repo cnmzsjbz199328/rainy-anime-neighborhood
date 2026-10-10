@@ -191,10 +191,11 @@ if (!process.argv.includes('--no-browser')) {
   await page.addInitScript(INIT);
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__scene && window.__scene.cover, null, { timeout: 90000 });
-  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: S.cover.state.built }; });
+  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: S.cover.state.built, visible: !!(S.cover.state.root && S.cover.state.root.visible) }; });
   const info = [], fails = [];
-  if (def.built) fails.push('默认画面已构建田地'); if (def.calls > 2374 * 1.03) fails.push(`默认视角绘制调用 ${def.calls} 超过基线 2374 的 +3%`);
-  info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，田地未构建（基线 2374 / 239,958）`);
+  // W10a (W10_SPEC 2.4, 6): the world is built before the first frame and shows in every view; the default view's budget is pre-w10a 2,374 + 10 %
+  if (!def.built || !def.visible) fails.push('默认画面没有地表覆盖（W10a：首帧前生成、所有视图显示）'); if (def.calls > 2611) fails.push(`默认视角绘制调用 ${def.calls} 超过 W10 预算 2611`);
+  info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，地表覆盖已构建并显示（W10 预算 ≤ 2611 = pre-w10a 2,374 + 10%）`);
   const shots = Object.fromEntries(SHOTS);
   // W8g-c (W8_SPEC 13.3 C2): no load ring and no 110 m cut-off any more; every drawn instance must be at least the fade-out size on screen
   // the land cover's draw calls: one per instance type and one per ink hull, plus the plot meshes. W6 had 40 (fields) / 60 (forest) / 70 (the rest) with the
@@ -237,7 +238,7 @@ if (!process.argv.includes('--no-browser')) {
   info.push(`田地：全部实例 ${stt.items}（按屏幕像素选层级，W8g-c），田块网格 ${stt.treadTriangles} + ${stt.ridgeTriangles} + ${stt.waterTriangles} 三角形，梯田 ${stt.terraceCells} 格；首次构建 ${stt.buildMs} ms`);
   if (errors.length) fails.push('页面错误：' + errors.join(' | '));
   results.push({ id: 'W6-C3', ok: !fails.length });
-  console.log(`${fails.length ? 'FAIL' : 'PASS'} W6-C3 预算与动态：默认画面不变、只画屏幕尺寸不小于淡出下限的实例（W8g-c 起取代“全景不加载实例”）、地表覆盖绘制调用 ≤ 80（W8g-c 起取代 40 / 60 / 70）、动态、无页面错误`);
+  console.log(`${fails.length ? 'FAIL' : 'PASS'} W6-C3 预算与动态：默认画面在 W10 预算内、只画屏幕尺寸不小于淡出下限的实例（W8g-c 起取代“全景不加载实例”）、地表覆盖绘制调用 ≤ 80（W8g-c 起取代 40 / 60 / 70）、动态、无页面错误`);
   for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m);
   await browser.close();
 }

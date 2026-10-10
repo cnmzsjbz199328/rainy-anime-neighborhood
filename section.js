@@ -1,8 +1,8 @@
 // W4 sample section (ST03): town edge -> paddies -> fallow fields -> forest edge -> forest -> grass -> coast -> shallow sea, built from
 // world.js through section_plan.js, with the road kit (roadkit.js), the object kit (flora.js) and the water shader (water.js).
 // All geometry is stored in flat Mercator coordinates and rolled onto the sphere by bend.js (see docs/world/W3_SPEC.md section 2): every
-// instance is scaled by 1/cos(lat) so that bend.js shrinks it back to its true size. The section is built lazily the first time it is
-// shown (uBend > 0 or the 'section' view mode), so the default town costs nothing. Test hooks: window.__scene.section.
+// instance is scaled by 1/cos(lat) so that bend.js shrinks it back to its true size. The section is built at start-up (worldgen.js,
+// W10a) and shown in every view. Test hooks: window.__scene.section.
 (function (global) {
 'use strict';
 const R = 90, D = Math.PI / 180, BASE = 1.6;
@@ -37,7 +37,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
     // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
-    TERR.buildRest(); H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
+    H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
     yield;
     const inkColor = 0x273647;
@@ -216,10 +216,10 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   }
   const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
 
-  // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), built the first time they are needed
+  // ---- global outlines for the panorama distance (coast, ridges at 10 m, ice edges), a start-up step of their own (cut along the seam like everything else)
   function buildGlobalInk() {
     if (S.globalInk) return; S.globalInk = true;
-    const t0 = Date.now(), root = new THREE.Group(), step = 1; root.name = 'globalInk'; S.root.add(root); S.globalInkGroup = root;   // own group: shown only while uBend >= 0.5, so the picture never depends on whether it was built earlier (W8a)
+    const t0 = Date.now(), root = new THREE.Group(), step = 1; root.name = 'globalInk'; S.root.add(root); S.globalInkGroup = root;   // own group; its lines show by the camera's altitude (ink.panorama in tick())
     const nx = 360 / step, ny = 170 / step;
     const sample = (fn) => { const g = new Float32Array((nx + 1) * (ny + 1)); for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) g[j * (nx + 1) + i] = fn(-180 + i * step, -85 + j * step); return g; };
     const contour = (grid, level, altOff) => {
@@ -242,21 +242,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     S.stats.globalInkMs = Date.now() - t0;
   }
 
-  // ---------------------------------------------------------------- visibility, hooks, per-frame update
+  // ---------------------------------------------------------------- hooks, per-frame update
   const lerp3 = (v, a, b) => a + (b - a) * v;
-  function ensure() { if (!S.built) job.finish(); return S.root; }
-  // the panorama outlines as their own job: their own private stream, as their own withPrivateRandom call had; still built on the first sphere view (W8g-a)
-  const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); });
-  function visibility() {
-    const show = BEND.get() > 0 || TERR.explore || S.mode;
-    if (show) ensure();
-    if (S.root) S.root.visible = show;
-    if (TERR.setHeadCaps) TERR.setHeadCaps('section', !(show && S.built));   // W8g-b: N08's end cap, while the T03 chain does not continue it
-    if (show && BEND.get() >= 0.5 && S.built) inkJob.finish();
-    if (S.globalInkGroup) S.globalInkGroup.visible = BEND.get() >= 0.5;
-  }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
+  // the panorama outlines as their own job (their own private stream, as before); W10a: built at start-up and cut along the -85 deg seam like every other
+  // layer, so the flat map may show them too (by the camera's altitude, as on the sphere)
+  const inkJob = global.TERRAIN.job(function* () { buildGlobalInk(); BEND.seamSplit(S.globalInkGroup); });
 
   // ink layer by the camera's altitude above the surface (not by the distance to the section: a person standing in it is 'ground' everywhere)
   function distance(camera) {
@@ -315,9 +305,9 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   }
 
   const api = {
-    ensure, tick, state: S, visibility,
+    tick, state: S,
     jobs: { build: job, ink: inkJob },                     // W8g-a: worldgen.js steps them ahead of time
-    setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; visibility(); },
+    setMode(on) { if (on && global.__scene && !global.__scene.transition.townAvailable()) return; S.mode = !!on; },
     set(v) {
       if (v.rain !== undefined) { S.settings.rain = !!v.rain; if (ctx.rainObj) ctx.rainObj.visible = S.settings.rain; }
       if (v.light) { S.settings.light = v.light; applyLight(); }

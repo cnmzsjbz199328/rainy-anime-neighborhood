@@ -32,10 +32,10 @@ if (!process.argv.includes('--no-browser')) {
   await page.addInitScript(INIT);
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__scene && window.__scene.landmarks, null, { timeout: 90000 });
-  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: Object.keys(S.landmarks.info).length > 1 }; });
+  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: Object.keys(S.landmarks.info).filter(k => k.startsWith('LM')).length, visible: Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || []).every(g => g.visible) }; });
   // measurements inside the page: local extents of the module's baked meshes, true size after the bend, footprint, lowest point
   const M = await page.evaluate(id => {
-    const S = window.__scene, T = window.THREE, B = S.bend; S.landmarks.build(); B.set(1);
+    const S = window.__scene, T = window.THREE, B = S.bend; B.set(1);
     const info = S.landmarks.info[id]; if (!info || !info.groups) return { missing: true };
     const lm = window.WORLD.landmarks.find(q => q.id === id), meshes = []; let calls = 0, tris = 0;
     for (const g of info.groups) g.traverse(o => { if ((o.isMesh || o.isLineSegments) && o.geometry) { meshes.push(o); calls++; if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
@@ -56,8 +56,9 @@ if (!process.argv.includes('--no-browser')) {
     }
     report('W7-C2', '尺寸与占地：局部范围、弯曲后真实尺寸 ≤ 1%、物件在占地内', info, fails); }
   { const info = [], fails = [];
-    if (def.built) fails.push('默认画面已构建地标'); if (def.calls > 2374 * 1.01) fails.push(`默认视角绘制调用 ${def.calls} 超过基线 2374 的 +1%`);
-    info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用 / ${def.tri} 个三角形，地标未构建（基线 2374 / 239,958，预算 ≤ +1%）`);
+    // W10a (W10_SPEC 2.4, 6): the landmarks are built before the first frame and show in every view; the default view's budget is pre-w10a 2,374 + 10 %
+    if (def.built !== 10 || !def.visible) fails.push(`默认画面地标 ${def.built} 个、全部可见 ${def.visible}（W10a：首帧前生成 10 个、所有视图显示）`); if (def.calls > 2611) fails.push(`默认视角绘制调用 ${def.calls} 超过 W10 预算 2611`);
+    info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用 / ${def.tri} 个三角形，10 个地标已构建并显示（W10 预算 ≤ 2611 = pre-w10a 2,374 + 10%）`);
     if (!M.missing) info.push(`模块自身：${M.calls} 个网格/线对象（bake 之后）、${Math.round(M.tris)} 个三角形`);
     const SH = Object.fromEntries(shots(id)); const rows = [];
     for (const [label, name] of [['近景', 'front'], ['半空', 'site-plan'], ['远眺', 'from-afar']]) { const on = await renderShot(page, SH[name]), off = (await renderShot(page, SH[name], { noLandmarks: true })).info; rows.push(`${label}（${name}）：整帧 ${on.info.calls} 次调用 / ${on.info.triangles} 三角形；不含地标 ${off.calls} / ${off.triangles}；地标新增 ${on.info.calls - off.calls} 次调用 / ${on.info.triangles - off.triangles} 三角形`); }
@@ -67,7 +68,7 @@ if (!process.argv.includes('--no-browser')) {
     const v = { ...SH['rainy-night'], rain: false }; const a = await renderShot(page, v, { t: 2.0 }), b = await renderShot(page, v, { t: 3.7 }), n = await diff(a.url, b.url);
     info.push(`动态（雨夜近景关雨，t = 2.0 与 3.7 s）：差异像素 ${n}`); if (n <= 0) fails.push('近景没有动态');
     if (errors.length) fails.push('页面错误：' + errors.join(' | '));
-    report('W7-C5', '预算与动态：默认画面不变、记录成本、近景有动态、无页面错误', info, fails); }
+    report('W7-C5', '预算与动态：默认画面在 W10 预算内、记录成本、近景有动态、无页面错误', info, fails); }
   // landmark-specific checks (module stats and measurements)
   const spec = await import('./landmark_specific.mjs').catch(() => null);
   if (spec && spec.CHECKS[id]) { const info = [], fails = []; await spec.CHECKS[id]({ page, info, fail: m => fails.push(m), f, W, lm, M, renderShot, shots: Object.fromEntries(shots(id)) }); report('W7-C3/C4', `${lm.name} 专有检查（落地、衔接、动态与光、亮度排序）`, info, fails); }

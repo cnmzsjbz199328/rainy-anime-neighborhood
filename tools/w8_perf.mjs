@@ -20,7 +20,7 @@ async function open(html) {
 // set the view the way the app does (zoom drives uBend), run n frames, render once and read the counters
 // section = the planet's ground view (uBend locked at 1, the far world built, landmarks loaded) as the W5-W7 tools use it; the render time is the second of two renders (the first builds what is missing)
 const measure = (page, v, n = 40, weather = 'rain', section = false) => page.evaluate(([v, n, weather, section]) => { const S = window.__scene; if (S.weather) S.weather.lock(weather); if (S.view.get().mode !== 'free') S.view.set({ mode: 'free' });
-  if (section) { S.bend.set(1); S.view.set({ mode: 'section' }); S.landmarks.build(); S.view.set(v); } else { if (v.bend === 0) S.bend.set(0); S.view.set(v); if (S.transition) S.transition.pending = true; }
+  if (section) { S.bend.set(1); S.view.set({ mode: 'section' }); S.view.set(v); } else { if (v.bend === 0) S.bend.set(0); S.view.set(v); if (S.transition) S.transition.pending = true; }
   window.__step(n); S.renderer.render(S.scene, S.camera);
   const t0 = Date.now(); S.renderer.render(S.scene, S.camera); S.renderer.getContext().finish(); const ms = Date.now() - t0; const i = S.renderer.info.render; return { calls: i.calls, tris: i.triangles, ms, u: S.bend.get() }; }, [v, n, weather, section]);
 const rows = [], add = (group, name, r) => { rows.push({ group, name, ...r }); console.log(`${group} · ${name}：${r.calls} 次绘制调用，${r.tris} 个三角形，${r.ms} ms（uBend ${(+r.u).toFixed(2)}）`); };

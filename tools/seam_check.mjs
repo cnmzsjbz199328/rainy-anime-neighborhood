@@ -26,7 +26,7 @@ async function open(w = 1280, h = 800) {
 }
 const page = await open();
 // build everything that exists on the planet (the flat map's explore view builds the same set)
-await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.terrain.buildRest(); S.roads.ensure(); S.ocean.ensure(); S.cover.ensure(); S.landmarks.build(); S.view.set({ target: [-120, 1.2, 22], dist: 60 }); window.__step(3); });
+await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.view.set({ target: [-120, 1.2, 22], dist: 60 }); window.__step(3); });
 
 // ---- C1
 {

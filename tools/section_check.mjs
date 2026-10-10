@@ -155,7 +155,7 @@ if (!process.argv.includes('--no-browser')) {
 
   await checkAsync('W4-C3b', '落地（页面）：每个实例的底面与渲染用的地形网格的竖向距离 ≤ 0.05 m', async ({ info, fail }) => {
     const inst = await page.evaluate(() => {
-      const S = window.__scene, SEC = S.section; S.bend.set(1); SEC.setMode(true); SEC.ensure();
+      const S = window.__scene, SEC = S.section; S.bend.set(1); SEC.setMode(true);
       const R = 90, D = Math.PI / 180, out = [], M = new window.THREE.Matrix4(), BASE = 1.6, seen = new Set();
       const rec = (type, e) => { const x = e[12], y = e[13], z = e[14], lon = x / (R * D), lat = Math.atan(Math.sinh(-z / R)) / D, k = 1 / Math.cos(lat * D); out.push([type, lon, lat, y / k + BASE]); };
       const objs = SEC.objects;
@@ -205,7 +205,7 @@ if (!process.argv.includes('--no-browser')) {
   await checkAsync('W4-C5', '墨线：三个距离的线宽不跳变，权重连续，固定帧逐位相同', async ({ info, fail }) => {
     // 1) weights and pixel width of the outline hull vs camera altitude (continuous sweep)
     const sweep = await page.evaluate(() => {
-      const S = window.__scene, T = window.THREE, SEC = S.section, B = S.bend, cam = S.camera; B.set(1); SEC.setMode(true); SEC.ensure(); SEC.set({ ink: 'auto' });
+      const S = window.__scene, T = window.THREE, SEC = S.section, B = S.bend, cam = S.camera; B.set(1); SEC.setMode(true); SEC.set({ ink: 'auto' });
       const out = [], H = S.renderer.domElement.height;
       for (let alt = 1.6; alt <= 320; alt *= 1.04) {
         cam.position.set(0, -90 + 90 + alt, 0); cam.up.set(0, 0, -1); cam.lookAt(0, -90, 0); cam.fov = 36; cam.updateMatrixWorld(); SEC.tick(1, cam);

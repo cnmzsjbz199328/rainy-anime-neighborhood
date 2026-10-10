@@ -1,7 +1,7 @@
 // Planet road network, batch W5a (W5_SPEC): RD01 trunk road with its town-exit transitions, RD02 bridges (bridge.js), the RD01 tunnel portals, the exits
 // of the other classes (RD03 N04/N09/N10, RD05 N11-N13), street furniture of RD01/RD02 and the night light band (lightband.js).
 // Pure part: plan(W, H) builds all data from world.js and a ground height function (no THREE, no DOM; tools/road_check.mjs runs it under Node).
-// Scene part: attach(...) makes the meshes the first time the planet is shown (uBend > 0 or the 'section' view mode), so the default town costs nothing.
+// Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a); the network shows in every view.
 // Geometry is stored in flat Mercator coordinates and rolled onto the sphere by bend.js (docs/world/W3_SPEC.md section 2); instances are scaled by
 // 1/cos(lat) so that bend.js shrinks them back to their true size. Test hooks: window.__scene.roads.
 (function (global) {
@@ -354,7 +354,7 @@ function routeOpts(def, ctx, tc) {
 // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
 const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
 
-// ---- W8g-b (W8_SPEC 13.2 B1): the exit heads. The town view shows the first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
+// ---- W8g-b (W8_SPEC 13.2 B1): the exit heads (W10c replaces them). The first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
 // edge)), made at start-up from the same route() call as the network's: a route no longer than L + HEAD_MARGIN is made whole (abutment, ramp and taper of its
 // far end included); a longer one is cut there (route option `until`; its abutment only keeps its columns, gridAbut). The network road later takes the head's
 // rows 0 .. K + 1 (K: the head's last row) as its own (applyHead), so the two meet with the same vertices; normals at the seam come from the same triangles on
@@ -462,8 +462,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
 
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
-    SEC.ensure();
-    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
     // W8g-b: the exit routes take the rows of the heads made at start-up (terrain.js cut the ring under them then); the network draws them from the head's last row
     const TB = TERR.builder || global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertexColor(lo, la), TERR.exitHeads); S.data = DATA;
     const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
@@ -600,17 +599,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     }
   }
 
-  // ---------------------------------------------------------------- visibility, per-frame update, hooks
-  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
-  function visibility() {
-    const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
-    if (show) ensure();
-    if (S.root) S.root.visible = show;
-    if (TERR.setHeadCaps) TERR.setHeadCaps('roads', !(show && S.built));     // W8g-b: the heads' end caps, while this road does not continue them
-  }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
-
+  // ---------------------------------------------------------------- per-frame update, hooks
   function tick(t, camera) {
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
@@ -634,9 +623,9 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
 
   const api = {
-    ensure, tick, state: S, visibility, job,                 // W8g-a: worldgen.js steps the job ahead of time
+    tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
-    setLightBand(v) { ensure(); S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
+    setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
     data: () => DATA, objects: objs,
   };

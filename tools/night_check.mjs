@@ -73,7 +73,7 @@ const LAMPS = "[...S.roads.objects.glows.filter(m => /lamp/.test(m.name)), ...S.
 const page = await open();
 // ---- C1
 if (want('c1')) {
-  const r = await page.evaluate(() => { const S = window.__scene; S.transition.setMode('flat'); S.transition.step(3); S.roads.ensure(); window.__step(2); const L = S.roads.data().lit; const p = L[0][Math.floor(L[0].length / 2)]; return { lon: p.lon, lat: p.lat }; });
+  const r = await page.evaluate(() => { const S = window.__scene; S.transition.setMode('flat'); S.transition.step(3); window.__step(2); const L = S.roads.data().lit; const p = L[0][Math.floor(L[0].length / 2)]; return { lon: p.lon, lat: p.lat }; });
   const rows = [], vals = []; let ok = true;
   for (let hh = 30; hh <= 130; hh += 10) {
     const st = await page.evaluate(([lon, lat, hh]) => { const S = window.__scene, q = window.WORLD.lonLatToTown(lon, lat); S.weather.lock('rain'); S.view.set({ target: [q.x, 1.2, q.z], dist: hh / Math.sin(0.9), pitch: 0.9, yaw: 0.4 }); window.__step(4);
@@ -143,7 +143,7 @@ if (want('c2') || args.includes('--shots')) {
   }
   if (args.includes('--shots')) {
     // the light band close-up: 150 m over the T01 ring just outside the town (the band nearly full, the lamps gone), clear night
-    await ps.evaluate(() => { const S = window.__scene; S.transition.setMode('flat'); S.transition.step(3); S.roads.ensure(); const p = S.roads.data().lit[0][40], q = window.WORLD.lonLatToTown(p.lon, p.lat); S.weather.lock('clear'); S.view.set({ target: [q.x, 1.2, q.z], dist: 150, pitch: 0.75, yaw: 2.0 }); window.__step(40); });
+    await ps.evaluate(() => { const S = window.__scene; S.transition.setMode('flat'); S.transition.step(3); const p = S.roads.data().lit[0][40], q = window.WORLD.lonLatToTown(p.lon, p.lat); S.weather.lock('clear'); S.view.set({ target: [q.x, 1.2, q.z], dist: 150, pitch: 0.75, yaw: 2.0 }); window.__step(40); });
     save(shotsDir, 'night-flat-lightband.png', await shot(ps)); out(true, 'W8c 截图（平面，docs/world/w8e/night-flat-*.png）', [[...HEMIS.map(h => `night-flat-${h[0]}.png`), 'night-flat-lightband.png'].join('、')]);
   }
   await ps.close();

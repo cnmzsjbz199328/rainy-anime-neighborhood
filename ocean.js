@@ -1,7 +1,7 @@
 // BI01 ocean and TR02 coast over the whole planet (W6a). Pure part: build(W, chunks, H, roads) makes, from the terrain lattice that W3 built, the water surface
 // (every triangle with a vertex below sea level, at sea level, with a signed water depth per vertex so that the foam line lands exactly on the coast), the coast line
 // (the sea-level contour of the terrain triangles), rocks on rocky shores and in the shallows, driftwood on beaches, seaweed shadows, and sea walls with tetrapods
-// beside the places where a road reaches the shore. Scene part: attach(...) makes the meshes the first time the planet is shown (uBend > 0 or the 'section' view).
+// beside the places where a road reaches the shore. Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a).
 // Geometry is stored in flat Mercator coordinates (docs/world/W3_SPEC.md section 2) and rolled onto the sphere by bend.js; instances are scaled by 1/cos(lat).
 (function (global) {
 'use strict';
@@ -150,9 +150,8 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   let DATA = null;
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    SEC.ensure();
-    TERR.buildRest(); const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();      // (asking for the global sampler used to build the rest here; the order is kept)
-    const RD = global.ROADS_API && global.ROADS_API.ensure && (global.ROADS_API.ensure(), global.ROADS_API.data());
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
+    const RD = global.ROADS_API && global.ROADS_API.data();
     const centre = []; if (RD) { for (const r of RD.routes) for (const p of r.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const b of RD.bridges) for (const p of b.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const s of RD.stairs) for (const p of s.samples) centre.push({ lon: p.lon, lat: p.lat }); }
     DATA = build(W, [...TERR.ringData, ...TERR.restData], H, { centre: centre.filter((_, i) => i % 2 === 0), clear: 8 }); S.data = DATA;
     yield;
@@ -175,21 +174,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     }
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the water is cut along the seam
     S.stats = { ...DATA.stats, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
+    // the section's own corridor sea and its corridor coast line give way to the global water (one layer, one line)
+    for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = false;
+    for (const l of SEC.objects.lines.coast) l.userData.hidden = true;
     root.visible = true; S.built = true; return root;
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
-
-  function ensure() { if (!S.built) { SEC.ensure(); job.finish(); } return S.root; }
-  function visibility() {
-    const show = BEND.get() > 0 || TERR.explore || SEC.state.mode;
-    if (show) ensure();
-    if (S.root) S.root.visible = show;
-    // the section's own corridor sea and its corridor coast line give way to the global water (one layer, one line)
-    if (S.built && show) { for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = false; for (const l of SEC.objects.lines.coast) l.userData.hidden = true; }
-    else if (S.built) for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = true;
-  }
-  BEND.onChange(visibility);
-  TERR.onExplore(visibility);
 
   function tick(t, camera) {
     uniforms.uTime.value = t; uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get());     // W8e-c: no ripples in the clear daytime of the sphere
@@ -200,7 +190,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const m of objs.inst) m.visible = near; for (const h of objs.hulls) h.visible = near && g > 0.01;
   }
 
-  const api = { ensure, tick, state: S, visibility, job, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
+  const api = { tick, state: S, job, data: () => DATA, uniforms, objects: objs, stats: () => ({ counts: S.counts, ...S.stats }) };
   global.OCEAN_API = api;
   return api;
 };

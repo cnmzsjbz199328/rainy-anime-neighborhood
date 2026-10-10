@@ -44,7 +44,7 @@ export const INIT = `(() => {
 export async function renderShot(page, v, opts = {}) {
   return await page.evaluate(([v, opts]) => {
     const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, B = S.bend, cam = S.camera, SEC = S.section;
-    B.set(1); SEC.setMode(true); SEC.ensure();
+    B.set(1); SEC.setMode(true);
     const PL = SEC.plan();
     SEC.set({ rain: v.rain !== false, light: v.light || 'rainy', ink: v.ink || 'auto' });
     const fog0 = S.scene.fog.density, basis = (x, z) => { const b = B.basis(x, z); return { east: new T.Vector3(...b.east), up: new T.Vector3(...b.up), south: new T.Vector3(...b.south) }; };

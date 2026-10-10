@@ -1,9 +1,10 @@
 // W8g-d (W8_SPEC 13.4, D14): quality tiers. Two tiers, high and low, and auto. A tier has three parameters only: the density of the land cover's
 // instances (a deterministic thinning by instance hash, no scaling), the pixel thresholds of the near / far display (W8g-c C2)
-// and the detail of the canopy groups. The town's default view shows no land cover, so it is the same in both tiers.
+// and the detail of the canopy groups. (W10a: the town's default view shows the land cover around the town too, so the tiers differ there as well.)
 // Choice: the URL (?quality=high|low|auto) first, then a tier a test tool put in window.__QUALITY before the page ran, else auto.
-// auto: once the page is usable, the frame intervals of the town's default view over 90 frames; a median above 20 ms picks low. While running, it only
-// steps down (never up), and only when the camera has not moved for 5 s and the median of those 5 s is above 25 ms.
+// auto: the frame intervals of the first 90 frames of the default view (W10a: the complete world, the first frame comes after the start-up build); a median
+// above 20 ms picks low. While running, it only steps down (never up), and only when the camera has not moved for 5 s and the median of those 5 s is
+// above 25 ms.
 // No THREE, no DOM beyond location.
 (function (global) {
 'use strict';

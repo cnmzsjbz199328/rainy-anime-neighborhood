@@ -101,10 +101,11 @@ if (!process.argv.includes('--no-browser')) {
   await page.addInitScript(INIT);
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__scene && window.__scene.ocean, null, { timeout: 90000 });
-  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: S.ocean.state.built }; });
+  const def = await page.evaluate(() => { window.__step(3); const S = window.__scene; S.renderer.render(S.scene, S.camera); return { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles, built: S.ocean.state.built, visible: !!(S.ocean.state.root && S.ocean.state.root.visible) }; });
   const info = [], fails = [];
-  if (def.built) fails.push('默认画面已构建海洋'); if (def.calls > 2374 * 1.03) fails.push(`默认视角绘制调用 ${def.calls} 超过基线 2374 的 +3%`);
-  info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，海洋未构建（基线 2374 / 239,958）`);
+  // W10a (W10_SPEC 2.4, 6): the world is built before the first frame and shows in every view; the default view's budget is pre-w10a 2,374 + 10 %
+  if (!def.built || !def.visible) fails.push('默认画面没有海洋（W10a：首帧前生成、所有视图显示）'); if (def.calls > 2611) fails.push(`默认视角绘制调用 ${def.calls} 超过 W10 预算 2611`);
+  info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用、${def.tri} 个三角形，海洋已构建并显示（W10 预算 ≤ 2611 = pre-w10a 2,374 + 10%）`);
   const shots = Object.fromEntries(SHOTS);
   const hideOcean = async () => page.evaluate(() => { const S = window.__scene; S.ocean.state.root.visible = false; S.renderer.render(S.scene, S.camera); const r = { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles }; S.ocean.state.root.visible = true; return r; });
   for (const [label, name] of [['地面', 'coast-beach-ground'], ['半空', 'coast-rocky-aerial'], ['全景', 'ocean-panorama-back-east']]) {
@@ -121,7 +122,7 @@ if (!process.argv.includes('--no-browser')) {
   info.push(`实例：${Object.entries(st.counts).map(([k, v]) => `${k} ${v}`).join('、')}；水面 ${st.waterTriangles} 三角形 1 个网格，海岸线 ${st.coastSegmentsDrawn} 段 1 条；首次构建 ${st.buildMs} ms（SwiftShader）`);
   if (errors.length) fails.push('页面错误：' + errors.join(' | '));
   results.push({ id: 'W6-C3', ok: !fails.length });
-  console.log(`${fails.length ? 'FAIL' : 'PASS'} W6-C3 预算与动态：默认画面不变、水面 ≤ 4 次绘制、三个距离都在动、无页面错误`);
+  console.log(`${fails.length ? 'FAIL' : 'PASS'} W6-C3 预算与动态：默认画面在 W10 预算内、水面 ≤ 4 次绘制、三个距离都在动、无页面错误`);
   for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m);
   await browser.close();
 }
