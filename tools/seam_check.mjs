@@ -2,7 +2,7 @@
 //   node tools/seam_check.mjs [--shots] [--perf]
 //   C1  every planet mesh / line set that follows the seam shift: no triangle or segment has vertices with different shifts (nothing reaches across the map);
 //       no vertex at or beyond the second seam (x >= SEAM + 2 pi R); the cut counts
-//   C2  bridge T01-13: the deck faces and ink are cut exactly at the seam (west copy SEAM - EPS, east copy SEAM); on the sphere (uBend = 1) the two copies of every cut point
+//   C2  bridge RN01-13 (source T01-13): the deck faces and ink are cut exactly at the seam (west copy SEAM - EPS, east copy SEAM); on the sphere (uBend = 1) the two copies of every cut point
 //       land within 1 mm of each other (no crack); in the flat map the west part is drawn at the east end
 //   C3  edge fog (CPU mirror of the shader term): 1 at both seam edges, 0 from 12 deg of longitude inside, 0 below 80 deg, 1 from 84.5 deg; LM07's north edge (81.1 deg) thin;
 //       0 everywhere in the town; the GPU agrees (rendered edge pixel = background colour, town pixel unchanged with the fog off)
@@ -50,7 +50,7 @@ await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S
 // ---- C2
 {
   const r = await page.evaluate(() => {
-    const S = window.__scene, B = S.bend, west = Math.fround(B.SEAM - B.EPS), meshes = S.roads.objects.strips.filter(m => /T01-13/.test(m.name)), lines = S.roads.objects.lines.bridge;
+    const S = window.__scene, B = S.bend, west = Math.fround(B.SEAM - B.EPS), meshes = S.roads.objects.strips.filter(m => /RN01-13/.test(m.name)), lines = S.roads.objects.lines.bridge;
     let cutW = 0, cutE = 0, worst = 0, pairs = 0; const v = new THREE.Vector3();
     for (const m of meshes) { const p = m.geometry.attributes.position, W = [], E = [];
       for (let i = 0; i < p.count; i++) { const x = p.getX(i); if (x === west) W.push(i); else if (x === B.SEAM) E.push(i); }
@@ -60,7 +60,7 @@ await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S
     const ids = S.roads.data().bridges.find(b => b.def.id === 'RN01-13'), s0 = ids.samples[0], q = window.WORLD.lonLatToTown(s0.lon, s0.lat);
     return { faces: meshes.length, cutW, cutE, pairs, worst, lineW, lineE, westStart: q.x, westStartShown: B.wrapX(q.x) };
   });
-  out(r.faces >= 6 && r.cutW > 0 && r.cutW === r.cutE && r.pairs === r.cutW && r.worst < 1e-3 && r.lineW > 0 && r.lineW === r.lineE && r.westStartShown > 380, 'W8e-b C2 桥 T01-13 在接缝处按段平移、球面上无裂缝', [
+  out(r.faces >= 6 && r.cutW > 0 && r.cutW === r.cutE && r.pairs === r.cutW && r.worst < 1e-3 && r.lineW > 0 && r.lineW === r.lineE && r.westStartShown > 380, 'W8e-b C2 桥 RN01-13 在接缝处按段平移、球面上无裂缝', [
     `桥面 ${r.faces} 个面：接缝处切点 西侧副本 ${r.cutW} 个（x = 接缝 − 0.2 mm）、东侧副本 ${r.cutE} 个（x = 接缝）；墨线切点 ${r.lineW} / ${r.lineE}`,
     `uBend = 1 时每对切点的球面距离最大 ${(r.worst * 1000).toFixed(3)} mm（< 1 mm），${r.pairs} 对`,
     `西桥头 J-W2 平面 x = ${r.westStart.toFixed(1)} m，显示在 x = ${r.westStartShown.toFixed(1)} m（东端；桥西段整体平移 2πR）`]);

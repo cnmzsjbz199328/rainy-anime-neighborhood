@@ -1,4 +1,4 @@
-// Survey maps for the planet layout (W1). Run: node tools/world_survey.mjs
+// Survey maps for the frozen planet layout and current world.js road network. Run: node tools/world_survey.mjs
 // --road-review-base writes only a terrain/landmark base without route geometry for planning overlays.
 // Normal mode writes docs/world/survey/: equirect.png (1920x960), view-front/east/back/west.png and view-north/south.png (1024x1024).
 // Data comes from world.js only; the maps are drawn on a canvas inside Chromium (tools/browser.mjs) and saved as PNG.
@@ -47,7 +47,7 @@ const dec = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length); for
 const kindIdx = dec(data.kindIdx, Uint8Array), hgrid = dec(data.hgrid, Float32Array);
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const pal = data.kinds.map(k => hex(data.PALETTE[k]));
-const CLS = { RD01: ['#ffd23f', 3.2], RD02: ['#ff8c1a', 3.6], RD03: ['#f4f4f4', 2.4], RD04: ['#9c9c9c', 2.2], RD05: ['#d8bf94', 2.0], RD06: ['#ff6fa3', 2.2], RD07: ['#5ee6d2', 2.4], RD08: ['#c8ecff', 2.4] };
+const CLS = { RD01: ['#ffd23f', 3.2], RD02: ['#ff8c1a', 3.6], RD03: ['#f4f4f4', 2.4], RD04: ['#9c9c9c', 2.2], RD05: ['#d8bf94', 2.0], RD06: ['#ff6fa3', 2.2], RD07: ['#5ee6d2', 2.4], RD08: ['#c8ecff', 2.4], TOWN_MAIN: ['#fff0a6', 3.2], TOWN_BRANCH: ['#ffc46b', 2.8], TOWN_ALLEY: ['#c9a0dc', 1.8] };
 
 const hAt = (lon, lat) => {
   const fx = (lon + 180) / data.HG - 0.5, fy = Math.min(Math.max((lat + 90) / data.HG - 0.5, 0), data.hny - 1.001);
@@ -98,7 +98,8 @@ const ortho = (lon0, lat0, cx, cy, rad) => (lon, lat) => {
   return [cx + rad * x, cy - rad * y, cosc > 0.02];
 };
 
-const strokePath = (ctx, pts, proj, wrap) => {
+const strokePath = (ctx, pts, proj, wrap, label = 'path') => {
+  if (!pts || typeof pts[Symbol.iterator] !== 'function') throw new TypeError('world_survey strokePath received no points for ' + label);
   let open = false, prev = null;
   for (const p of pts) {
     const q = proj(p[0], p[1]);
@@ -113,8 +114,8 @@ function overlays(ctx, proj, wrap, opts) {
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   // graticule
   ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1; ctx.setLineDash([]);
-  for (let lon = -180; lon <= 180; lon += 30) { const pts = []; for (let lat = -90; lat <= 90; lat += 2) pts.push([lon, lat]); strokePath(ctx, pts, proj, false); }
-  for (let lat = -60; lat <= 60; lat += 30) { const pts = []; for (let lon = -180; lon <= 180; lon += 2) pts.push([lon, lat]); strokePath(ctx, pts, proj, false); }
+  for (let lon = -180; lon <= 180; lon += 30) { const pts = []; for (let lat = -90; lat <= 90; lat += 2) pts.push([lon, lat]); strokePath(ctx, pts, proj, false, 'longitude graticule'); }
+  for (let lat = -60; lat <= 60; lat += 30) { const pts = []; for (let lon = -180; lon <= 180; lon += 2) pts.push([lon, lat]); strokePath(ctx, pts, proj, false, 'latitude graticule'); }
   if (opts.equirect) {
     ctx.font = 'bold 12px sans-serif'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(8,12,22,0.9)'; ctx.fillStyle = '#fff';
     for (let lon = -150; lon <= 150; lon += 30) { const q = proj(lon, -90); ctx.strokeText(lon + '°', q[0] + 3, opts.h - 6); ctx.fillText(lon + '°', q[0] + 3, opts.h - 6); }
@@ -132,14 +133,14 @@ function overlays(ctx, proj, wrap, opts) {
   ctx.stroke();
   // ice cap edges
   ctx.strokeStyle = '#3f78c0'; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]);
-  for (const e of data.ice) strokePath(ctx, e, proj, wrap);
+  for (let i = 0; i < data.ice.length; i++) strokePath(ctx, data.ice[i], proj, wrap, 'ice edge ' + i);
   ctx.setLineDash([]);
   // town patch
   { const P = data.patch, ring = []; for (let lon = P.lonMin; lon <= P.lonMax; lon += 2) ring.push([lon, P.latMax]); ring.push([P.lonMax, P.latMax]); for (let lat = P.latMax; lat >= P.latMin; lat -= 2) ring.push([P.lonMax, lat]); ring.push([P.lonMax, P.latMin]);
     for (let lon = P.lonMax; lon >= P.lonMin; lon -= 2) ring.push([lon, P.latMin]); ring.push([P.lonMin, P.latMin]); for (let lat = P.latMin; lat <= P.latMax; lat += 2) ring.push([P.lonMin, lat]); ring.push([P.lonMin, P.latMax]);
-    ctx.strokeStyle = '#fff3c0'; ctx.lineWidth = 1.6; strokePath(ctx, ring, proj, false); }
+    ctx.strokeStyle = '#fff3c0'; ctx.lineWidth = 1.6; strokePath(ctx, ring, proj, false, 'town patch'); }
   // rivers
-  for (const r of data.rivers) { ctx.strokeStyle = '#1b5fa8'; ctx.lineWidth = 2.6; strokePath(ctx, r.pts, proj, wrap); ctx.strokeStyle = '#7fc4ff'; ctx.lineWidth = 1.2; strokePath(ctx, r.pts, proj, wrap); }
+  for (const r of data.rivers) { ctx.strokeStyle = '#1b5fa8'; ctx.lineWidth = 2.6; strokePath(ctx, r.pts, proj, wrap, 'river ' + r.id); ctx.strokeStyle = '#7fc4ff'; ctx.lineWidth = 1.2; strokePath(ctx, r.pts, proj, wrap, 'river ' + r.id); }
   if (!opts.noRoads) {
     // roads: dark casing first, then the class colour; bridges wider, tunnels dashed, stairs dotted
     for (const pass of ['case', 'fill']) for (const e of data.edges) {
@@ -150,7 +151,7 @@ function overlays(ctx, proj, wrap, opts) {
         const k = opts.scale || 1, bw = (s.t === 'bridge' || s.t === 'boardwalk') ? 1.6 : 1;
         if (pass === 'case') { ctx.strokeStyle = 'rgba(10,14,24,0.9)'; ctx.lineWidth = (w * bw + 2.4) * k; ctx.setLineDash([]); }
         else { ctx.strokeStyle = s.t === 'tunnel' ? '#2a2a2a' : col; ctx.lineWidth = w * bw * k; ctx.setLineDash(s.t === 'tunnel' ? [4, 3] : s.t === 'stairs' ? [2, 3] : s.t === 'boardwalk' ? [1, 0] : []); }
-        strokePath(ctx, s.pts, proj, wrap);
+        strokePath(ctx, s.pts, proj, wrap, 'road ' + e.id + ' ' + (s.t || 'land'));
       }
     }
     ctx.setLineDash([]);
@@ -167,7 +168,7 @@ function overlays(ctx, proj, wrap, opts) {
     const q = proj(l.lon, l.lat); if (!q[2]) continue;
     ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1; ctx.beginPath();
     const ring = []; for (let a = 0; a <= 360; a += 15) { const f = l.lat * D, th = a * D, dr = l.r / 90, f2 = Math.asin(Math.sin(f) * Math.cos(dr) + Math.cos(f) * Math.sin(dr) * Math.cos(th)), l2 = l.lon * D + Math.atan2(Math.sin(th) * Math.sin(dr) * Math.cos(f), Math.cos(dr) - Math.sin(f) * Math.sin(f2)); ring.push([l2 / D, f2 / D]); }
-    strokePath(ctx, ring, proj, wrap);
+    strokePath(ctx, ring, proj, wrap, 'landmark ' + l.id);
     ctx.beginPath(); ctx.moveTo(q[0], q[1] - 6); ctx.lineTo(q[0] + 5, q[1] + 4); ctx.lineTo(q[0] - 5, q[1] + 4); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
     const label = l.id === 'TOWN' ? 'TOWN 雨音街角' : l.id + ' ' + l.name, off = (opts.labelOff && opts.labelOff[l.id]) || [8, -8];
     ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(8,12,22,0.9)'; ctx.strokeText(label, q[0] + off[0], q[1] + off[1]); ctx.fillStyle = '#fff'; ctx.fillText(label, q[0] + off[0], q[1] + off[1]);
@@ -176,11 +177,12 @@ function overlays(ctx, proj, wrap, opts) {
 
 const legend = (ctx, x, y) => {
   const rows = [['town', '城镇'], ['farmland', '农田'], ['village', '村落'], ['ruin', '遗迹'], ['forest', '森林'], ['grassland', '草原'], ['desert', '沙漠'], ['lava', '熔岩原'], ['ice-north', '冰盖'], ['east-strait', '海洋']];
-  ctx.fillStyle = 'rgba(8,12,22,0.86)'; ctx.fillRect(x - 8, y - 18, 440, Math.ceil(rows.length / 2) * 17 + 4 * 17 + 62); ctx.font = '12px sans-serif';
+  const classRows = Math.ceil(Object.keys(CLS).length / 2);
+  ctx.fillStyle = 'rgba(8,12,22,0.86)'; ctx.fillRect(x - 8, y - 18, 440, Math.ceil(rows.length / 2) * 17 + classRows * 17 + 62); ctx.font = '12px sans-serif';
   rows.forEach((r, i) => { const cx = x + (i % 2) * 96, cy = y + Math.floor(i / 2) * 17; ctx.fillStyle = data.PALETTE[r[0]]; ctx.fillRect(cx, cy - 10, 14, 11); ctx.fillStyle = '#fff'; ctx.fillText(r[1], cx + 20, cy); });
   const base = y + Math.ceil(rows.length / 2) * 17 + 6;
   Object.entries(CLS).forEach(([k, v], i) => { const cx = x + (i % 2) * 140, cy = base + Math.floor(i / 2) * 17; ctx.strokeStyle = v[0]; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy - 4); ctx.lineTo(cx + 22, cy - 4); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(k, cx + 28, cy); });
-  const by = base + 4 * 17 + 4; ctx.fillStyle = '#ddd'; ctx.fillText('粗线 = 桥/栈道；虚线 = 隧道；点线 = 石阶；白点 = 城镇出口；红点 = 地标入口', x - 2, by);
+  const by = base + classRows * 17 + 4; ctx.fillStyle = '#ddd'; ctx.fillText('粗线 = 桥/栈道；虚线 = 隧道；点线 = 石阶；白点 = 城镇出口；红点 = 地标入口', x - 2, by);
   ctx.fillText('等高线 5 / 10 / 15 / 20 / 25 m；虚线蓝白 = 冰盖边缘；1° ≈ 1.57 m', x - 2, by + 16);
 };
 
@@ -193,7 +195,7 @@ const out = {};
   overlays(ctx, equirect(w, h), true, { equirect: !data.roadReviewBase, noRoads: data.roadReviewBase, h, scale: 1, font: 14, labelOff: { LM02: [-120, -10], LM10: [8, 22], LM04: [8, 22], LM03: [8, 20], LM06: [8, 20], LM09: [-130, 20], LM08: [8, -10], LM05: [-150, -10] } });
   if (!data.roadReviewBase) {
     legend(ctx, 14, 52);
-    ctx.fillStyle = 'rgba(8,12,22,0.9)'; ctx.fillRect(0, 0, 560, 30); ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('星球布局 v1 勘探图 · 等距圆柱（R = 90 m，1° ≈ 1.57 m）', 12, 22);
+    ctx.fillStyle = 'rgba(8,12,22,0.9)'; ctx.fillRect(0, 0, 560, 30); ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('星球布局 v1 · 路网 v2 勘探图（R = 90 m，1° ≈ 1.57 m）', 12, 22);
   }
   out[data.roadReviewBase ? 'equirect-road-review-base.png' : 'equirect.png'] = c.toDataURL('image/png');
 }

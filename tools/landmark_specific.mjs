@@ -52,7 +52,16 @@ CHECKS.LM04 = async ({ page, info, fail, f, W, lm, M, shots, renderShot }) => {
 
 CHECKS.LM09 = async ({ page, info, fail, f, W, lm, M }) => {
   const st = M.stats || {};
-  info.push(`站台长 ${st.platformLength} m（规格约 20 m，黄色盲道沿轨道侧）；候车小屋 ${st.shed.join(' × ')} m（4 × 2.5）；回车场直径 ${st.circle} m（约 12）；柴油车 ${st.cars} 节（静止）；铁轨 ${st.tracks} 条，两端都在占地附近终止（东端车挡、西端道砟渐隐入水田）：没有第二处铁轨模块，不连接任何铁路网（D6）；道口警报灯 ${st.lights} 个（周期 6 s 的升余弦交替，不闪烁）；亮着的光：候车小屋灯 + 小屋窗 + 自动售货机 + 公交站路灯`);
+  const platform = M.groupBounds?.lm09Platform, shed = M.groupBounds?.lm09Shed, track = M.groupBounds?.lm09Track, car = M.groupBounds?.lm09Car;
+  info.push(`W10b 裁决 A：站台长 ${st.platformLength} m，局部范围 x ${st.platformExtent?.join('…')} m；小屋 ${st.shed.join(' × ')} m、中心 x = ${st.shedX}（向西移 3 m）；铁轨东端 x = ${st.trackEast} m，车挡 x = ${st.bufferX} m，车厢范围 x ${st.carExtent?.join('…')} m；道口范围 x ${st.crossingExtent?.join('…')} m。CR01 不动，站台与车挡均止于路缘西侧。`);
+  if (Math.abs(st.platformLength - 15.5) > 0.01 || Math.abs(st.platformExtent?.[0] - (-5.5)) > 0.01 || Math.abs(st.platformExtent?.[1] - 10) > 0.01) fail('站台东端没有按 W10b A 退让 4.5 m');
+  if (!platform || Math.abs(platform.min[0] - (-5.5)) > 0.02 || Math.abs(platform.max[0] - 10) > 0.02) fail('LM09 平台实际模型没有落在 x = −5.5…10 m');
+  if (Math.abs(st.shedX - (-2.5)) > 0.01) fail('候车小屋没有向西移 3 m');
+  if (!shed || Math.abs(shed.min[0] - (st.shedX - 2.5)) > 0.02) fail('候车小屋实际模型没有向西移 3 m');
+  if (!(st.trackEast > -6.15 && st.bufferX > st.trackEast && st.carExtent?.[0] > st.bufferX + 0.15 && st.carExtent?.[1] < st.crossingExtent?.[0])) fail('轨道、车挡、车厢或道口越过 W10b A 退让边界或相互重叠');
+  if (!track || !(track.min[0] > -6.15) || !car || !(car.min[0] > st.bufferX + 0.15 && car.max[0] < st.crossingExtent?.[0])) fail('LM09 实际轨道越过 CR01 路缘，或车厢与车挡/道口相交');
+  info.push(`实际模型边界（弯曲前局部坐标）：站台 x ${f(platform?.min[0], 2)}…${f(platform?.max[0], 2)} m；候车小屋西缘 ${f(shed?.min[0], 2)} m；轨道东缘 ${f(track?.min[0], 2)} m（CR01 道路西缘 −6.15 m）；车厢 x ${f(car?.min[0], 2)}…${f(car?.max[0], 2)} m。`);
+  info.push(`回车场直径 ${st.circle} m（约 12）；柴油车 ${st.cars} 节（静止）；铁轨 ${st.tracks} 条，不连接任何铁路网（D6）；道口警报灯 ${st.lights} 个（周期 6 s 的升余弦交替，不闪烁）；亮着的光：候车小屋灯 + 小屋窗 + 自动售货机 + 公交站路灯`);
   if (st.tracks !== 1) fail('铁轨不是一条');
   let worst = 0; for (let a = 0; a < 360; a += 10) for (let d = 1; d <= 10; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
   info.push(`占地内（r ≤ 10 m）最大坡度 ${f(worst * 100, 1)}%（world.js 上限 10%；规格写现 1.9%）；入口 (0, 13.35) 在 T01 干线上，站前小路 (3.35 m) 从干线边缘（z = 4.5 + ...）接到回车场，路口无台阶（小路与路面同一高度）`);

@@ -2903,18 +2903,18 @@
 - 退出标准：U0（加旧边 ID 不残留）；U1-数据（拓扑 59/66/57 连通、度数为 1 的六个端点；CR01 闭合 418.27 m、R 8 m；城镇边与 layout.js ≤ 1 mm；出口位置差 ≤ 0.01 m、方向差 ≤ 0.5°、半径 ≥ 等级下限；对 `pre-w10b` 的偏差报告）；`world_check` WC1–WC11；`layout_check`、`measure_samples`；road/terrain/cover/section_check 仍成立的部分；`unify_check` U3。
 - 预算：城镇默认机位绘制调用 ≤ 2,611、帧间隔中位数 ≤ 17 ms、p95 ≤ 25 ms；首个完整画面 ≤ 4.0 s；`index.html` 增量 ≤ 0.6 MB；计时用本机 Chromium（Metal），记 GPU 字符串。
 - 停止条件：world_check 失败且只改第一条边控制点解决不了；必须移动节点；确认的路网与冻结的地标场地、建筑或地块冲突。
-- **开工核查发现的冲突（需用户决定）**：CR01 西边（x = −54 m）中线进入 LM09 场地圆（半径 10 m）1.60 m，N11 接线 RN13-01 进入 1.02 m；WC6 容差 0.2 m。按 LM09 模型换算到城镇平面：
+- **开工核查发现的冲突（已按用户 A 解决）**：CR01 西边（x = −54 m）中线进入 LM09 场地圆（半径 10 m）1.60 m，N11 接线 RN13-01 进入 1.02 m；WC6 容差 0.2 m。按 LM09 模型换算到城镇平面：
   - 站台 x −73.35…−52.32、z 31.06…34.22；候车棚东端 x −54.95；轨道 z 35.48、x −74.40…−49.16；
   - CR01 的 RD03 全断面约占 x −57.7…−51.6，会压过站台东段约 4 m 和候车棚东端，并横穿轨道。
   - 设计稿 5.1 审查了地块、建筑、田块和植被，没有审查地标场地。
-- 裁决：按确认稿原样登记，不自行改环线或 LM09；其余工作照做。WC6 的 LM09 项如实报未通过，分支 `world/W10b` 不合并，交用户决定。
+- 当时暂定不改环线或 LM09、待用户决定；随后用户明确选 A（下文），此暂定处置已被取代。
 - 其他已知矛盾与裁决：
   - LM04：CR01 南边中线进入其场地圆 0.05 m，在容差内，WC6 通过；RD03 外侧边沟约进入 3.6 m（场地北缘是林地，参道与小殿在西北侧）。记为 W10c 绘制前的核对项。
   - RN06-01：确认稿把它定为 1.55 m，C01-S 处因此有约 58° 的折角，J-T03a 落在将来环路的铺装内。数据照确认稿；U1 的半径检查只管出口到第一个路口，折角由 W10c 路口铺装吸收。
   - 道路头长度：L = min(15 m, 第一条边) 随新接线变为约 5.9 m（真实米，平面 6 m）。
   - 路标石堆的随机种子改用来源旧 ID，保留原有位置；新边没有来源，用自身 ID。
 
-## W10b 实施与交付（2026-10-11，提交 `0edb57b`、`4435da6` 与本节的文档提交，分支 `world/W10b`，未合并 main，未推送；状态待确认，另有一项待用户决定）
+## W10b 实施与交付（2026-10-11，分支 `world/W10b`，状态待确认；LM09 已按用户裁决 A 返工，复验完成；已合并 main，未推送）
 
 - **第一步，规格同步**（`0edb57b`）：按确认的 `ROAD_NETWORK_DESIGN_DRAFT.md` 修订 `docs/world/W10_SPEC.md`：
   - 第 2.1 节：一张网 59 节点 / 66 边（RN01–RN14），CR01 的线位、断面与路权，平面边与大圆边，出城线形，退役 T04/T05/T06；
@@ -2942,32 +2942,21 @@
   - `exit_geometry` 的断面链网格名改为 M01 south chain。
   - `cover_check`、`section_check`、`terrain_check`、`section_extrapolate`、`joint_shots`、`landmark_specific`、`seam_check`、`w8f_check`、`exit_check`、`road_views` 改新 ID；`road_views` 删去 T04 路口、T05 地藏两处已无对象的机位。
   - `road_network_review` 改为从登记数据绘图，重出 `docs/world/ROAD_NETWORK_REVIEW.png` / `.svg`，已目视检查。
-- **数据检查**：
-  - 通过：
-    - `unify_check`（Metal）：U0、U0-W10b、U1-topology、U1-CR01、U1-town、U1-exits、U1-changes；U3-first、U3-stable（首帧后 31 s、27 次采样，网格与实例容量不变）、U3-display、U3-town（6,975 点，0 点被盖）；无页面错误。
-    - U1 的数字：CR01 平面长 418.265 m（真实 374.81 m），直边取样偏差 ≤ 0.00001 m，圆弧 ≤ 0.00015 m，节点与设计稿差 ≤ 1e-6 m；城镇边取样离 `layout.js` 中线 ≤ 0.000005 m；出口位置差 0.0000 m、方向差 ≤ 0.124°；RN05-01 在原线上（0.000013 m）。
-    - `world_check` WC1–WC5、WC7–WC11；城镇等级的 12 条边坡度 0。
-    - `layout_check --png` 12/12（俯视图逐字节不变）；`measure_samples` 通过（实测与登记一致、无页面错误）。
-    - `terrain_check` 7/7（含 W3-C6 九个出口道路头）；`cover_check` 9/9（含页面 W6-C3）。田块 106 个、3,741 m²：退役的 T04/T05/T06 路廊被田块补上。
-    - `section_check` 数据 3 项与页面 W4-C3b。
-    - `road_check`：W5-C1–C6、C9、C10、J2、W5-C11（默认视角 2,569 次绘制调用，W10a 2,583，预算 2,611）、W8f-c-G6（九个出口亮度差 0.7–8.3%）。
-  - 未通过：
-    - `world_check` WC6 与 `road_check` W5-C7：同一个 LM09 冲突，见下。
-    - `road_check` W5-C10-exits：N08 有 8 条射线首先碰到断面链 `sec:M01 south chain`。原因是 `exit_geometry.mjs` 按旧网格名 /T03|T11/ 识别断面路面，已改为 /M01 south chain/（本次提交），**改后未重跑**。
-  - 未跑完（机器交换区 6 GB，检查链在 section_check 页面部分时为交接停止）：`section_check` 其余页面项、`seam_check`、`ocean_check`、`lod_check`、`exit_check`。另按 WORLD_LAYOUT_V1 第 10 节，勘探图（`node tools/world_survey.mjs`）还没有重出；`world_check --write` 的报告已更新。
-- **性能**：未测。本机交换区已用 6 GB、空闲内存约 60 MB，计时不可信（按约定性能单独在空闲时测）。待下一轮：`node tools/perf_baseline.mjs --views-only --quality high --loads 3 --label w10b`，同时段测 `--ref pre-w10b --label pre-w10b`，写入 `docs/world/perf/w10b.json`。`index.html` 2,922,357 字节（`pre-w10b` 2,914,050，+8.3 KB）。
-- **待用户决定：CR01 与 LM09 无人站场地冲突**（停止条件“确认的路网与冻结地标场地冲突”）：
-  - 事实：
-    - CR01 西边中线 x = −54 m 进入 LM09 场地圆（半径 10 m）1.60 m（RN04-15）和 1.0 m（RN04-14）；N11 接线 RN13-01 进入 1.02 m。WC6 与 `road_check` W5-C7 因此未通过，容差 0.2 m。
-    - 换到 LM09 模型（城镇平面坐标）：站台 x −73.35…−52.32、z 31.06…34.22；候车棚 x −59.15…−54.95；轨道 z 35.48、x −74.40…−49.16。
-    - CR01 的 RD03 全断面约占 x −57.7…−51.6，会压过站台东段约 4 m 和候车棚东端约 2.7 m，并横穿轨道。N11 接线（z = 32.25）也穿过站台东端。
-    - 设计稿 5.1 审查了地块、建筑、田块和植被，没有审查地标场地。审阅图的全球图上可以直接看到环线压着 LM09 的场地圆。
-  - 现状：数据照确认稿登记，CR01 还没有绘制，所以页面上看不到环线压站台。N11 的 6 m 道路头止于站台东端附近，W10a 时 N11 路口就已被站台盖住（待办池）。
-  - 可选做法：
-    - **A（推荐）**：CR01 不动，LM09 让路。在 W10c 绘制 CR01 之前把站台东端缩到 CR01 外侧边沟以西（20 m → 约 15.5 m），候车棚西移约 3 m，轨道在环线西侧以车挡结束；LM09 场地按“道路优先、地标场地止于路缘”登记一个东侧退让，WC6 照此改写。已确认的路网和全部节点都不变，只改 LM09 模型的东端。
-    - **B**：CR01 西边在 LM09 一段（约 z 18–40）局部内收到 x ≈ −51.5。LM09 不动，但改了已确认的环线；环线内缘离城镇边只剩约 1.4 m，N01、N11 的接线缩到约 3.5 m，与 6 m 接线和宽度渐变的设计冲突。
-    - **C**：LM09 整体西移约 5–6 m（经度 −40° → 约 −43.5°）。两边的设计都保留，但改冻结的星球布局 v1：LM09-north 节点要移，RN01-14/15 随之改线；LM09 的西缘会贴近雨见川（只剩约 2 m）。
-  - 分支 `world/W10b` 在用户决定前不合并 main。决定后：A 或 C 在 W10b 返工登记，B 要先改设计稿。
+- **返工后复验（2026-10-11）**：
+  - `node tools/road_check.mjs` 13 项通过，W5-C10-exits 通过；W5-C11 默认机位 2,567 次绘制调用（预算 2,611）。
+  - `node tools/section_check.mjs` 8 项通过；`node tools/seam_check.mjs` 通过，RN01-13 桥接缝 160 对、最大间距 0.201 mm、标线切口 4/4；`node tools/ocean_check.mjs` 4 项通过，1,798 个实例、道路/物件重叠 0。
+  - `node tools/exit_check.mjs` 7/7 通过：平面、球形各 828 条射线，阻挡与漏检均为 0；边缘连接位置差 0，植被侵入 0。
+  - `node tools/unify_check.mjs`：U0、U0-W10b、U1 全项、U3 首帧/稳定/显示/城镇全部通过；U2、U4–U7 属 W10c–W10g，按阶段未运行。
+  - `node tools/world_check.mjs --write`：WC1–WC11 11/11 通过；WC6 的 LM09 东侧退让命中 14 个获批采样点。更新 `docs/world/survey/check-report.md` 与 `area-report.md`（后者内容未变化）。
+  - `node tools/landmark_check.mjs LM09 --no-shots` 3 项通过。实际界限：站台 x −5.51…10.01 m、小屋西缘 −5.00 m、轨道东端 x −5.50 m；对应道路边缘 x −6.15 m，专项净空断言通过。
+  - `node tools/lod_check.mjs`：L1、L2、L3-ink、D3 通过；L3 的推拉峰值/中位数标准与 L4 球形帧预算未过，分别是 W8g-c、W8g-d 已记录的遗留项（L4 与基线同属城镇绘制调用问题），未发现 W10b 新数据差异。
+  - 按 WORLD_LAYOUT_V1 第 10 节重出 `docs/world/survey/equirect.png` 与 `view-front/east/back/west/north/south.png`；查看等距圆柱图和正面图，城镇和路网均已绘出。未运行截图审查链。
+- **性能（同一时段，Chromium 153 / Apple M4 Metal）**：命令分别为 `node tools/perf_baseline.mjs --views-only --quality high --loads 3 --label w10b` 与 `node tools/perf_baseline.mjs --views-only --quality high --loads 3 --ref pre-w10b --label pre-w10b`，记录在 `docs/world/perf/w10b.json`、`pre-w10b.json`。W10b 默认视图 16.5 ms 中位数 / 19.0 ms p95、2,571 calls；首个完整画面中位数 3,555 ms；`index.html` 2,923,023 字节，比基线 2,914,050 增 8,973 字节。球形 d140 中位数与对照同为 40.5 ms，p95 43.2 vs 42.6 ms；d400 中位数 40.4 vs 40.3 ms，p95 48.2 vs 41.8 ms（+15.3%）。d400 p95 超出第 6 节 10% 对照线，单列为性能遗留；平面预算、默认绘制调用、完整首帧和 HTML 增量通过。
+- **LM09 场地冲突的初测与用户裁决 A（2026-10-11）**：
+  - 返工前：CR01 西边中线进入 LM09 场地圆（半径 10 m）最多 1.60 m（RN04-15）；RN13-01 进入 1.02 m。LM09 站台 x −73.35…−52.32、z 31.06…34.22；轨道 x −74.40…−49.16。CR01 全断面压过站台东端并横穿轨道；N11 接线也压入站台东端。
+  - 用户选 A：CR01、路网节点与 `world.js` 均不动；LM09 站台东端缩短 4.5 m（20 → 15.5 m），候车棚西移 3 m，轨道在 CR01 西侧以车挡结束。场地只在 RN04-14、RN04-15、RN13-01 的路廊范围内按“道路优先、场地止于路缘”退让，不改 W10-RD 设计稿。
+  - 返工：`landmarks/LM09.js` 更新站台、候车棚、轨道、车厢与道口位置；`tools/world_check.mjs` 的 WC6 和 `tools/road_check.mjs` 的 W5-C7 只对三条指定道路的 LM09 东侧楔区豁免；`tools/landmark_specific.mjs` 加专项尺寸与净空断言。返工后专项 3 项通过。
+  - 不改 `world.js`、`layout.js` 的节点或 `ROAD_NETWORK_DESIGN_DRAFT.md`。本行状态仍待用户确认；数据复验完成后已合并 `world/W10b` 到 `main`，未推送。球形 d400 p95 性能遗留已记录，等待用户视觉确认本行。
 - **看点清单**：（机位都是平面地图，夜间默认）
   1. 城镇默认视图，依次朝 9 个出口看：道路头沿街道轴线笔直出城约 6 m，止于田里，那里是将来 CR01 的位置。N04、N08 朝正北、正南，N01、N03、N09、N10 朝东西，N11–N13 是巷道。
   2. N01、N03 两口：RN01 照常贯通，线形与原来相差 ≤ 0.045 m。西侧 LM09-north 处原 T05 的支路口铺装消失，东侧约 12 m 外 J-T04 处原 T04 的支路口铺装消失。
@@ -2978,6 +2967,6 @@
      - CR01 与它的路口没有绘制，道路头止于田中，田块也还没给 CR01 让路（W10c）；
      - C01-S 的折角（W10c 路口铺装）；
      - 宽度与横断面（W10c）；
-     - N11 的道路头冲着 LM09 站台东端（LM09 冲突，待决定）；
+     - N11 的道路头仍朝 LM09 东侧；站台东端与轨道已按裁决 A 后退，专项检查确认与道路边界留有净空；
      - 底座立面（W10d）。
 - **待办池新增**：见「W10b 观察（2026-10-11）」5 条。

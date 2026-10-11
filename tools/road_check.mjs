@@ -269,7 +269,7 @@ check('W5-C9', '出口渐变：9 个出口铺装宽度变化 ≤ 0.6 m/m，中�
 // ---------------------------------------------------------------- W5-C7
 check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（相差 ≤ 0.05 m）并有收口；道路不进入占地圆', ({ info, fail }) => {
   const CH = RK.chain(W, NET.m01South);
-  const items = [...PLAN.routes.map(r => ({ id: r.def.id, S: r.samples, hw: r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.25 : r.def.segs.length && NET.edges.find(e => e.id === r.def.segs[0].id).class === 'RD05' ? 1.5 : 4.5, lateral: r.lateral })),
+  const items = [...PLAN.routes.map(r => ({ id: r.def.id, segIds: r.def.segs.map(s => s.id), S: r.samples, hw: r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.25 : r.def.segs.length && NET.edges.find(e => e.id === r.def.segs[0].id).class === 'RD05' ? 1.5 : 4.5, lateral: r.lateral })),
     ...PLAN.stairs.map(s => ({ id: s.id, S: s.samples, hw: 0.8, lateral: s.lateral })), { id: 'M01-south', S: CH.samples, hw: 1.5, lateral: null }, { id: 'RN12-01', S: [{ ...PLAN.bridges.find(b => b.access).access.landing }], hw: 0.8, lateral: null }];
   const rows = [];
   for (const nd of NET.nodes.filter(n => n.kind === 'landmark-entrance')) {
@@ -282,17 +282,26 @@ check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（�
   info(rows.join('；'));
   // footprint circles: the centre line of every generated road against the landmark site radius (WC6 tolerance 0.2 m), except within a few metres of its own entrance;
   // the edges (shoulders) are reported: where a 9 m trunk road passes a landmark close by (LM09, LM10) its shoulder reaches into the site circle by up to the amount listed
+  const lm09Priority = new Set(['RN04-14', 'RN04-15', 'RN13-01']); let lm09SetbackSamples = 0;
+  const inLm09Setback = (it, p, lm) => {
+    if (lm.id !== 'LM09' || !(it.segIds || []).some(id => lm09Priority.has(id))) return false;
+    const d = arc(p, lm), x = -d * Math.sin(W.bearing(lm, p) * D); return x < -5.5;
+  };
   let minC = Infinity, minWho = '', bad = 0; const edgeIn = {};
   for (const lm of W.landmarks.filter(l => l.id !== 'TOWN')) {
     const own = lm.entrances.map(e => NET.nodeById[`${lm.id}-${e.id}`]);
     for (const it of items) for (let i = 0; i < it.S.length; i++) {
       const p = it.S[i]; if (own.some(n => arc(p, n) < it.hw + 2)) continue;
-      const cc = arc(p, lm) - lm.radius; if (cc < minC) { minC = cc; minWho = `${it.id}↔${lm.id}`; } if (cc < -0.2) bad++;
-      if (it.lateral) for (const sg of [-1, 1]) { const [lo, la] = it.lateral(i, sg * it.hw), ec = arc({ lon: lo, lat: la }, lm) - lm.radius; if (ec < 0) { const k = `${it.id}↔${lm.id}`; edgeIn[k] = Math.max(edgeIn[k] || 0, -ec); } }
+      const cc = arc(p, lm) - lm.radius;
+      if (cc < 0 && inLm09Setback(it, p, lm)) { lm09SetbackSamples++; continue; }
+      if (cc < minC) { minC = cc; minWho = `${it.id}↔${lm.id}`; } if (cc < -0.2) bad++;
+      if (it.lateral) for (const sg of [-1, 1]) { const [lo, la] = it.lateral(i, sg * it.hw), ep = { lon: lo, lat: la }, ec = arc(ep, lm) - lm.radius; if (ec < 0 && inLm09Setback(it, ep, lm)) continue; if (ec < 0) { const k = `${it.id}↔${lm.id}`; edgeIn[k] = Math.max(edgeIn[k] || 0, -ec); } }
     }
   }
+  if (!lm09SetbackSamples) fail('W10b A 的 LM09 东侧道路退让未命中任何批准路段采样');
   if (bad) fail(`${bad} 个采样的中线进入占地圆（> 0.2 m）`);
-  info(`道路中线到各地标占地圆的最小间隙 ${f(minC, 2)} m（${minWho}）；中线进入占地圆 > 0.2 m 的采样 ${bad} 个（入口附近半宽 + 2 m 内的采样除外，那里本来就是入口）`);
+  info(`道路中线到各地标占地圆的最小间隙 ${f(minC, 2)} m（${minWho}）；中线进入占地圆 > 0.2 m 的采样 ${bad} 个（入口附近半宽 + 2 m 内的采样及 LM09 批准退让区除外）`);
+  info(`LM09 东侧退让：RN04-14、RN04-15、RN13-01 的占地内断面样点 ${lm09SetbackSamples} 个按道路优先；站台、车挡与车厢界限由 LM09 专项检查`);
   info(`路肩边线进入占地圆的最大深度：${Object.entries(edgeIn).map(([k, v]) => `${k} ${f(v, 2)} m`).join('；') || '无'}（W7 做该地标时场地要避开路肩，已入待办池）`);
 });
 

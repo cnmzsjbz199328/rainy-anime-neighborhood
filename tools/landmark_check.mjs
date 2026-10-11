@@ -1,11 +1,11 @@
-// Checks W7-C1..C5 for one planet landmark. Run after `python3 build.py`:  node tools/landmark_check.mjs LM01 [--no-browser]
+// Checks W7-C1..C5 for one planet landmark. Run after `python3 build.py`:  node tools/landmark_check.mjs LM01 [--no-browser] [--no-shots]
 // Data (Node): the registration against world.js. Page: the module's local frame and extents, the true size after the bend, the footprint, the ground contact, the cost and the
 // motion; landmark-specific measurements (counts, sizes) come from the module's `stats` and from the checks listed in SPECIFIC below.
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const id = process.argv[2]; if (!/^LM\d\d$/.test(id || '')) { console.error('usage: node tools/landmark_check.mjs LMxx [--no-browser]'); process.exit(2); }
+const id = process.argv[2]; if (!/^LM\d\d$/.test(id || '')) { console.error('usage: node tools/landmark_check.mjs LMxx [--no-browser] [--no-shots]'); process.exit(2); }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 globalThis.LAYOUT = require(path.join(root, 'layout.js'));
@@ -15,6 +15,7 @@ const results = [];
 const f = (v, n = 3) => (typeof v === 'number' ? v.toFixed(n) : String(v));
 function report(idc, title, info, fails) { results.push({ id: idc, ok: !fails.length }); console.log(`${fails.length ? 'FAIL' : 'PASS'} ${idc} ${title}`); for (const m of fails) console.log('  ✗ ' + m); for (const m of info) console.log('  · ' + m); }
 const lm = W.landmarks.find(q => q.id === id);
+const noShots = process.argv.includes('--no-shots');
 
 // ---- W7-C1 registration (Node side)
 { const info = [], fails = [];
@@ -37,13 +38,13 @@ if (!process.argv.includes('--no-browser')) {
   const M = await page.evaluate(id => {
     const S = window.__scene, T = window.THREE, B = S.bend; B.set(1);
     const info = S.landmarks.info[id]; if (!info || !info.groups) return { missing: true };
-    const lm = window.WORLD.landmarks.find(q => q.id === id), meshes = []; let calls = 0, tris = 0;
-    for (const g of info.groups) g.traverse(o => { if ((o.isMesh || o.isLineSegments) && o.geometry) { meshes.push(o); calls++; if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
+    const lm = window.WORLD.landmarks.find(q => q.id === id), meshes = [], groupBounds = {}, needGroupBounds = id === 'LM09'; let calls = 0, tris = 0;
+    for (const g of info.groups) { const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9]; g.traverse(o => { if ((o.isMesh || o.isLineSegments) && o.geometry) { meshes.push(o); calls++; if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; const a = needGroupBounds && o.geometry.userData.local; if (a) for (let i = 0; i < a.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a[i + k]); hi[k] = Math.max(hi[k], a[i + k]); } } }); if (needGroupBounds) groupBounds[g.name] = { min: lo, max: hi }; }
     let min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9], maxR = 0, lowest = 1e9; const pairsSrc = [];
     for (const o of meshes) { if (o.isLineSegments || (o.userData && o.userData.layer === 'ice-overlay')) continue;                  /* the LM07 texture patch and hexagon mesh belong to the ice, not to the 8 m site (W7_SPEC 3) */ const loc = o.geometry.userData.local; if (!loc) continue; const step = Math.max(1, Math.floor(loc.length / 3 / 400));
       for (let i = 0; i < loc.length; i += 3 * step) { const l = [loc[i], loc[i + 1], loc[i + 2]]; for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], l[k]); max[k] = Math.max(max[k], l[k]); } maxR = Math.max(maxR, Math.hypot(l[0], l[2])); lowest = Math.min(lowest, l[1]); const w = o.geometry.attributes.position; pairsSrc.push([l, [w.array[i], w.array[i + 1], w.array[i + 2]]]); } }
     const pairs = []; for (let i = 0; i < 60; i++) { const a = pairsSrc[(i * 7919) % pairsSrc.length], b = pairsSrc[(i * 104729 + 13) % pairsSrc.length]; if (!a || !b) continue; const d0 = Math.hypot(a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2]); if (d0 < 6 || d0 > (({ LM06: 24 })[id] || 30) || Math.abs(a[0][1] - b[0][1]) > (({ LM06: 0.5 })[id] || 1.0)) continue; /* pairs at about the same height: tangent-plane distance against the true distance on the sphere (curvature alone gives 0.5% per 30 m) */  const A = B.point(a[1][0], a[1][1], a[1][2], 1), Bp = B.point(b[1][0], b[1][1], b[1][2], 1), d1 = Math.hypot(A[0] - Bp[0], A[1] - Bp[1], A[2] - Bp[2]); pairs.push(Math.abs(d1 / d0 - 1)); }
-    return { min, max, maxR, maxAllowed: Math.max(lm.radius, ...lm.entrances.map(e => e.offset)) + 1.5 + (({ LM10: 10, LM08: 5, LM06: 12 })[id] || 0), seabed: ({ LM10: -6, LM08: -7, LM06: -1.6, LM07: -1.05 })[id] ?? -0.6, lowest, calls, tris, worstScale: pairs.length ? Math.max(...pairs) : 0, pairs: pairs.length, stats: info.fx && info.fx.stats ? info.fx.stats : null, groups: info.groups.map(g => g.name), radius: lm.radius, buildMs: S.landmarks.info.buildMs };
+    return { min, max, maxR, maxAllowed: Math.max(lm.radius, ...lm.entrances.map(e => e.offset)) + 1.5 + (({ LM10: 10, LM08: 5, LM06: 12 })[id] || 0), seabed: ({ LM10: -6, LM08: -7, LM06: -1.6, LM07: -1.05 })[id] ?? -0.6, lowest, calls, tris, worstScale: pairs.length ? Math.max(...pairs) : 0, pairs: pairs.length, stats: info.fx && info.fx.stats ? info.fx.stats : null, groups: info.groups.map(g => g.name), groupBounds, radius: lm.radius, buildMs: S.landmarks.info.buildMs };
   }, id);
   { const info = [], fails = [];
     if (M.missing) fails.push('模块没有注册或没有构建'); else {
@@ -55,7 +56,7 @@ if (!process.argv.includes('--no-browser')) {
       if (M.lowest < M.seabed) fails.push(`有物件低于局部地面 ${f(M.lowest, 2)} m（允许到 ${M.seabed} m：靠海地标的防波堤基础与码头桩在海床上）`);
     }
     report('W7-C2', '尺寸与占地：局部范围、弯曲后真实尺寸 ≤ 1%、物件在占地内', info, fails); }
-  { const info = [], fails = [];
+  if (!noShots) { const info = [], fails = [];
     // W10a (W10_SPEC 2.4, 6): the landmarks are built before the first frame and show in every view; the default view's budget is pre-w10a 2,374 + 10 %
     if (def.built !== 10 || !def.visible) fails.push(`默认画面地标 ${def.built} 个、全部可见 ${def.visible}（W10a：首帧前生成 10 个、所有视图显示）`); if (def.calls > 2611) fails.push(`默认视角绘制调用 ${def.calls} 超过 W10 预算 2611`);
     info.push(`默认视角（uBend = 0）：${def.calls} 次绘制调用 / ${def.tri} 个三角形，10 个地标已构建并显示（W10 预算 ≤ 2611 = pre-w10a 2,374 + 10%）`);

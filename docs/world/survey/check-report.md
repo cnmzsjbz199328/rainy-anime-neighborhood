@@ -27,11 +27,9 @@ PASS WC4 每个道路等级的坡度不超过上限（5 m 窗口平均坡度；�
 PASS WC5 道路跨越水面（海、河）处都有桥或栈道
   · 水面采样点 247 个，无桥或栈道 0 个
   · 桥与栈道：RN01-03:bridge、RN01-07:bridge、RN01-08:bridge、RN01-09:bridge、RN01-13:bridge、RN11-01:boardwalk、RN12-01:boardwalk
-FAIL WC6 道路不穿过地标内部，只在入口处接入；城镇等级的边只在城镇补丁内，其余道路不进入补丁（只经 9 个出口）
-  ✗ RN04-14 压入 LM09 的占地半径 1.0 m
-  ✗ RN04-15 压入 LM09 的占地半径 1.6 m
-  ✗ RN13-01 压入 LM09 的占地半径 1.0 m
-  · 与地标占地圆的最小间隙 -1.6 m（RN04-15↔LM09）；占地半径取设计卡「尺度」一节的场地半径，LM01 取火山口与山顶局部模型范围
+PASS WC6 道路不穿过地标内部，只在入口处接入；LM09 的 W10b 东侧退让按道路优先
+  · 与地标占地圆的最小间隙 -0.1 m（RN04-12↔LM04）；占地半径取设计卡「尺度」一节的场地半径，LM01 取火山口与山顶局部模型范围
+  · LM09 东侧退让：RN04-14、RN04-15、RN13-01 的东侧楔区样点（局部 x < −5.5 m）按道路优先豁免 14 点；站台、轨道与车挡的界限由 tools/landmark_check.mjs LM09 专项核验
   · 城镇等级的边 12 条全部在城镇补丁内（含边界上的出口），其余 54 条只在 9 个出口 0.6 m 内触及补丁
 PASS WC7 城镇补丁外缘 15 m 内：|height−1.6| ≤ 0.05×距离+0.05，相邻 1 m 网格坡度 ≤ 5%
   · 检查 7410 个点；max(|height−1.6| − 0.05×距离) = -0.042 m（须 ≤ 0.05）；最大坡度 4.59%（须 ≤ 5%）
@@ -62,5 +60,5 @@ PASS WC11 LM05、LM06、LM07 在同一大圆上，误差不超过 0.5°
 INFO WC12 弯曲为 0 时，现有布局检查与截图与改动前一致：node tools/regress.mjs --baseline-ref pre-w6a --mask-patch-margin 24（浏览器）
 INFO WC13 天气锁定为雨时现有检查与截图一致；天气可复现：node tools/regress.mjs ... --weather lock:rain 与 node tools/weather_check.mjs（浏览器）
 INFO WC14 全景距离下没有雨丝和遮挡地表的云层、四个方向可读：node tools/wc14_check.mjs（浏览器）
-FAIL world_check：WC1–WC11 10/11 通过，WC12–WC14 由浏览器检查负责（见上）
+PASS world_check：WC1–WC11 11/11 通过，WC12–WC14 由浏览器检查负责（见上）
 ```

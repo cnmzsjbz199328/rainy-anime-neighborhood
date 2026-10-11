@@ -196,8 +196,9 @@ check('WC5', '道路跨越水面（海、河）处都有桥或栈道', ({ info, 
   info('桥与栈道：' + sp.join('、'));
 });
 
-check('WC6', '道路不穿过地标内部，只在入口处接入；城镇等级的边只在城镇补丁内，其余道路不进入补丁（只经 9 个出口）', ({ info, fail }) => {
+check('WC6', '道路不穿过地标内部，只在入口处接入；LM09 的 W10b 东侧退让按道路优先', ({ info, fail }) => {
   const exits = NODES.filter(n => n.kind === 'town-exit');
+  const lm09Priority = new Set(['RN04-14', 'RN04-15', 'RN13-01']); let lm09SetbackSamples = 0;
   let minClear = Infinity, minWho = '', townEdges = 0;
   for (const e of EDGES) {
     let inTown = 0, outTown = 0, lmHit = {};
@@ -207,6 +208,12 @@ check('WC6', '道路不穿过地标内部，只在入口处接入；城镇等级
       else if (W.insideTownPatch(p.lon, p.lat) && !exits.some(n => W.arcDistance(n, p) < 0.6)) inTown++;
       for (const lm of landmarks) {
         const d = W.arcDistance(p, lm), clear = d - lm.radius;
+        // W10b user decision A: the station's eastern site edge ends at the CR01/N11 road edge.
+        // Only these three approved road segments may occupy the removed eastern wedge (local x < -5.5 m).
+        if (lm.id === 'LM09' && lm09Priority.has(e.id) && clear < 0) {
+          const x = -d * Math.sin(W.bearing(lm, p) * D);
+          if (x < -5.5) { lm09SetbackSamples++; continue; }
+        }
         if (clear < minClear) { minClear = clear; minWho = `${e.id}↔${lm.id}`; }
         if (clear < -0.2) lmHit[lm.id] = Math.max(lmHit[lm.id] || 0, -clear);
       }
@@ -215,11 +222,13 @@ check('WC6', '道路不穿过地标内部，只在入口处接入；城镇等级
     if (outTown) fail(`城镇等级的边 ${e.id} 有 ${outTown} 个采样点在城镇补丁外`);
     for (const id in lmHit) fail(`${e.id} 压入 ${id} 的占地半径 ${fmt(lmHit[id])} m`);
   }
+  if (!lm09SetbackSamples) fail('W10b A 的 LM09 东侧道路退让未命中任何批准路段采样');
   for (const n of NODES.filter(q => q.kind === 'landmark-entrance')) {
     const lm = W.landmarks.find(l => l.id === n.landmark), ent = lm.entrances.find(en => `${lm.id}-${en.id}` === n.id);
     if (!ent || W.arcDistance(n, ent) > 0.01) fail(`${n.id} 与地标登记的入口不一致`);
   }
   info(`与地标占地圆的最小间隙 ${fmt(minClear)} m（${minWho}）；占地半径取设计卡「尺度」一节的场地半径，LM01 取火山口与山顶局部模型范围`);
+  info(`LM09 东侧退让：RN04-14、RN04-15、RN13-01 的东侧楔区样点（局部 x < −5.5 m）按道路优先豁免 ${lm09SetbackSamples} 点；站台、轨道与车挡的界限由 tools/landmark_check.mjs LM09 专项核验`);
   info(`城镇等级的边 ${townEdges} 条全部在城镇补丁内（含边界上的出口），其余 ${EDGES.length - townEdges} 条只在 9 个出口 0.6 m 内触及补丁`);
 });
 
