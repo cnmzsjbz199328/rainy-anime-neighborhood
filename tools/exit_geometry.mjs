@@ -2,7 +2,7 @@
 // All functions take a Playwright page with index.html loaded (any renderer); they finish the background generation first.
 //   exitRays(page): for every exit head, rows 0 .. K (its first L metres), 9 points across the whole cross-section (footprint: paved + shoulder + ditch), a ray from
 //     30 m above straight down to the road (flat state: along -y; sphere state, uBend = 1: along the sphere's radius, the triangles bent on the CPU with BEND.point):
-//     the first surface hit must be a road mesh (the start-up heads, the network's road meshes, the section's T03 / T11 strips). Candidates: every visible opaque
+//     the first surface hit must be a road mesh (the start-up heads, the network's road meshes, the section's chain: M01 south, the former T03). Candidates: every visible opaque
 //     non-instanced mesh with an identity world matrix outside the town's own objects. Also reports, for information, the network road from L to 24 m (ruling 2).
 //   exitSeams(page): the seam between each head and the road beyond it (positions, normals of row K), the step from the road surface to the cut terrain edge, widths.
 export const prepare = () => Promise.resolve(true);   // W10a: the whole world is built before the first frame (worldgen.js), nothing to finish here
@@ -16,7 +16,7 @@ export async function exitRays(page, { beyond = 24 } = {}) {
     const townSet = new Set(); for (const r of S.town.roots) r.traverse(o => townSet.add(o)); for (const lm of Object.values(S.landmarks.info)) if (lm && lm.groups) for (const g of lm.groups) g.traverse(o => townSet.add(o));
     const shown = o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
     const roadSet = new Set([...S.terrain.heads]); S.roads.state.root.traverse(o => { if (o.isMesh) roadSet.add(o); });
-    S.section.state.root.traverse(o => { if (o.isMesh && /T03|T11/.test(o.name)) roadSet.add(o); });
+    S.section.state.root.traverse(o => { if (o.isMesh && /M01 south chain/.test(o.name)) roadSet.add(o); });
     const heads = S.terrain.exitHeads, routes = S.roads.data().routes;
     const colPt = (st, m, i, j) => [st.pos[(i * m + j) * 3], st.pos[(i * m + j) * 3 + 1], st.pos[(i * m + j) * 3 + 2]];
     const atO = (rt, i, o) => { const g = rt.grid, m = g.length; let j = 0; while (j + 2 < m && g[j + 1] < o) j++; const t = Math.max(0, Math.min(1, (o - g[j]) / (g[j + 1] - g[j]))), a = colPt(rt.strip, m, i, j), b = colPt(rt.strip, m, i, j + 1); return [0, 1, 2].map(k => a[k] + (b[k] - a[k]) * t); };
