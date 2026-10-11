@@ -1,5 +1,6 @@
 // Survey maps for the planet layout (W1). Run: node tools/world_survey.mjs
-// Writes docs/world/survey/: equirect.png (1920x960), view-front/east/back/west.png and view-north/south.png (1024x1024).
+// --road-review-base writes only a terrain/landmark base without route geometry for planning overlays.
+// Normal mode writes docs/world/survey/: equirect.png (1920x960), view-front/east/back/west.png and view-north/south.png (1024x1024).
 // Data comes from world.js only; the maps are drawn on a canvas inside Chromium (tools/browser.mjs) and saved as PNG.
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
@@ -10,6 +11,7 @@ import { launchChromium } from './browser.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const W = require(path.join(root, 'world.js'));
+const roadReviewBase = process.argv.includes('--road-review-base');
 const outDir = path.join(root, 'docs/world/survey');
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -36,7 +38,7 @@ const ice = ['N', 'S'].map(h => { const r = W.regions.find(q => q.shape.hemisphe
 const patch = W.TOWN_PATCH;
 const shares = W.computeAreaShares(0.25);
 
-const payload = { PALETTE, kinds, nx: ras.nx, ny: ras.ny, kindIdx: b64(kindIdx), hnx, hny, HG, hgrid: b64(hgrid), edges, rivers, nodes, lms, ice, patch, shares: shares.zone };
+const payload = { PALETTE, kinds, nx: ras.nx, ny: ras.ny, kindIdx: b64(kindIdx), hnx, hny, HG, hgrid: b64(hgrid), edges, rivers, nodes, lms, ice, patch, shares: shares.zone, roadReviewBase };
 
 // ---------------------------------------------------------------- drawing code (runs in the page)
 const pageCode = `(data) => {
@@ -138,24 +140,26 @@ function overlays(ctx, proj, wrap, opts) {
     ctx.strokeStyle = '#fff3c0'; ctx.lineWidth = 1.6; strokePath(ctx, ring, proj, false); }
   // rivers
   for (const r of data.rivers) { ctx.strokeStyle = '#1b5fa8'; ctx.lineWidth = 2.6; strokePath(ctx, r.pts, proj, wrap); ctx.strokeStyle = '#7fc4ff'; ctx.lineWidth = 1.2; strokePath(ctx, r.pts, proj, wrap); }
-  // roads: dark casing first, then the class colour; bridges wider, tunnels dashed, stairs dotted
-  for (const pass of ['case', 'fill']) for (const e of data.edges) {
-    const [col, w] = CLS[e.cls];
-    const segs = []; let cur = null;
-    for (const p of e.pts) { const sp = e.spans.find(s => p[2] >= s.a - 1e-6 && p[2] <= s.b + 1e-6); const t = sp ? sp.type : null; if (!cur || cur.t !== t) { cur = { t, pts: [] }; segs.push(cur); if (segs.length > 1) cur.pts.push(segs[segs.length - 2].pts[segs[segs.length - 2].pts.length - 1]); } cur.pts.push(p); }
-    for (const s of segs) {
-      const k = opts.scale || 1, bw = (s.t === 'bridge' || s.t === 'boardwalk') ? 1.6 : 1;
-      if (pass === 'case') { ctx.strokeStyle = 'rgba(10,14,24,0.9)'; ctx.lineWidth = (w * bw + 2.4) * k; ctx.setLineDash([]); }
-      else { ctx.strokeStyle = s.t === 'tunnel' ? '#2a2a2a' : col; ctx.lineWidth = w * bw * k; ctx.setLineDash(s.t === 'tunnel' ? [4, 3] : s.t === 'stairs' ? [2, 3] : s.t === 'boardwalk' ? [1, 0] : []); }
-      strokePath(ctx, s.pts, proj, wrap);
+  if (!opts.noRoads) {
+    // roads: dark casing first, then the class colour; bridges wider, tunnels dashed, stairs dotted
+    for (const pass of ['case', 'fill']) for (const e of data.edges) {
+      const [col, w] = CLS[e.cls];
+      const segs = []; let cur = null;
+      for (const p of e.pts) { const sp = e.spans.find(s => p[2] >= s.a - 1e-6 && p[2] <= s.b + 1e-6); const t = sp ? sp.type : null; if (!cur || cur.t !== t) { cur = { t, pts: [] }; segs.push(cur); if (segs.length > 1) cur.pts.push(segs[segs.length - 2].pts[segs[segs.length - 2].pts.length - 1]); } cur.pts.push(p); }
+      for (const s of segs) {
+        const k = opts.scale || 1, bw = (s.t === 'bridge' || s.t === 'boardwalk') ? 1.6 : 1;
+        if (pass === 'case') { ctx.strokeStyle = 'rgba(10,14,24,0.9)'; ctx.lineWidth = (w * bw + 2.4) * k; ctx.setLineDash([]); }
+        else { ctx.strokeStyle = s.t === 'tunnel' ? '#2a2a2a' : col; ctx.lineWidth = w * bw * k; ctx.setLineDash(s.t === 'tunnel' ? [4, 3] : s.t === 'stairs' ? [2, 3] : s.t === 'boardwalk' ? [1, 0] : []); }
+        strokePath(ctx, s.pts, proj, wrap);
+      }
     }
-  }
-  ctx.setLineDash([]);
-  // nodes
-  for (const n of data.nodes) {
-    const q = proj(n.lon, n.lat); if (!q[2]) continue;
-    ctx.beginPath(); ctx.arc(q[0], q[1], n.kind === 'town-exit' ? 3.2 : n.kind === 'landmark-entrance' ? 3.4 : 2.4, 0, 7);
-    ctx.fillStyle = n.kind === 'town-exit' ? '#ffffff' : n.kind === 'landmark-entrance' ? '#ff4d6d' : n.kind === 'endpoint' ? '#bbbbbb' : '#222'; ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.setLineDash([]);
+    // nodes
+    for (const n of data.nodes) {
+      const q = proj(n.lon, n.lat); if (!q[2]) continue;
+      ctx.beginPath(); ctx.arc(q[0], q[1], n.kind === 'town-exit' ? 3.2 : n.kind === 'landmark-entrance' ? 3.4 : 2.4, 0, 7);
+      ctx.fillStyle = n.kind === 'town-exit' ? '#ffffff' : n.kind === 'landmark-entrance' ? '#ff4d6d' : n.kind === 'endpoint' ? '#bbbbbb' : '#222'; ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 0.8; ctx.stroke();
+    }
   }
   // landmarks: footprint circle, marker, label
   ctx.font = (opts.font || 13) + 'px sans-serif';
@@ -186,11 +190,14 @@ const out = {};
   const w = 1920, h = 960, c = makeCanvas(w, h), ctx = c.getContext('2d'), img = ctx.createImageData(w, h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const s = surface(-180 + (x + 0.5) * 360 / w, 90 - (y + 0.5) * 180 / h), i = (y * w + x) * 4; img.data[i] = s[0]; img.data[i + 1] = s[1]; img.data[i + 2] = s[2]; img.data[i + 3] = 255; }
   ctx.putImageData(img, 0, 0);
-  overlays(ctx, equirect(w, h), true, { equirect: true, h, scale: 1, font: 14, labelOff: { LM02: [-120, -10], LM10: [8, 22], LM04: [8, 22], LM03: [8, 20], LM06: [8, 20], LM09: [-130, 20], LM08: [8, -10], LM05: [-150, -10] } });
-  legend(ctx, 14, 52);
-  ctx.fillStyle = 'rgba(8,12,22,0.9)'; ctx.fillRect(0, 0, 560, 30); ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('星球布局 v1 勘探图 · 等距圆柱（R = 90 m，1° ≈ 1.57 m）', 12, 22);
-  out['equirect.png'] = c.toDataURL('image/png');
+  overlays(ctx, equirect(w, h), true, { equirect: !data.roadReviewBase, noRoads: data.roadReviewBase, h, scale: 1, font: 14, labelOff: { LM02: [-120, -10], LM10: [8, 22], LM04: [8, 22], LM03: [8, 20], LM06: [8, 20], LM09: [-130, 20], LM08: [8, -10], LM05: [-150, -10] } });
+  if (!data.roadReviewBase) {
+    legend(ctx, 14, 52);
+    ctx.fillStyle = 'rgba(8,12,22,0.9)'; ctx.fillRect(0, 0, 560, 30); ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('星球布局 v1 勘探图 · 等距圆柱（R = 90 m，1° ≈ 1.57 m）', 12, 22);
+  }
+  out[data.roadReviewBase ? 'equirect-road-review-base.png' : 'equirect.png'] = c.toDataURL('image/png');
 }
+if (data.roadReviewBase) return out;
 // ---- orthographic hemispheres and polar views
 const VIEWS = [['view-front', 0, 0, '正面 FRONT  中心 (0°, 0°)'], ['view-east', 90, 0, '东 EAST  中心 (0°, 90°E)'], ['view-back', 180, 0, '背面 BACK  中心 (0°, 180°)'], ['view-west', -90, 0, '西 WEST  中心 (0°, 90°W)'], ['view-north', 0, 90, '北极 NORTH  经度 0° 在下方'], ['view-south', 0, -90, '南极 SOUTH  经度 0° 在上方']];
 for (const [name, lon0, lat0, title] of VIEWS) {

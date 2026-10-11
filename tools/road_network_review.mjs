@@ -256,7 +256,7 @@ sections.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w
 <rect width="100%" height="100%" fill="#111b27"/>
 <rect x="0" y="0" width="${WIDTH}" height="70" fill="#1b2837"/>
 ${svgText(28, 33, '全球与城镇路网设计图（W10-RD）', 26, '#f3f6f9', 750)}
-${svgText(28, 57, '定稿建议待用户确认；道路坐标可用于 W10b，layout.js 既有数据不变', 15, '#becbd8', 450)}
+${svgText(28, 57, 'W10-RD 设计已获确认；W10b 前同步 W10_SPEC，layout.js 既有数据不变', 15, '#becbd8', 450)}
 <image x="0" y="${MAP_Y}" width="${WMAP}" height="${HMAP}" href="data:image/png;base64,${globalImage}"/>
 <g id="existing-world">${globalRoads}</g>
 <g id="existing-town">${townMapRoads}</g>
@@ -287,12 +287,18 @@ ${svgText(0, 317, '• RD03 断面：4.5 m 沥青、碎石肩、外侧边沟；�
 ${svgText(0, 343, '• N04 接正北点；T02-01 在西北环点接入，截短 28.89 m。', 15, '#dce5ed', 450)}
 ${svgText(0, 369, '• N08 与 T03 共用正南交点；T03-01 截短 5.28 m，不跨环。', 15, '#dce5ed', 450)}
 ${svgText(0, 395, '• T04/T05/T06 全部移除；九出口与保留地标路仍连通。', 15, '#dce5ed', 450)}
-${svgText(0, 437, '拓扑核对', 18, '#9fe4f4', 700)}
-${svgText(0, 465, '• 59 个节点、66 条边；RN04 由 18 条边闭合。', 15, '#dce5ed', 450)}
-${svgText(0, 491, '• RN01 贯通东西环球路与 R01，CR01 在两端平交。', 15, '#dce5ed', 450)}
-${svgText(0, 517, '• RN05 到 LM02/LM01/LM07；RN06 到 LM04；支路均有目的地。', 15, '#dce5ed', 450)}
-${svgText(0, 559, '确认后先修订 W10_SPEC，再进入 W10b。', 15, '#ffd479', 650)}
-${svgText(0, 585, '待确认用途：E-T11 海上栈道末端作为临水观景平台。', 15, '#ffd479', 650)}
+${svgText(0, 437, '农田 / 草地 / 建构筑物审查', 18, '#ff9999', 700)}
+${svgText(0, 465, '• 当前道路与田块面相交 0；森林实例相交 0。', 15, '#dce5ed', 450)}
+${svgText(0, 491, '• J-T09 有 1 个 T09 路标石堆压入 RN01-11 铺装；实施时抑制。', 15, '#dce5ed', 450)}
+${svgText(0, 517, '• CR01 与九条接线不压草地/森林实例；环线位于 farmland-main。', 15, '#dce5ed', 450)}
+${svgText(0, 543, '• 未重算田块时有 27 格相交（22 格耕作面进入铺装）。', 15, '#dce5ed', 450)}
+${svgText(0, 569, '• 完整采样避让后田块相交 0、净减约 936 m²；地块净距 ≥ 2.01 m。', 15, '#dce5ed', 450)}
+${svgText(0, 611, '拓扑核对', 18, '#9fe4f4', 700)}
+${svgText(0, 639, '• 59 个节点、66 条边；RN04 由 18 条边闭合。', 15, '#dce5ed', 450)}
+${svgText(0, 665, '• RN01 贯通东西环球路与 R01，CR01 在两端平交。', 15, '#dce5ed', 450)}
+${svgText(0, 691, '• RN05 到 LM02/LM01/LM07；RN06 到 LM04；支路均有目的地。', 15, '#dce5ed', 450)}
+${svgText(0, 733, 'W10b 前先修订 W10_SPEC；本轮未开始 W10b。', 15, '#ffd479', 650)}
+${svgText(0, 759, '已确认用途：E-T11 海上栈道末端作为临水观景平台。', 15, '#ffd479', 650)}
 </g>
 <rect x="0" y="${HEIGHT - 50}" width="${WIDTH}" height="50" fill="#111b27"/>
 ${svgText(28, HEIGHT - 17, '底图：equirect-road-review-base.png（无预烘焙道路）；城镇放大：docs/layout/topdown.png。实线为保留及新增道路；T04/T05/T06 与田边端点不绘制。', 13, '#9baaba', 450)}
