@@ -13,11 +13,11 @@
 ## 文件
 
 - `index.html`：包含渲染库、布局数据和场景脚本的单文件交付版。
-- `sphere_camera.js`：W8f-b 球形抓取、跨极点朝向与弧长移动；`tools/sphere_camera_check.mjs` 用鼠标、键盘和触屏事件验证 K2–K8，`tools/distant_check.mjs` 比较 `pre-w8f-b` 的远景与加载交接，`tools/joint_shots.mjs` 逐处截图路网全部 42 个连接处（出口、节点、尽头、地标入口、隧道洞口）并检查树冠团不压路，输出 `docs/world/w8f-b/`。
+- `sphere_camera.js`：W8f-b 球形抓取、跨极点朝向与弧长移动；`tools/sphere_camera_check.mjs` 用鼠标、键盘和触屏事件验证 K2–K8，`tools/distant_check.mjs` 比较 `pre-w8f-b` 的远景与加载交接，`tools/joint_shots.mjs` 逐处为路网 42 个连接处生成截图，并以机器规则检查树冠团不压路，输出 `docs/world/w8f-b/` 供用户验收。
 - `scene.js`：可编辑的场景源码；已有样板按命名分组（store、ramen、apartment 等），便于整体放置。
 - `layout.js`：道路、街区、地块与样板放置的布局数据（坐标约定见文件头）；`buildings` 登记新建筑的放置、实测包围盒与遮雨区。
 - `buildings/<地块>.js`：逐栋新建筑的建模源码（目前 `B05-P01.js` 便利店、`B05-P05.js` 公寓、`B05-P02.js` 拉面店、`B05-P03.js` 咖啡店、`B05-P04.js` 花店、`B03-P01.js` 面包店、`B03-P02.js` 洗衣店、`B03-P03.js` 旧书店、`B03-P04.js` 食堂、`B03-P05.js` 杂货店、`B03-P06.js` 社区会所、`B03-P07.js` 邮政服务站、`B03-P08.js` 雨宿神社、`B04-P01.js` 交番、`B04-P02.js` 诊所、`B04-P03.js` 口袋公园、`B04-P04.js` 街角小神社、`B04-P05.js` 文具店商住楼、`B06-P01.js` 药店商住楼、`B06-P02.js` 理发店商住楼、`B06-P03.js` 小文具店商住楼、`B06-P04.js` 修理铺商住楼、`B02-P01.js` 独栋住宅 1、`B02-P02.js` 独栋住宅 2、`B02-P03.js` 独栋住宅 3、`B02-P04.js` 独栋住宅 4、`B02-P05.js` 独栋住宅 5、`B02-P06.js` 独栋住宅 6、`B02-P07.js` 独栋住宅 7、`B02-P08.js` 独栋住宅 8、`B05-P06.js` 独栋住宅 9、`B05-P07.js` 独栋住宅 10、`B05-P08.js` 独栋住宅 11、`B06-P05.js` 独栋住宅 12、`B06-P06.js` 独栋住宅 13、`B06-P07.js` 独栋住宅 14、`B06-P08.js` 独栋住宅 15、`B01-P01.js` 小学），用 scene.js 提供的同一套墨线、toon、纸纹工具绘制。
-- `tools/`：布局与浏览器检查工具。`measure_samples.mjs` 在 Chromium 中实测样板与新建筑尺寸；`layout_check.mjs` 检查布局（C12 检查新建筑实测模型）并生成 `docs/layout/` 下的俯视检查图和报告；`building_views.mjs` 输出新建筑的八视图实景截图与渲染成本；`live_topdown.mjs` 渲染实景俯视并叠加布局线；`views.mjs` 检查首帧、控制台和交互，并输出审查截图。
+- `tools/`：布局与浏览器检查工具。`measure_samples.mjs` 在 Chromium 中实测样板与新建筑尺寸；`layout_check.mjs` 检查布局（C12 检查新建筑实测模型）并生成 `docs/layout/` 下的俯视检查图和报告；`building_views.mjs` 输出新建筑的八视图实景截图与渲染成本；`live_topdown.mjs` 渲染实景俯视并叠加布局线；`views.mjs` 检查首帧、控制台和交互，并输出供用户验收的截图。
 - `PROGRESS.md`：分阶段进度、检查结果和待验证项。
 - `docs/layout/LAYOUT_V1.md`：首版道路与地块坐标，以及新增建筑时的变更规则（2026-10-10 起按 D15 解冻：街道中线与宽度、地块、建筑不变，底座与城镇—世界衔接按 `docs/world/W10_SPEC.md` 重做）。
 - `ROAD_NETWORK_PLAN.md`：道路与用地建设计划。
@@ -42,7 +42,7 @@
 
 修改 `scene.js`、`layout.js` 或 `buildings/` 后运行 `python3 build.py`，更新 `index.html`；不要同时手工编辑生成文件和源码。
 
-布局检查需要 Node 与 Playwright（Chromium）：先运行 `node tools/measure_samples.mjs`，再运行 `node tools/layout_check.mjs --png`；实景检查运行 `node tools/live_topdown.mjs` 与 `node tools/views.mjs`；新建筑截图与成本运行 `node tools/building_views.mjs B05-P03`。
+布局检查需要 Node 与 Playwright（Chromium）：先运行 `node tools/measure_samples.mjs`，再运行 `node tools/layout_check.mjs --png`；实景检查运行 `node tools/live_topdown.mjs` 与 `node tools/views.mjs`；新建筑截图与成本运行 `node tools/building_views.mjs B05-P03`。这些工具可能生成截图；按当前阶段范围运行，截图和页面输出交给用户验收，不由 Agent 打开作视觉判断。
 
 ## 当前效果
 
@@ -67,7 +67,7 @@
 
 ## 验证状态
 
-已在无头 Chromium（SwiftShader 软件 WebGL）中检查：首帧渲染、无控制台错误，旋转、缩放、平移及其边界，降雨、涟漪和信号灯动画；布局检查 C1–C12 全部通过。尚未在真实 GPU、iPad/手机上验证视觉效果和性能。道路建设的阶段进度见 PROGRESS.md。
+已有无头 Chromium（SwiftShader 软件 WebGL）机器检查记录：首帧渲染、控制台、旋转/缩放/平移及其边界、降雨/涟漪/信号灯动画；布局检查 C1–C12 通过。该记录不代表画面验收；需要人眼判断的当前输出由用户检查。真实 GPU、iPad/手机性能仍需实机数据。道路建设的阶段进度见 PROGRESS.md。
 
 ## 下一阶段：逐栋建筑构建
 

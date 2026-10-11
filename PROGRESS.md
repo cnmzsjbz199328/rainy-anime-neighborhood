@@ -2950,6 +2950,7 @@
   - `node tools/world_check.mjs --write`：WC1–WC11 11/11 通过；WC6 的 LM09 东侧退让命中 14 个获批采样点。更新 `docs/world/survey/check-report.md` 与 `area-report.md`（后者内容未变化）。
   - `node tools/landmark_check.mjs LM09 --no-shots` 3 项通过。实际界限：站台 x −5.51…10.01 m、小屋西缘 −5.00 m、轨道东端 x −5.50 m；对应道路边缘 x −6.15 m，专项净空断言通过。
   - `node tools/lod_check.mjs`：L1、L2、L3-ink、D3 通过；L3 的推拉峰值/中位数标准与 L4 球形帧预算未过，分别是 W8g-c、W8g-d 已记录的遗留项（L4 与基线同属城镇绘制调用问题），未发现 W10b 新数据差异。
+  - **后续复验范围**：如需重跑 W10b 的 LOD 检查，使用 `node tools/lod_check.mjs --only L1,L2`。上一行记录的是当时实际运行完整工具的历史结果；不将 L3、L4、D3 纳入本行复跑清单。
   - 按 WORLD_LAYOUT_V1 第 10 节重出 `docs/world/survey/equirect.png` 与 `view-front/east/back/west/north/south.png`；查看等距圆柱图和正面图，城镇和路网均已绘出。未运行截图审查链。
 - **性能（同一时段，Chromium 153 / Apple M4 Metal）**：命令分别为 `node tools/perf_baseline.mjs --views-only --quality high --loads 3 --label w10b` 与 `node tools/perf_baseline.mjs --views-only --quality high --loads 3 --ref pre-w10b --label pre-w10b`，记录在 `docs/world/perf/w10b.json`、`pre-w10b.json`。W10b 默认视图 16.5 ms 中位数 / 19.0 ms p95、2,571 calls；首个完整画面中位数 3,555 ms；`index.html` 2,923,023 字节，比基线 2,914,050 增 8,973 字节。球形 d140 中位数与对照同为 40.5 ms，p95 43.2 vs 42.6 ms；d400 中位数 40.4 vs 40.3 ms，p95 48.2 vs 41.8 ms（+15.3%）。d400 p95 超出第 6 节 10% 对照线，单列为性能遗留；平面预算、默认绘制调用、完整首帧和 HTML 增量通过。
 - **LM09 场地冲突的初测与用户裁决 A（2026-10-11）**：
@@ -2970,3 +2971,10 @@
      - N11 的道路头仍朝 LM09 东侧；站台东端与轨道已按裁决 A 后退，专项检查确认与道路边界留有净空；
      - 底座立面（W10d）。
 - **待办池新增**：见「W10b 观察（2026-10-11）」5 条。
+
+## 视觉验收责任与交付流程统一（2026-10-11，仅文档）
+
+- 按 [VISUAL_VALIDATION_WORKFLOW_PLAN.md](docs/VISUAL_VALIDATION_WORKFLOW_PLAN.md) 统一默认规则：需要人眼判断的最终画面由用户验收；Agent 运行阶段要求的机器检查、按规格生成输出，并交付准确路径和短看点清单。只有用户在当前任务明确点名某项画面检查时，Agent 才检查该项。
+- 更新仓库规则、通用审查协议、世界与参考图入口、建筑与样板升级入口/规格、README、ROADMAP 和 W10 规格。图像生成入口把候选图先放在 `docs/world/w0/candidates/`，用户确认后才写入正式参考包。
+- W10b 历史完整 `lod_check` 运行结果保留；后续若重跑本行，只用 `node tools/lod_check.mjs --only L1,L2`，不重跑 L3、L4、D3。
+- 本次未改场景代码、布局、阈值或图片；未生成、打开或审查场景截图；未重写已完成阶段的历史视觉记录。`git diff --check` 通过；本轮没有参考包内容变更，未运行 `check_kit`。

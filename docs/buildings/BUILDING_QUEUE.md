@@ -56,4 +56,4 @@
 |7|B01-P01|院落型小学|已实现（[截图](screenshots/B01-P01/)）|[规格](tasks/B01-P01.md)|[参考图](references/B01-P01.jpg)|
 
 ## 状态规则
-“规格就绪/参考图生成”不等于“代码已实现”。catalog.json 的 imageStatus 只表示图片交付。implementationStatus 记录未开始、实现中、已实现待验收、验收完成；只有代码/截图/检查都具备才能置完成。
+“规格就绪/参考图生成”不等于“代码已实现”。catalog.json 的 imageStatus 只表示图片交付。implementationStatus 记录未开始、实现中、已实现待验收、验收完成；实现和机器检查完成后，仍需用户完成画面验收才能置为验收完成。截图生成不等于画面验收。

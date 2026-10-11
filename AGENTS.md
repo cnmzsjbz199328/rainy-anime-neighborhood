@@ -21,15 +21,21 @@
 - Neutral illumination in non-globe reference panels is a material/form study, not a game state. Local night panels follow biome weather (snow on ice, usually clear in desert).
 - Correct stale template wording minimally to match established decisions and record the correction. Ask only for a real design-decision change or unresolved meaning; do not repeatedly request confirmation of D8/D9 or the already accepted ST01 style.
 
+## Visual acceptance
+- The user owns every visual judgment that requires looking at an image, screenshot, video, live page, or generated image. Do not open final outputs to judge appearance or report a visual pass unless the user explicitly asks for that specific visual check in the current task. Such authorization covers only the named output and check.
+- Reference images may be read as implementation inputs. Agents may generate screenshots or images required by the selected stage and run machine checks, but should report their exact paths and leave stages with visual gates at `待确认` until the user accepts them.
+- Image existence, metadata, dimensions, automated pixel differences, and numeric metrics are machine results; they do not establish visual quality. Deliver a short, reproducible user look-point list with camera or location, expected result, and known remaining issues.
+- This rule applies when older stage documents ask the Agent to inspect final outputs. Preserve completed visual-review records as historical facts; do not rewrite them.
+
 ## Validation and delivery
-- World reference changes: `node docs/world/check_kit.mjs`; use `--refs` once all 39 references exist. Inspect each generated image visually; the checker does not validate image content.
+- World reference changes: `node docs/world/check_kit.mjs`; use `--refs` once all 39 references exist. The checker validates the reference package, not image content; the user judges generated image content.
 - Building reference changes: `node docs/buildings/check_kit.mjs`.
 - Scene/layout changes: rebuild, then run relevant checks documented in README, including `node tools/measure_samples.mjs` before `node tools/layout_check.mjs --png`; visual acceptance is the user's (2026-10-10): do not run screenshot review chains, and hand over a short look-point list (camera, what should be visible, known remaining issues).
 - Keep unrelated work intact. Stage explicit task files. Follow the selected workflow's commit/push instructions; never treat a local commit as proof of a successful push.
 - Write concise Chinese progress and handoff notes, with exact output paths, validation results, and remaining visual issues.
 
 ## Evidence and repo size
-- Regenerable review screenshots (`docs/world/w*/`, `docs/buildings/screenshots/`) are git-ignored by default. Keep them locally for visual inspection; do not stage them.
+- Regenerable review screenshots (`docs/world/w*/`, `docs/buildings/screenshots/`) are git-ignored by default. Keep them locally for the user to inspect; do not stage them.
 - W10 stages commit no screenshots (the user's screenshots and confirmation are the evidence). Earlier stages: commit only a few key images per stage (3–5), compressed (WebP or lossy, ≤1280 px wide, ideally ≤200 KB each), with `git add -f`. Reference/design images (`docs/world/references`, `landmarks`, `docs/buildings/references`) and frozen layout figures stay tracked.
 - Record evidence as text instead of images: check output, measured numbers, and screenshot file names/paths in PROGRESS or the handoff note.
 - Already-tracked images stay as they are; do not rewrite history or delete them without explicit user approval. Check `git status` before committing and restore (`git checkout -- <path>`) tracked screenshots that a re-run regenerated unintentionally.

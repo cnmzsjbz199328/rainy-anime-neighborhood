@@ -15,14 +15,14 @@
 ## 开工前与交付后
 
 - 开工前按 [docs/AGENT_PROTOCOLS.md](../AGENT_PROTOCOLS.md) 第 1 节写「阶段细化」（约 20 行，进 PROGRESS），然后直接开工。
-- 截图审查按该文件第 4 节「视觉缺陷清单」逐项检查并记录。
+- 需要人眼判断的截图和最终画面由用户验收。Agent 可按阶段规格生成所需截图并运行机器检查，但不打开截图作视觉判断；交付时给第 4 节格式的看点清单，状态保持 `待确认`。
 - 交付后用户可另起 Agent 做「独立审查」或「返工」，协议见同一文件第 2、3 节。
 
 ## 先读
 
 1. AGENTS.md、ROADMAP.md（第 4 节规则）、docs/BACKLOG.md。
 2. **[SAMPLE_UPGRADE_PLAN.md](SAMPLE_UPGRADE_PLAN.md) 全文**：风险 R1–R10、安全原则、阶段计划、替换流程、验收门槛、默认裁决、回滚、停止条件。本文件不重复它。
-3. S1–S3：再读 [AGENT_START.md](AGENT_START.md) 的「先读」「必须沿用的集成方式」「工作步骤」「不得做」（其中「不得改三栋旧样板」被本任务明确取代，其余照旧）、BUILDING_SPEC.md、对应任务卡、`references/<地块>.jpg`（升级概念图，要看图）、`screenshots/<地块>/`（现状）。
+3. S1–S3：再读 [AGENT_START.md](AGENT_START.md) 的「先读」「必须沿用的集成方式」「工作步骤」「不得做」（其中「不得改三栋旧样板」被本任务明确取代，其余照旧）、BUILDING_SPEC.md、对应任务卡、`references/<地块>.jpg`（升级概念图，作为实现输入读取）、`screenshots/<地块>/`（当前模型状态作为实现输入；最终结果交用户验收）。
 
 ## 规则
 
