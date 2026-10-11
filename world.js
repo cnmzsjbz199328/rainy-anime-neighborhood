@@ -600,9 +600,18 @@ function height(lon, lat) {
 for (const lm of landmarks) Object.defineProperty(lm, 'baseHeight', { enumerable: true, get() { return round1(height(lm.lon, lm.lat)); } });
 
 // ---------------------------------------------------------------- road network
+// W10b (W10_SPEC 2.1): one network for the town and the planet, as the approved design lists it (docs/world/ROAD_NETWORK_DESIGN_DRAFT.md section 4): 59 nodes
+// and 66 edges, numbered by route RN01-RN14; `source` is the id of the edge an edge comes from (none for a new one). The town streets (classes TOWN_MAIN,
+// TOWN_BRANCH, TOWN_ALLEY, read from layout.js), the ring road CR01 and the nine exit connectors are lines and arcs of the town plane (layout.js coordinates:
+// x east, z south, Mercator), so that they lie on the streets' own centre lines; every other edge is a chain of great circles between its controls.
 // Spans are stretches where the road leaves the terrain: bridge, tunnel, boardwalk (RD07 piles) and stairs (RD06 steps).
 const LATR = townToLonLat(0, 15).lat;                                   // R01 centre line, the latitude of T01 near the town
-const townExit = id => { const n = LAYOUT.roadNodes.find(q => q.id === id); const p = townToLonLat(n.x, n.z); return { id, lon: p.lon, lat: p.lat, kind: 'town-exit' }; };
+const TOWN_CLASSES = { TOWN_MAIN: LAYOUT.ROAD_TYPES.main, TOWN_BRANCH: LAYOUT.ROAD_TYPES.branch, TOWN_ALLEY: { carriageway: LAYOUT.ALLEY.width, shared: true } };
+const TOWN_CLASS_OF = { main: 'TOWN_MAIN', branch: 'TOWN_BRANCH', alley: 'TOWN_ALLEY' };
+const planeNode = (id, x, z, kind, extra) => { const p = townToLonLat(x, z); return { id, lon: p.lon, lat: p.lat, x, z, kind, ...extra }; };
+const townNodes = [...LAYOUT.roadNodes.filter(n => n.kind === 'edge'), ...LAYOUT.roadNodes.filter(n => n.kind !== 'edge')]
+  .map(n => planeNode(n.id, n.x, n.z, n.kind === 'edge' ? 'town-exit' : 'town-junction', n.name ? { name: n.name } : {}));
+const townNode = id => LAYOUT.roadNodes.find(n => n.id === id);
 const entranceNode = (lmId, entId) => {
   const lm = landmarks.find(l => l.id === lmId), e = lm.entrances.find(q => q.id === entId);
   return { id: `${lmId}-${entId}`, lon: e.lon, lat: e.lat, kind: 'landmark-entrance', landmark: lmId };
@@ -617,59 +626,124 @@ const spiral = (lmId, from, to, steps) => {
   for (let k = 1; k < steps; k++) { const f = k / steps, q = destination(lm, b0 + sweep * f, lerp(r0, ent.offset, f)); out.push([q.lon, q.lat]); }
   return out;
 };
+// The point where the great circle through a and b crosses the parallel `lat`, on the arc between a and b (none: null).
+function parallelCrossing(a, b, lat) {
+  const va = vecOf(a), vb = vecOf(b), n = cross(va, vb), A = Math.hypot(n[0], n[1]), c = -n[2] * Math.tan(lat * D) / A;
+  if (Math.abs(c) > 1) return null;
+  for (const sg of [1, -1]) {
+    const lon = wrapLon((Math.atan2(n[1], n[0]) + sg * Math.acos(c)) / D), v = vec(lon, lat);
+    if (Math.abs(angleBetween(va, v) + angleBetween(v, vb) - angleBetween(va, vb)) < 1e-12) return { lon, lat };
+  }
+  return null;
+}
+// CR01 (design section 2): the ring road round the town, RD03, a square of 2 x 54 m with R 8 m corner arcs in the town plane, run clockwise from the north-west
+// corner (the north side eastward). Its junctions lie on the exits' street axes (N01 and N03 on R01, where RN01 crosses it) and at C01-T02, where T02-01's
+// frozen line (its leg (-12, 31) -> (-26, 33)) crosses the north side: RN05-01 keeps the rest of that line and never enters the ring (design section 3).
+const CR01 = { half: 54, radius: 8 };
+const T02_LEG = [[-12, 31], [-26, 33]];
+const ringNodes = (() => {
+  const h = CR01.half, t = h - CR01.radius, ex = townNode, cut = lonLatToTown(parallelCrossing(T02_LEG[0], T02_LEG[1], townToLonLat(0, -h).lat).lon, townToLonLat(0, -h).lat);
+  return [['C01-NW', -t, -h, 'tangent'], ['C01-T02', cut.x, -h], ['C01-N', ex('N04').x, -h], ['C01-NE', t, -h, 'tangent'], ['C01-E-NE', h, -t, 'tangent'],
+    ['C01-E-N13', h, ex('N13').z], ['C01-E-N10', h, ex('N10').z], ['C01-E-N03', h, ex('N03').z], ['C01-E-N12', h, ex('N12').z], ['C01-E-SE', h, t, 'tangent'],
+    ['C01-SE', t, h, 'tangent'], ['C01-S', ex('N08').x, h], ['C01-SW', -t, h, 'tangent'], ['C01-W-SW', -h, t, 'tangent'], ['C01-W-N11', -h, ex('N11').z],
+    ['C01-W-N01', -h, ex('N01').z], ['C01-W-N09', -h, ex('N09').z], ['C01-W-NW', -h, -t, 'tangent']]
+    .map(([id, x, z, kind]) => planeNode(id, x, z, kind || 'junction', { ring: 'CR01' }));
+})();
 const nodes = [
-  ...['N01', 'N03', 'N04', 'N08', 'N09', 'N10', 'N11', 'N12', 'N13'].map(townExit),
+  ...townNodes.filter(n => n.kind === 'town-exit'),
   // bridge abutments sit at least the 14 m beach ramp inland of the coast, so that the road leaves the terrain before the slope starts
   J('J-T04', 38.5, LATR), J('J-E1', 43.3, LATR), J('J-E2', 79.2, LATR), J('J-T07', 81, LATR), J('J-E3', 116.9, LATR), J('J-P1', 151, -14.5),
   J('J-LM08', 190, -17.5), J('J-W3', -142.9, -12), J('J-T08', -128, -12), J('J-T09', -116, -12), J('J-W2', -108.8, -12), J('J-W1', -46.3, -12),
   J('J-T03a', 1, -33), J('J-T03b', 2, -39), J('J-T08b', -127.5, 15),
-  J('E-N11', -35.5, -25, 'endpoint'), J('E-N12', 35.5, -21, 'endpoint'), J('E-N13', 35.5, 22, 'endpoint'), J('E-T11', 24, -61, 'endpoint'),
+  J('E-T11', 24, -61, 'endpoint'),                                     // the end of the RN11 boardwalk on the west sea: a waterside lookout (design section 5)
   ...[['LM01', 'west'], ['LM01', 'north'], ['LM02', 'east'], ['LM02', 'northeast'], ['LM03', 'north'], ['LM04', 'southeast'], ['LM05', 'west'], ['LM06', 'north'], ['LM07', 'west'], ['LM08', 'south'], ['LM09', 'north'], ['LM10', 'south']].map(a => entranceNode(...a)),
+  ...townNodes.filter(n => n.kind !== 'town-exit'),
+  ...ringNodes,
 ];
 const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 
 const edges = [];
+const at = id => [nodeById[id].lon, nodeById[id].lat];
 // spans: [type, fromMeters, toMeters | 'end']
-const E = (id, route, cls, from, to, mids, spans) => edges.push({ id, route, class: cls, from, to, controls: [[nodeById[from].lon, nodeById[from].lat], ...(mids || []), [nodeById[to].lon, nodeById[to].lat]], spans: (spans || []).map(([type, a, b]) => ({ type, fromMeters: a, toMeters: b })) });
+const E = (id, source, cls, from, to, mids, spans) => edges.push({ id, route: id.slice(0, 4), class: cls, from, to, source, controls: [at(from), ...(mids || []), at(to)], spans: (spans || []).map(([type, a, b]) => ({ type, fromMeters: a, toMeters: b })) });
+// an edge of the town plane: a straight line between its nodes, or (arc) a circle of the ring from angle a0 to a1 (radians, x east, z south)
+const P = (id, source, cls, from, to, arc) => edges.push({ id, route: id.slice(0, 4), class: cls, from, to, source, controls: [at(from), at(to)], spans: [], plane: arc ? { arc } : { line: true } });
 const ALL = 'end';
-E('T01-01', 'T01', 'RD01', 'N03', 'J-T04');
-E('T01-02', 'T01', 'RD01', 'J-T04', 'J-E1');
-E('T01-03', 'T01', 'RD02', 'J-E1', 'J-E2', [], [['bridge', 0, ALL]]);
-E('T01-04', 'T01', 'RD01', 'J-E2', 'J-T07');
-E('T01-05', 'T01', 'RD01', 'J-T07', 'LM10-south', [], [['tunnel', 6.5, 29.5]]);
-E('T01-06', 'T01', 'RD01', 'LM10-south', 'J-E3');
-E('T01-07', 'T01', 'RD02', 'J-E3', 'J-P1', [[134, -12]], [['bridge', 0, ALL]]);
-E('T01-08', 'T01', 'RD02', 'J-P1', 'J-LM08', [[172, -17]], [['bridge', 0, ALL]]);
-E('T01-09', 'T01', 'RD02', 'J-LM08', 'J-W3', [[-160, -16]], [['bridge', 0, ALL]]);
-E('T01-10', 'T01', 'RD01', 'J-W3', 'J-T08');
-E('T01-11', 'T01', 'RD01', 'J-T08', 'J-T09');
-E('T01-12', 'T01', 'RD01', 'J-T09', 'J-W2');
-E('T01-13', 'T01', 'RD02', 'J-W2', 'J-W1', [], [['bridge', 0, ALL]]);
-E('T01-14', 'T01', 'RD01', 'J-W1', 'LM09-north');
-E('T01-15', 'T01', 'RD01', 'LM09-north', 'N01');
-E('T02-01', 'T02', 'RD03', 'N04', 'LM02-east', [[-12, 31], [-26, 33]]);
-E('T02-02', 'T02', 'RD06', 'LM02-northeast', 'LM01-west', spiral('LM01', nodeById['LM02-northeast'], 'west', 14), [['stairs', 0, ALL]]);
-E('T03-01', 'T03', 'RD03', 'N08', 'J-T03a');
-E('T03-02', 'T03', 'RD04', 'J-T03a', 'J-T03b');
-E('T03-03', 'T03', 'RD05', 'J-T03b', 'LM04-southeast');
-E('T04-01', 'T04', 'RD03', 'N10', 'J-T04', [[37, 4]]);
-E('T05-01', 'T05', 'RD03', 'N09', 'LM09-north', [[-35, 1]]);
-E('T06-01', 'T06', 'RD05', 'N11', 'E-N11');
-E('T06-02', 'T06', 'RD05', 'N12', 'E-N12');
-E('T06-03', 'T06', 'RD05', 'N13', 'E-N13');
-E('T07-01', 'T07', 'RD05', 'J-T07', 'LM03-north');
-E('T08-01', 'T08', 'RD05', 'J-T08', 'J-T08b');
-E('T08-02', 'T08', 'RD06', 'J-T08b', 'LM05-west', spiral('LM05', nodeById['J-T08b'], 'west', 8), [['stairs', 0, ALL]]);
-E('T09-01', 'T09', 'RD05', 'J-T09', 'LM06-north');
-E('T10-01', 'T10', 'RD08', 'LM01-north', 'LM07-west');
-E('T11-01', 'T11', 'RD07', 'LM04-southeast', 'E-T11', [[-1, -55.5], [12, -58.5]], [['boardwalk', 0, ALL]]);
-E('T11-02', 'T11', 'RD07', 'J-LM08', 'LM08-south', [], [['boardwalk', 0, ALL]]);
+// RN01: the planet's east-west trunk T01 and the town's main street R01, one route (the T01 numbers are kept; RN01-16 and RN01-19 cross CR01 at the exits)
+E('RN01-01', 'T01-01', 'RD01', 'C01-E-N03', 'J-T04');
+E('RN01-02', 'T01-02', 'RD01', 'J-T04', 'J-E1');
+E('RN01-03', 'T01-03', 'RD02', 'J-E1', 'J-E2', [], [['bridge', 0, ALL]]);
+E('RN01-04', 'T01-04', 'RD01', 'J-E2', 'J-T07');
+E('RN01-05', 'T01-05', 'RD01', 'J-T07', 'LM10-south', [], [['tunnel', 6.5, 29.5]]);
+E('RN01-06', 'T01-06', 'RD01', 'LM10-south', 'J-E3');
+E('RN01-07', 'T01-07', 'RD02', 'J-E3', 'J-P1', [[134, -12]], [['bridge', 0, ALL]]);
+E('RN01-08', 'T01-08', 'RD02', 'J-P1', 'J-LM08', [[172, -17]], [['bridge', 0, ALL]]);
+E('RN01-09', 'T01-09', 'RD02', 'J-LM08', 'J-W3', [[-160, -16]], [['bridge', 0, ALL]]);
+E('RN01-10', 'T01-10', 'RD01', 'J-W3', 'J-T08');
+E('RN01-11', 'T01-11', 'RD01', 'J-T08', 'J-T09');
+E('RN01-12', 'T01-12', 'RD01', 'J-T09', 'J-W2');
+E('RN01-13', 'T01-13', 'RD02', 'J-W2', 'J-W1', [], [['bridge', 0, ALL]]);
+E('RN01-14', 'T01-14', 'RD01', 'J-W1', 'LM09-north');
+E('RN01-15', 'T01-15', 'RD01', 'LM09-north', 'C01-W-N01');
+P('RN01-16', 'T01-15', 'RD01', 'C01-W-N01', 'N01');
+// the town streets of layout.js: [edge, layout.js segment, taken against its layout.js direction]
+const TOWN_EDGES = [['RN01-17', 'R01-1'], ['RN01-18', 'R01-2'], ['RN02-02', 'R02-1'], ['RN02-03', 'R02-2'], ['RN02-04', 'R02-3'], ['RN02-05', 'R02-4'], ['RN02-06', 'R02-5'],
+  ['RN03-02', 'R03-1'], ['RN03-03', 'R03-2'], ['RN13-02', 'A01'], ['RN13-03', 'A02'], ['RN14-02', 'A03', true]];
+const townEdge = id => { const [, segId, rev] = TOWN_EDGES.find(q => q[0] === id), sg = LAYOUT.roadSegments.find(q => q.id === segId); P(id, segId, TOWN_CLASS_OF[sg.type], rev ? sg.to : sg.from, rev ? sg.from : sg.to); };
+townEdge('RN01-17'); townEdge('RN01-18');
+P('RN01-19', 'T01-01', 'RD01', 'N03', 'C01-E-N03');
+// RN02: the meridian axis M01 through the town (R02) with its 6 m connectors to the ring's north and south points; it goes on south as RN06
+P('RN02-01', null, 'RD03', 'C01-N', 'N04');
+for (const id of ['RN02-02', 'RN02-03', 'RN02-04', 'RN02-05', 'RN02-06']) townEdge(id);
+P('RN02-07', null, 'RD03', 'N08', 'C01-S');
+// RN03: the community street R03 and its connectors
+P('RN03-01', null, 'RD03', 'C01-W-N09', 'N09');
+townEdge('RN03-02'); townEdge('RN03-03');
+P('RN03-04', null, 'RD03', 'N10', 'C01-E-N10');
+// RN04: CR01, 18 edges from C01-NW round to it again; the four corners are the R 8 m arcs
+ringNodes.forEach((a, k) => {
+  const b = ringNodes[(k + 1) % ringNodes.length], id = 'RN04-' + String(k + 1).padStart(2, '0');
+  if (a.kind !== 'tangent' || b.kind !== 'tangent') return P(id, null, 'RD03', a.id, b.id);
+  const cx = Math.abs(a.x) === CR01.half ? Math.sign(a.x) * (CR01.half - CR01.radius) : a.x, cz = Math.abs(a.z) === CR01.half ? Math.sign(a.z) * (CR01.half - CR01.radius) : a.z;
+  const a0 = Math.atan2(a.z - cz, a.x - cx), a1 = Math.atan2(b.z - cz, b.x - cx);
+  P(id, null, 'RD03', a.id, b.id, { cx, cz, r: CR01.radius, a0, a1: a1 < a0 ? a1 + 2 * Math.PI : a1 });
+});
+// RN05-RN12: the branches that stay, each to a named destination
+E('RN05-01', 'T02-01', 'RD03', 'C01-T02', 'LM02-east', [T02_LEG[1]]);
+E('RN05-02', 'T02-02', 'RD06', 'LM02-northeast', 'LM01-west', spiral('LM01', nodeById['LM02-northeast'], 'west', 14), [['stairs', 0, ALL]]);
+E('RN06-01', 'T03-01', 'RD03', 'C01-S', 'J-T03a');
+E('RN06-02', 'T03-02', 'RD04', 'J-T03a', 'J-T03b');
+E('RN06-03', 'T03-03', 'RD05', 'J-T03b', 'LM04-southeast');
+E('RN07-01', 'T07-01', 'RD05', 'J-T07', 'LM03-north');
+E('RN08-01', 'T08-01', 'RD05', 'J-T08', 'J-T08b');
+E('RN08-02', 'T08-02', 'RD06', 'J-T08b', 'LM05-west', spiral('LM05', nodeById['J-T08b'], 'west', 8), [['stairs', 0, ALL]]);
+E('RN09-01', 'T09-01', 'RD05', 'J-T09', 'LM06-north');
+E('RN10-01', 'T10-01', 'RD08', 'LM01-north', 'LM07-west');
+E('RN11-01', 'T11-01', 'RD07', 'LM04-southeast', 'E-T11', [[-1, -55.5], [12, -58.5]], [['boardwalk', 0, ALL]]);
+E('RN12-01', 'T11-02', 'RD07', 'J-LM08', 'LM08-south', [], [['boardwalk', 0, ALL]]);
+// RN13, RN14: the alleys and their RD05 connectors (the alley exits end at the ring)
+P('RN13-01', null, 'RD05', 'C01-W-N11', 'N11');
+townEdge('RN13-02'); townEdge('RN13-03');
+P('RN13-04', null, 'RD05', 'N12', 'C01-E-N12');
+P('RN14-01', null, 'RD05', 'C01-E-N13', 'N13');
+townEdge('RN14-02');
+// M01 south of the town (design section 3): the N08 connector, then RN06 (the former T03) to LM04; the W4 section sweeps it as one chain
+const m01South = ['RN02-07', 'RN06-01', 'RN06-02', 'RN06-03'];
 
-// Dense geometry of an edge (great-circle legs between controls), cached.
+// Dense geometry of an edge, cached: great-circle legs between the controls every 0.5 m; an edge of the town plane every 0.1 m along its line or arc (a chord
+// of 0.1 m stays within 0.2 mm of an R 8 m arc), its end points exactly on the nodes.
 function edgeGeometry(edge) {
   if (edge._geo) return edge._geo;
   const pts = [];
-  for (let i = 0; i + 1 < edge.controls.length; i++) { const seg = greatCirclePoints(edge.controls[i], edge.controls[i + 1], 0.5); for (let k = 0; k < seg.length - 1; k++) pts.push(seg[k]); }
+  if (edge.plane) {
+    const a = nodeById[edge.from], b = nodeById[edge.to], A = edge.plane.arc;
+    const len = A ? A.r * (A.a1 - A.a0) : Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(len / 0.1));
+    pts.push(at(edge.from));
+    for (let k = 1; k < n; k++) {
+      const f = k / n, q = A ? townToLonLat(A.cx + A.r * Math.cos(A.a0 + (A.a1 - A.a0) * f), A.cz + A.r * Math.sin(A.a0 + (A.a1 - A.a0) * f)) : townToLonLat(a.x + (b.x - a.x) * f, a.z + (b.z - a.z) * f);
+      pts.push([q.lon, q.lat]);
+    }
+  } else for (let i = 0; i + 1 < edge.controls.length; i++) { const seg = greatCirclePoints(edge.controls[i], edge.controls[i + 1], 0.5); for (let k = 0; k < seg.length - 1; k++) pts.push(seg[k]); }
   pts.push(edge.controls[edge.controls.length - 1]);
   const vs = pts.map(p => vec(p[0], p[1])), s = [0];
   for (let i = 1; i < vs.length; i++) s.push(s[i - 1] + R * angleBetween(vs[i - 1], vs[i]));
@@ -692,7 +766,7 @@ function samplePath(edge, stepMeters) {
   }
   return out;
 }
-const roadNetwork = { nodes, edges, nodeById, edgeLength, samplePath, LATR };
+const roadNetwork = { nodes, edges, nodeById, edgeLength, samplePath, LATR, CR01, townClasses: TOWN_CLASSES, m01South };
 
 const areaBudget = { computeAreaShares, targets: { building: 0.30, ocean: 0.30, wild: 0.32, ice: 0.08 }, tolerance: 0.02 };
 

@@ -1,5 +1,5 @@
 // LM06 砂没驿与半埋巨碑 (the sand-swallowed station and the half-buried monolith) (W7, hidden clue 2). Local frame: origin = the site anchor (32.00 S 115.00 W, altitude 1.9 m, a levelled
-// platform of radius 15 m in the desert), +Z towards the north entrance (heading 0, 17 m out, the end of T09-01), +X to the left of +Z. 1 unit = 1 m. First of all a forgotten Japanese country
+// platform of radius 15 m in the desert), +Z towards the north entrance (heading 0, 17 m out, the end of RN09-01), +X to the left of +Z. 1 unit = 1 m. First of all a forgotten Japanese country
 // station: a platform 15 m long of which only the edge shows between sand drifts, a 3 x 2.5 m waiting shed whose roof has half fallen in, a faded name board (no readable letters), one rusted
 // single car 12 m long on a track that is half buried and runs into a dune, a signal lying on its side, sand sliding slowly off the car roof. Then, 25 m away along -Z on its own flat
 // round disc of sand (radius 4 m: too regular for the wind), the monolith: 7.0 m above the sand, 2.5 m wide, 0.8 m thick, near-black, leaning 8 degrees, smooth as new, drawn with one clean straight

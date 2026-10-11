@@ -2073,9 +2073,18 @@ function height(lon, lat) {
 for (const lm of landmarks) Object.defineProperty(lm, 'baseHeight', { enumerable: true, get() { return round1(height(lm.lon, lm.lat)); } });
 
 // ---------------------------------------------------------------- road network
+// W10b (W10_SPEC 2.1): one network for the town and the planet, as the approved design lists it (docs/world/ROAD_NETWORK_DESIGN_DRAFT.md section 4): 59 nodes
+// and 66 edges, numbered by route RN01-RN14; `source` is the id of the edge an edge comes from (none for a new one). The town streets (classes TOWN_MAIN,
+// TOWN_BRANCH, TOWN_ALLEY, read from layout.js), the ring road CR01 and the nine exit connectors are lines and arcs of the town plane (layout.js coordinates:
+// x east, z south, Mercator), so that they lie on the streets' own centre lines; every other edge is a chain of great circles between its controls.
 // Spans are stretches where the road leaves the terrain: bridge, tunnel, boardwalk (RD07 piles) and stairs (RD06 steps).
 const LATR = townToLonLat(0, 15).lat;                                   // R01 centre line, the latitude of T01 near the town
-const townExit = id => { const n = LAYOUT.roadNodes.find(q => q.id === id); const p = townToLonLat(n.x, n.z); return { id, lon: p.lon, lat: p.lat, kind: 'town-exit' }; };
+const TOWN_CLASSES = { TOWN_MAIN: LAYOUT.ROAD_TYPES.main, TOWN_BRANCH: LAYOUT.ROAD_TYPES.branch, TOWN_ALLEY: { carriageway: LAYOUT.ALLEY.width, shared: true } };
+const TOWN_CLASS_OF = { main: 'TOWN_MAIN', branch: 'TOWN_BRANCH', alley: 'TOWN_ALLEY' };
+const planeNode = (id, x, z, kind, extra) => { const p = townToLonLat(x, z); return { id, lon: p.lon, lat: p.lat, x, z, kind, ...extra }; };
+const townNodes = [...LAYOUT.roadNodes.filter(n => n.kind === 'edge'), ...LAYOUT.roadNodes.filter(n => n.kind !== 'edge')]
+  .map(n => planeNode(n.id, n.x, n.z, n.kind === 'edge' ? 'town-exit' : 'town-junction', n.name ? { name: n.name } : {}));
+const townNode = id => LAYOUT.roadNodes.find(n => n.id === id);
 const entranceNode = (lmId, entId) => {
   const lm = landmarks.find(l => l.id === lmId), e = lm.entrances.find(q => q.id === entId);
   return { id: `${lmId}-${entId}`, lon: e.lon, lat: e.lat, kind: 'landmark-entrance', landmark: lmId };
@@ -2090,59 +2099,124 @@ const spiral = (lmId, from, to, steps) => {
   for (let k = 1; k < steps; k++) { const f = k / steps, q = destination(lm, b0 + sweep * f, lerp(r0, ent.offset, f)); out.push([q.lon, q.lat]); }
   return out;
 };
+// The point where the great circle through a and b crosses the parallel `lat`, on the arc between a and b (none: null).
+function parallelCrossing(a, b, lat) {
+  const va = vecOf(a), vb = vecOf(b), n = cross(va, vb), A = Math.hypot(n[0], n[1]), c = -n[2] * Math.tan(lat * D) / A;
+  if (Math.abs(c) > 1) return null;
+  for (const sg of [1, -1]) {
+    const lon = wrapLon((Math.atan2(n[1], n[0]) + sg * Math.acos(c)) / D), v = vec(lon, lat);
+    if (Math.abs(angleBetween(va, v) + angleBetween(v, vb) - angleBetween(va, vb)) < 1e-12) return { lon, lat };
+  }
+  return null;
+}
+// CR01 (design section 2): the ring road round the town, RD03, a square of 2 x 54 m with R 8 m corner arcs in the town plane, run clockwise from the north-west
+// corner (the north side eastward). Its junctions lie on the exits' street axes (N01 and N03 on R01, where RN01 crosses it) and at C01-T02, where T02-01's
+// frozen line (its leg (-12, 31) -> (-26, 33)) crosses the north side: RN05-01 keeps the rest of that line and never enters the ring (design section 3).
+const CR01 = { half: 54, radius: 8 };
+const T02_LEG = [[-12, 31], [-26, 33]];
+const ringNodes = (() => {
+  const h = CR01.half, t = h - CR01.radius, ex = townNode, cut = lonLatToTown(parallelCrossing(T02_LEG[0], T02_LEG[1], townToLonLat(0, -h).lat).lon, townToLonLat(0, -h).lat);
+  return [['C01-NW', -t, -h, 'tangent'], ['C01-T02', cut.x, -h], ['C01-N', ex('N04').x, -h], ['C01-NE', t, -h, 'tangent'], ['C01-E-NE', h, -t, 'tangent'],
+    ['C01-E-N13', h, ex('N13').z], ['C01-E-N10', h, ex('N10').z], ['C01-E-N03', h, ex('N03').z], ['C01-E-N12', h, ex('N12').z], ['C01-E-SE', h, t, 'tangent'],
+    ['C01-SE', t, h, 'tangent'], ['C01-S', ex('N08').x, h], ['C01-SW', -t, h, 'tangent'], ['C01-W-SW', -h, t, 'tangent'], ['C01-W-N11', -h, ex('N11').z],
+    ['C01-W-N01', -h, ex('N01').z], ['C01-W-N09', -h, ex('N09').z], ['C01-W-NW', -h, -t, 'tangent']]
+    .map(([id, x, z, kind]) => planeNode(id, x, z, kind || 'junction', { ring: 'CR01' }));
+})();
 const nodes = [
-  ...['N01', 'N03', 'N04', 'N08', 'N09', 'N10', 'N11', 'N12', 'N13'].map(townExit),
+  ...townNodes.filter(n => n.kind === 'town-exit'),
   // bridge abutments sit at least the 14 m beach ramp inland of the coast, so that the road leaves the terrain before the slope starts
   J('J-T04', 38.5, LATR), J('J-E1', 43.3, LATR), J('J-E2', 79.2, LATR), J('J-T07', 81, LATR), J('J-E3', 116.9, LATR), J('J-P1', 151, -14.5),
   J('J-LM08', 190, -17.5), J('J-W3', -142.9, -12), J('J-T08', -128, -12), J('J-T09', -116, -12), J('J-W2', -108.8, -12), J('J-W1', -46.3, -12),
   J('J-T03a', 1, -33), J('J-T03b', 2, -39), J('J-T08b', -127.5, 15),
-  J('E-N11', -35.5, -25, 'endpoint'), J('E-N12', 35.5, -21, 'endpoint'), J('E-N13', 35.5, 22, 'endpoint'), J('E-T11', 24, -61, 'endpoint'),
+  J('E-T11', 24, -61, 'endpoint'),                                     // the end of the RN11 boardwalk on the west sea: a waterside lookout (design section 5)
   ...[['LM01', 'west'], ['LM01', 'north'], ['LM02', 'east'], ['LM02', 'northeast'], ['LM03', 'north'], ['LM04', 'southeast'], ['LM05', 'west'], ['LM06', 'north'], ['LM07', 'west'], ['LM08', 'south'], ['LM09', 'north'], ['LM10', 'south']].map(a => entranceNode(...a)),
+  ...townNodes.filter(n => n.kind !== 'town-exit'),
+  ...ringNodes,
 ];
 const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 
 const edges = [];
+const at = id => [nodeById[id].lon, nodeById[id].lat];
 // spans: [type, fromMeters, toMeters | 'end']
-const E = (id, route, cls, from, to, mids, spans) => edges.push({ id, route, class: cls, from, to, controls: [[nodeById[from].lon, nodeById[from].lat], ...(mids || []), [nodeById[to].lon, nodeById[to].lat]], spans: (spans || []).map(([type, a, b]) => ({ type, fromMeters: a, toMeters: b })) });
+const E = (id, source, cls, from, to, mids, spans) => edges.push({ id, route: id.slice(0, 4), class: cls, from, to, source, controls: [at(from), ...(mids || []), at(to)], spans: (spans || []).map(([type, a, b]) => ({ type, fromMeters: a, toMeters: b })) });
+// an edge of the town plane: a straight line between its nodes, or (arc) a circle of the ring from angle a0 to a1 (radians, x east, z south)
+const P = (id, source, cls, from, to, arc) => edges.push({ id, route: id.slice(0, 4), class: cls, from, to, source, controls: [at(from), at(to)], spans: [], plane: arc ? { arc } : { line: true } });
 const ALL = 'end';
-E('T01-01', 'T01', 'RD01', 'N03', 'J-T04');
-E('T01-02', 'T01', 'RD01', 'J-T04', 'J-E1');
-E('T01-03', 'T01', 'RD02', 'J-E1', 'J-E2', [], [['bridge', 0, ALL]]);
-E('T01-04', 'T01', 'RD01', 'J-E2', 'J-T07');
-E('T01-05', 'T01', 'RD01', 'J-T07', 'LM10-south', [], [['tunnel', 6.5, 29.5]]);
-E('T01-06', 'T01', 'RD01', 'LM10-south', 'J-E3');
-E('T01-07', 'T01', 'RD02', 'J-E3', 'J-P1', [[134, -12]], [['bridge', 0, ALL]]);
-E('T01-08', 'T01', 'RD02', 'J-P1', 'J-LM08', [[172, -17]], [['bridge', 0, ALL]]);
-E('T01-09', 'T01', 'RD02', 'J-LM08', 'J-W3', [[-160, -16]], [['bridge', 0, ALL]]);
-E('T01-10', 'T01', 'RD01', 'J-W3', 'J-T08');
-E('T01-11', 'T01', 'RD01', 'J-T08', 'J-T09');
-E('T01-12', 'T01', 'RD01', 'J-T09', 'J-W2');
-E('T01-13', 'T01', 'RD02', 'J-W2', 'J-W1', [], [['bridge', 0, ALL]]);
-E('T01-14', 'T01', 'RD01', 'J-W1', 'LM09-north');
-E('T01-15', 'T01', 'RD01', 'LM09-north', 'N01');
-E('T02-01', 'T02', 'RD03', 'N04', 'LM02-east', [[-12, 31], [-26, 33]]);
-E('T02-02', 'T02', 'RD06', 'LM02-northeast', 'LM01-west', spiral('LM01', nodeById['LM02-northeast'], 'west', 14), [['stairs', 0, ALL]]);
-E('T03-01', 'T03', 'RD03', 'N08', 'J-T03a');
-E('T03-02', 'T03', 'RD04', 'J-T03a', 'J-T03b');
-E('T03-03', 'T03', 'RD05', 'J-T03b', 'LM04-southeast');
-E('T04-01', 'T04', 'RD03', 'N10', 'J-T04', [[37, 4]]);
-E('T05-01', 'T05', 'RD03', 'N09', 'LM09-north', [[-35, 1]]);
-E('T06-01', 'T06', 'RD05', 'N11', 'E-N11');
-E('T06-02', 'T06', 'RD05', 'N12', 'E-N12');
-E('T06-03', 'T06', 'RD05', 'N13', 'E-N13');
-E('T07-01', 'T07', 'RD05', 'J-T07', 'LM03-north');
-E('T08-01', 'T08', 'RD05', 'J-T08', 'J-T08b');
-E('T08-02', 'T08', 'RD06', 'J-T08b', 'LM05-west', spiral('LM05', nodeById['J-T08b'], 'west', 8), [['stairs', 0, ALL]]);
-E('T09-01', 'T09', 'RD05', 'J-T09', 'LM06-north');
-E('T10-01', 'T10', 'RD08', 'LM01-north', 'LM07-west');
-E('T11-01', 'T11', 'RD07', 'LM04-southeast', 'E-T11', [[-1, -55.5], [12, -58.5]], [['boardwalk', 0, ALL]]);
-E('T11-02', 'T11', 'RD07', 'J-LM08', 'LM08-south', [], [['boardwalk', 0, ALL]]);
+// RN01: the planet's east-west trunk T01 and the town's main street R01, one route (the T01 numbers are kept; RN01-16 and RN01-19 cross CR01 at the exits)
+E('RN01-01', 'T01-01', 'RD01', 'C01-E-N03', 'J-T04');
+E('RN01-02', 'T01-02', 'RD01', 'J-T04', 'J-E1');
+E('RN01-03', 'T01-03', 'RD02', 'J-E1', 'J-E2', [], [['bridge', 0, ALL]]);
+E('RN01-04', 'T01-04', 'RD01', 'J-E2', 'J-T07');
+E('RN01-05', 'T01-05', 'RD01', 'J-T07', 'LM10-south', [], [['tunnel', 6.5, 29.5]]);
+E('RN01-06', 'T01-06', 'RD01', 'LM10-south', 'J-E3');
+E('RN01-07', 'T01-07', 'RD02', 'J-E3', 'J-P1', [[134, -12]], [['bridge', 0, ALL]]);
+E('RN01-08', 'T01-08', 'RD02', 'J-P1', 'J-LM08', [[172, -17]], [['bridge', 0, ALL]]);
+E('RN01-09', 'T01-09', 'RD02', 'J-LM08', 'J-W3', [[-160, -16]], [['bridge', 0, ALL]]);
+E('RN01-10', 'T01-10', 'RD01', 'J-W3', 'J-T08');
+E('RN01-11', 'T01-11', 'RD01', 'J-T08', 'J-T09');
+E('RN01-12', 'T01-12', 'RD01', 'J-T09', 'J-W2');
+E('RN01-13', 'T01-13', 'RD02', 'J-W2', 'J-W1', [], [['bridge', 0, ALL]]);
+E('RN01-14', 'T01-14', 'RD01', 'J-W1', 'LM09-north');
+E('RN01-15', 'T01-15', 'RD01', 'LM09-north', 'C01-W-N01');
+P('RN01-16', 'T01-15', 'RD01', 'C01-W-N01', 'N01');
+// the town streets of layout.js: [edge, layout.js segment, taken against its layout.js direction]
+const TOWN_EDGES = [['RN01-17', 'R01-1'], ['RN01-18', 'R01-2'], ['RN02-02', 'R02-1'], ['RN02-03', 'R02-2'], ['RN02-04', 'R02-3'], ['RN02-05', 'R02-4'], ['RN02-06', 'R02-5'],
+  ['RN03-02', 'R03-1'], ['RN03-03', 'R03-2'], ['RN13-02', 'A01'], ['RN13-03', 'A02'], ['RN14-02', 'A03', true]];
+const townEdge = id => { const [, segId, rev] = TOWN_EDGES.find(q => q[0] === id), sg = LAYOUT.roadSegments.find(q => q.id === segId); P(id, segId, TOWN_CLASS_OF[sg.type], rev ? sg.to : sg.from, rev ? sg.from : sg.to); };
+townEdge('RN01-17'); townEdge('RN01-18');
+P('RN01-19', 'T01-01', 'RD01', 'N03', 'C01-E-N03');
+// RN02: the meridian axis M01 through the town (R02) with its 6 m connectors to the ring's north and south points; it goes on south as RN06
+P('RN02-01', null, 'RD03', 'C01-N', 'N04');
+for (const id of ['RN02-02', 'RN02-03', 'RN02-04', 'RN02-05', 'RN02-06']) townEdge(id);
+P('RN02-07', null, 'RD03', 'N08', 'C01-S');
+// RN03: the community street R03 and its connectors
+P('RN03-01', null, 'RD03', 'C01-W-N09', 'N09');
+townEdge('RN03-02'); townEdge('RN03-03');
+P('RN03-04', null, 'RD03', 'N10', 'C01-E-N10');
+// RN04: CR01, 18 edges from C01-NW round to it again; the four corners are the R 8 m arcs
+ringNodes.forEach((a, k) => {
+  const b = ringNodes[(k + 1) % ringNodes.length], id = 'RN04-' + String(k + 1).padStart(2, '0');
+  if (a.kind !== 'tangent' || b.kind !== 'tangent') return P(id, null, 'RD03', a.id, b.id);
+  const cx = Math.abs(a.x) === CR01.half ? Math.sign(a.x) * (CR01.half - CR01.radius) : a.x, cz = Math.abs(a.z) === CR01.half ? Math.sign(a.z) * (CR01.half - CR01.radius) : a.z;
+  const a0 = Math.atan2(a.z - cz, a.x - cx), a1 = Math.atan2(b.z - cz, b.x - cx);
+  P(id, null, 'RD03', a.id, b.id, { cx, cz, r: CR01.radius, a0, a1: a1 < a0 ? a1 + 2 * Math.PI : a1 });
+});
+// RN05-RN12: the branches that stay, each to a named destination
+E('RN05-01', 'T02-01', 'RD03', 'C01-T02', 'LM02-east', [T02_LEG[1]]);
+E('RN05-02', 'T02-02', 'RD06', 'LM02-northeast', 'LM01-west', spiral('LM01', nodeById['LM02-northeast'], 'west', 14), [['stairs', 0, ALL]]);
+E('RN06-01', 'T03-01', 'RD03', 'C01-S', 'J-T03a');
+E('RN06-02', 'T03-02', 'RD04', 'J-T03a', 'J-T03b');
+E('RN06-03', 'T03-03', 'RD05', 'J-T03b', 'LM04-southeast');
+E('RN07-01', 'T07-01', 'RD05', 'J-T07', 'LM03-north');
+E('RN08-01', 'T08-01', 'RD05', 'J-T08', 'J-T08b');
+E('RN08-02', 'T08-02', 'RD06', 'J-T08b', 'LM05-west', spiral('LM05', nodeById['J-T08b'], 'west', 8), [['stairs', 0, ALL]]);
+E('RN09-01', 'T09-01', 'RD05', 'J-T09', 'LM06-north');
+E('RN10-01', 'T10-01', 'RD08', 'LM01-north', 'LM07-west');
+E('RN11-01', 'T11-01', 'RD07', 'LM04-southeast', 'E-T11', [[-1, -55.5], [12, -58.5]], [['boardwalk', 0, ALL]]);
+E('RN12-01', 'T11-02', 'RD07', 'J-LM08', 'LM08-south', [], [['boardwalk', 0, ALL]]);
+// RN13, RN14: the alleys and their RD05 connectors (the alley exits end at the ring)
+P('RN13-01', null, 'RD05', 'C01-W-N11', 'N11');
+townEdge('RN13-02'); townEdge('RN13-03');
+P('RN13-04', null, 'RD05', 'N12', 'C01-E-N12');
+P('RN14-01', null, 'RD05', 'C01-E-N13', 'N13');
+townEdge('RN14-02');
+// M01 south of the town (design section 3): the N08 connector, then RN06 (the former T03) to LM04; the W4 section sweeps it as one chain
+const m01South = ['RN02-07', 'RN06-01', 'RN06-02', 'RN06-03'];
 
-// Dense geometry of an edge (great-circle legs between controls), cached.
+// Dense geometry of an edge, cached: great-circle legs between the controls every 0.5 m; an edge of the town plane every 0.1 m along its line or arc (a chord
+// of 0.1 m stays within 0.2 mm of an R 8 m arc), its end points exactly on the nodes.
 function edgeGeometry(edge) {
   if (edge._geo) return edge._geo;
   const pts = [];
-  for (let i = 0; i + 1 < edge.controls.length; i++) { const seg = greatCirclePoints(edge.controls[i], edge.controls[i + 1], 0.5); for (let k = 0; k < seg.length - 1; k++) pts.push(seg[k]); }
+  if (edge.plane) {
+    const a = nodeById[edge.from], b = nodeById[edge.to], A = edge.plane.arc;
+    const len = A ? A.r * (A.a1 - A.a0) : Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(len / 0.1));
+    pts.push(at(edge.from));
+    for (let k = 1; k < n; k++) {
+      const f = k / n, q = A ? townToLonLat(A.cx + A.r * Math.cos(A.a0 + (A.a1 - A.a0) * f), A.cz + A.r * Math.sin(A.a0 + (A.a1 - A.a0) * f)) : townToLonLat(a.x + (b.x - a.x) * f, a.z + (b.z - a.z) * f);
+      pts.push([q.lon, q.lat]);
+    }
+  } else for (let i = 0; i + 1 < edge.controls.length; i++) { const seg = greatCirclePoints(edge.controls[i], edge.controls[i + 1], 0.5); for (let k = 0; k < seg.length - 1; k++) pts.push(seg[k]); }
   pts.push(edge.controls[edge.controls.length - 1]);
   const vs = pts.map(p => vec(p[0], p[1])), s = [0];
   for (let i = 1; i < vs.length; i++) s.push(s[i - 1] + R * angleBetween(vs[i - 1], vs[i]));
@@ -2165,7 +2239,7 @@ function samplePath(edge, stepMeters) {
   }
   return out;
 }
-const roadNetwork = { nodes, edges, nodeById, edgeLength, samplePath, LATR };
+const roadNetwork = { nodes, edges, nodeById, edgeLength, samplePath, LATR, CR01, townClasses: TOWN_CLASSES, m01South };
 
 const areaBudget = { computeAreaShares, targets: { building: 0.30, ocean: 0.30, wild: 0.32, ice: 0.08 }, tolerance: 0.02 };
 
@@ -2915,7 +2989,7 @@ function plan(W) {
   const coastAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.coastDistance(lon, lat); };
 
   // ---- the roads of the section: dense centre lines in (u, v)
-  const roadEdges = ['T03-01', 'T03-02', 'T03-03', 'T11-01'];
+  const roadEdges = [...W.roadNetwork.m01South, 'RN11-01'];          // M01 south of exit N08 (the former T03) and the RN11 boardwalk
   const roads = {};
   for (const id of roadEdges) {
     const e = W.roadNetwork.edges.find(q => q.id === id), S = W.roadNetwork.samplePath(e, 0.5);
@@ -2970,14 +3044,13 @@ function plan(W) {
   const coastV = (() => { for (let v = 30; v < 62; v += 0.02) if (W.coastDistance(-1, LAT0 - v / (R * D)) <= 0) return v; return null; })();
 
   // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
-  const T1 = roads['T03-01'];
-  put('lamp', ...(() => { const b = beside('T03-01', 1.2, 3.4); return [b.u, b.v]; })(), { yaw: Math.PI / 2 - 0.0, r: 0.6, lean: [0, 0] });
-  { const b = beside('T03-01', 5.8, -3.5); put('lamp', b.u, b.v, { yaw: -Math.PI / 2, r: 0.6 }); }   // RD03: a lamp at the junction as well
-  { const b = beside('T03-01', 4.2, -3.4); put('signRound', b.u, b.v, { yaw: b.yaw, r: 0.4 }); }
-  { const b = beside('T03-01', 2.6, -3.4); put('signBus', b.u, b.v, { yaw: b.yaw + Math.PI, r: 0.4 }); }
-  { const b = beside('T03-01', 5.4, 3.5); put('mirror', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.4 }); }
-  { const b = beside('T03-01', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
-  for (let s = 0.8; s <= 5.6; s += 2.0) { const b = beside('T03-01', s, 3.6 + 1.2); put('guardrailMetal', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8 }); }
+  put('lamp', ...(() => { const b = beside('RN02-07', 1.2, 3.4); return [b.u, b.v]; })(), { yaw: Math.PI / 2 - 0.0, r: 0.6, lean: [0, 0] });
+  { const b = beside('RN02-07', 5.8, -3.5); put('lamp', b.u, b.v, { yaw: -Math.PI / 2, r: 0.6 }); }   // RD03: a lamp at the junction as well
+  { const b = beside('RN02-07', 4.2, -3.4); put('signRound', b.u, b.v, { yaw: b.yaw, r: 0.4 }); }
+  { const b = beside('RN02-07', 2.6, -3.4); put('signBus', b.u, b.v, { yaw: b.yaw + Math.PI, r: 0.4 }); }
+  { const b = beside('RN02-07', 5.4, 3.5); put('mirror', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.4 }); }
+  { const b = beside('RN02-07', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
+  for (let s = 0.8; s <= 5.6; s += 2.0) { const b = beside('RN02-07', s, 3.6 + 1.2); put('guardrailMetal', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8 }); }
   for (const [u0, u1] of [[-12, -4.2], [5.8, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 3.9, { yaw: 0, r: 0.8 });
   // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
   const poleA = [[-8.0, 2.4, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[4.3, 1.8, 0.0], [5.0, 12.8, 0.08], [3.6, 21.0, 0.2]];
@@ -3021,9 +3094,9 @@ function plan(W) {
   put('oldMachine', -6.8, 15.6, { r: 1.4, yaw: 0.9 });
   put('rackFallen', 4.7, 20.2, { r: 1.2, yaw: 0.5 }); put('rackFallen', -2.4, 19.6, { r: 1.2, yaw: 2.4 });
   // RD04 stage: faded barrier, fallen sign, rusty guard rail
-  { const b = beside('T03-02', 4.0, -3.2); put('barrier', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
-  { const b = beside('T03-02', 6.4, 3.4); put('signFallen', b.u, b.v, { yaw: b.yaw, r: 0.8 }); }
-  for (let s = 1.0; s <= 8.0; s += 2.0) { const b = beside('T03-02', s, 3.3); put('guardrail', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8, lean: [0, (s % 4) * 0.01] }); }
+  { const b = beside('RN06-02', 4.0, -3.2); put('barrier', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
+  { const b = beside('RN06-02', 6.4, 3.4); put('signFallen', b.u, b.v, { yaw: b.yaw, r: 0.8 }); }
+  for (let s = 1.0; s <= 8.0; s += 2.0) { const b = beside('RN06-02', s, 3.3); put('guardrail', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8, lean: [0, (s % 4) * 0.01] }); }
 
   // ---- TR03 forest edge (v 17–26): shrubs, saplings, rocks, a log, the torii of LM04's entrance
   scatter('shrub', 30, { u0: -12, u1: 12, v0: 17, v1: 23.5 }, (u, v) => land(u, v), { r: 0.45, road: 0.7, scale: [0.8, 1.5] });
@@ -3237,8 +3310,9 @@ function build(W, edgeId, opts = {}) {
   throw new Error('roadkit: no profile for ' + cls);
 }
 
-// ---- transition chain (user review of W4): the three rural edges of T03 are swept as ONE strip whose cross-section changes gradually, so an asphalt
-// street turns into a cracked lane, then into a dirt track with weeds creeping in, instead of three profiles that meet at a hard joint.
+// ---- transition chain (user review of W4): the rural edges from exit N08 to LM04 are swept as ONE strip whose cross-section changes gradually, so an asphalt
+// street turns into a cracked lane, then into a dirt track with weeds creeping in, instead of profiles that meet at a hard joint. Since W10b (W10_SPEC 2.1) the chain
+// is M01 south of the town (world.js roadNetwork.m01South): the 6 m connector RN02-07 to the ring's south point C01-S, then RN06 (the former T03) to LM04.
 // Every profile is sampled on one common lateral grid; at each sample the two neighbouring road classes are blended with a smoothstep over
 // 2 x BLEND metres around their joint, and a wear value (0 at the town edge, 1 at the end) frays the paved edge and cracks the surface.
 const BLEND = 3.2;
@@ -3287,16 +3361,16 @@ function chain(W, ids, opts = {}) {
   }
   for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; (pure[a] && pure[b] && pure[c] && pure[d] ? headIdx : idx).push(a, c, b, b, c, d); }
   for (const L of [idx, headIdx]) for (let t = 0; t < L.length; t += 3) { const A = L[t] * 3, B = L[t + 1] * 3, C = L[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = L[t + 1]; L[t + 1] = L[t + 2]; L[t + 2] = tmp; } }
-  // weeds and tufts creep in along the paved edge: none at the town edge, more and more with wear (the RD04 / RD05 parts add their own in build())
-  const instances = {};
-  for (let st = 1.5; st < joints[0]; st += 0.7) {
+  // weeds and tufts creep in along the paved edge of the leading class: none at the town edge, more and more with wear (the RD04 / RD05 parts add their own in build())
+  const instances = {}, lead = classes.findIndex(c => c !== classes[0]), leadEnd = lead > 0 ? joints[lead - 1] : total;
+  for (let st = 1.5; st < leadEnd; st += 0.7) {
     const i = Math.round(st / 0.5), wear = wearOf[i]; if (hash(st, 41) > wear * 1.2) continue;
     const side = hash(st, 43) < 0.5 ? -1 : 1, o = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47)), a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], q = W.destination(S[i], W.bearing(a, b) + (side > 0 ? 90 : -90), Math.abs(o));
     const type = hash(st, 49) < 0.5 ? 'tuft' : 'weed'; (instances[type] = instances[type] || []).push({ type, lon: q.lon, lat: q.lat, alt: W.height(q.lon, q.lat), yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], lean: [0, 0], tint: [1, 1, 1] });
   }
   const lateral = (i, o) => { const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], br = W.bearing(a, b), q = W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat]; };
   const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }) };
-  return { ids, classes, joints, samples: S, instances, strip: { name: 'T03 transition chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, footprint: foot, wear: wearOf, lines, length: total };
+  return { ids, classes, joints, samples: S, instances, strip: { name: 'M01 south chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, footprint: foot, wear: wearOf, lines, length: total };
 }
 
 
@@ -3328,13 +3402,19 @@ function route(W, segs, o = {}) {
     P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, h: W.height(p.lon, p.lat), s: p.s + off }); edgeOf.push(k); });
     off += len; if (k + 1 < edges.length) joints.push(off);
   });
-  if (o.lead) { classes = [o.lead.cls, ...classes]; joints = [o.lead.at, ...joints]; }
+  if (o.lead) {
+    classes = [o.lead.cls, ...classes]; joints = [o.lead.at, ...joints];
+    // W10b: the lead may reach past the first edge (the exits' 6 m connectors are shorter than RD01T's 8 m). A joint between two edges of the same class blends
+    // nothing, so those joints are merged and the lead's joint stays in order (out of order, wts() would give negative weights)
+    for (let k = joints.length - 1; k >= 1; k--) if (classes[k] === classes[k + 1]) { classes.splice(k + 1, 1); joints.splice(k, 1); }
+  }
+  if (joints.some((jt, k) => k && jt <= joints[k - 1])) throw new Error(`roadkit.route ${segs.map(q => q.id).join('+')}: class joints out of order (${joints.join(', ')})`);
   if (o.trimStart) { while (S.length > 2 && S[0].s < o.trimStart) { S.shift(); edgeOf.shift(); } }      // start beyond the edge of a wider road it branches from
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   if (o.until !== undefined) { while (S.length > 2 && S[S.length - 1].s > o.until + 1e-9) { S.pop(); edgeOf.pop(); } }   // W8g-b: an exit head, made up to `until` metres
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const sNodeOf = which => (which === 'end' ? off : 0);
-  // W8f-a abutment curves and W8f-c node turns can overlap on the short T01-14 approach to J-W1.
+  // W8f-a abutment curves and W8f-c node turns can overlap on the short RN01-14 approach to J-W1.
   // Blend their centre-line offsets smoothly through the shared station range so neither curve is
   // overwritten at the overlap edge (which would create a visible heading kink at the bridge).
   const P2 = 2 * Math.PI * R, flatX = p => R * p.lon * D, flatZ = p => -R * Math.asinh(Math.tan(p.lat * D));
@@ -3555,7 +3635,7 @@ function build(W, ids, o = {}) {
   if (AB.end) for (const p of S) if (off - p.s <= AB.end.T + 1e-9) { const q = AB.end.at(off - p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
   // W8f-c G1: bridge-to-bridge nodes use the same sampled centreline transition on both sides of the node.
   for (const q of (o.turns || [])) for (const p of S) { const d = p.s - q.station, f = q.fillet; if (d < -f.Ta - 1e-9 || d > f.Tb + 1e-9) continue; const a = f.at(d); p.lon = a.lon; p.lat = a.lat; p.h = W.height(a.lon, a.lat); }
-  // unwrapped longitudes: the chain across the dateline (T01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
+  // unwrapped longitudes: the chain across the dateline (RN01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
   S.forEach((p, i) => { p.lonU = i === 0 ? p.lon : S[i - 1].lonU + ((p.lon - S[i - 1].lonU + 540) % 360 - 180); });
   const n = S.length, L = off, flat = p => ({ x: R * p.lonU * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
@@ -3570,7 +3650,7 @@ function build(W, ids, o = {}) {
   // ---- vertical alignment: climb at DECK.slope from each abutment to the base height, a hump at the tower (if any), rounded by a 2 m moving average
   // W8f-a: the deck starts at the altitude of the road's approach (raised by its fill, never lower than the terrain at the node: the deck over the water is not lowered)
   const hS = o.startAlt === undefined ? S[0].h : o.startAlt, hE = o.endAlt === undefined ? S[n - 1].h : o.endAlt, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
-  // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of T11-02 has room at the node (W5b裁决)
+  // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of RN12-01 has room at the node (W5b裁决)
   const pylonS = humpS === null ? null : humpS + (o.pylonShift || 0);
   const base = o.base || DECK.base;
   let A = S.map(p => Math.min(base, hS + DECK.slope * p.s, hE + DECK.slope * (L - p.s)));
@@ -3685,7 +3765,7 @@ function build(W, ids, o = {}) {
     out.lines.stays = stays;
     out.pylon = { s: pylonS, i, lon: S[i].lon, lat: S[i].lat, deck: A[i], top, above: DECK.towerAbove, legs };
   }
-  // ---- T11-02 maintenance stair (LM08 and RD02 cards): a gate in the north parapet, a gangway out to a two-flight steel stair hung on the north face of the girder
+  // ---- RN12-01 maintenance stair (LM08 and RD02 cards): a gate in the north parapet, a gangway out to a two-flight steel stair hung on the north face of the girder
   // (flight A runs away from the gate, a landing, flight B returns to the node), ending on a small wooden landing at LM08-south; riser 0.2 m, tread 0.26 m
   if (o.access) {
     const s0 = accessS, i0 = Math.round(s0 / 0.5), top = A[i0], riser = 0.2, treadL = 0.26, nFl = Math.round((top - 0.04) / riser / 2), grd = ground(i0, -5.4), acc = { s: s0, i: i0, top, steps: [], posts: 0, landing: null };
@@ -3715,7 +3795,7 @@ function build(W, ids, o = {}) {
   return out;
 }
 
-// ---- RD01 tunnel portals through the ridge (T01-05, span 6.5-29.5 m): the centre samples with the road bed altitude, for the arch geometry of roads.js
+// ---- RD01 tunnel portals through the ridge (RN01-05, span 6.5-29.5 m): the centre samples with the road bed altitude, for the arch geometry of roads.js
 function tunnel(W, edgeId, bed) {
   const NET = W.roadNetwork, e = NET.edges.find(q => q.id === edgeId), sp = e.spans.find(q => q.type === 'tunnel'), S = NET.samplePath(e, 0.5);
   const idx = []; S.forEach((p, i) => { if (p.s >= sp.fromMeters - 1e-9 && p.s <= sp.toMeters + 1e-9) idx.push(i); });
@@ -4032,10 +4112,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const all = {};
     for (const [t, list] of Object.entries(PLAN.items)) all[t] = list.map(it => ({ ...it, m: matrixOf(it) }));
     // roads: strips and instances
-    const roadOut = ['T03-01', 'T03-02', 'T03-03', 'T11-01'].map(id => global.ROADKIT.build(WS, id));
-    // T03-01/02/03 are swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping in); their own strips and edge lines are replaced
-    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
-    for (const r of roadOut.slice(0, 3)) { r.strips = []; r.lines = {}; }
+    const M = W.roadNetwork.m01South, roadOut = [...M, 'RN11-01'].map(id => global.ROADKIT.build(WS, id));
+    // M01 south (RN02-07, RN06-01/02/03, the former T03) is swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping
+    // in); the edges' own strips and edge lines are replaced
+    const CH = global.ROADKIT.chain(WS, M, { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
+    for (const r of roadOut.slice(0, M.length)) { r.strips = []; r.lines = {}; }
     for (const [t, list] of Object.entries(CH.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     S.roadOut = roadOut;
@@ -4307,28 +4388,32 @@ const lin = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16)
 // into the road class (W5_SPEC 3.0): RD01 9 m asphalt -> 7 m with gravel shoulders within 15 m; RD03 fraying edges, cracks, weeds; RD05 from a 4.5 m asphalt apron.
 const LEAD01 = { cls: 'RD01T', at: 8 };
 const ROUTES = [
-  { id: 'N03-east', exit: 'N03', segs: [{ id: 'T01-01' }, { id: 'T01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'] } },
-  { id: 'N01-west', exit: 'N01', segs: [{ id: 'T01-15', rev: true }, { id: 'T01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 11, barrier: ['end'] } },
-  { id: 'T01-ridge', segs: [{ id: 'T01-04' }, { id: 'T01-05' }, { id: 'T01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
-  { id: 'T01-west', segs: [{ id: 'T01-10' }, { id: 'T01-11' }, { id: 'T01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'] } },
-  { id: 'N10-T04', exit: 'N10', segs: [{ id: 'T04-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24, trimEnd: 3.6 }, furnish: { kind: 'RD03', lamps: [6, 25], poles: [10, 21], sign: [{ s: 15, type: 'signTri' }], mirror: 'end', vending: 23.5 } },
-  { id: 'N04-T02', exit: 'N04', segs: [{ id: 'T02-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 31], poles: [9, 24, 38, 48], sign: [{ s: 13, type: 'signRound' }], mirror: 'bend', busStop: 31 } },
-  // W8f-a: N09-T05 now stops 10.4 m before LM09-north (the junction paving takes the rest): the lamp and the jizo keep their distance before the junction (3.3 m, 4.3 m)
-  { id: 'N09-T05', exit: 'N09', segs: [{ id: 'T05-01' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [6, 19.6], poles: [11, 17], sign: [{ s: 14, type: 'signRound' }], jizo: 18.6 } },
-  { id: 'N11-T06', exit: 'N11', segs: [{ id: 'T06-01' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4, taperEnd: true } },
-  { id: 'N12-T06', exit: 'N12', segs: [{ id: 'T06-02' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4, taperEnd: true } },
-  { id: 'N13-T06', exit: 'N13', segs: [{ id: 'T06-03' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4, taperEnd: true } },
-  // W5b: the RD05 branches off T01 (start beyond the edge of the trunk road), the snow route RD08
-  { id: 'T07-RD05', segs: [{ id: 'T07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
-  { id: 'T08-RD05', segs: [{ id: 'T08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
-  { id: 'T09-RD05', segs: [{ id: 'T09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', stakes: true } },
-  { id: 'T10-RD08', segs: [{ id: 'T10-01' }], opts: { wearMax: 0, weeds: false }, furnish: { kind: 'RD08', poleEvery: 8, shelter: 17.5 } },
+  { id: 'N03-east', exit: 'N03', segs: [{ id: 'RN01-19' }, { id: 'RN01-01' }, { id: 'RN01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'] } },
+  { id: 'N01-west', exit: 'N01', segs: [{ id: 'RN01-16', rev: true }, { id: 'RN01-15', rev: true }, { id: 'RN01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 11, barrier: ['end'] } },
+  { id: 'RN01-ridge', segs: [{ id: 'RN01-04' }, { id: 'RN01-05' }, { id: 'RN01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
+  { id: 'RN01-west', segs: [{ id: 'RN01-10' }, { id: 'RN01-11' }, { id: 'RN01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'] } },
+  // W10b: the other exits end at the ring road CR01 (W10_SPEC 2.1): their 6 m connectors straight out along the street axis, RD03 (N04, N09, N10) and RD05
+  // (N11-N13, from a 4.5 m apron as in 12.4 G6). They are the exit heads until W10c draws the ring and its junctions; no furniture on them.
+  { id: 'N04-C01', exit: 'N04', segs: [{ id: 'RN02-01', rev: true }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
+  { id: 'N09-C01', exit: 'N09', segs: [{ id: 'RN03-01', rev: true }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
+  { id: 'N10-C01', exit: 'N10', segs: [{ id: 'RN03-04' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
+  { id: 'N11-C01', exit: 'N11', segs: [{ id: 'RN13-01', rev: true }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
+  { id: 'N12-C01', exit: 'N12', segs: [{ id: 'RN13-04' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  { id: 'N13-C01', exit: 'N13', segs: [{ id: 'RN14-01', rev: true }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  // RN05-01 (T02-01 cut at the ring, W10b): from C01-T02 to LM02. The lamp, the bus stop and the poles beyond the cut keep their stations of the whole T02-01
+  // (31, 38, 48 m from N04) less the 28.892 m cut; the lamp, poles and sign of the part inside the ring went with it.
+  { id: 'RN05-RD03', segs: [{ id: 'RN05-01' }], opts: { wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [2.108], poles: [9.108, 19.108], mirror: 'bend', busStop: 2.108 } },
+  // W5b: the RD05 branches off RN01 (start beyond the edge of the trunk road), the snow route RD08
+  { id: 'RN07-RD05', segs: [{ id: 'RN07-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
+  { id: 'RN08-RD05', segs: [{ id: 'RN08-01' }], opts: { trimStart: 5.2, wearMax: 0.35, wearLen: 40, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', post: true } },
+  { id: 'RN09-RD05', segs: [{ id: 'RN09-01' }], opts: { trimStart: 5.2, wearMax: 0.3, wearLen: 20, taperStart: true, taperEnd: true }, furnish: { kind: 'RD05', stakes: true } },
+  { id: 'RN10-RD08', segs: [{ id: 'RN10-01' }], opts: { wearMax: 0, weeds: false }, furnish: { kind: 'RD08', poleEvery: 8, shelter: 17.5 } },
 ];
-const STAIRS = ['T02-02', 'T08-02'];
+const STAIRS = ['RN05-02', 'RN08-02'];
 const BRIDGES = [
-  { id: 'T01-03', ids: ['T01-03'] },
-  { id: 'T01-07+08+09', ids: ['T01-07', 'T01-08', 'T01-09'], pylonJoint: 1, pylonShift: -4.5, access: { atJoint: 1, node: 'LM08-south' } },       // J-LM08 is the joint between T01-08 and T01-09; the tower stands 4.5 m before it, the T11-02 stair at the node
-  { id: 'T01-13', ids: ['T01-13'] },
+  { id: 'RN01-03', ids: ['RN01-03'] },
+  { id: 'RN01-07+08+09', ids: ['RN01-07', 'RN01-08', 'RN01-09'], pylonJoint: 1, pylonShift: -4.5, access: { atJoint: 1, node: 'LM08-south' } },       // J-LM08 is the joint between RN01-08 and RN01-09; the tower stands 4.5 m before it, the RN12-01 stair at the node
+  { id: 'RN01-13', ids: ['RN01-13'] },
 ];
 const NAV_PERIOD = 6;                                // navigation lights: one slow pulse per 6 s (card: period >= 4 s, no flicker)
 const SPACING = { human: 16, wild: 40 };            // RD01 lamps (card): inhabited land 16 m, wilderness 40 m
@@ -4394,7 +4479,7 @@ function furnishRD03(W, rt, cfg) {
   if (cfg.jizo) { const i = idxAt(cfg.jizo), o = 3.0; add('jizo', i, o, rt.surface(i, o), { yaw: P.yawFace(-P.right(i)[0], -P.right(i)[1]) }); add('lantern', i, o + 0.8, rt.surface(i, o + 0.8), { yaw: 0 }); }
   if (cfg.busStop) { const i = idxAt(cfg.busStop), r = P.right(i); add('signBus', i, 2.9, rt.surface(i, 2.9), { yaw: P.yawFace(-r[0], -r[1]) }); add('busBench', i + 6 < n ? i + 6 : i, 3.1, rt.surface(i + 6 < n ? i + 6 : i, 3.1), { yaw: P.yawAlong(i) }); }
 }
-// RD05 dirt track: a stone post where it leaves the trunk road; the desert one (T09-01) is marked by wooden stakes every 5 m
+// RD05 dirt track: a stone post where it leaves the trunk road; the desert one (RN09-01) is marked by wooden stakes every 5 m
 function furnishRD05(W, rt, cfg) {
   const P = placer(rt), { add, idxAt, S } = P;
   if (cfg.post) { const i = idxAt(S[0].s + 0.8); add('stonePost', i, -1.95, rt.surface(i, -1.95), { s: [0.9, 1, 0.9] }); }
@@ -4407,18 +4492,16 @@ function furnishRD08(W, rt, cfg) {
   { const i = idxAt(cfg.shelter), o = 3.6, g = rt.surface(i, o); add('shelterOrange', i, o, g - 0.8, { yaw: P.yawAcross(i) }); rt.shelter = { i, s: S[i].s, alt: g }; }
 }
 
-// ---- W8f-a joints (W8_SPEC 12.1 C): the six RD01 / RD02 abutments, the T01 chainage, the five T junctions of a minor road with RD01
+// ---- W8f-a joints (W8_SPEC 12.1 C): the six RD01 / RD02 abutments, the RN01 chainage, the T junctions of a minor road with RD01 (three since W10b retired T04 / T05)
 const FILLET_T = 12, FILLET_E = 0.75;                // abutment transitions: at most 12 m on each side of the node (tangent length), within 0.75 m of the original centre lines
 const PAVE_LIFT = 0.01;                              // junction paving above the trunk's surface (flush: <= 0.02 m)
-// the T01 ring in its order of travel (N03 east round the planet to N01): pieces and their direction against the ring's chainage
-const RING = [['N03-east', 1], ['T01-03', 1], ['T01-ridge', 1], ['T01-07+08+09', 1], ['T01-west', 1], ['T01-13', 1], ['N01-west', -1]];
+// RN01 round the planet in its order of travel (N03 east round to N01): pieces and their direction against the trunk's chainage
+const RING = [['N03-east', 1], ['RN01-03', 1], ['RN01-ridge', 1], ['RN01-07+08+09', 1], ['RN01-west', 1], ['RN01-13', 1], ['N01-west', -1]];
 // T junctions: minor road (branch) on RD01 (trunk); paving class and corner radius (RD03 3 m asphalt, RD05 2 m rammed earth)
 const JUNCTIONS = [
-  { node: 'J-T04', trunk: 'N03-east', branch: 'N10-T04', paving: 'asphalt', r: 3 },
-  { node: 'J-T07', trunk: 'T01-ridge', branch: 'T07-RD05', paving: 'dirt', r: 2 },
-  { node: 'J-T08', trunk: 'T01-west', branch: 'T08-RD05', paving: 'dirt', r: 2 },
-  { node: 'J-T09', trunk: 'T01-west', branch: 'T09-RD05', paving: 'dirt', r: 2 },
-  { node: 'LM09-north', trunk: 'N01-west', branch: 'N09-T05', paving: 'asphalt', r: 3 },
+  { node: 'J-T07', trunk: 'RN01-ridge', branch: 'RN07-RD05', paving: 'dirt', r: 2 },
+  { node: 'J-T08', trunk: 'RN01-west', branch: 'RN08-RD05', paving: 'dirt', r: 2 },
+  { node: 'J-T09', trunk: 'RN01-west', branch: 'RN09-RD05', paving: 'dirt', r: 2 },
 ];
 const wrap180 = a => (((a % 360) + 540) % 360) - 180;
 // local plane at a node: gnomonic (great circles through the node are straight lines, azimuths at the node are true); coordinates east, north in metres
@@ -4472,7 +4555,8 @@ function nodeTurn(W, segs, node) {
     const prev = segs[k - 1], next = segs[k];
     station += NET.edgeLength(NET.edges.find(e => e.id === prev.id));
     if (routeNode(NET, prev, 'end') === node && routeNode(NET, next, 'start') === node) {
-      const incoming = chainPoints(W, [{ id: prev.id, rev: !prev.rev }], false), outgoing = chainPoints(W, [next], false);
+      // the road on both sides of the node as far as the route goes (W10b: RN01-15 before LM09-north is 8 m long, the fillet reaches on into RN01-16)
+      const incoming = chainPoints(W, segs.slice(0, k).reverse().map(sg => ({ id: sg.id, rev: !sg.rev })), false), outgoing = chainPoints(W, segs.slice(k), false);
       return { node, station, fillet: transition(W, NET.nodeById[node], incoming, outgoing, node === 'LM09-north' ? 0.95 : FILLET_E) };
     }
   }
@@ -4500,15 +4584,15 @@ function ringChain(W) {
   for (const [id, dir] of RING) { const r = ROUTES.find(q => q.id === id), b = BRIDGES.find(q => q.id === id), L = (r ? r.segs.map(q => q.id) : b.ids).reduce((a, x) => a + len(x), 0); out[id] = dir > 0 ? { c0: c, dir: 1 } : { c0: c + L, dir: -1 }; c += L; }
   return out;
 }
-// junction layout in the node's plane, from world.js alone (before any road is swept). The trunk is two straight legs through the node (it turns by 1-3 deg at J-T04 ... J-T09 and
-// by 22 deg at LM09-north): its carriageway edge on the branch side (3.5 m) is one line per leg. Each of the branch's two paved edges meets the edge line of the leg it lands on;
+// junction layout in the node's plane, from world.js alone (before any road is swept). The trunk is two straight legs through the node (it turns by 1-3 deg at J-T07 ... J-T09):
+// its carriageway edge on the branch side (3.5 m) is one line per leg. Each of the branch's two paved edges meets the edge line of the leg it lands on;
 // a corner arc of radius r is tangent to both (T1 on the trunk edge, T2 on the branch edge); the branch then starts 0.6 m beyond the farther T2. The mouth = the trunk stations
 // where the paving outline lies in the ditch band (4.4-7.3 m from the centre), at least the branch's paved width + 1 m on each side: there the ditch is filled and no barrier stands.
-function junctionPlan(W, J, RK, turn = null) {
+function junctionPlan(W, J, RK) {
   const NET = W.roadNetwork, N0 = NET.nodeById[J.node], P = plane(W, N0), tr = ROUTES.find(r => r.id === J.trunk), br = ROUTES.find(r => r.id === J.branch);
   const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1], right = d => [d[1], -d[0]];
   let sJ = 0, iSeg = 0; for (; iSeg < tr.segs.length; iSeg++) { if (routeNode(NET, tr.segs[iSeg], 'start') === J.node) break; sJ += NET.edgeLength(NET.edges.find(e => e.id === tr.segs[iSeg].id)); }
-  const dF = turn ? unit(P.to(turn.fillet.at(0.5)).map((v, i) => v - P.to(turn.fillet.at(-0.5))[i])) : unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = turn ? dF : unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
+  const dF = unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
   const bEdge = br.segs[0].id, bd = unit(P.to(nearNode(W, bEdge, N0, 4))), sigma = dot(bd, right(dM)) > 0 ? 1 : -1;
   const h = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved[1], vE = 3.5, r = J.r, nB = right(bd);
   const legs = { back: { d: dB, p: right(dB).map(v => v * sigma * vE) }, fwd: { d: dF, p: right(dF).map(v => v * sigma * vE) } };
@@ -4629,7 +4713,7 @@ function abutWall(W, rt, ab, deckAlt) {
 // `junctions` limits the junction plans (W8g-b: the exit heads need only the two junctions that exits meet); each plan depends on its own junction only.
 function routeContext(WS, junctions = JUNCTIONS, routeIds) {
   const RK = global.ROADKIT, BR = global.BRIDGE, lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north');
-  return { AB: abutments(WS, BR, routeIds), CH: ringChain(WS), lm09Turn, JP: junctions.map(J => junctionPlan(WS, J, RK, J.node === 'LM09-north' ? lm09Turn : null)) };
+  return { AB: abutments(WS, BR, routeIds), CH: ringChain(WS), lm09Turn, JP: junctions.map(J => junctionPlan(WS, J, RK)) };
 }
 // the options of a route (plan() and the exit heads share it, so that a head is swept exactly like its route)
 const ALLEY_EXITS = ['N11', 'N12', 'N13'];
@@ -4647,24 +4731,24 @@ function routeOpts(def, ctx, tc) {
 const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
 
 // ---- W8g-b (W8_SPEC 13.2 B1): the exit heads (W10c replaces them). The first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
-// edge)), made at start-up from the same route() call as the network's: a route no longer than L + HEAD_MARGIN is made whole (abutment, ramp and taper of its
-// far end included); a longer one is cut there (route option `until`; its abutment only keeps its columns, gridAbut). The network road later takes the head's
+// edge)), made at start-up from the same route() call as the network's: a route no longer than L + HEAD_MARGIN, or one that ends at a bridge abutment (N01, N03:
+// the approach and its cross-section blend reach back into the head), is made whole (abutment, ramp and taper of its far end included); a longer one is cut there (route option `until`; its abutment only keeps its columns, gridAbut). The network road later takes the head's
 // rows 0 .. K + 1 (K: the head's last row) as its own (applyHead), so the two meet with the same vertices; normals at the seam come from the same triangles on
-// both sides (headGeometry / the strip of roads.js). N08 is the W4 section's T03 chain (made whole). Each head: { exit, id, rt, L, K, whole }.
-const HEAD_MARGIN = 12, HEAD_CUT = 6;   // a route within L + 12 m is made whole (N01 / N03: their abutment's approach reaches back into the head); a longer one is cut at L + 6 m
+// both sides (headGeometry / the strip of roads.js). N08 is the W4 section's chain, M01 south (RN02-07, then RN06, the former T03). Each head: { exit, id, rt, L, K, whole }.
+const HEAD_MARGIN = 12, HEAD_CUT = 6;   // a route within L + 12 m (or ending at an abutment) is made whole; a longer one is cut at L + 6 m
 function exitHeads(W, H, tc) {
   const RK = global.ROADKIT, NET = W.roadNetwork, WS = Object.assign(Object.create(W), { height: H }), exits = ROUTES.filter(r => r.exit), ids = exits.map(r => r.id);
   const ctx = routeContext(WS, JUNCTIONS.filter(J => ids.includes(J.trunk) || ids.includes(J.branch)), ids), byId = {}, out = [];
   const len = id => NET.edgeLength(NET.edges.find(e => e.id === id)), lastRow = (S, L) => { let k = 0; while (k + 1 < S.length && S[k + 1].s <= L + 1e-9) k++; return k; };
   const branchOf = def => ctx.JP.find(j => j.branch === def.id);
   for (const def of [...exits.filter(d => !branchOf(d)), ...exits.filter(branchOf)]) {
-    const L = Math.min(15, len(def.segs[0].id)), total = def.segs.reduce((a, q) => a + len(q.id), 0), whole = total <= L + HEAD_MARGIN + 1e-9, o = routeOpts(def, ctx, tc), jp = branchOf(def);
+    const L = Math.min(15, len(def.segs[0].id)), total = def.segs.reduce((a, q) => a + len(q.id), 0), o = routeOpts(def, ctx, tc), whole = total <= L + HEAD_MARGIN + 1e-9 || !!o.abut, jp = branchOf(def);
     if (whole && jp) o.ramp = branchRamp(jp, byId[jp.trunk]);
     if (!whole) { o.until = L + HEAD_CUT; if (o.abut) { delete o.abut; o.gridAbut = true; } delete o.taperEnd; }
     const rt = RK.route(WS, def.segs, o); rt.def = def; if (whole) byId[def.id] = rt;
     out.push({ exit: def.exit, id: def.id, rt, L, K: lastRow(rt.samples, L), whole });
   }
-  { const L = Math.min(15, len('T03-01')), ch = RK.chain(WS, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD, until: L + HEAD_CUT }); out.push({ exit: 'N08', id: 'T03-chain', rt: ch, L, K: lastRow(ch.samples, L), whole: false, upNormals: true }); }
+  { const M = NET.m01South, L = Math.min(15, len(M[0])), ch = RK.chain(WS, M, { townHead: RK.TOWN_HEAD, until: L + HEAD_CUT }); out.push({ exit: 'N08', id: 'M01-south', rt: ch, L, K: lastRow(ch.samples, L), whole: false, upNormals: true }); }
   return out;
 }
 // the network's road takes the head's rows 0 .. K + 1: position, colour, surface altitude (things stand on it), paving and footprint; returns the largest change
@@ -4685,7 +4769,7 @@ function stripCells(index, m, r0, r1) { const out = []; for (let t = 0; t < inde
 function* planSteps(W, H, tc, heads) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   const ctx = routeContext(WS), { AB, CH, lm09Turn, JP } = ctx,
-    bridgeTurnDefs = { 'T01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'T01-07+08+09').ids.map(id => ({ id })), node)) };
+    bridgeTurnDefs = { 'RN01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'RN01-07+08+09').ids.map(id => ({ id })), node)) };
   void lm09Turn;
   yield;
   const optsOf = def => routeOpts(def, ctx, tc);
@@ -4709,7 +4793,7 @@ function* planSteps(W, H, tc, heads) {
   });
   yield;
   // the road's last cross-section takes the deck's first one vertex by vertex (|o| <= 5 m: the same offsets on both, mirrored where the two run against each other;
-  // a deck laid out one circumference east of the road, T01-07+08+09 at J-W3, is moved back by it: bend.js shifts the road there by the same amount)
+  // a deck laid out one circumference east of the road, RN01-07+08+09 at J-W3, is moved back by it: bend.js shifts the road there by the same amount)
   // shifted(x, k): the float32 value v k circumferences away from x such that the shader's float32 sum v - k * PERIOD (bend.js, exact for its uniform) is x again, bit for bit
   const shifted = (x, k) => { const P = Math.fround(2 * Math.PI * R), want = Math.fround(x), v0 = Math.fround(x + k * P), ulp = Math.abs(Math.fround(v0 * (1 + 2 ** -23)) - v0) || 1e-7;
     for (let q = 0; q <= 8; q++) for (const sg of [1, -1]) { const v = Math.fround(v0 + sg * q * ulp); if (Math.fround(v - k * P) === want) return v; } return v0; };
@@ -4795,7 +4879,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     if (DATA.junctions.length) stripMesh({ ...merge('junction paving', DATA.junctions.map(j => j.strip)), normals: false }, pavingMat);      // up normals: an even surface, no facets
     if (DATA.abutments.length) stripMesh(merge('abutment walls', DATA.abutments.map(a => a.wall)), bridgeMat);
 
-    // ---- tunnel (T01-05): a half-round arch tube along the bed, outer concrete shell, dark inner lining, a portal ring and a black void disc at each end
+    // ---- tunnel (RN01-05): a half-round arch tube along the bed, outer concrete shell, dark inner lining, a portal ring and a black void disc at each end
     for (const rt of DATA.routes) if (rt.tunnel) buildTunnel(rt, root, stripMesh, bridgeMat);
 
     // ---- instances
@@ -4837,7 +4921,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     { const segs = [], white = []; for (const b of DATA.bridges) { for (const k of ['edgeL', 'edgeR', 'edgeLU', 'edgeRU']) poly(b.lines[k], segs); for (const j of b.lines.joints) poly(j, segs); for (const st of (b.lines.stays || [])) poly(st, white); }
       addLines('bridge', segs); addLines('bridge', white, 0xe6ebf2); }
 
-    // ---- near-only lines: rope handrails of the stairs, the steel rails of the T11-02 stair, the wires between the RD03 utility poles
+    // ---- near-only lines: rope handrails of the stairs, the steel rails of the RN12-01 stair, the wires between the RD03 utility poles
     { const rope = [], rail = [], wire = [], local = [[-0.8, 7.75, 0], [0, 7.75, 0], [0.8, 7.75, 0]];
       for (const st of DATA.stairs) for (const line of st.ropeSegments) poly(line, rope);
       for (const b of DATA.bridges) for (const line of (b.stairRails || [])) poly(line, rail);
@@ -4852,7 +4936,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     for (const rec of ((SEC.state.roadOut || []).flatMap(r => r.instances.lampSmall || []))) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     for (const b of DATA.bridges) for (const rec of (b.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea, dots); S.dots = dots.length;
-    if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the T01-13 deck faces, its ink and the band are cut where the seam crosses the bridge
+    if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the RN01-13 deck faces, its ink and the band are cut where the seam crosses the bridge
     root.visible = true; S.built = true;
     return root;
   }
@@ -5388,9 +5472,10 @@ function* grasslandSteps(W, H, ctx) {
       if (hash(key, 15) < 0.0042) { const hh = 5 + 7 * hash(key, 16), w = 1.0 + 0.8 * hash(key, 17); put('rockPillar', lon, lat, h - 0.1, { s: [w, hh, w], tint: tint(0.9, 1.15, key + 9) }); stats.pillars++; }
     }
   }, 40);
-  // cairns beside the dirt tracks of T07, T08, T09 (RD05) and T02/T05 country roads in grassland: every ~14 m on the left side
+  // cairns beside the RD05 dirt tracks (RN07, RN08, RN09) and the RD03 country roads (RN05) in grassland: every ~14 m on the left side. The seed is the id of the
+  // edge a road comes from (W10b renumbered them), so the cairns stay where they were; a new edge uses its own id
   for (const e of W.roadNetwork.edges.filter(q => ['RD05', 'RD03'].includes(q.class))) {
-    const S = W.roadNetwork.samplePath(e, 0.5); for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, e.id.length * 7 + e.id.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
+    const S = W.roadNetwork.samplePath(e, 0.5), key = e.source || e.id; for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, key.length * 7 + key.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
   }
   return { items, stats };
 }
@@ -20019,9 +20104,9 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM01 雨見岳 (Ame-mi-dake): the dormant volcano's summit (W7). Local frame: origin = the anchor on the summit (56.00 N 25.00 W, altitude 26.0 m, the highest point of the planet),
-// +Z towards the west entrance (heading 300, 10 m out, the end of the T02-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. The mountain itself is terrain (ameni-dake,
+// +Z towards the west entrance (heading 300, 10 m out, the end of the RN05-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. The mountain itself is terrain (ameni-dake,
 // radius 28 m, flat top radius 4.2 m, snow above 20 m from terrain.js); this module replaces the summit inside r = 8 m: a crater of 12 m across (rim, ash floor, lake, two vents with thin
-// steam), the small shrine and the stone marker beside the stairs' last flight, and the stone lanterns of the path (<= 10, weak warm light). The north entrance (T10-01) is at the foot
+// steam), the small shrine and the stone marker beside the stairs' last flight, and the stone lanterns of the path (<= 10, weak warm light). The north entrance (RN10-01) is at the foot
 // of the mountain and is not part of the summit model. Groups: lm01Rim, lm01Crater (floor, lake, ember), lm01Vent (live steam), lm01Shrine, lm01Path (steps, marker, lanterns).
 (globalThis.LANDMARKS = globalThis.LANDMARKS || {}).LM01 = (K, rec) => {
   const { THREE, group, mesh, box, cyl, mat, warm } = K, L = LMLIB(K), PI = Math.PI, rnd = K.rand(101);
@@ -20058,7 +20143,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM02 湯けむり温泉村 (Yu-kemuri hot-spring village) (W7). Local frame: origin = the site anchor (36.00 N 50.00 W, altitude 1.9 m, a levelled platform of radius 15 m with a 10 m
-// transition), +Z towards the east entrance (heading 100, 17 m out, the end of T02-01), +X to the left of +Z; the north-east entrance (heading 41, T02-02's start) is at local (14.57, 8.76).
+// transition), +Z towards the east entrance (heading 100, 17 m out, the end of RN05-01), +X to the left of +Z; the north-east entrance (heading 41, RN05-02's start) is at local (14.57, 8.76).
 // 1 unit = 1 m. Six timber buildings (two 2-storey inns, three houses, a shop) lie round a small plaza along a brook; the open-air spring (5 x 4 m) with a bamboo fence, the source hut and
 // its wooden flume, a foot bath, stone-slab paths, a plank bridge, paper lanterns, noren, the village torii, a bus stop and a vending machine. Detail is one level below the town's;
 // interiors are only the lit window panes. Groups: lm02Ground, lm02Houses, lm02Onsen (pool, hut, flume, fence), lm02Brook, lm02Street (torii, bus stop, vending, lanterns, bridge),
@@ -20128,7 +20213,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM03 苔石古坟群 (the moss-stone tumulus group) (W7). Local frame: origin = the site anchor (27.00 S 86.00 E, altitude 1.9 m, a levelled platform of radius 12 m), +Z towards the north
-// entrance (heading 0, 14 m out, the end of T07-01), +X to the left of +Z. 1 unit = 1 m. The site is trimmed to a 24 m disc (W7_SPEC section 3): at its centre the megalithic chamber (its earth
+// entrance (heading 0, 14 m out, the end of RN07-01), +X to the left of +Z. 1 unit = 1 m. The site is trimmed to a 24 m disc (W7_SPEC section 3): at its centre the megalithic chamber (its earth
 // mound long washed away: a corridor 1.8 m wide between two walls of three boulders each, a back stone and a capstone of 6 x 1.6 x 4 m on top, about 4 m high in all, the opening towards the
 // entrance), four small grassy round mounds (3-4 m across, with a tree on two of them), a toppled pillar, a weathered explanatory stele (the text is unreadable), moss and ferns, a short timber
 // fence where the forest track ends. Purely human ruin: no hidden-clue elements. Boulder outlines are drawn slightly heavier by their size. Night: fireflies and moonlight only; the chamber is dark.
@@ -20185,7 +20270,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM04 森中废神社与鸟居残迹 (the forgotten forest shrine and its torii) (W7). Local frame: origin = the site anchor (42.00 S 15.00 W, altitude 1.9 m, a levelled platform of radius 15 m),
-// +Z towards the south-east entrance (heading 120, 17 m out, the end of T03-03 and the start of the T11-01 boardwalk), +X to the left of +Z. 1 unit = 1 m. The approach (sando) runs from the
+// +Z towards the south-east entrance (heading 120, 17 m out, the end of RN06-03 and the start of the RN11-01 boardwalk), +X to the left of +Z. 1 unit = 1 m. The approach (sando) runs from the
 // entrance along -Z for 25 m: moss-covered slabs and steps through ten small torii (2.5-3 m: whole, leaning, fallen, only posts), stone lanterns (two still faintly lit), a pair of komainu and
 // three stone Buddhas, a dry hand-washing basin, a great sacred tree with a shimenawa, and at the end the tilted little hall (4 x 5 m, 5 m high, a roof of moss) with its steps, a rope and
 // lattice doors; rain drips from its eaves and a few fireflies drift about. W4's two entrance torii of the TR03 edge stand at about z = 14.6 and 12 and are not repeated: the first torii
@@ -20242,7 +20327,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM05 星見石環 (the star-viewing stone ring) (W7, hidden clue 1). Local frame: origin = the site anchor (33.00 N 126.90 W, altitude 7.9 m: the flat top of the hill hill-lm05, platform radius
-// 10 m), +Z towards the west entrance (heading 300, 12 m out, the end of the T08-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. 13 IDENTICAL standing stones (3.2 high, 1.2 wide,
+// 10 m), +Z towards the west entrance (heading 300, 12 m out, the end of the RN08-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. 13 IDENTICAL standing stones (3.2 high, 1.2 wide,
 // 0.6 thick, one geometry shared by all: that sameness is the clue) stand on a circle of radius 9 m, equally spaced (centre distance 2 x 9 x sin(pi/13) = 4.30 m), faces along the
 // tangent, the gap between two of them opening on the entrance axis; moss only on the lower half of each stone, weathered but unchipped; in the middle a lying slab of about 3 x 2 m,
 // smoother and darker than its surroundings, its edges perfectly straight; a trodden ring path between the stones; a small stone cut with concentric circles. Read first as an ancient
@@ -20283,7 +20368,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM06 砂没驿与半埋巨碑 (the sand-swallowed station and the half-buried monolith) (W7, hidden clue 2). Local frame: origin = the site anchor (32.00 S 115.00 W, altitude 1.9 m, a levelled
-// platform of radius 15 m in the desert), +Z towards the north entrance (heading 0, 17 m out, the end of T09-01), +X to the left of +Z. 1 unit = 1 m. First of all a forgotten Japanese country
+// platform of radius 15 m in the desert), +Z towards the north entrance (heading 0, 17 m out, the end of RN09-01), +X to the left of +Z. 1 unit = 1 m. First of all a forgotten Japanese country
 // station: a platform 15 m long of which only the edge shows between sand drifts, a 3 x 2.5 m waiting shed whose roof has half fallen in, a faded name board (no readable letters), one rusted
 // single car 12 m long on a track that is half buried and runs into a dune, a signal lying on its side, sand sliding slowly off the car roof. Then, 25 m away along -Z on its own flat
 // round disc of sand (radius 4 m: too regular for the wind), the monolith: 7.0 m above the sand, 2.5 m wide, 0.8 m thick, near-black, leaning 8 degrees, smooth as new, drawn with one clean straight
@@ -20345,7 +20430,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM07 冰封轮廓 (the ice-sealed outline) (W7, hidden clue 3). Local frame: origin = the site anchor (76.00 N 100.00 E, altitude 2.5 m, the ice sheet itself: no platform), +Z towards the west
-// entrance (heading 280, 10 m out, the end of T10-01 and of the RD08 pole line), +X to the left of +Z. 1 unit = 1 m. Above the ice there is almost nothing: a half-buried faded-orange observation
+// entrance (heading 280, 10 m out, the end of RN10-01 and of the RD08 pole line), +X to the left of +Z. 1 unit = 1 m. Above the ice there is almost nothing: a half-buried faded-orange observation
 // hut 4 x 3 m (antenna fallen across the roof, frosted window), a survey pole, a tripod with its instrument, snow banked on the weather side, a little snow mist drifting low. The clue is in
 // the ice: a patch of clearer, deeper-cyan ice about 36 m across (a soft canvas texture on a mesh that follows the ground) and, under it, a regular hexagonal ring of circumradius 15 m
 // (side 15 m) at a depth of 3 m: its shadow is painted into that texture at a contrast far below the ice's own unevenness, and a simple translucent hexagon mesh stands for it at y = -3
@@ -20420,7 +20505,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM08 灯塔岛 (the lighthouse island) (W7). Local frame: origin = the site anchor (8.00 S 170.00 W, altitude 1.53 m: the island's top), +Z towards the south entrance (heading 180, 9.5 m out, the
-// island's south shore: the end of T11-02, where the bridge's steel maintenance stair of W5b lands), +X to the left of +Z = EAST. The island (world.js: a 10 m cone, the land ends at r = 10 m) is terrain;
+// island's south shore: the end of RN12-01, where the bridge's steel maintenance stair of W5b lands), +X to the left of +Z = EAST. The island (world.js: a 10 m cone, the land ends at r = 10 m) is terrain;
 // the module stands on it through groundFn. White round lighthouse 12.0 m high (a tapering shaft, a gallery ring, a glazed lantern room with a roof and finial) at (0, -1); the keeper's
 // cottage 5 x 4 m with a red tile roof and one lit window at (-3.6, 2.4); a 6 m timber jetty on the NORTH shore with a small boat tied up (never on the south: the bridge deck is 14.9 m south of
 // the anchor); rocks and tide pools round the shore; a weather vane and a clothes line. The beam: one soft additive cone that turns once in 12 s, 40 m long, faint (peak opacity 0.10): it
@@ -20479,7 +20564,7 @@ globalThis.LMLIB = function (K) {
 
 </script><script>
 // LM09 乡间无人站 (an unmanned country station) (W7). Local frame: origin = the site anchor (18.00 S 40.00 W, altitude 1.8 m, a levelled platform of radius 10 m), +Z towards the north
-// entrance (heading 0, 13.35 m out: a point of the T01 trunk road, where T05-01 also ends), +X to the left of +Z. 1 unit = 1 m. From the road a 3.35 m station lane leads to a bus turning circle
+// entrance (heading 0, 13.35 m out: a point of the RN01 trunk road; T05-01 also ended here until W10b retired it), +X to the left of +Z. 1 unit = 1 m. From the road a 3.35 m station lane leads to a bus turning circle
 // (12 m across, with a stop sign and a shelter light) and on to the platform (20 m long, yellow tactile strip, one side) with the timber waiting shed (4 x 2.5 m, bench, timetable, one lamp),
 // a vending machine, a bicycle rack, a phone box; one cream-and-red single diesel car stands still on the only track, which runs a short way east to a buffer and west into the paddy and ends
 // there (D6: no railway network); a foot crossing with a warning light that alternates very slowly. Groups: lm09Ground, lm09Platform, lm09Shed, lm09Track, lm09Car, lm09Street, lm09Live.

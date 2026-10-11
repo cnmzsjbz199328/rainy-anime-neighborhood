@@ -24,7 +24,7 @@ const add = (kind, type) => {
   p.near += near; p.far += far;
 };
 for (const [type, list] of Object.entries(PLAN.items)) for (const it of list) add(kindOf(it.lon, it.lat), type);
-for (const id of ['T03-01', 'T03-02', 'T03-03', 'T11-01']) for (const [type, list] of Object.entries(RK.build(W, id).instances)) for (const it of list) add(kindOf(it.lon, it.lat), type);
+for (const id of [...W.roadNetwork.m01South, 'RN11-01']) for (const [type, list] of Object.entries(RK.build(W, id).instances)) for (const it of list) add(kindOf(it.lon, it.lat), type);
 
 const AREAS = { forest: 7208, farmland: 14769, grassland: 19785, village: 4823, desert: 2773, lava: 1119, ice: 8407, ocean: 31510 };
 const SUB = { village: ['farmland', 1.0, '以 farmland 的密度估算（建筑由 W7 的村庄套件另计）'], desert: ['grassland', 0.5, '以 grassland 密度的一半估算（岩石与枯草）'], lava: ['grassland', 0.25, '以 grassland 密度的 1/4 估算（只有岩石）'], ice: ['ocean', 1.0, '以 ocean 估算（平面，零星冰块）'] };

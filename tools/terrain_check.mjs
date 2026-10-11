@@ -239,7 +239,7 @@ check('W3-C6', '9 个出口道路头（W8g-b）：首点在出口节点上、外
   for (const h of heads) {
     ids.add(h.exit);
     const rt = h.rt, m = rt.grid.length, node = NET.nodeById[h.exit], p0 = rt.samples[0], d0 = W.arcDistance({ lon: p0.lon, lat: p0.lat }, node);
-    const firstEdge = NET.edges.find(e => (h.exit === 'N08' ? e.id === 'T03-01' : e.id === rt.def.segs[0].id)), L = Math.min(15, NET.edgeLength(firstEdge));
+    const firstEdge = NET.edges.find(e => (h.exit === 'N08' ? e.id === NET.m01South[0] : e.id === rt.def.segs[0].id)), L = Math.min(15, NET.edgeLength(firstEdge));
     const unflat = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D }), col = (i, j) => [rt.strip.pos[(i * m + j) * 3], rt.strip.pos[(i * m + j) * 3 + 1], rt.strip.pos[(i * m + j) * 3 + 2]];
     let onGround = 0, inside = 0;
     for (let i = 0; i <= h.K; i++) for (const j of [0, m - 1]) { const q = col(i, j), ll = unflat(q[0], q[2]), y = q[1] * Math.cos(ll.lat * D) + BASE; onGround = Math.max(onGround, Math.abs(y - HS(ll.lon, ll.lat))); }

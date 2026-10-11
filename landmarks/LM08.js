@@ -1,5 +1,5 @@
 // LM08 灯塔岛 (the lighthouse island) (W7). Local frame: origin = the site anchor (8.00 S 170.00 W, altitude 1.53 m: the island's top), +Z towards the south entrance (heading 180, 9.5 m out, the
-// island's south shore: the end of T11-02, where the bridge's steel maintenance stair of W5b lands), +X to the left of +Z = EAST. The island (world.js: a 10 m cone, the land ends at r = 10 m) is terrain;
+// island's south shore: the end of RN12-01, where the bridge's steel maintenance stair of W5b lands), +X to the left of +Z = EAST. The island (world.js: a 10 m cone, the land ends at r = 10 m) is terrain;
 // the module stands on it through groundFn. White round lighthouse 12.0 m high (a tapering shaft, a gallery ring, a glazed lantern room with a roof and finial) at (0, -1); the keeper's
 // cottage 5 x 4 m with a red tile roof and one lit window at (-3.6, 2.4); a 6 m timber jetty on the NORTH shore with a small boat tied up (never on the south: the bridge deck is 14.9 m south of
 // the anchor); rocks and tide pools round the shore; a weather vane and a clothes line. The beam: one soft additive cone that turns once in 12 s, 40 m long, faint (peak opacity 0.10): it

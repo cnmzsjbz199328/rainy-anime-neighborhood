@@ -17,7 +17,7 @@ function plan(W) {
   const coastAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.coastDistance(lon, lat); };
 
   // ---- the roads of the section: dense centre lines in (u, v)
-  const roadEdges = ['T03-01', 'T03-02', 'T03-03', 'T11-01'];
+  const roadEdges = [...W.roadNetwork.m01South, 'RN11-01'];          // M01 south of exit N08 (the former T03) and the RN11 boardwalk
   const roads = {};
   for (const id of roadEdges) {
     const e = W.roadNetwork.edges.find(q => q.id === id), S = W.roadNetwork.samplePath(e, 0.5);
@@ -72,14 +72,13 @@ function plan(W) {
   const coastV = (() => { for (let v = 30; v < 62; v += 0.02) if (W.coastDistance(-1, LAT0 - v / (R * D)) <= 0) return v; return null; })();
 
   // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
-  const T1 = roads['T03-01'];
-  put('lamp', ...(() => { const b = beside('T03-01', 1.2, 3.4); return [b.u, b.v]; })(), { yaw: Math.PI / 2 - 0.0, r: 0.6, lean: [0, 0] });
-  { const b = beside('T03-01', 5.8, -3.5); put('lamp', b.u, b.v, { yaw: -Math.PI / 2, r: 0.6 }); }   // RD03: a lamp at the junction as well
-  { const b = beside('T03-01', 4.2, -3.4); put('signRound', b.u, b.v, { yaw: b.yaw, r: 0.4 }); }
-  { const b = beside('T03-01', 2.6, -3.4); put('signBus', b.u, b.v, { yaw: b.yaw + Math.PI, r: 0.4 }); }
-  { const b = beside('T03-01', 5.4, 3.5); put('mirror', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.4 }); }
-  { const b = beside('T03-01', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
-  for (let s = 0.8; s <= 5.6; s += 2.0) { const b = beside('T03-01', s, 3.6 + 1.2); put('guardrailMetal', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8 }); }
+  put('lamp', ...(() => { const b = beside('RN02-07', 1.2, 3.4); return [b.u, b.v]; })(), { yaw: Math.PI / 2 - 0.0, r: 0.6, lean: [0, 0] });
+  { const b = beside('RN02-07', 5.8, -3.5); put('lamp', b.u, b.v, { yaw: -Math.PI / 2, r: 0.6 }); }   // RD03: a lamp at the junction as well
+  { const b = beside('RN02-07', 4.2, -3.4); put('signRound', b.u, b.v, { yaw: b.yaw, r: 0.4 }); }
+  { const b = beside('RN02-07', 2.6, -3.4); put('signBus', b.u, b.v, { yaw: b.yaw + Math.PI, r: 0.4 }); }
+  { const b = beside('RN02-07', 5.4, 3.5); put('mirror', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.4 }); }
+  { const b = beside('RN02-07', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
+  for (let s = 0.8; s <= 5.6; s += 2.0) { const b = beside('RN02-07', s, 3.6 + 1.2); put('guardrailMetal', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8 }); }
   for (const [u0, u1] of [[-12, -4.2], [5.8, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 3.9, { yaw: 0, r: 0.8 });
   // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
   const poleA = [[-8.0, 2.4, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[4.3, 1.8, 0.0], [5.0, 12.8, 0.08], [3.6, 21.0, 0.2]];
@@ -123,9 +122,9 @@ function plan(W) {
   put('oldMachine', -6.8, 15.6, { r: 1.4, yaw: 0.9 });
   put('rackFallen', 4.7, 20.2, { r: 1.2, yaw: 0.5 }); put('rackFallen', -2.4, 19.6, { r: 1.2, yaw: 2.4 });
   // RD04 stage: faded barrier, fallen sign, rusty guard rail
-  { const b = beside('T03-02', 4.0, -3.2); put('barrier', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
-  { const b = beside('T03-02', 6.4, 3.4); put('signFallen', b.u, b.v, { yaw: b.yaw, r: 0.8 }); }
-  for (let s = 1.0; s <= 8.0; s += 2.0) { const b = beside('T03-02', s, 3.3); put('guardrail', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8, lean: [0, (s % 4) * 0.01] }); }
+  { const b = beside('RN06-02', 4.0, -3.2); put('barrier', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
+  { const b = beside('RN06-02', 6.4, 3.4); put('signFallen', b.u, b.v, { yaw: b.yaw, r: 0.8 }); }
+  for (let s = 1.0; s <= 8.0; s += 2.0) { const b = beside('RN06-02', s, 3.3); put('guardrail', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8, lean: [0, (s % 4) * 0.01] }); }
 
   // ---- TR03 forest edge (v 17–26): shrubs, saplings, rocks, a log, the torii of LM04's entrance
   scatter('shrub', 30, { u0: -12, u1: 12, v0: 17, v1: 23.5 }, (u, v) => land(u, v), { r: 0.45, road: 0.7, scale: [0.8, 1.5] });

@@ -83,12 +83,13 @@ check('W5-C1', '中线：生成中线与 samplePath 相差 ≤ 0.05 m（桥台�
     if (e0 > 0.05 || e1 > 0.05) fail(`石阶 ${st.id} 端点偏差 ${f(e0)} / ${f(e1)} m`); covered.add(st.id);
     info(`石阶 ${st.id}（RD06）：长 ${f(st.length, 1)} m，${st.count} 级，端点相差 ${f(e0, 3)} / ${f(e1, 3)} m`);
   }
-  // T11-02: the wooden landing of the maintenance stair at the node LM08-south; the other end is the node J-LM08 on the deck (the gate in the parapet)
+  // RN12-01 (the former T11-02): the wooden landing of the maintenance stair at the node LM08-south; the other end is the node J-LM08 on the deck (the gate in the parapet)
   { const bp = PLAN.bridges.find(b => b.access), land = bp.access.landing, nd = NET.nodeById['LM08-south'], d = arc(land, nd), gate = bp.samples[bp.access.i], node = NET.nodeById['J-LM08'], topShift = arc(gate, node);
-    if (d > 0.05) fail(`T11-02 平台与 LM08-south 相差 ${f(d)} m`); if (topShift > 1.0) fail(`T11-02 楼梯门过渡后离 J-LM08 ${f(topShift)} m > 1 m`); covered.add('T11-02');
-    info(`T11-02（检修楼梯，裁决见 PROGRESS）：平台中心与 LM08-south 相差 ${f(d, 3)} m，楼梯门随过渡曲线位于 J-LM08 偏移 ${f(topShift, 3)} m（过渡允许 ≤ 1 m），${bp.access.steps.length} 级钢踏步，立柱 ${bp.access.posts} 根`); }
-  const w4 = ['T03-01', 'T03-02', 'T03-03', 'T11-01'], rest = NET.edges.filter(e => !covered.has(e.id) && !w4.includes(e.id)).map(e => e.id);
-  info(`W5 共覆盖 ${covered.size} 条边（另有 W4 已做的 ${w4.join('、')} 共 ${w4.length} 条）= ${covered.size + w4.length}/${NET.edges.length}；未覆盖 ${rest.length} 条${rest.length ? '：' + rest.join('、') : ''}`);
+    if (d > 0.05) fail(`RN12-01 平台与 LM08-south 相差 ${f(d)} m`); if (topShift > 1.0) fail(`RN12-01 楼梯门过渡后离 J-LM08 ${f(topShift)} m > 1 m`); covered.add('RN12-01');
+    info(`RN12-01（检修楼梯，裁决见 PROGRESS）：平台中心与 LM08-south 相差 ${f(d, 3)} m，楼梯门随过渡曲线位于 J-LM08 偏移 ${f(topShift, 3)} m（过渡允许 ≤ 1 m），${bp.access.steps.length} 级钢踏步，立柱 ${bp.access.posts} 根`); }
+  // W10b: the ring road CR01 (RN04) and the town's own streets are registered as data only; W10c's one road generator draws them with the ring's junctions
+  const w4 = [...NET.m01South, 'RN11-01'], dataOnly = NET.edges.filter(e => e.route === 'RN04' || /^TOWN_/.test(e.class)).map(e => e.id), rest = NET.edges.filter(e => !covered.has(e.id) && !w4.includes(e.id) && !dataOnly.includes(e.id)).map(e => e.id);
+  info(`W5 共覆盖 ${covered.size} 条边（另有 W4 断面的 ${w4.join('、')} 共 ${w4.length} 条，只登记、W10c 绘制的 CR01 与城镇等级的边 ${dataOnly.length} 条）= ${covered.size + w4.length + dataOnly.length}/${NET.edges.length}；未覆盖 ${rest.length} 条${rest.length ? '：' + rest.join('、') : ''}`);
   if (rest.length) fail(`边缺少几何：${rest.join('、')}`);
 });
 
@@ -107,7 +108,7 @@ check('W5-C2', '宽度（弯曲后的真实米制，每 5 m）：RD01 9 ± 0.1�
       else if (cls0 === 'RD08') rd08.push(chord(i, -1.05, 1.05));
     });
   }
-  worstOf(rd01Tot, 9, 'RD01 总宽（含两侧路肩）'); worstOf(rd01Asp, 7, 'RD01 铺装车行道'); worstOf(rd03, 4.5, 'RD03 铺装（N04/N09/N10 出口）'); worstOf(rd05, 3, 'RD05 土路（N11–N13 出口，s ≥ 6 m）');
+  worstOf(rd01Tot, 9, 'RD01 总宽（含两侧路肩）'); worstOf(rd01Asp, 7, 'RD01 铺装车行道'); worstOf(rd03, 4.5, 'RD03 铺装（N04/N09/N10 接线与 RN05）'); worstOf(rd05, 3, 'RD05 土路（RN07–RN09，s ≥ 6 m；N11–N13 的接线不足 6 m）');
   for (const b of PLAN.bridges) { const st = b.strips[0], NB = b.topCols.length; b.samples.forEach((p, i) => { if (Math.abs(p.s % 5) > 0.25 && Math.abs(p.s % 5 - 5) > 0.25) return; deck.push(dist3(bendPt(...col(st, NB, i, 0)), bendPt(...col(st, NB, i, NB - 1)))); }); }
   worstOf(deck, 10, 'RD02 桥面');
   { const lo = Math.min(...rd08), hi = Math.max(...rd08); if (lo < 1.9 || hi > 2.2) fail(`RD08 雪道宽 ${f(lo)}–${f(hi)} m 不在 约 2 m`); else info(`RD08 压实雪道：${rd08.length} 个采样，${f(lo, 3)}–${f(hi, 3)} m（卡片「约 2 m」，取两侧边缘列间距）`); }
@@ -152,7 +153,7 @@ check('W5-C4', '桥与隧道：桥面高出海面 4.0–8.0 m、坡度 ≤ 15%�
   }
   const bp = PLAN.bridges.find(b => b.pylon), py = bp.pylon, node = NET.nodeById['J-LM08'], dn = arc({ lon: py.lon, lat: py.lat }, node);
   if (py.above < 12 || py.above > 15) fail(`斜拉塔高 ${py.above} m 不在 12–15`); if (dn > 5) fail(`斜拉塔不在 J-LM08 一带（相差 ${f(dn)} m）`);
-  info(`斜拉塔：高出桥面 ${py.above} m（塔顶海拔 ${f(py.top, 2)} m），在 J-LM08 西侧 ${f(dn, 2)} m（给 T11-02 检修楼梯让位，≤ 5 m），两腿落点海底 ${py.legs.map(l => f(l.ground, 2)).join(' / ')} m，拉索 ${bp.lines.stays.length} 根`);
+  info(`斜拉塔：高出桥面 ${py.above} m（塔顶海拔 ${f(py.top, 2)} m），在 J-LM08 西侧 ${f(dn, 2)} m（给 RN12-01 检修楼梯让位，≤ 5 m），两腿落点海底 ${py.legs.map(l => f(l.ground, 2)).join(' / ')} m，拉索 ${bp.lines.stays.length} 根`);
   // the lighthouse island: region island-lm08 is a cap of radius 10 m around LM08; deck, piers and tower legs against it
   const lm = W.landmarks.find(l => l.id === 'LM08'), isl = W.regions.find(r => r.id === 'island-lm08'), Ri = isl.shape.radiusMeters;
   const flatPos = (it) => ({ lon: it.lon, lat: it.lat });
@@ -170,12 +171,12 @@ check('W5-C4', '桥与隧道：桥面高出海面 4.0–8.0 m、坡度 ≤ 15%�
   const hidden = rows.filter(r => r.margin >= 0.3), firstHidden = rows.findIndex(r => r.margin >= 0.3), lastHidden = rows.length - 1 - [...rows].reverse().findIndex(r => r.margin >= 0.3);
   const expA = firstHidden >= 0 ? rows[firstHidden].s : tn.s1 - tn.s0, expB = firstHidden >= 0 ? (tn.s1 - tn.s0) - rows[lastHidden].s : 0;
   const inner = rows.filter(r => r.s > expA && r.s < (tn.s1 - tn.s0) - expB), leak = inner.filter(r => r.margin < 0.3);
-  info(`隧道 T01-05（${f(tn.s1 - tn.s0, 1)} m，拱顶高出路面 ${f(crownAbove, 1)} m）：中段拱顶低于上方地形 ≥ 0.3 m 的采样 ${hidden.length}/${rows.length}；两端外露的入口结构 ${f(expA, 1)} m 与 ${f(expB, 1)} m；中段不满足的采样 ${leak.length}；最小余量（中段）${inner.length ? f(Math.min(...inner.map(r => r.margin)), 2) : '—'} m`);
+  info(`隧道 RN01-05（${f(tn.s1 - tn.s0, 1)} m，拱顶高出路面 ${f(crownAbove, 1)} m）：中段拱顶低于上方地形 ≥ 0.3 m 的采样 ${hidden.length}/${rows.length}；两端外露的入口结构 ${f(expA, 1)} m 与 ${f(expB, 1)} m；中段不满足的采样 ${leak.length}；最小余量（中段）${inner.length ? f(Math.min(...inner.map(r => r.margin)), 2) : '—'} m`);
   if (leak.length) fail(`隧道中段有 ${leak.length} 个采样的拱顶高于地形 − 0.3 m`); if (expA > 8 || expB > 8) fail('隧道口外露长度 > 8 m');
 });
 
 // ---------------------------------------------------------------- W5-C5
-check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1），RD01 间距人类活动区 16 ± 2 m、荒野 40 ± 4 m，航道灯周期 ≥ 4 s', ({ info, fail }) => {
+check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1），RD01 间距人类活动区 16 ± 2 m、荒野 40 ± 4 m，RD03 约 25 m 一盏（W10b 起），航道灯周期 ≥ 4 s', ({ info, fail }) => {
   const lampsOf = rt => rt.lamps || [];
   const rd01R = PLAN.routes.filter(r => r.def.furnish && r.def.furnish.kind === 'RD01'), rd01 = rd01R.flatMap(lampsOf), n01 = rd01.length;
   if (n01 < 7 || n01 > 9) fail(`RD01 灯 ${n01} 盏，规格约 8（±1）`);
@@ -188,18 +189,21 @@ check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1）�
   info(`RD02：${n02} 盏（桥 ${PLAN.bridges.map(b => `${b.def.id}:${b.lamps.length}`).join('、')}），间距 ${f(Math.min(...bg), 1)}–${f(Math.max(...bg), 1)} m；航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏，周期 ${ROADS.NAV_PERIOD} s（≥ 4 s，亮度 28%–100% 正弦，不闪烁）`);
   if (ROADS.NAV_PERIOD < 4) fail('航道灯周期 < 4 s');
   const n03 = PLAN.routes.reduce((s, r) => s + (r.def.furnish && r.def.furnish.kind === 'RD03' ? r.lamps.length : 0), 0), g03 = []; for (const r of PLAN.routes) if (r.def.furnish && r.def.furnish.kind === 'RD03') for (let i = 1; i < r.lamps.length; i++) g03.push(r.lamps[i].s - r.lamps[i - 1].s);
-  if (n03 < 5 || n03 > 8) fail(`RD03 灯 ${n03} 盏，规格 5–6 盏加路口与公交站各一盏（5–8）`);
+  // W10b: T04 / T05 retired and T02 cut at the ring (W10_SPEC 2.1), so the W5 tally of 5-8 RD03 lamps no longer applies; the card's rule does: a lamp about every
+  // 25 m on every furnished RD03 road (at least one per road), no gap over 30 m. CR01's lamps come with W10c, which draws the ring.
+  for (const r of PLAN.routes.filter(q => q.def.furnish && q.def.furnish.kind === 'RD03')) { const want = Math.max(1, Math.floor(r.length / 25)); if (r.lamps.length < want) fail(`${r.def.id} 长 ${f(r.length, 1)} m 只有 ${r.lamps.length} 盏灯，按约 25 m 一盏应 ≥ ${want}`); }
+  if (g03.some(g => g > 30)) fail(`RD03 同一条路相邻灯距 ${g03.map(g => f(g, 1)).join('、')} m 超过 30 m`);
   info(`RD03：${n03} 盏（路口灯与公交站灯包含在内），同一条路相邻间距 ${g03.map(g => f(g, 1)).join('、')} m（约 25 m）；电杆 ${PLAN.routes.reduce((s, r) => s + (r.poles ? r.poles.length : 0), 0)} 根（沿路抖动，不成排）；反光镜 ${PLAN.routes.reduce((s, r) => s + ((r.instances.mirror || []).length), 0)} 面`);
   { const rt = PLAN.routes.find(r => r.def.furnish && r.def.furnish.kind === 'RD08'), per = { '-1': [], 1: [] }; for (const q of rt.poles8) per[q.side].push(q.s); const gaps = Object.values(per).flatMap(a => a.slice(1).map((v, i) => v - a[i]));
     if (gaps.some(g => Math.abs(g - 8) > 1)) fail(`RD08 标杆间距 ${gaps.map(g => f(g, 1))} 不在 8 ± 1 m`);
     info(`RD08：标杆 ${rt.poles8.length} 根（每侧 ${per[1].length}），同侧间距 ${gaps.map(g => f(g, 1)).join('、')} m（8 ± 1），高 2.0 m（几何高度在页面部分核对）；避难小屋在 s = ${f(rt.shelter.s, 1)} m（橙色，半埋）`); }
   for (const st of PLAN.stairs) {
     const sd = st.steps.map(s => s.riser), tr = st.steps.map(s => s.tread);
-    const want = st.id === 'T02-02' ? [105, 126] : [32, 39];
+    const want = st.id === 'RN05-02' ? [105, 126] : [32, 39];
     if (st.riser < 0.15 || st.riser > 0.18) fail(`石阶 ${st.id} 踏步高 ${f(st.riser, 3)} 不在 0.15–0.18`); if (st.count < want[0] || st.count > want[1]) fail(`石阶 ${st.id} 级数 ${st.count} 不在 ${want[0]}–${want[1]}`); if (st.lanterns.length > 10) fail(`石阶 ${st.id} 灯笼 ${st.lanterns.length} > 10`);
     info(`石阶 ${st.id}：${st.count} 级（规格 ${want[0]}–${want[1]}），踏步高 ${f(st.riser, 3)} m（0.15–0.18），踏面 ${f(Math.min(...tr), 2)}–${f(Math.max(...tr), 2)} m，平均 ${f(st.length / st.count, 2)} m，平台 ${st.platforms.length} 处，灯笼 ${st.lanterns.length} 盏（≤ 10），绳索扶手立柱 ${st.stats.ropePosts} 根，鸟居 1、地藏 ${(st.instances.jizo || []).length}、长凳 ${(st.instances.busBench || []).length}、指路石柱 ${(st.instances.stonePost || []).length}`); void sd;
   }
-  info(`全球灯数（W5）：RD01 ${n01} + RD02 ${n02} + RD03 ${n03} = ${n01 + n02 + n03} 盏路灯，另有石阶灯笼 ${PLAN.stairs.reduce((s, st) => s + st.lanterns.length, 0)} 盏、RD07 小灯柱 4 盏（W4）、T11-02 平台灯 1 盏、航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏（规格估计「全球约 35–40 盏路灯」）`);
+  info(`全球灯数（W5）：RD01 ${n01} + RD02 ${n02} + RD03 ${n03} = ${n01 + n02 + n03} 盏路灯，另有石阶灯笼 ${PLAN.stairs.reduce((s, st) => s + st.lanterns.length, 0)} 盏、RD07 小灯柱 4 盏（W4）、RN12-01 平台灯 1 盏、航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏（规格估计「全球约 35–40 盏路灯」）`);
 });
 
 // ---------------------------------------------------------------- W5-C6
@@ -239,7 +243,7 @@ check('W5-C6', '落地：路上与桥上的实例底面与路面（扫出的面�
 check('W5-C9', '出口渐变：9 个出口铺装宽度变化 ≤ 0.6 m/m，中线颜色差 ≤ 0.25（城镇边缘处与城镇沥青 ≤ 0.05，W8f-a），出口与城镇路面齐平 ≤ 0.01 m，杂草按 5 m 分段单调不减', ({ info, fail }) => {
   const exits = [];
   for (const rt of PLAN.routes.filter(r => r.def.exit)) exits.push({ id: rt.def.exit, rt, strip: rt.strip, grid: rt.grid, S: rt.samples, paved: rt.paved, instances: rt.instances, k: rt.flatOf });
-  { const CH = RK.chain(W, ['T03-01', 'T03-02', 'T03-03'], { townHead: RK.TOWN_HEAD }), inst = {}; for (const src of [CH.instances, ...['T03-01', 'T03-02', 'T03-03'].map(id => RK.build(W, id).instances)]) for (const [t, l] of Object.entries(src)) (inst[t] = inst[t] || []).push(...l);
+  { const CH = RK.chain(W, NET.m01South, { townHead: RK.TOWN_HEAD }), inst = {}; for (const src of [CH.instances, ...NET.m01South.map(id => RK.build(W, id).instances)]) for (const [t, l] of Object.entries(src)) (inst[t] = inst[t] || []).push(...l);
     inst.weed = [...(inst.weed || []), ...(inst.shrubLow || [])]; exits.push({ id: 'N08', rt: CH, strip: CH.strip, grid: CH.grid, S: CH.samples, paved: CH.paved, instances: inst, chain: true }); }
   exits.sort((a, b) => a.id.localeCompare(b.id));
   for (const e of exits) {
@@ -264,9 +268,9 @@ check('W5-C9', '出口渐变：9 个出口铺装宽度变化 ≤ 0.6 m/m，中�
 
 // ---------------------------------------------------------------- W5-C7
 check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（相差 ≤ 0.05 m）并有收口；道路不进入占地圆', ({ info, fail }) => {
-  const CH = RK.chain(W, ['T03-01', 'T03-02', 'T03-03']);
+  const CH = RK.chain(W, NET.m01South);
   const items = [...PLAN.routes.map(r => ({ id: r.def.id, S: r.samples, hw: r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.25 : r.def.segs.length && NET.edges.find(e => e.id === r.def.segs[0].id).class === 'RD05' ? 1.5 : 4.5, lateral: r.lateral })),
-    ...PLAN.stairs.map(s => ({ id: s.id, S: s.samples, hw: 0.8, lateral: s.lateral })), { id: 'T03-chain', S: CH.samples, hw: 1.5, lateral: null }, { id: 'T11-02', S: [{ ...PLAN.bridges.find(b => b.access).access.landing }], hw: 0.8, lateral: null }];
+    ...PLAN.stairs.map(s => ({ id: s.id, S: s.samples, hw: 0.8, lateral: s.lateral })), { id: 'M01-south', S: CH.samples, hw: 1.5, lateral: null }, { id: 'RN12-01', S: [{ ...PLAN.bridges.find(b => b.access).access.landing }], hw: 0.8, lateral: null }];
   const rows = [];
   for (const nd of NET.nodes.filter(n => n.kind === 'landmark-entrance')) {
     let best = { d: Infinity, id: '' }; for (const it of items) for (let i = 0; i < it.S.length; i++) { const d = arc(it.S[i], nd); if (d < best.d) best = { d, id: it.id, i, n: it.S.length }; }
@@ -293,7 +297,7 @@ check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（�
 });
 
 // ---------------------------------------------------------------- W5-C10 (W8f-a)
-check('W5-C10', '衔接（W8f-a，W8_SPEC 12.1 C）：6 个桥台的走向、竖曲线、断面重合、护栏、虚线与边线；5 个 T 形路口的铺装、口门与齐平', ({ info, fail }) => {
+check('W5-C10', '衔接（W8f-a，W8_SPEC 12.1 C）：6 个桥台的走向、竖曲线、断面重合、护栏、虚线与边线；RN01 上 3 个 T 形路口（W10b 起）的铺装、口门与齐平', ({ info, fail }) => {
   const RO = ROADS, wrapX = (x, ref) => x + 2 * Math.PI * R * Math.round((ref - x) / (2 * Math.PI * R));
   for (const a of PLAN.abutments) {
     const rt = PLAN.routes.find(r => r.def.id === a.route), b = PLAN.bridges.find(q => q.def.id === a.bridge), ap = a.approach, f2 = a.fillet, bad0 = [];
@@ -388,9 +392,9 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
   const access = PLAN.bridges.find(b => b.access), accessNode = NET.nodeById['J-LM08'], gate = access.samples[access.access.i], gateShift = arc(gate, accessNode),
     planeGate = ROADS.plane(W, gate), gc = planeGate.to(gate), g0 = planeGate.to(access.samples[Math.max(0, access.access.i - 2)]), g1 = planeGate.to(access.samples[Math.min(access.samples.length - 1, access.access.i + 2)]), gl = Math.hypot(g1[0] - g0[0], g1[1] - g0[1]) || 1, gd = [(g1[0] - g0[0]) / gl, (g1[1] - g0[1]) / gl],
     gateOpen = !(access.instances.barrierConcrete || []).some(it => { if (Math.abs(it.station - access.access.s) > 2.4) return false; const q = planeGate.to(it); return (q[0] - gc[0]) * gd[1] - (q[1] - gc[1]) * gd[0] < 0; });
-  if (gateShift > 1.0) fail(`T11-02 顶端偏离 J-LM08 ${f(gateShift, 3)} m > 1 m`);
-  if (!gateOpen) fail('T11-02 顶端对应的桥栏开口被护栏块占用');
-  info(`T11-02 顶端：距 J-LM08 ${f(gateShift, 3)} m；桥栏检修门区间无护栏块；钢梯板内缘与桥面边缘共边（0.00 m）`);
+  if (gateShift > 1.0) fail(`RN12-01 顶端偏离 J-LM08 ${f(gateShift, 3)} m > 1 m`);
+  if (!gateOpen) fail('RN12-01 顶端对应的桥栏开口被护栏块占用');
+  info(`RN12-01 顶端：距 J-LM08 ${f(gateShift, 3)} m；桥栏检修门区间无护栏块；钢梯板内缘与桥面边缘共边（0.00 m）`);
 
   // W8g-b (W8_SPEC 13.2 B5): the exit ray test runs on the meshes the page shows (browser part below, W5-C10 exits: tools/exit_geometry.mjs), no longer on a cut mesh
   // made here; the columns the terrain is cut by are still checked against the route here: a head's cut follows its strip's outer columns (terrain.js exitPolygons)
@@ -488,7 +492,7 @@ if (!process.argv.includes('--no-browser')) {
       const S = window.__scene, W = window.WORLD, L = window.LAYOUT, THREE = window.THREE, R = 90, D = Math.PI / 180;
       S.bend.set(0); S.transition.setMode('flat');
       const flat = (lon, lat) => [R * lon * D, (W.height(lon, lat) - 1.6 + 0.02) / Math.cos(lat * D), -R * Math.asinh(Math.tan(lat * D))];
-      const pathFromExit = node => { const edge = W.roadNetwork.edges.find(e => e.from === node.id || e.to === node.id), length = W.roadNetwork.edgeLength(edge); let samples = W.roadNetwork.samplePath(edge, 0.5); if (edge.to === node.id) samples = samples.slice().reverse().map(p => ({ ...p, s: length - p.s })); return { edge, samples }; };
+      const pathFromExit = node => { const edge = W.roadNetwork.edges.find(e => (e.from === node.id || e.to === node.id) && !/^TOWN_/.test(e.class)), length = W.roadNetwork.edgeLength(edge); let samples = W.roadNetwork.samplePath(edge, 0.5); if (edge.to === node.id) samples = samples.slice().reverse().map(p => ({ ...p, s: length - p.s })); return { edge, samples }; };
       const point = (samples, s, o) => {
         const P = samples; let p, brg;
         if (s < 0) { p = P[0]; brg = W.bearing(P[0], P[1]); p = W.destination(p, brg + 180, -s); }

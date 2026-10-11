@@ -1,5 +1,5 @@
 // LM04 森中废神社与鸟居残迹 (the forgotten forest shrine and its torii) (W7). Local frame: origin = the site anchor (42.00 S 15.00 W, altitude 1.9 m, a levelled platform of radius 15 m),
-// +Z towards the south-east entrance (heading 120, 17 m out, the end of T03-03 and the start of the T11-01 boardwalk), +X to the left of +Z. 1 unit = 1 m. The approach (sando) runs from the
+// +Z towards the south-east entrance (heading 120, 17 m out, the end of RN06-03 and the start of the RN11-01 boardwalk), +X to the left of +Z. 1 unit = 1 m. The approach (sando) runs from the
 // entrance along -Z for 25 m: moss-covered slabs and steps through ten small torii (2.5-3 m: whole, leaning, fallen, only posts), stone lanterns (two still faintly lit), a pair of komainu and
 // three stone Buddhas, a dry hand-washing basin, a great sacred tree with a shimenawa, and at the end the tilted little hall (4 x 5 m, 5 m high, a roof of moss) with its steps, a rope and
 // lattice doors; rain drips from its eaves and a few fireflies drift about. W4's two entrance torii of the TR03 edge stand at about z = 14.6 and 12 and are not repeated: the first torii

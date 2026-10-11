@@ -1,5 +1,5 @@
 // LM09 乡间无人站 (an unmanned country station) (W7). Local frame: origin = the site anchor (18.00 S 40.00 W, altitude 1.8 m, a levelled platform of radius 10 m), +Z towards the north
-// entrance (heading 0, 13.35 m out: a point of the T01 trunk road, where T05-01 also ends), +X to the left of +Z. 1 unit = 1 m. From the road a 3.35 m station lane leads to a bus turning circle
+// entrance (heading 0, 13.35 m out: a point of the RN01 trunk road; T05-01 also ended here until W10b retired it), +X to the left of +Z. 1 unit = 1 m. From the road a 3.35 m station lane leads to a bus turning circle
 // (12 m across, with a stop sign and a shelter light) and on to the platform (20 m long, yellow tactile strip, one side) with the timber waiting shed (4 x 2.5 m, bench, timetable, one lamp),
 // a vending machine, a bicycle rack, a phone box; one cream-and-red single diesel car stands still on the only track, which runs a short way east to a buffer and west into the paddy and ends
 // there (D6: no railway network); a foot crossing with a warning light that alternates very slowly. Groups: lm09Ground, lm09Platform, lm09Shed, lm09Track, lm09Car, lm09Street, lm09Live.

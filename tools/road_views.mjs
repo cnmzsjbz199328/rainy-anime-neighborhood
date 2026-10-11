@@ -12,28 +12,29 @@ export const INIT = `(() => {
 })();`;
 
 const rt = (route, s, o = 0, dy = 1.6) => ({ route, s, o, dy });
-const ch = (s, o = 0, dy = 1.6) => ({ chain: true, s, o, dy });      // the T03 chain of the W4 section (exit N08)
+const ch = (s, o = 0, dy = 1.6) => ({ chain: true, s, o, dy });      // the chain of the W4 section from exit N08: M01 south (the former T03)
 const br = (bridge, s, o = 0, dy = 1.6) => ({ bridge, s, o, dy });
 const st = (stairs, s, o = 0, dy = 1.6) => ({ stairs, s, o, dy });
 const pr = (bridge, pier, o = 0, dy = 1.6) => ({ bridge, pier, s: 0, o, dy });
-const T2 = 'T02-02', T8 = 'T08-02', BR1 = 'T01-03', BR2 = 'T01-07+08+09', BR3 = 'T01-13';
-// the nine town exits, ground view (eye 1.6 m in the left lane at the exit, looking out along the road) and a collage of all nine
-export const EXITS = [['N01', rt('N01-west', 0.6, -1.4), rt('N01-west', 22, 0, 1.3)], ['N03', rt('N03-east', 0.6, -1.4), rt('N03-east', 19, 0, 1.3)], ['N04', rt('N04-T02', 0.6, -1.2), rt('N04-T02', 22, 0, 1.0)],
-  ['N08', ch(0.6, -1.2), ch(24, 0, 1.0)], ['N09', rt('N09-T05', 0.6, -1.2), rt('N09-T05', 22, 0, 1.0)], ['N10', rt('N10-T04', 0.6, -1.2), rt('N10-T04', 22, 0, 1.0)],
-  ['N11', rt('N11-T06', 0.4, -0.9), rt('N11-T06', 9.5, 0, 0.9)], ['N12', rt('N12-T06', 0.4, -0.9), rt('N12-T06', 7, 0, 0.9)], ['N13', rt('N13-T06', 0.4, -0.9), rt('N13-T06', 7, 0, 0.9)]];
+const T2 = 'RN05-02', T8 = 'RN08-02', BR1 = 'RN01-03', BR2 = 'RN01-07+08+09', BR3 = 'RN01-13';
+// the nine town exits, ground view (eye 1.6 m in the left lane at the exit, looking out along the road) and a collage of all nine. W10b: N04, N09-N13 end at the
+// ring road after their 6 m connectors (W10c draws it); a look point past the end lies on the connector's tangent
+export const EXITS = [['N01', rt('N01-west', 0.6, -1.4), rt('N01-west', 22, 0, 1.3)], ['N03', rt('N03-east', 0.6, -1.4), rt('N03-east', 19, 0, 1.3)], ['N04', rt('N04-C01', 0.6, -1.2), rt('N04-C01', 22, 0, 1.0)],
+  ['N08', ch(0.6, -1.2), ch(24, 0, 1.0)], ['N09', rt('N09-C01', 0.6, -1.2), rt('N09-C01', 22, 0, 1.0)], ['N10', rt('N10-C01', 0.6, -1.2), rt('N10-C01', 22, 0, 1.0)],
+  ['N11', rt('N11-C01', 0.4, -0.9), rt('N11-C01', 9.5, 0, 0.9)], ['N12', rt('N12-C01', 0.4, -0.9), rt('N12-C01', 7, 0, 0.9)], ['N13', rt('N13-C01', 0.4, -0.9), rt('N13-C01', 7, 0, 0.9)]];
 export const SHOTS = [
   ...EXITS.map(([n, eye, look]) => [`exit-${n}`, { eye, look, fov: 62 }]),
   // ---- night panorama (clear moonlit night, light band on): four hemispheres along the T01 ring (about 12 degrees south), and the north pole
   ...[['east', 60], ['back-east', 150], ['back-west', -120], ['west', -40]].map(([n, lon]) => [`panorama-${n}`, { sphere: [lon, -12], d: 300, fov: 36, light: 'panorama', ink: 'panorama', rain: false, band: true }]),
-  ['exit-N11-aerial', { eye: rt('N11-T06', 3, 7, 7), look: rt('N11-T06', 7, 0, 0), fov: 50 }],
-  ['exit-N04-aerial', { eye: rt('N04-T02', 12, 12, 14), look: rt('N04-T02', 14, 0, 0), fov: 50 }],
-  ['exit-N10-aerial', { eye: rt('N10-T04', 12, 12, 14), look: rt('N10-T04', 14, 0, 0), fov: 50 }],
+  ['exit-N11-aerial', { eye: rt('N11-C01', 3, 7, 7), look: rt('N11-C01', 7, 0, 0), fov: 50 }],
+  ['exit-N04-aerial', { eye: rt('N04-C01', 12, 12, 14), look: rt('N04-C01', 14, 0, 0), fov: 50 }],
+  ['exit-N10-aerial', { eye: rt('N10-C01', 12, 12, 14), look: rt('N10-C01', 14, 0, 0), fov: 50 }],
   // ---- RD01: the town exit N03 (asphalt street -> RD01 with gravel shoulders), the exit N01, ground and aerial, rain
   ['rd01-exit-ground', { eye: rt('N03-east', 1, -1.7, 1.6), look: rt('N03-east', 26, 0.5, 1.2), fov: 62 }],
   ['rd01-exit-aerial', { eye: rt('N03-east', 4, 14, 17), look: rt('N03-east', 14, 0, 0), fov: 50 }],
   ['rd01-exit-looking-back', { eye: rt('N03-east', 24, 1.7, 1.7), look: rt('N03-east', 2, 0, 1.6), fov: 62 }],
   ['rd01-west-exit-ground', { eye: rt('N01-west', 1, -1.7, 1.6), look: rt('N01-west', 24, 0, 1.2), fov: 62 }],
-  ['rd01-ridge-ground', { eye: rt('T01-ridge', 0.5, -1.7, 1.6), look: rt('T01-ridge', 18, 0, 2.0), fov: 62 }],
+  ['rd01-ridge-ground', { eye: rt('RN01-ridge', 0.5, -1.7, 1.6), look: rt('RN01-ridge', 18, 0, 2.0), fov: 62 }],
   // ---- RD02
   ['bridge-east-strait-ground', { eye: br(BR1, 6, -1.7, 1.7), look: br(BR1, 40, 0, 2.2), fov: 62 }],
   ['bridge-east-strait-aerial', { eye: br(BR1, 20, 26, 18), look: br(BR1, 27, 0, 0), fov: 50 }],
@@ -45,17 +46,16 @@ export const SHOTS = [
   ['bridge-navlight-night', { eye: pr(BR2, 5, 14, 2.0), look: pr(BR2, 6, 0, 3.0), fov: 55, rain: false }],
   ['junction-abutment-J-E1', { eye: rt('N03-east', 6, 8, 4), look: br(BR1, 8, 0, 1.0), fov: 62 }],
   ['junction-abutment-aerial', { eye: rt('N03-east', 8, 20, 16), look: br(BR1, 6, 0, 2), fov: 50 }],
-  ['tunnel-portal-east', { eye: rt('T01-ridge', 0.5, -1.7, 1.6), look: rt('T01-ridge', 12, 0, 2.5), fov: 62 }],
-  ['tunnel-portal-aerial', { eye: rt('T01-ridge', -2, 16, 14), look: rt('T01-ridge', 11, 0, 3), fov: 50 }],
-  ['tunnel-portal-west-ground', { eye: rt('T01-ridge', 43, -1.7, 1.6), look: rt('T01-ridge', 30, 0, 2.5), fov: 62 }],
-  ['rd01-west-ground', { eye: rt('T01-west', 2, -1.7, 1.6), look: rt('T01-west', 30, 0, 1.2), fov: 62 }],
-  ['rd01-west-aerial', { eye: rt('T01-west', 6, 16, 16), look: rt('T01-west', 22, 0, 0), fov: 50 }],
-  ['junction-T04-aerial', { eye: rt('N10-T04', 22, 14, 14), look: rt('N10-T04', 30, 0, 0), fov: 50 }],
+  ['tunnel-portal-east', { eye: rt('RN01-ridge', 0.5, -1.7, 1.6), look: rt('RN01-ridge', 12, 0, 2.5), fov: 62 }],
+  ['tunnel-portal-aerial', { eye: rt('RN01-ridge', -2, 16, 14), look: rt('RN01-ridge', 11, 0, 3), fov: 50 }],
+  ['tunnel-portal-west-ground', { eye: rt('RN01-ridge', 43, -1.7, 1.6), look: rt('RN01-ridge', 30, 0, 2.5), fov: 62 }],
+  ['rd01-west-ground', { eye: rt('RN01-west', 2, -1.7, 1.6), look: rt('RN01-west', 30, 0, 1.2), fov: 62 }],
+  ['rd01-west-aerial', { eye: rt('RN01-west', 6, 16, 16), look: rt('RN01-west', 22, 0, 0), fov: 50 }],
   // other local weather (clear night) and the neutral-light material study (not a daytime state, D9)
   ['bridge-clear-night', { eye: br(BR1, 6, -1.7, 1.7), look: br(BR1, 40, 0, 2.2), fov: 62, rain: false }],
-  ['rd01-clear-night-aerial', { eye: rt('T01-west', 6, 16, 16), look: rt('T01-west', 22, 0, 0), fov: 50, rain: false }],
+  ['rd01-clear-night-aerial', { eye: rt('RN01-west', 6, 16, 16), look: rt('RN01-west', 22, 0, 0), fov: 50, rain: false }],
   ['bridge-neutral-aerial', { eye: br(BR1, 20, 26, 18), look: br(BR1, 27, 0, 0), fov: 50, light: 'neutral', rain: false }],
-  // ---- W5b: RD06 stone stairs (T02-02 up the volcano, T08-02 to the stone circle), RD08 snow route, RD05 branches, RD03 furniture, the T11-02 maintenance stair, entrances
+  // ---- W5b: RD06 stone stairs (RN05-02 up the volcano, RN08-02 to the stone circle), RD08 snow route, RD05 branches, RD03 furniture, the RN12-01 maintenance stair, entrances
   ['stairs-T02-ground', { eye: st(T2, 3, 0, 1.7), look: st(T2, 24, 0, 3.0), fov: 62 }],
   ['stairs-T02-steep-ground', { eye: st(T2, 40, 0.3, 1.7), look: st(T2, 58, 0, 4.5), fov: 62 }],
   ['stairs-T02-aerial', { eye: st(T2, 38, 16, 14), look: st(T2, 46, 0, 5), fov: 50 }],
@@ -63,26 +63,25 @@ export const SHOTS = [
   ['stairs-T02-clear-night', { eye: st(T2, 66, 2.5, 2.0), look: st(T2, 84, 0, 5), fov: 62, rain: false }],
   ['stairs-T08-ground', { eye: st(T8, 2, 0, 1.7), look: st(T8, 26, 0, 1.8), fov: 62 }],
   ['stairs-T08-aerial', { eye: st(T8, 60, 14, 12), look: st(T8, 64, 0, 5), fov: 50 }],
-  ['junction-T08b-rd05-rd06', { eye: rt('T08-RD05', 36, 1.2, 1.7), look: st(T8, 5, 0, 1.0), fov: 62 }],
-  ['rd08-ground', { eye: rt('T10-RD08', 0.5, 0, 1.6), look: rt('T10-RD08', 26, 0, 1.6), fov: 62 }],
-  ['rd08-aerial', { eye: rt('T10-RD08', 6, 12, 12), look: rt('T10-RD08', 16, 0, 0), fov: 50 }],
-  ['rd08-shelter', { eye: rt('T10-RD08', 12, 7, 2.0), look: rt('T10-RD08', 17.5, 3.6, 1.0), fov: 55 }],
-  ['rd08-poles-dashed', { eye: rt('T10-RD08', -2, 3, 9), look: rt('T10-RD08', 30, 0, 0), fov: 50, rain: false }],
+  ['junction-T08b-rd05-rd06', { eye: rt('RN08-RD05', 36, 1.2, 1.7), look: st(T8, 5, 0, 1.0), fov: 62 }],
+  ['rd08-ground', { eye: rt('RN10-RD08', 0.5, 0, 1.6), look: rt('RN10-RD08', 26, 0, 1.6), fov: 62 }],
+  ['rd08-aerial', { eye: rt('RN10-RD08', 6, 12, 12), look: rt('RN10-RD08', 16, 0, 0), fov: 50 }],
+  ['rd08-shelter', { eye: rt('RN10-RD08', 12, 7, 2.0), look: rt('RN10-RD08', 17.5, 3.6, 1.0), fov: 55 }],
+  ['rd08-poles-dashed', { eye: rt('RN10-RD08', -2, 3, 9), look: rt('RN10-RD08', 30, 0, 0), fov: 50, rain: false }],
   ['panorama-north', { sphere: [30, 75], d: 300, fov: 36, light: 'panorama', ink: 'panorama', rain: false, band: true }],
-  ['rd05-T07-ground', { eye: rt('T07-RD05', 0.5, 0, 1.6), look: rt('T07-RD05', 9, 0, 1.2), fov: 62 }],
-  ['rd05-T09-stakes-ground', { eye: rt('T09-RD05', 0.5, 0, 1.6), look: rt('T09-RD05', 8, 0, 1.0), fov: 62 }],
-  ['rd05-T08-aerial', { eye: rt('T08-RD05', 8, 12, 12), look: rt('T08-RD05', 16, 0, 0), fov: 50 }],
-  ['rd03-N04-ground', { eye: rt('N04-T02', 8, -1.0, 1.6), look: rt('N04-T02', 36, 0.5, 2.5), fov: 62 }],
-  ['rd03-N04-aerial', { eye: rt('N04-T02', 22, 14, 14), look: rt('N04-T02', 26, 0, 3), fov: 50 }],
-  ['rd03-N10-junction', { eye: rt('N10-T04', 14, 1.6, 1.6), look: rt('N10-T04', 27, 0, 1.6), fov: 62 }],
-  ['rd03-N09-jizo', { eye: rt('N09-T05', 20, 1.2, 1.6), look: rt('N09-T05', 31, 3, 1.0), fov: 62 }],
+  ['rd05-T07-ground', { eye: rt('RN07-RD05', 0.5, 0, 1.6), look: rt('RN07-RD05', 9, 0, 1.2), fov: 62 }],
+  ['rd05-T09-stakes-ground', { eye: rt('RN09-RD05', 0.5, 0, 1.6), look: rt('RN09-RD05', 8, 0, 1.0), fov: 62 }],
+  ['rd05-T08-aerial', { eye: rt('RN08-RD05', 8, 12, 12), look: rt('RN08-RD05', 16, 0, 0), fov: 50 }],
+  // W10b: RN05-01 is T02-01 cut at the ring (28.892 m less); the junction of T04 and the jizo of T05 went with those roads
+  ['rd03-RN05-ground', { eye: rt('RN05-RD03', 1, -1.0, 1.6), look: rt('RN05-RD03', 15, 0.5, 2.5), fov: 62 }],
+  ['rd03-RN05-aerial', { eye: rt('RN05-RD03', 6, 14, 14), look: rt('RN05-RD03', 10, 0, 3), fov: 50 }],
   ['t11-02-stair-ground', { eye: { ...br(BR2, 121, -10.5, 1.7), g: true }, look: br(BR2, 114.5, -6.3, 3.0), fov: 62 }],
   ['t11-02-stair-aerial', { eye: br(BR2, 124, -22, 14), look: br(BR2, 114, -6, 3), fov: 50 }],
   ['t11-02-landing', { eye: { ...br(BR2, 118, -9.0, 1.7), g: true }, look: br(BR2, 112.5, -5.6, 1.2), fov: 55 }],
-  ['entrance-LM02-east', { eye: rt('N04-T02', 40, 0, 1.6), look: rt('N04-T02', 50.2, 0, 1.2), fov: 62 }],
-  ['entrance-LM03-north', { eye: rt('T07-RD05', 6, 0, 1.6), look: rt('T07-RD05', 15.5, 0, 1.0), fov: 62 }],
+  ['entrance-LM02-east', { eye: rt('RN05-RD03', 11.1, 0, 1.6), look: rt('RN05-RD03', 21.3, 0, 1.2), fov: 62 }],
+  ['entrance-LM03-north', { eye: rt('RN07-RD05', 6, 0, 1.6), look: rt('RN07-RD05', 15.5, 0, 1.0), fov: 62 }],
   ['entrance-LM01-west', { eye: st(T2, 74, 0, 1.7), look: st(T2, 85.9, 0, 3), fov: 62 }],
-  ['entrance-LM06-north', { eye: rt('T09-RD05', 5, 0, 1.6), look: rt('T09-RD05', 14, 0, 1.0), fov: 62 }],
+  ['entrance-LM06-north', { eye: rt('RN09-RD05', 5, 0, 1.6), look: rt('RN09-RD05', 14, 0, 1.0), fov: 62 }],
   ['bridge-piers-close', { eye: br(BR1, 30, 16, 1.5), look: br(BR1, 28, 0, -1.2), fov: 55 }],
 ];
 

@@ -100,6 +100,9 @@ check('WC2', '四个方向的全景中，建筑带、海洋、荒野各占可见
 // ---------------------------------------------------------------- road helpers
 const NET = W.roadNetwork, EDGES = NET.edges, NODES = NET.nodes;
 const SLOPE_LIMIT = { RD01: 0.06, RD02: 0.15, RD03: 0.10, RD04: 0.15, RD05: 0.15, RD06: 0.15, RD07: 0.15, RD08: 0.15 };
+// W10b: the town's streets are edges of the network too (TOWN_MAIN, TOWN_BRANCH, TOWN_ALLEY); they lie on the town plain of 1.6 m (W10_SPEC 1.2), so they are level
+const isTown = e => /^TOWN_/.test(e.class);
+for (const k of Object.keys(W.roadNetwork.townClasses)) SLOPE_LIMIT[k] = 0;
 const STAIRS_LIMIT = 0.60;
 const samples = new Map();
 for (const e of EDGES) samples.set(e.id, NET.samplePath(e, 1));
@@ -167,11 +170,13 @@ check('WC4', '每个道路等级的坡度不超过上限（5 m 窗口平均坡�
       }
     }
   }
-  const tight = slopeTable.filter(r => r.free).sort((a, b) => b.max / b.lim - a.max / a.lim).slice(0, 4);
+  const tight = slopeTable.filter(r => r.free && r.lim > 0).sort((a, b) => b.max / b.lim - a.max / a.lim).slice(0, 4);
   info('最紧的边：' + tight.map(r => `${r.id} ${pct(r.max)}/${pct(r.lim)}`).join('，'));
   const st = slopeTable.filter(r => r.stairsMax > 0);
   if (st.length) info('石阶最大坡度：' + st.map(r => `${r.id} ${pct(r.stairsMax)}`).join('，'));
   info('卡片没有给出坡度数字的等级（RD02/RD04/RD07/RD08）采用 RD05 的 15%，RD06 石阶上限取 60%（踏步高 0.17 / 踏面 0.28）');
+  const town = slopeTable.filter(r => /^TOWN_/.test(r.cls));
+  info(`城镇等级的边 ${town.length} 条在 1.6 m 平台上，最大坡度 ${pct(Math.max(0, ...town.map(r => r.max)))}（须为 0）`);
 });
 
 check('WC5', '道路跨越水面（海、河）处都有桥或栈道', ({ info, fail }) => {
@@ -191,13 +196,15 @@ check('WC5', '道路跨越水面（海、河）处都有桥或栈道', ({ info, 
   info('桥与栈道：' + sp.join('、'));
 });
 
-check('WC6', '道路不穿过地标内部、不进入城镇补丁（只经 9 个出口），只在入口处接入', ({ info, fail }) => {
+check('WC6', '道路不穿过地标内部，只在入口处接入；城镇等级的边只在城镇补丁内，其余道路不进入补丁（只经 9 个出口）', ({ info, fail }) => {
   const exits = NODES.filter(n => n.kind === 'town-exit');
-  let minClear = Infinity, minWho = '';
+  let minClear = Infinity, minWho = '', townEdges = 0;
   for (const e of EDGES) {
-    let inTown = 0, lmHit = {};
+    let inTown = 0, outTown = 0, lmHit = {};
+    if (isTown(e)) townEdges++;
     for (const p of samples.get(e.id)) {
-      if (W.insideTownPatch(p.lon, p.lat) && !exits.some(n => W.arcDistance(n, p) < 0.6)) inTown++;
+      if (isTown(e)) { if (W.townPatchDistance(p.lon, p.lat) > 1e-6) outTown++; }
+      else if (W.insideTownPatch(p.lon, p.lat) && !exits.some(n => W.arcDistance(n, p) < 0.6)) inTown++;
       for (const lm of landmarks) {
         const d = W.arcDistance(p, lm), clear = d - lm.radius;
         if (clear < minClear) { minClear = clear; minWho = `${e.id}↔${lm.id}`; }
@@ -205,6 +212,7 @@ check('WC6', '道路不穿过地标内部、不进入城镇补丁（只经 9 个
       }
     }
     if (inTown) fail(`${e.id} 有 ${inTown} 个采样点进入城镇补丁`);
+    if (outTown) fail(`城镇等级的边 ${e.id} 有 ${outTown} 个采样点在城镇补丁外`);
     for (const id in lmHit) fail(`${e.id} 压入 ${id} 的占地半径 ${fmt(lmHit[id])} m`);
   }
   for (const n of NODES.filter(q => q.kind === 'landmark-entrance')) {
@@ -212,6 +220,7 @@ check('WC6', '道路不穿过地标内部、不进入城镇补丁（只经 9 个
     if (!ent || W.arcDistance(n, ent) > 0.01) fail(`${n.id} 与地标登记的入口不一致`);
   }
   info(`与地标占地圆的最小间隙 ${fmt(minClear)} m（${minWho}）；占地半径取设计卡「尺度」一节的场地半径，LM01 取火山口与山顶局部模型范围`);
+  info(`城镇等级的边 ${townEdges} 条全部在城镇补丁内（含边界上的出口），其余 ${EDGES.length - townEdges} 条只在 9 个出口 0.6 m 内触及补丁`);
 });
 
 // town edge: points within 15 m (spherical) outside the patch

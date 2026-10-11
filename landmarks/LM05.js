@@ -1,5 +1,5 @@
 // LM05 星見石環 (the star-viewing stone ring) (W7, hidden clue 1). Local frame: origin = the site anchor (33.00 N 126.90 W, altitude 7.9 m: the flat top of the hill hill-lm05, platform radius
-// 10 m), +Z towards the west entrance (heading 300, 12 m out, the end of the T08-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. 13 IDENTICAL standing stones (3.2 high, 1.2 wide,
+// 10 m), +Z towards the west entrance (heading 300, 12 m out, the end of the RN08-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. 13 IDENTICAL standing stones (3.2 high, 1.2 wide,
 // 0.6 thick, one geometry shared by all: that sameness is the clue) stand on a circle of radius 9 m, equally spaced (centre distance 2 x 9 x sin(pi/13) = 4.30 m), faces along the
 // tangent, the gap between two of them opening on the entrance axis; moss only on the lower half of each stone, weathered but unchipped; in the middle a lying slab of about 3 x 2 m,
 // smoother and darker than its surroundings, its edges perfectly straight; a trodden ring path between the stones; a small stone cut with concentric circles. Read first as an ancient

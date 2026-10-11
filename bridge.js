@@ -35,7 +35,7 @@ function build(W, ids, o = {}) {
   if (AB.end) for (const p of S) if (off - p.s <= AB.end.T + 1e-9) { const q = AB.end.at(off - p.s); p.lon = q.lon; p.lat = q.lat; p.h = W.height(q.lon, q.lat); }
   // W8f-c G1: bridge-to-bridge nodes use the same sampled centreline transition on both sides of the node.
   for (const q of (o.turns || [])) for (const p of S) { const d = p.s - q.station, f = q.fillet; if (d < -f.Ta - 1e-9 || d > f.Tb + 1e-9) continue; const a = f.at(d); p.lon = a.lon; p.lat = a.lat; p.h = W.height(a.lon, a.lat); }
-  // unwrapped longitudes: the chain across the dateline (T01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
+  // unwrapped longitudes: the chain across the dateline (RN01-08) must be continuous in the flat frame (bend.js takes sin/cos of x / R, so x beyond +-283 m is fine)
   S.forEach((p, i) => { p.lonU = i === 0 ? p.lon : S[i - 1].lonU + ((p.lon - S[i - 1].lonU + 540) % 360 - 180); });
   const n = S.length, L = off, flat = p => ({ x: R * p.lonU * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const F = S.map(flat), T = F.map((p, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)]; let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; return [tx / l, tz / l]; });
@@ -50,7 +50,7 @@ function build(W, ids, o = {}) {
   // ---- vertical alignment: climb at DECK.slope from each abutment to the base height, a hump at the tower (if any), rounded by a 2 m moving average
   // W8f-a: the deck starts at the altitude of the road's approach (raised by its fill, never lower than the terrain at the node: the deck over the water is not lowered)
   const hS = o.startAlt === undefined ? S[0].h : o.startAlt, hE = o.endAlt === undefined ? S[n - 1].h : o.endAlt, humpS = o.pylonJoint !== undefined ? joints[o.pylonJoint] : o.pylonAt === undefined ? null : o.pylonAt;
-  // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of T11-02 has room at the node (W5b裁决)
+  // the tower stands 4.5 m before the junction J-LM08 (towards J-P1) so that the maintenance stair of RN12-01 has room at the node (W5b裁决)
   const pylonS = humpS === null ? null : humpS + (o.pylonShift || 0);
   const base = o.base || DECK.base;
   let A = S.map(p => Math.min(base, hS + DECK.slope * p.s, hE + DECK.slope * (L - p.s)));
@@ -165,7 +165,7 @@ function build(W, ids, o = {}) {
     out.lines.stays = stays;
     out.pylon = { s: pylonS, i, lon: S[i].lon, lat: S[i].lat, deck: A[i], top, above: DECK.towerAbove, legs };
   }
-  // ---- T11-02 maintenance stair (LM08 and RD02 cards): a gate in the north parapet, a gangway out to a two-flight steel stair hung on the north face of the girder
+  // ---- RN12-01 maintenance stair (LM08 and RD02 cards): a gate in the north parapet, a gangway out to a two-flight steel stair hung on the north face of the girder
   // (flight A runs away from the gate, a landing, flight B returns to the node), ending on a small wooden landing at LM08-south; riser 0.2 m, tread 0.26 m
   if (o.access) {
     const s0 = accessS, i0 = Math.round(s0 / 0.5), top = A[i0], riser = 0.2, treadL = 0.26, nFl = Math.round((top - 0.04) / riser / 2), grd = ground(i0, -5.4), acc = { s: s0, i: i0, top, steps: [], posts: 0, landing: null };
@@ -195,7 +195,7 @@ function build(W, ids, o = {}) {
   return out;
 }
 
-// ---- RD01 tunnel portals through the ridge (T01-05, span 6.5-29.5 m): the centre samples with the road bed altitude, for the arch geometry of roads.js
+// ---- RD01 tunnel portals through the ridge (RN01-05, span 6.5-29.5 m): the centre samples with the road bed altitude, for the arch geometry of roads.js
 function tunnel(W, edgeId, bed) {
   const NET = W.roadNetwork, e = NET.edges.find(q => q.id === edgeId), sp = e.spans.find(q => q.type === 'tunnel'), S = NET.samplePath(e, 0.5);
   const idx = []; S.forEach((p, i) => { if (p.s >= sp.fromMeters - 1e-9 && p.s <= sp.toMeters + 1e-9) idx.push(i); });

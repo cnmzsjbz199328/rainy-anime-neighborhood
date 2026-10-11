@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Build a review-only sheet: current global graph + town streets + proposed town ring.
-// This script does not change world.js, layout.js, or the rendered scene.
+// Build the review sheet of the road network: the global graph, the town streets and the town ring CR01.
+// Since W10b everything is drawn from the network registered in world.js (ROAD_NETWORK_DESIGN_DRAFT.md section 4); the script changes no data.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -81,87 +81,38 @@ function townGeoLine(localPoints, step = 1) {
 function localInsetPath(points) {
   return points.map((p, i) => `${i ? 'L' : 'M'}${fmt(TOWN.pad + (p.x + 48) / 96 * TOWN.size)},${fmt(TOWN.pad + (p.z + 48) / 96 * TOWN.size)}`).join(' ');
 }
-const RING_HALF = 54, RING_RADIUS = 8;
-function ringPoints(half = RING_HALF, radius = RING_RADIUS, steps = 8) {
-  const c = half - radius, pts = [];
-  const corners = [
-    [c, -c, -90, 0], [c, c, 0, 90], [-c, c, 90, 180], [-c, -c, 180, 270],
-  ];
-  for (const [cx, cz, a0, a1] of corners) {
-    for (let k = 0; k <= steps; k++) {
-      const a = (a0 + (a1 - a0) * k / steps) * Math.PI / 180;
-      pts.push({ x: cx + radius * Math.cos(a), z: cz + radius * Math.sin(a) });
-    }
-  }
-  pts.push(pts[0]);
-  return pts;
-}
-const ringLocal = ringPoints();
-const ringGeo = ringLocal.map(p => { const q = W.townToLonLat(p.x, p.z); return { lon: q.lon, lat: q.lat }; });
-const globalNorth0 = W.townToLonLat(0, -RING_HALF), globalSouth0 = W.townToLonLat(0, RING_HALF);
-const globalNorth = W.townToLonLat(0, -RING_HALF - 4), globalSouth = W.townToLonLat(0, RING_HALF + 4);
+const NET = W.roadNetwork, nodeLocal = id => ({ x: NET.nodeById[id].x, z: NET.nodeById[id].z });
+const samplesOf = (e, step = 0.5) => NET.samplePath(e, step).map(p => ({ lon: p.lon, lat: p.lat }));
+const localOf = pts => pts.map(p => W.lonLatToTown(p.lon, p.lat));
 const roadNode = Object.fromEntries(L.roadNodes.map(n => [n.id, n]));
 const exits = L.roadNodes.filter(n => n.kind === 'edge');
-function radialRingPoint(n) {
-  const h = 54, eps = 1e-7;
-  if (Math.abs(n.x + 48) < eps) return { x: -h, z: n.z };
-  if (Math.abs(n.x - 48) < eps) return { x: h, z: n.z };
-  if (Math.abs(n.z + 48) < eps) return { x: n.x, z: -h };
-  return { x: n.x, z: h };
-}
 const arrow = `<marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="${meridian}"/></marker>`;
+// the registered pieces: CR01 (RN04, clockwise from C01-NW), the exit connectors (outside RN01), the cut T02 (RN05-01) and the re-joined T03 (RN06-01)
+const ring = NET.edges.filter(e => e.route === 'RN04');
+const ringPts = ring.flatMap((e, k) => samplesOf(e).slice(k ? 1 : 0));
+const ringLocal = localOf(ringPts);
+const isTown = e => /^TOWN_/.test(e.class), isLink = e => !!e.plane && !isTown(e) && e.route !== 'RN04';
+const connectors = exits.map(n => NET.edges.find(e => isLink(e) && (e.from === n.id || e.to === n.id)));
+const ringNodeOf = n => { const c = connectors.find(e => e.from === n.id || e.to === n.id); return nodeLocal(c.from === n.id ? c.to : c.from); };
+const regionIds = ['RN05-01', 'RN06-01'], regionEdges = regionIds.map(id => NET.edges.find(e => e.id === id));
+const stubOf = e => localOf(NET.samplePath(e, 0.25).filter(p => p.s <= 8));
+const N0 = NET.nodeById['C01-N'], S0 = NET.nodeById['C01-S'];
+const globalNorth0 = N0, globalSouth0 = S0, globalNorth = W.townToLonLat(0, N0.z - 4), globalSouth = W.townToLonLat(0, S0.z + 4);
+if (exits.length !== 9 || connectors.some(c => !c) || ring.at(-1).to !== ring[0].from) throw new Error('CR01 must be closed and connect all nine fixed town exits');
 
-function ringSignedDistance(p) {
-  const q = W.lonLatToTown(p.lon, p.lat);
-  const dx = Math.abs(q.x) - (RING_HALF - RING_RADIUS);
-  const dz = Math.abs(q.z) - (RING_HALF - RING_RADIUS);
-  return Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0) - RING_RADIUS;
-}
-function trimEdgeAtRing(edgeId) {
-  const edge = W.roadNetwork.edges.find(e => e.id === edgeId);
-  const samples = W.roadNetwork.samplePath(edge, 0.05);
-  const crossing = samples.findIndex((p, i) => i > 0 && ringSignedDistance(p) >= 0);
-  if (crossing < 1) throw new Error(`${edgeId} does not intersect the proposed CR01 boundary`);
-  const start = samples[crossing];
-  const local = W.lonLatToTown(start.lon, start.lat);
-  const stub = samples.slice(crossing).filter(p => p.s <= start.s + 8).map(p => W.lonLatToTown(p.lon, p.lat));
-  return {
-    path: lonLatD(samples.slice(crossing)),
-    trimMeters: start.s,
-    ringLocal: { x: local.x, z: local.z },
-    townStub: stub,
-  };
-}
-const t02Plan = trimEdgeAtRing('T02-01');
-const t03Plan = trimEdgeAtRing('T03-01');
-const t02Candidate = t02Plan.path;
-const t03Start = W.townToLonLat(0, RING_HALF);
-const t03Candidate = lonLatD([
-  { lon: t03Start.lon, lat: t03Start.lat },
-  ...W.roadNetwork.samplePath(W.roadNetwork.edges.find(e => e.id === 'T03-01'), 0.05)
-    .filter(p => p.s > t03Plan.trimMeters + 0.025),
-]);
-t03Plan.townStub = [{ x: 0, z: RING_HALF }, ...t03Plan.townStub.slice(1)];
-if (exits.length !== 9 || ringLocal[0].x !== ringLocal.at(-1).x || ringLocal[0].z !== ringLocal.at(-1).z) {
-  throw new Error('CR01 must be closed and connect all nine fixed town exits');
-}
-
-// Current retained world.js roads, shown by road class. T04/T05/T06 are excluded because
-// the planning decision removes them; the review map shows the resulting network.
+// The registered roads outside the town, by road class (RN01 in one colour); the ring, the connectors of the seven non-RN01 exits and RN05-01 / RN06-01
+// are drawn on their own layers below.
 let globalRoads = '';
-for (const e of W.roadNetwork.edges) {
-  if (['T04', 'T05', 'T06'].includes(e.route)) continue;
-  // T02-01/T03-01 are redrawn from their CR01 intersections below, trimming their
-  // portions inside the proposed perimeter.
-  if (e.id === 'T02-01' || e.id === 'T03-01') continue;
-  const samples = W.roadNetwork.samplePath(e, 0.5);
-  const d = lonLatD(samples);
+for (const e of NET.edges) {
+  if (isTown(e) || e.route === 'RN04' || (isLink(e) && e.route !== 'RN01') || regionIds.includes(e.id)) continue;
+  const d = lonLatD(samplesOf(e));
   globalRoads += pathElement(d, '#102030', 6, '', 0.86);
-  globalRoads += pathElement(d, e.route === 'T01' ? globalRouteColor : clsColor[e.class], 3.2, '', 0.98);
+  globalRoads += pathElement(d, e.route === 'RN01' ? globalRouteColor : clsColor[e.class], 3.2, '', 0.98);
 }
+const t02Candidate = lonLatD(samplesOf(regionEdges[0])), t03Candidate = lonLatD(samplesOf(regionEdges[1]));
+const t02Cut = Number(fs.readFileSync(path.join(outDir, 'ROAD_NETWORK_DESIGN_DRAFT.md'), 'utf8').match(/交点里程 ([\d.]+) m/)[1]);
 
-// Town street graph from layout.js: the bridge across the current gap between N03 and N01
-// makes the T01 route continuous through the existing town on the review map.
+// Town street graph from layout.js (the town edges of the network lie on these centre lines, unify_check U1-town): R01 carries RN01 through the town.
 let townMapRoads = '';
 for (const road of L.roads) {
   const pts = road.nodes.map(id => roadNode[id]);
@@ -178,11 +129,8 @@ for (const alley of L.alleys) {
   townMapRoads += pathElement(d, townColor.alley, 1.8, '', 0.96);
 }
 
-const globalRing = lonLatD(ringGeo);
-const globalLinks = exits.filter(n => !['N01', 'N03'].includes(n.id)).map(n => {
-  const p = radialRingPoint(n), q = W.townToLonLat(p.x, p.z), a = W.townToLonLat(n.x, n.z);
-  return lonLatD([{ lon: a.lon, lat: a.lat }, { lon: q.lon, lat: q.lat }]);
-}).join(' ');
+const globalRing = lonLatD(ringPts);
+const globalLinks = connectors.filter(e => e.route !== 'RN01').map(e => lonLatD(samplesOf(e))).join(' ');
 
 function tag(lon, lat, label, fill = '#192536') {
   const [x, y] = mapPoint({ lon, lat });
@@ -204,13 +152,13 @@ const proposedRegionRoads = pathElement(t02Candidate, '#14202c', 6.3, '', 0.88) 
   pathElement(t03Candidate, '#14202c', 6.3, '', 0.88) + pathElement(t03Candidate, '#54e0cf', 3.4, '', 1);
 
 // Town inset: crop the plotting rectangle from topdown.png, surround it with 6 m clearance,
-// then add the proposed rounded ring and its nine radial access connections.
+// then add the registered ring and its nine connectors.
 let townOverlay = '';
 const insetR = ringLocal.map(p => `${fmt(TOWN.pad + (p.x + 48) / 96 * TOWN.size)},${fmt(TOWN.pad + (p.z + 48) / 96 * TOWN.size)}`).join(' ');
 townOverlay += `<polyline points="${insetR}" fill="none" stroke="#17222e" stroke-width="15" stroke-linejoin="round"/>`;
 townOverlay += `<polyline points="${insetR}" fill="none" stroke="${proposed}" stroke-width="8" stroke-linejoin="round"/>`;
 for (const n of exits) {
-  const p = radialRingPoint(n);
+  const p = ringNodeOf(n);
   const d = localInsetPath([{ x: n.x, z: n.z }, p]);
   townOverlay += pathElement(d, '#17222e', 11, '', 0.8) + pathElement(d, proposed, 5.5, '12 8', 1);
 }
@@ -225,15 +173,15 @@ for (const alley of L.alleys) {
   const d = localInsetPath(alley.nodes.map(id => roadNode[id]));
   townOverlay += pathElement(d, '#102031', 5.5, '', 0.8) + pathElement(d, townColor.alley, 2.4, '', 1);
 }
-// M01 follows the frozen R02 axis; T03 leaves the common south junction toward LM04.
+// M01 follows the frozen R02 axis; RN06 (the former T03) leaves the common south junction toward LM04.
 townOverlay += svgText(TOWN.pad + TOWN.size / 2 + 12, TOWN.pad + TOWN.size / 2 - 18, 'M01 / RN02', 15, meridian, 750);
-townOverlay += svgText(TOWN.pad + TOWN.size / 2 + 14, TOWN.pad + TOWN.size - 8, 'T03 → LM04', 14, '#54e0cf', 700);
-for (const route of [t02Plan, t03Plan]) {
-  const d = localInsetPath(route.townStub);
+townOverlay += svgText(TOWN.pad + TOWN.size / 2 + 14, TOWN.pad + TOWN.size - 8, 'RN06 → LM04', 14, '#54e0cf', 700);
+for (const e of regionEdges) {
+  const d = localInsetPath(stubOf(e));
   townOverlay += pathElement(d, '#14202c', 10, '', 0.9) + pathElement(d, '#54e0cf', 5, '', 1);
 }
 const exitLabels = exits.map(n => {
-  const p = radialRingPoint(n), x = TOWN.pad + (p.x + 48) / 96 * TOWN.size, y = TOWN.pad + (p.z + 48) / 96 * TOWN.size;
+  const p = ringNodeOf(n), x = TOWN.pad + (p.x + 48) / 96 * TOWN.size, y = TOWN.pad + (p.z + 48) / 96 * TOWN.size;
   const labelW = 42, labelH = 22;
   let dx = 8, dy = -25;
   if (n.id === 'N04') { dx = -labelW / 2; dy = -29; }
@@ -242,8 +190,8 @@ const exitLabels = exits.map(n => {
   if (n.id === 'N03' || n.id === 'N10' || n.id === 'N12' || n.id === 'N13') { dx = 8; dy = -labelH / 2; }
   return `<g transform="translate(${fmt(x + dx)},${fmt(y + dy)})"><rect width="${labelW}" height="${labelH}" rx="6" fill="#182433" fill-opacity=".95" stroke="${proposed}" stroke-width="1.5"/><text x="${labelW / 2}" y="15.5" text-anchor="middle" font-family="${font}" font-size="13" font-weight="700" fill="#fff">${n.id}</text></g>`;
 }).join('');
-const cT02 = { x: TOWN.pad + (-33.117867 + 48) / 96 * TOWN.size, y: TOWN.pad + (-54 + 48) / 96 * TOWN.size };
-townOverlay += '<g transform="translate(' + fmt(cT02.x - 24) + ',' + fmt(cT02.y - 52) + ')"><rect width="55" height="21" rx="5" fill="#182433" stroke="#54e0cf"/><text x="27.5" y="14.5" text-anchor="middle" font-family="' + font + '" font-size="11" font-weight="700" fill="#fff">T02 接点</text></g>';
+const cT02 = { x: TOWN.pad + (NET.nodeById['C01-T02'].x + 48) / 96 * TOWN.size, y: TOWN.pad + (NET.nodeById['C01-T02'].z + 48) / 96 * TOWN.size };
+townOverlay += '<g transform="translate(' + fmt(cT02.x - 24) + ',' + fmt(cT02.y - 52) + ')"><rect width="55" height="21" rx="5" fill="#182433" stroke="#54e0cf"/><text x="27.5" y="14.5" text-anchor="middle" font-family="' + font + '" font-size="11" font-weight="700" fill="#fff">RN05 接点</text></g>';
 
 function legendItem(x, y, color, label, style = 'solid') {
   const dash = style === 'dash' ? '11 7' : style === 'dot' ? '3 6' : '';
@@ -256,7 +204,7 @@ sections.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w
 <rect width="100%" height="100%" fill="#111b27"/>
 <rect x="0" y="0" width="${WIDTH}" height="70" fill="#1b2837"/>
 ${svgText(28, 33, '全球与城镇路网设计图（W10-RD）', 26, '#f3f6f9', 750)}
-${svgText(28, 57, 'W10-RD 设计已获确认；W10b 前同步 W10_SPEC，layout.js 既有数据不变', 15, '#becbd8', 450)}
+${svgText(28, 57, 'W10-RD 设计已获确认；W10b 已登记进 world.js，本图由登记数据绘制；layout.js 既有数据不变', 15, '#becbd8', 450)}
 <image x="0" y="${MAP_Y}" width="${WMAP}" height="${HMAP}" href="data:image/png;base64,${globalImage}"/>
 <g id="existing-world">${globalRoads}</g>
 <g id="existing-town">${townMapRoads}</g>
@@ -278,15 +226,15 @@ ${svgText(34, LOWER_Y - 3, '城镇放大：以 topdown.png 为底图', 20, '#f4f
 ${svgText(0, 25, '图例与拓扑核对', 22, '#f4f6f8', 700)}
 ${legendItem(0, 65, globalRouteColor, 'RN01 全球纬向主线：含城镇横穿段与桥段，同色')}
 ${legendItem(0, 101, clsColor.RD03, '其他 RN 路线（按道路等级着色）')}
-${legendItem(0, 137, townColor.R02, 'M01 / RN02：R02 北南轴，南端由 RN06 / T03 延至 LM04')}
+${legendItem(0, 137, townColor.R02, 'M01 / RN02：R02 北南轴，南端由 RN06（原 T03）延至 LM04')}
 ${legendItem(0, 173, proposed, 'RN04 / CR01：RD03 闭环，九个出口接点')}
-${legendItem(0, 209, '#54e0cf', 'RN05 / T02 从西北环点分出；RN06 / T03 从南点出')}
+${legendItem(0, 209, '#54e0cf', 'RN05（原 T02）从西北环点分出；RN06（原 T03）从南点出')}
 ${svgText(0, 263, '设计定值', 18, '#9fe4f4', 700)}
 ${svgText(0, 291, '• CR01 中线 ±54 m，R8 m 圆角，长度约 418.27 m。', 15, '#dce5ed', 450)}
 ${svgText(0, 317, '• RD03 断面：4.5 m 沥青、碎石肩、外侧边沟；无步道。', 15, '#dce5ed', 450)}
-${svgText(0, 343, '• N04 接正北点；T02-01 在西北环点接入，截短 28.89 m。', 15, '#dce5ed', 450)}
-${svgText(0, 369, '• N08 与 T03 共用正南交点；T03-01 截短 5.28 m，不跨环。', 15, '#dce5ed', 450)}
-${svgText(0, 395, '• T04/T05/T06 全部移除；九出口与保留地标路仍连通。', 15, '#dce5ed', 450)}
+${svgText(0, 343, `• N04 接正北点；RN05-01 自 C01-T02 起，原 T02-01 截去 ${t02Cut.toFixed(2)} m。`, 15, '#dce5ed', 450)}
+${svgText(0, 369, `• N08 与 RN06 共用正南交点；RN06-01 长 ${NET.edgeLength(regionEdges[1]).toFixed(2)} m 至 J-T03a。`, 15, '#dce5ed', 450)}
+${svgText(0, 395, '• T04/T05/T06 已退役；九出口与保留地标路仍连通。', 15, '#dce5ed', 450)}
 ${svgText(0, 437, '农田 / 草地 / 建构筑物审查', 18, '#ff9999', 700)}
 ${svgText(0, 465, '• 当前道路与田块面相交 0；森林实例相交 0。', 15, '#dce5ed', 450)}
 ${svgText(0, 491, '• J-T09 有 1 个 T09 路标石堆压入 RN01-11 铺装；实施时抑制。', 15, '#dce5ed', 450)}
@@ -294,14 +242,14 @@ ${svgText(0, 517, '• CR01 与九条接线不压草地/森林实例；环线位
 ${svgText(0, 543, '• 未重算田块时有 27 格相交（22 格耕作面进入铺装）。', 15, '#dce5ed', 450)}
 ${svgText(0, 569, '• 完整采样避让后田块相交 0、净减约 936 m²；地块净距 ≥ 2.01 m。', 15, '#dce5ed', 450)}
 ${svgText(0, 611, '拓扑核对', 18, '#9fe4f4', 700)}
-${svgText(0, 639, '• 59 个节点、66 条边；RN04 由 18 条边闭合。', 15, '#dce5ed', 450)}
+${svgText(0, 639, `• ${NET.nodes.length} 个节点、${NET.edges.length} 条边；RN04 由 ${ring.length} 条边闭合。`, 15, '#dce5ed', 450)}
 ${svgText(0, 665, '• RN01 贯通东西环球路与 R01，CR01 在两端平交。', 15, '#dce5ed', 450)}
 ${svgText(0, 691, '• RN05 到 LM02/LM01/LM07；RN06 到 LM04；支路均有目的地。', 15, '#dce5ed', 450)}
-${svgText(0, 733, 'W10b 前先修订 W10_SPEC；本轮未开始 W10b。', 15, '#ffd479', 650)}
+${svgText(0, 733, 'W10b 已登记；CR01 与城镇等级的边由 W10c 绘制。', 15, '#ffd479', 650)}
 ${svgText(0, 759, '已确认用途：E-T11 海上栈道末端作为临水观景平台。', 15, '#ffd479', 650)}
 </g>
 <rect x="0" y="${HEIGHT - 50}" width="${WIDTH}" height="50" fill="#111b27"/>
-${svgText(28, HEIGHT - 17, '底图：equirect-road-review-base.png（无预烘焙道路）；城镇放大：docs/layout/topdown.png。实线为保留及新增道路；T04/T05/T06 与田边端点不绘制。', 13, '#9baaba', 450)}
+${svgText(28, HEIGHT - 17, '底图：equirect-road-review-base.png（无预烘焙道路）；城镇放大：docs/layout/topdown.png。实线为 world.js 登记的道路；退役的 T04/T05/T06 与田边端点已不在路网中。', 13, '#9baaba', 450)}
 </svg>`);
 
 const svg = sections.join('');
@@ -318,5 +266,5 @@ try {
 } finally { await browser.close(); }
 console.log(`Wrote ${path.relative(ROOT, svgPath)}`);
 console.log(`Wrote ${path.relative(ROOT, pngPath)}`);
-console.log(`Global: ${W.roadNetwork.nodes.length} nodes / ${W.roadNetwork.edges.length} edges; town: ${L.roadNodes.length} nodes / ${L.roadSegments.length} segments; CR01: 9 access connections.`);
-console.log(`Trimmed within CR01: T02-01 ${t02Plan.trimMeters.toFixed(2)} m; T03-01 ${t03Plan.trimMeters.toFixed(2)} m.`);
+console.log(`Network: ${NET.nodes.length} nodes / ${NET.edges.length} edges (town ${L.roadNodes.length} nodes / ${L.roadSegments.length} segments); CR01: ${ring.length} edges, ${connectors.length} exit connectors.`);
+console.log(`RN05-01 starts at C01-T02, ${t02Cut.toFixed(3)} m of T02-01 cut; RN06-01 ${NET.edgeLength(regionEdges[1]).toFixed(3)} m.`);

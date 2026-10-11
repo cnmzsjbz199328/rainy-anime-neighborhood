@@ -1,5 +1,5 @@
 // LM03 苔石古坟群 (the moss-stone tumulus group) (W7). Local frame: origin = the site anchor (27.00 S 86.00 E, altitude 1.9 m, a levelled platform of radius 12 m), +Z towards the north
-// entrance (heading 0, 14 m out, the end of T07-01), +X to the left of +Z. 1 unit = 1 m. The site is trimmed to a 24 m disc (W7_SPEC section 3): at its centre the megalithic chamber (its earth
+// entrance (heading 0, 14 m out, the end of RN07-01), +X to the left of +Z. 1 unit = 1 m. The site is trimmed to a 24 m disc (W7_SPEC section 3): at its centre the megalithic chamber (its earth
 // mound long washed away: a corridor 1.8 m wide between two walls of three boulders each, a back stone and a capstone of 6 x 1.6 x 4 m on top, about 4 m high in all, the opening towards the
 // entrance), four small grassy round mounds (3-4 m across, with a tree on two of them), a toppled pillar, a weathered explanatory stele (the text is unreadable), moss and ferns, a short timber
 // fence where the forest track ends. Purely human ruin: no hidden-clue elements. Boulder outlines are drawn slightly heavier by their size. Night: fireflies and moonlight only; the chamber is dark.

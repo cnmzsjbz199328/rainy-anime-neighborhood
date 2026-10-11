@@ -57,7 +57,7 @@ await page.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S
       cutW += W.length; cutE += E.length;
       for (const i of W) { let best = 1e9; const a = B.point(p.getX(i), p.getY(i), p.getZ(i), 1); for (const j of E) { const b = B.point(p.getX(j), p.getY(j), p.getZ(j), 1); best = Math.min(best, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])); } if (best < 1) { worst = Math.max(worst, best); pairs++; } } }
     let lineW = 0, lineE = 0; for (const l of lines) { const p = l.geometry.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i); if (x === west) lineW++; else if (x === B.SEAM) lineE++; } }
-    const ids = S.roads.data().bridges.find(b => b.def.id === 'T01-13'), s0 = ids.samples[0], q = window.WORLD.lonLatToTown(s0.lon, s0.lat);
+    const ids = S.roads.data().bridges.find(b => b.def.id === 'RN01-13'), s0 = ids.samples[0], q = window.WORLD.lonLatToTown(s0.lon, s0.lat);
     return { faces: meshes.length, cutW, cutE, pairs, worst, lineW, lineE, westStart: q.x, westStartShown: B.wrapX(q.x) };
   });
   out(r.faces >= 6 && r.cutW > 0 && r.cutW === r.cutE && r.pairs === r.cutW && r.worst < 1e-3 && r.lineW > 0 && r.lineW === r.lineE && r.westStartShown > 380, 'W8e-b C2 桥 T01-13 在接缝处按段平移、球面上无裂缝', [

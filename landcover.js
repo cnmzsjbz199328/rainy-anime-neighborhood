@@ -254,9 +254,10 @@ function* grasslandSteps(W, H, ctx) {
       if (hash(key, 15) < 0.0042) { const hh = 5 + 7 * hash(key, 16), w = 1.0 + 0.8 * hash(key, 17); put('rockPillar', lon, lat, h - 0.1, { s: [w, hh, w], tint: tint(0.9, 1.15, key + 9) }); stats.pillars++; }
     }
   }, 40);
-  // cairns beside the dirt tracks of T07, T08, T09 (RD05) and T02/T05 country roads in grassland: every ~14 m on the left side
+  // cairns beside the RD05 dirt tracks (RN07, RN08, RN09) and the RD03 country roads (RN05) in grassland: every ~14 m on the left side. The seed is the id of the
+  // edge a road comes from (W10b renumbered them), so the cairns stay where they were; a new edge uses its own id
   for (const e of W.roadNetwork.edges.filter(q => ['RD05', 'RD03'].includes(q.class))) {
-    const S = W.roadNetwork.samplePath(e, 0.5); for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, e.id.length * 7 + e.id.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
+    const S = W.roadNetwork.samplePath(e, 0.5), key = e.source || e.id; for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, key.length * 7 + key.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
   }
   return { items, stats };
 }

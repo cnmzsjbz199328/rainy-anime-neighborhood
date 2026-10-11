@@ -158,8 +158,9 @@ function build(W, edgeId, opts = {}) {
   throw new Error('roadkit: no profile for ' + cls);
 }
 
-// ---- transition chain (user review of W4): the three rural edges of T03 are swept as ONE strip whose cross-section changes gradually, so an asphalt
-// street turns into a cracked lane, then into a dirt track with weeds creeping in, instead of three profiles that meet at a hard joint.
+// ---- transition chain (user review of W4): the rural edges from exit N08 to LM04 are swept as ONE strip whose cross-section changes gradually, so an asphalt
+// street turns into a cracked lane, then into a dirt track with weeds creeping in, instead of profiles that meet at a hard joint. Since W10b (W10_SPEC 2.1) the chain
+// is M01 south of the town (world.js roadNetwork.m01South): the 6 m connector RN02-07 to the ring's south point C01-S, then RN06 (the former T03) to LM04.
 // Every profile is sampled on one common lateral grid; at each sample the two neighbouring road classes are blended with a smoothstep over
 // 2 x BLEND metres around their joint, and a wear value (0 at the town edge, 1 at the end) frays the paved edge and cracks the surface.
 const BLEND = 3.2;
@@ -208,16 +209,16 @@ function chain(W, ids, opts = {}) {
   }
   for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; (pure[a] && pure[b] && pure[c] && pure[d] ? headIdx : idx).push(a, c, b, b, c, d); }
   for (const L of [idx, headIdx]) for (let t = 0; t < L.length; t += 3) { const A = L[t] * 3, B = L[t + 1] * 3, C = L[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]) - (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]); if (ny < 0) { const tmp = L[t + 1]; L[t + 1] = L[t + 2]; L[t + 2] = tmp; } }
-  // weeds and tufts creep in along the paved edge: none at the town edge, more and more with wear (the RD04 / RD05 parts add their own in build())
-  const instances = {};
-  for (let st = 1.5; st < joints[0]; st += 0.7) {
+  // weeds and tufts creep in along the paved edge of the leading class: none at the town edge, more and more with wear (the RD04 / RD05 parts add their own in build())
+  const instances = {}, lead = classes.findIndex(c => c !== classes[0]), leadEnd = lead > 0 ? joints[lead - 1] : total;
+  for (let st = 1.5; st < leadEnd; st += 0.7) {
     const i = Math.round(st / 0.5), wear = wearOf[i]; if (hash(st, 41) > wear * 1.2) continue;
     const side = hash(st, 43) < 0.5 ? -1 : 1, o = (side < 0 ? paved[i][0] : paved[i][1]) + side * (0.1 + 0.9 * hash(st, 47)), a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], q = W.destination(S[i], W.bearing(a, b) + (side > 0 ? 90 : -90), Math.abs(o));
     const type = hash(st, 49) < 0.5 ? 'tuft' : 'weed'; (instances[type] = instances[type] || []).push({ type, lon: q.lon, lat: q.lat, alt: W.height(q.lon, q.lat), yaw: hash(st, 53) * 6.28, s: [0.9, 0.6 + 0.6 * hash(st, 59), 0.9], lean: [0, 0], tint: [1, 1, 1] });
   }
   const lateral = (i, o) => { const a = S[Math.max(0, i - 1)], b = S[Math.min(n - 1, i + 1)], br = W.bearing(a, b), q = W.destination(S[i], br + (o > 0 ? 90 : -90), Math.abs(o)); return [q.lon, q.lat]; };
   const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1]); return { lon: lo, lat: la, alt: W.height(lo, la) + 0.07 }; }) };
-  return { ids, classes, joints, samples: S, instances, strip: { name: 'T03 transition chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, footprint: foot, wear: wearOf, lines, length: total };
+  return { ids, classes, joints, samples: S, instances, strip: { name: 'M01 south chain', pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), headIndex: Uint32Array.from(headIdx), vertexCount: n * m }, grid, paved, footprint: foot, wear: wearOf, lines, length: total };
 }
 
 
@@ -249,13 +250,19 @@ function route(W, segs, o = {}) {
     P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, h: W.height(p.lon, p.lat), s: p.s + off }); edgeOf.push(k); });
     off += len; if (k + 1 < edges.length) joints.push(off);
   });
-  if (o.lead) { classes = [o.lead.cls, ...classes]; joints = [o.lead.at, ...joints]; }
+  if (o.lead) {
+    classes = [o.lead.cls, ...classes]; joints = [o.lead.at, ...joints];
+    // W10b: the lead may reach past the first edge (the exits' 6 m connectors are shorter than RD01T's 8 m). A joint between two edges of the same class blends
+    // nothing, so those joints are merged and the lead's joint stays in order (out of order, wts() would give negative weights)
+    for (let k = joints.length - 1; k >= 1; k--) if (classes[k] === classes[k + 1]) { classes.splice(k + 1, 1); joints.splice(k, 1); }
+  }
+  if (joints.some((jt, k) => k && jt <= joints[k - 1])) throw new Error(`roadkit.route ${segs.map(q => q.id).join('+')}: class joints out of order (${joints.join(', ')})`);
   if (o.trimStart) { while (S.length > 2 && S[0].s < o.trimStart) { S.shift(); edgeOf.shift(); } }      // start beyond the edge of a wider road it branches from
   if (o.trimEnd) { while (S.length > 2 && S[S.length - 1].s > off - o.trimEnd) { S.pop(); edgeOf.pop(); } }       // stop short of a junction on a wider road
   if (o.until !== undefined) { while (S.length > 2 && S[S.length - 1].s > o.until + 1e-9) { S.pop(); edgeOf.pop(); } }   // W8g-b: an exit head, made up to `until` metres
   const n = S.length, total = S[n - 1].s, flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)), k: 1 / Math.cos(p.lat * D) });
   const sNodeOf = which => (which === 'end' ? off : 0);
-  // W8f-a abutment curves and W8f-c node turns can overlap on the short T01-14 approach to J-W1.
+  // W8f-a abutment curves and W8f-c node turns can overlap on the short RN01-14 approach to J-W1.
   // Blend their centre-line offsets smoothly through the shared station range so neither curve is
   // overwritten at the overlap edge (which would create a visible heading kink at the bridge).
   const P2 = 2 * Math.PI * R, flatX = p => R * p.lon * D, flatZ = p => -R * Math.asinh(Math.tan(p.lat * D));

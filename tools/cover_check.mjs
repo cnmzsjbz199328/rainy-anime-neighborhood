@@ -33,7 +33,7 @@ const PLAN = ROADS.plan(W, H, (lo, la) => B.vertex(lo, la).c);
 const avoid = [], addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
 for (const r of PLAN.routes) addPts(r.samples, r.def.furnish && r.def.furnish.kind === 'RD05' ? 1.5 : r.def.furnish && r.def.furnish.kind === 'RD03' ? 2.4 : r.def.furnish && r.def.furnish.kind === 'RD08' ? 1.0 : 4.6);
 for (const b of PLAN.bridges) addPts(b.samples, 5.2); for (const s of PLAN.stairs) addPts(s.samples, 1.2);
-{ const CH = ROADKIT.chain(W, ['T03-01', 'T03-02', 'T03-03']); addPts(CH.samples, 3.0); }
+{ const CH = ROADKIT.chain(W, W.roadNetwork.m01South); addPts(CH.samples, 3.0); }
 for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
 const SP = SECP.plan(W), corridor = (lon, lat) => { const uv = SP.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
 const DATA = LC.build(W, H, { avoid, corridor });

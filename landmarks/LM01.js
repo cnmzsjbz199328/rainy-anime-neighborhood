@@ -1,7 +1,7 @@
 // LM01 雨見岳 (Ame-mi-dake): the dormant volcano's summit (W7). Local frame: origin = the anchor on the summit (56.00 N 25.00 W, altitude 26.0 m, the highest point of the planet),
-// +Z towards the west entrance (heading 300, 10 m out, the end of the T02-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. The mountain itself is terrain (ameni-dake,
+// +Z towards the west entrance (heading 300, 10 m out, the end of the RN05-02 stone stairs), +X to the left of +Z. 1 unit = 1 m. The mountain itself is terrain (ameni-dake,
 // radius 28 m, flat top radius 4.2 m, snow above 20 m from terrain.js); this module replaces the summit inside r = 8 m: a crater of 12 m across (rim, ash floor, lake, two vents with thin
-// steam), the small shrine and the stone marker beside the stairs' last flight, and the stone lanterns of the path (<= 10, weak warm light). The north entrance (T10-01) is at the foot
+// steam), the small shrine and the stone marker beside the stairs' last flight, and the stone lanterns of the path (<= 10, weak warm light). The north entrance (RN10-01) is at the foot
 // of the mountain and is not part of the summit model. Groups: lm01Rim, lm01Crater (floor, lake, ember), lm01Vent (live steam), lm01Shrine, lm01Path (steps, marker, lanterns).
 (globalThis.LANDMARKS = globalThis.LANDMARKS || {}).LM01 = (K, rec) => {
   const { THREE, group, mesh, box, cyl, mat, warm } = K, L = LMLIB(K), PI = Math.PI, rnd = K.rand(101);

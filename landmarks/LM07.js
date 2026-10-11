@@ -1,5 +1,5 @@
 // LM07 冰封轮廓 (the ice-sealed outline) (W7, hidden clue 3). Local frame: origin = the site anchor (76.00 N 100.00 E, altitude 2.5 m, the ice sheet itself: no platform), +Z towards the west
-// entrance (heading 280, 10 m out, the end of T10-01 and of the RD08 pole line), +X to the left of +Z. 1 unit = 1 m. Above the ice there is almost nothing: a half-buried faded-orange observation
+// entrance (heading 280, 10 m out, the end of RN10-01 and of the RD08 pole line), +X to the left of +Z. 1 unit = 1 m. Above the ice there is almost nothing: a half-buried faded-orange observation
 // hut 4 x 3 m (antenna fallen across the roof, frosted window), a survey pole, a tripod with its instrument, snow banked on the weather side, a little snow mist drifting low. The clue is in
 // the ice: a patch of clearer, deeper-cyan ice about 36 m across (a soft canvas texture on a mesh that follows the ground) and, under it, a regular hexagonal ring of circumradius 15 m
 // (side 15 m) at a depth of 3 m: its shadow is painted into that texture at a contrast far below the ice's own unevenness, and a simple translucent hexagon mesh stands for it at y = -3

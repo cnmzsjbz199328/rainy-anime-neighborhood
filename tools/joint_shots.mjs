@@ -23,17 +23,17 @@ const places = await page.evaluate(() => {
   const W = window.WORLD, N = W.roadNetwork, out = [], flat = (lon, lat) => W.lonLatToTown(lon, lat);
   const along = (edge, atStart, m) => { const s = N.samplePath(edge, 1), i = Math.min(m, s.length - 1); return atStart ? s[i] : s[s.length - 1 - i]; };
   for (const nd of N.nodes) {
-    const ins = N.edges.filter(e => e.to === nd.id), outs = N.edges.filter(e => e.from === nd.id), trunk = e => e.route === 'T01';
+    const ins = N.edges.filter(e => e.to === nd.id), outs = N.edges.filter(e => e.from === nd.id), trunk = e => e.route === 'RN01';
     const a = ins.find(trunk) || ins[0], b = outs.find(trunk) || outs[0];
     // from 6 m before the place to 6 m after it (one side only at an end of the network)
     const p0 = a ? along(a, false, 6) : nd, p1 = b ? along(b, true, 6) : nd, c = flat(nd.lon, nd.lat), q0 = flat(p0.lon, p0.lat), q1 = flat(p1.lon, p1.lat);
     let dx = q1.x - q0.x, dz = q1.z - q0.z; if (Math.hypot(dx, dz) < 1e-6) { dx = 1; dz = 0; }
     out.push({ id: nd.id, kind: nd.kind, lon: nd.lon, lat: nd.lat, x: c.x, z: c.z, dx, dz, edges: [...ins, ...outs].map(e => `${e.id} ${e.class}`) });
   }
-  // the tunnel portals of T01-05 (spans in metres along the edge)
-  const t = N.edges.find(e => e.id === 'T01-05'), sp = t.spans.find(s => s.type === 'tunnel'), S = N.samplePath(t, 0.5);
-  for (const [id, m] of [['T01-05-portal-a', sp.fromMeters], ['T01-05-portal-b', sp.toMeters]]) { const k = S.findIndex(q => q.s >= m), p = S[k], q0 = flat(S[Math.max(0, k - 12)].lon, S[Math.max(0, k - 12)].lat), q1 = flat(S[Math.min(S.length - 1, k + 12)].lon, S[Math.min(S.length - 1, k + 12)].lat), c = flat(p.lon, p.lat);
-    out.push({ id, kind: 'tunnel-portal', lon: p.lon, lat: p.lat, x: c.x, z: c.z, dx: q1.x - q0.x, dz: q1.z - q0.z, edges: ['T01-05 RD01'] }); }
+  // the tunnel portals of RN01-05 (spans in metres along the edge)
+  const t = N.edges.find(e => e.id === 'RN01-05'), sp = t.spans.find(s => s.type === 'tunnel'), S = N.samplePath(t, 0.5);
+  for (const [id, m] of [['RN01-05-portal-a', sp.fromMeters], ['RN01-05-portal-b', sp.toMeters]]) { const k = S.findIndex(q => q.s >= m), p = S[k], q0 = flat(S[Math.max(0, k - 12)].lon, S[Math.max(0, k - 12)].lat), q1 = flat(S[Math.min(S.length - 1, k + 12)].lon, S[Math.min(S.length - 1, k + 12)].lat), c = flat(p.lon, p.lat);
+    out.push({ id, kind: 'tunnel-portal', lon: p.lon, lat: p.lat, x: c.x, z: c.z, dx: q1.x - q0.x, dz: q1.z - q0.z, edges: ['RN01-05 RD01'] }); }
   return out;
 });
 const list = places.filter(p => !only || only.includes(p.id));

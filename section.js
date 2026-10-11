@@ -66,10 +66,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const all = {};
     for (const [t, list] of Object.entries(PLAN.items)) all[t] = list.map(it => ({ ...it, m: matrixOf(it) }));
     // roads: strips and instances
-    const roadOut = ['T03-01', 'T03-02', 'T03-03', 'T11-01'].map(id => global.ROADKIT.build(WS, id));
-    // T03-01/02/03 are swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping in); their own strips and edge lines are replaced
-    const CH = global.ROADKIT.chain(WS, ['T03-01', 'T03-02', 'T03-03'], { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
-    for (const r of roadOut.slice(0, 3)) { r.strips = []; r.lines = {}; }
+    const M = W.roadNetwork.m01South, roadOut = [...M, 'RN11-01'].map(id => global.ROADKIT.build(WS, id));
+    // M01 south (RN02-07, RN06-01/02/03, the former T03) is swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping
+    // in); the edges' own strips and edge lines are replaced
+    const CH = global.ROADKIT.chain(WS, M, { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
+    for (const r of roadOut.slice(0, M.length)) { r.strips = []; r.lines = {}; }
     for (const [t, list] of Object.entries(CH.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     S.roadOut = roadOut;

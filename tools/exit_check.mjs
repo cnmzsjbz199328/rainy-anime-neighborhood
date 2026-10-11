@@ -41,7 +41,7 @@ check('B5-3', '宽度：所有视图是同一个道路头网格（差 0）；s =
 
 const veg = await page.evaluate(() => {
   const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, K = S.section.kit(), routes = [...S.roads.data().routes, ...(S.section.state.chain ? [S.section.state.chain] : [])];
-  const pts = []; for (const rt of routes) rt.samples.forEach((p, i) => { if (rt.footprint) pts.push([p.lon, p.lat, Math.max(Math.abs(rt.footprint[i][2]), Math.abs(rt.footprint[i][3])), rt.def ? rt.def.id : 'T03-chain']); });
+  const pts = []; for (const rt of routes) rt.samples.forEach((p, i) => { if (rt.footprint) pts.push([p.lon, p.lat, Math.max(Math.abs(rt.footprint[i][2]), Math.abs(rt.footprint[i][3])), rt.def ? rt.def.id : 'M01-south']); });
   const cells = new Map(); for (const p of pts) { const k = Math.floor(p[0]) * 1000 + Math.floor(p[1]); let l = cells.get(k); if (!l) cells.set(k, l = []); l.push(p); }
   const gap = (lon, lat, r) => { let worst = Infinity, who = null; for (let a = -9; a <= 9; a++) for (let b = -7; b <= 7; b++) for (const [lo, la, w, id] of cells.get((Math.floor(lon) + a) * 1000 + Math.floor(lat) + b) || []) { const d = R * D * Math.hypot((((lo - lon + 540) % 360) - 180) * Math.cos(lat * D), la - lat), g = d - w - r; if (g < worst) { worst = g; who = id; } } return { worst, who }; };
   const crown = {}; for (const t of ['treeRound', 'cedar', 'pine', 'bamboo']) { const g = K.geometries[t]; if (!g) continue; g.computeBoundingBox(); const bb = g.boundingBox; crown[t] = Math.max(-bb.min.x, bb.max.x, -bb.min.z, bb.max.z); }

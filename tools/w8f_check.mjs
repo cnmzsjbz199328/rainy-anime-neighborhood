@@ -25,7 +25,7 @@ if (want('A')) {
   const require = createRequire(import.meta.url);
   globalThis.LAYOUT = require(path.join(root, 'layout.js'));
   const W = require(path.join(root, 'world.js')), RK = require(path.join(root, 'roadkit.js')), D = Math.PI / 180, R = 90;
-  const b = RK.build(W, 'T11-01'), C = b.centre, planks = b.instances.plank || [], n = C.length;
+  const b = RK.build(W, 'RN11-01'), C = b.centre, planks = b.instances.plank || [], n = C.length;
   const flat = p => ({ x: R * p.lon * D, z: -R * Math.asinh(Math.tan(p.lat * D)) });
   const near = p => { let bi = 0, bd = Infinity; C.forEach((q, i) => { const d = W.arcDistance(p, q); if (d < bd) { bd = d; bi = i; } }); return { i: bi, d: bd }; };
   const deck = planks.filter(p => p.s[0] === 1), land = planks.filter(p => p.s[0] !== 1);
