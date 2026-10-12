@@ -208,7 +208,7 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
       streetClass = NET.edges.find(q => /^TOWN_/.test(q.class) && (q.from === exit || q.to === exit)).class, roadLevel = streetClass === 'TOWN_ALLEY' ? L.LEVELS.pavement : L.LEVELS.carriageway,
       h0 = rt.surface(i, 0), groundLevel = W.height(n.lon, n.lat) + roadLevel, heightError = Math.abs(h0 - groundLevel),
       sidewalkOffsets = half < 2 ? [] : [-6, -4, 4, 6], walkStep = sidewalkOffsets.length ? Math.max(...sidewalkOffsets.map(o => Math.abs(rt.surface(i, o) - rt.surface(iOut, o)))) : 0,
-      shared = rt.strip.vertexCount === rt.samples.length * rt.grid.length && rt.classes.some(c => /^TOWN_/.test(c)) && rt.classes.some(c => !/^TOWN_/.test(c));
+      shared = rt.strip.vertexCount >= rt.samples.length * rt.grid.length && rt.strip.index.length > 0 && rt.classes.some(c => /^TOWN_/.test(c)) && rt.classes.some(c => !/^TOWN_/.test(c));
     if (pos > 0.01) probs.push(`${exit} 边界行中线差 ${pos.toFixed(4)} m`); if (dir > 0.5) probs.push(`${exit} 路由方向差 ${dir.toFixed(3)}°`);
     if (heightError > 0.005) probs.push(`${exit} 路面标高差 ${heightError.toFixed(4)} m`);
     if (walkStep > 0.02) probs.push(`${exit} 人行道端头相邻行高差 ${walkStep.toFixed(4)} m`); if (!shared) probs.push(`${exit} 没有同一条城镇-城外扫掠网格`);
@@ -271,6 +271,84 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
   } }
   check('U4-junctions', !jointIssues.length && zeroArea === 0 && duplicateFaces === 0,
     `环城路 ${ringCrossings} 个交点中心标高最大差 ${maxJointStep.toFixed(4)} m（限 0.02 m）；道路网格 ${faces} 个三角面，零面积 ${zeroArea}、重复索引面 ${duplicateFaces}${jointIssues.length ? '；问题：' + jointIssues.join('；') : ''}`);
+
+  // CR01 asphalt remains in its original swept mesh. Branch meshes are trimmed at that mesh;
+  // only the ring's outer section opens for each connected arm.
+  const expectedCR01 = {
+    'C01-N': ['RN02-01', 'RN04-02', 'RN04-03'], 'C01-W-N09': ['RN03-01', 'RN04-16', 'RN04-17'],
+    'C01-E-N10': ['RN03-04', 'RN04-06', 'RN04-07'], 'C01-W-N11': ['RN13-01', 'RN04-14', 'RN04-15'],
+    'C01-E-N12': ['RN13-04', 'RN04-08', 'RN04-09'], 'C01-E-N13': ['RN14-01', 'RN04-05', 'RN04-06'],
+    'C01-T02': ['RN05-01', 'RN04-01', 'RN04-02'], 'C01-W-N01': ['RN01-15', 'RN01-16', 'RN04-15', 'RN04-16'],
+    'C01-E-N03': ['RN01-19', 'RN01-01', 'RN04-07', 'RN04-08'], 'C01-S': ['RN02-07', 'RN06-01', 'RN04-11', 'RN04-12'],
+  }, expectedNodes = Object.keys(expectedCR01), crJ = PLAN.junctions.filter(q => q.kind === 'CR01'), ringRoad = PLAN.routes.find(q => q.def.id === 'CR01');
+  let shoulderLiftError = 0, shoulderColorError = 0;
+  const asphaltColor = globalThis.ROADKIT.lin(globalThis.ROADKIT.COL.asphalt), shoulderM = ringRoad.grid.length;
+  for (let i = 0; i < ringRoad.samples.length; i++) for (const o of [2.25, 2.3, 2.5, 2.75]) {
+    const [lon, lat] = ringRoad.lateral(i, o * ringRoad.cf[i]), relativeLift = ringRoad.surface(i, o) - W.height(lon, lat);
+    shoulderLiftError = Math.max(shoulderLiftError, Math.abs(relativeLift - 0.045));
+    const j = ringRoad.grid.findIndex(v => Math.abs(v - o) < 1e-6), p = (i * shoulderM + j) * 3;
+    if (j >= 0) for (let c = 0; c < 3; c++) shoulderColorError = Math.max(shoulderColorError, Math.abs(ringRoad.strip.col[p + c] - asphaltColor[c]));
+  }
+  const signedArea = poly => poly.reduce((s, p, i) => { const q = poly[(i + 1) % poly.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0),
+    area = poly => Math.abs(signedArea(poly)) / 2,
+    clipLine = (poly, a, b, sign, inside) => {
+      const value = p => ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) * sign, out = [];
+      let prev = poly.at(-1), vp = value(prev), pin = inside ? vp >= -1e-9 : vp <= 1e-9;
+      for (const cur of poly) { const vc = value(cur), cin = inside ? vc >= -1e-9 : vc <= 1e-9; if (cin !== pin) { const t = vp / (vp - vc); out.push([prev[0] + (cur[0] - prev[0]) * t, prev[1] + (cur[1] - prev[1]) * t]); } if (cin) out.push(cur); prev = cur; vp = vc; pin = cin; }
+      return out;
+    },
+    overlapArea = (tri, clip) => { let q = tri, sign = signedArea(clip) >= 0 ? 1 : -1; for (let i = 0; i < clip.length && q.length; i++) q = clipLine(q, clip[i], clip[(i + 1) % clip.length], sign, true); return q.length >= 3 ? area(q) : 0; },
+    inConvex = (p, poly) => { const sign = signedArea(poly) >= 0 ? 1 : -1; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if (((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) * sign < -1e-6) return false; } return true; },
+    pointSeg = (p, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / (dx * dx + dz * dz || 1e-12))); return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dz * t); },
+    polyDistance = (p, poly) => inConvex(p, poly) ? 0 : Math.min(...poly.map((a, i) => pointSeg(p, a, poly[(i + 1) % poly.length]))),
+    flat = p => [90 * p.lon * Math.PI / 180, -90 * Math.asinh(Math.tan(p.lat * Math.PI / 180))],
+    lonLat = (x, z) => ({ lon: x / (90 * Math.PI / 180), lat: Math.atan(Math.sinh(-z / 90)) / (Math.PI / 180) });
+  let nodeErrors = [], overlapCount = 0, overlapAreaTotal = 0, instanceLeaks = [], clippedArea = 0, cutTriangles = 0, removedObjects = 0;
+  const clearance = { weed: 0.8, tuft: 0.8, shrubLow: 0.8, lampPool: 1.6, lamp: 1, lampSmall: 1, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
+  for (const j of crJ) {
+    const expectedEdges = expectedCR01[j.node], actualEdges = net.edges.filter(e => e.from === j.node || e.to === j.node).map(e => e.id).sort();
+    if (!expectedEdges || JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges.slice().sort())) nodeErrors.push(`${j.node} 拓扑 ${actualEdges.join('/')}，应为 ${(expectedEdges || []).join('/')}`);
+    if (j.strip.index.length || j.paving !== 'continuous-asphalt' || j.area < 1) nodeErrors.push(`${j.node} 仍有独立路口补面或缺少路口边界`);
+    if (j.cuts.length !== j.routes.filter(id => id !== 'CR01').length + j.arms.filter(a => a.routeId !== 'CR01').length) nodeErrors.push(`${j.node} 接入口裁切记录 ${j.cuts.length}`);
+    clippedArea += j.cuts.reduce((s, c) => s + c.removedArea, 0); cutTriangles += j.cuts.reduce((s, c) => s + c.clippedTriangles, 0); removedObjects += j.removedInstances.length;
+    const [minX, maxX, minZ, maxZ] = [Math.min(...j.ringBand.map(p => p[0])), Math.max(...j.ringBand.map(p => p[0])), Math.min(...j.ringBand.map(p => p[1])), Math.max(...j.ringBand.map(p => p[1]))];
+    for (const routeId of j.routes.filter(id => id !== 'CR01')) {
+      const rt = PLAN.routes.find(q => q.def.id === routeId), pos = rt.strip.pos, ix = rt.strip.index;
+      for (let t = 0; t < ix.length; t += 3) { const ids = [ix[t], ix[t + 1], ix[t + 2]], tri = ids.map(k => [pos[k * 3], pos[k * 3 + 2]]), tx0 = Math.min(...tri.map(p => p[0])), tx1 = Math.max(...tri.map(p => p[0])), tz0 = Math.min(...tri.map(p => p[1])), tz1 = Math.max(...tri.map(p => p[1]));
+        if (tx1 < minX || tx0 > maxX || tz1 < minZ || tz0 > maxZ) continue; const a = overlapArea(tri, j.ringBand); if (a > 1e-5) { overlapCount++; overlapAreaTotal += a; if (overlapCount < 6) nodeErrors.push(`${j.node} 的 ${routeId} 仍进入 CR01 铺装带 ${a.toFixed(6)} m²`); }
+      }
+    }
+    // The central asphalt strip is never clipped: every original paved triangle must survive.
+    const ringPos = ringRoad.strip.pos, ringIx = ringRoad.strip.index;
+    let asphaltArea = 0;
+    for (let t = 0; t < ringIx.length; t += 3) {
+      const ids = [ringIx[t], ringIx[t + 1], ringIx[t + 2]], offsets = ids.map(id => ringRoad.strip.clipOffset[id]);
+      if (offsets.some(o => o < -2.25 - 1e-5 || o > 2.75 + 1e-5)) continue;
+      const tri = ids.map(id => [ringPos[id * 3], ringPos[id * 3 + 2]]);
+      if (Math.max(...tri.map(p => p[0])) < minX || Math.min(...tri.map(p => p[0])) > maxX || Math.max(...tri.map(p => p[1])) < minZ || Math.min(...tri.map(p => p[1])) > maxZ) continue;
+      asphaltArea += overlapArea(tri, j.ringBand);
+    }
+    if (asphaltArea < 5) nodeErrors.push(`${j.node} 原 CR01 沥青带覆盖仅 ${asphaltArea.toFixed(2)} m²`);
+  }
+  for (const rt of PLAN.routes) for (const [type, list] of Object.entries(rt.instances || {})) for (const it of list) {
+    const p = flat(it), radius = clearance[type] ?? 0.6;
+    let conflict = crJ.find(j => polyDistance(p, j.polygon) <= radius + 1e-6)?.node || null;
+    if (!conflict && rt.def.id !== 'CR01' && crJ.some(j => polyDistance(p, j.polygon) <= 18)) {
+      const pr = ROADS.project(ringRoad, it.lon, it.lat); if (pr) {
+        const nearest = crJ.map(j => { const a = j.arms.filter(q => q.routeId === 'CR01').reduce((best, q) => Math.abs(q.nodeS - pr.s) < best.d ? { d: Math.abs(q.nodeS - pr.s), s: q.nodeS } : best, { d: Infinity, s: 0 }), delta = Math.abs(a.s - pr.s); return { node: j.node, d: Math.min(delta, Math.max(0, ringRoad.length - delta)) }; }).sort((a, b) => a.d - b.d)[0];
+        if (nearest && nearest.d <= 18) { const q = ROADS.atS(ringRoad, pr.s), bounds = ringRoad.carriageway[q.i].map((v, side) => v + (ringRoad.carriageway[q.i + 1][side] - v) * q.t); if (pr.o >= bounds[0] - radius && pr.o <= bounds[1] + radius) conflict = `${nearest.node}/CR01-carriageway`; }
+      }
+    }
+    if (conflict) { instanceLeaks.push(`${conflict}/${rt.def.id}/${type} s=${it.station ?? '—'}`); }
+  }
+  const vegetationProbes = [['N11-C01', 48.41], ['N12-C01', 48.41], ['N13-C01', 48.41], ['N13-C01', 49.11], ['RN05-RD03', 6.18], ['RN05-RD03', 13.97], ['RN05-RD03', 18.04]],
+    activeVegetation = vegetationProbes.reduce((n, [id, s]) => { const rt = PLAN.routes.find(q => q.def.id === id); return n + ['weed', 'tuft'].flatMap(t => rt.instances[t] || []).filter(q => Math.abs((q.station ?? -1000) - s) < 0.2).length; }, 0);
+  if (instanceLeaks.length) nodeErrors.push(`${instanceLeaks.length} 个路面实例仍侵入路口净空：${instanceLeaks.slice(0, 8).join('、')}`);
+  if (crJ.length !== expectedNodes.length || expectedNodes.some(id => !crJ.some(q => q.node === id))) nodeErrors.push(`CR01 统一路口 ${crJ.length} 个，应有 ${expectedNodes.length} 个`);
+  if (shoulderLiftError > 0.005) nodeErrors.push(`CR01 内侧 0.5 m 肩带未收平，最大相对抬升误差 ${shoulderLiftError.toFixed(5)} m`);
+  if (shoulderColorError > 0.0001) nodeErrors.push(`CR01 内侧 0.5 m 肩带未并入沥青，最大颜色差 ${shoulderColorError.toFixed(6)}`);
+  check('U4-CR01-junctions', !nodeErrors.length && overlapCount === 0 && instanceLeaks.length === 0,
+    `10 节点 ${crJ.length} 个，十字/共用节点 ${crJ.filter(j => expectedCR01[j.node]?.length === 4).map(j => j.node).join('、')}；支路全部断面进入 CR01 铺装带 ${overlapCount} 处 / ${overlapAreaTotal.toFixed(6)} m²；草簇、杂草及设施与路口/CR01 车行道净空冲突 ${instanceLeaks.length}；已定位植被站位 ${vegetationProbes.length} 处，仍有植被 ${activeVegetation}；内侧肩带最大高度误差 ${shoulderLiftError.toFixed(5)} m、最大沥青色差 ${shoulderColorError.toFixed(6)}；裁切覆盖面积 ${clippedArea.toFixed(2)} m²、边界三角 ${cutTriangles}、移除实例 ${removedObjects}${nodeErrors.length ? '；问题：' + nodeErrors.slice(0, 12).join('；') : ''}${instanceLeaks.length ? '；设施样例：' + instanceLeaks.slice(0, 6).join('、') : ''}`);
 }
 
 // ---- U3 (W10a)
@@ -298,6 +376,8 @@ try {
   // ---- U2 (W10c): cast against the actual visible, static mesh triangles. Road rows are 0.5 m apart; each row has nine points across its paved width.
   const u2 = await page.evaluate(() => {
     const S = window.__scene, T = window.THREE, B = S.bend, W = window.WORLD, D = S.roads.data(), roadSet = new Set(), surfaceSet = new Set(), probes = [], exitCounts = {};
+    const ringJunctions = D.junctions.filter(j => j.kind === 'CR01');
+    const inPoly = (p, poly) => { let sign = 0; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], c = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]); if (Math.abs(c) < 1e-5) continue; if (sign && Math.sign(c) !== sign) return false; sign = Math.sign(c); } return true; };
     S.roads.state.root.traverse(o => { if (o.isMesh && !o.isInstancedMesh) { roadSet.add(o); if (o.name.startsWith('road:route ') || /^road:bridge .* top$/.test(o.name) || o.name === 'road:junction paving') surfaceSet.add(o); } });
     const atO = (strip, grid, i, o) => {
       let j = 0; while (j + 2 < grid.length && grid[j + 1] < o) j++;
@@ -305,7 +385,9 @@ try {
       return [0, 1, 2].map(k => p[a + k] + (p[b + k] - p[a + k]) * t);
     };
     const addRow = (rt, i, tag = null) => {
-      const [a, b] = rt.paved[i]; for (let k = 0; k <= 8; k++) { const o = a + 0.02 + (b - a - 0.04) * k / 8, p = atO(rt.strip, rt.grid, i, o); probes.push({ p, tag, route: rt.def.id }); if (tag) exitCounts[tag] = (exitCounts[tag] || 0) + 1; }
+      const [a, b] = rt.paved[i]; for (let k = 0; k <= 8; k++) { const o = a + 0.02 + (b - a - 0.04) * k / 8, p = atO(rt.strip, rt.grid, i, o);
+        if (rt.def.id !== 'CR01' && ringJunctions.some(j => inPoly([p[0], p[2]], j.ringBand))) continue;
+        probes.push({ p, tag, route: rt.def.id }); if (tag) exitCounts[tag] = (exitCounts[tag] || 0) + 1; }
     };
     for (const rt of D.routes) for (let i = 0; i < rt.samples.length; i++) if (rt.samples[i].span !== 'tunnel' && rt.samples[i].span !== 'bridge') addRow(rt, i);
     // A bridge deck is a road surface too; test its full 10 m deck, including the shoulder and kerbs.
@@ -320,6 +402,20 @@ try {
       exitCounts[id] = 0;
       for (let i = 0; i < rt.samples.length; i++) { const p = rt.flatOf[i], s = ((p.x - n0.x) * dx + (p.z - n0.z) * dz) / len, side = Math.abs((p.x - n0.x) * dz - (p.z - n0.z) * dx) / len;
         if (s >= -0.02 && s <= 6.02 && side <= 0.02) addRow(rt, i, id);
+      }
+    }
+    // The continuous CR01 asphalt receives independent area probes at every junction.
+    const crJunctions = ringJunctions, signed = poly => poly.reduce((s, p, i) => { const q = poly[(i + 1) % poly.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0),
+      inside = (p, poly) => { const sign = signed(poly) >= 0 ? 1 : -1; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if (((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) * sign < -1e-5) return false; } return true; },
+      toLonLat = (x, z) => ({ lon: x / (90 * Math.PI / 180), lat: Math.atan(Math.sinh(-z / 90)) / (Math.PI / 180) });
+    for (const j of crJunctions) {
+      const areas = [j.ringBand, ...j.mouths.map(q => q.polygon)], seen = new Set();
+      for (const poly of areas) {
+        const minX = Math.min(...poly.map(p => p[0])), maxX = Math.max(...poly.map(p => p[0])), minZ = Math.min(...poly.map(p => p[1])), maxZ = Math.max(...poly.map(p => p[1]));
+        for (let x = Math.ceil(minX * 2) / 2; x <= maxX + 1e-8; x += 0.5) for (let z = Math.ceil(minZ * 2) / 2; z <= maxZ + 1e-8; z += 0.5) if (inside([x, z], poly)) {
+          const key = `${x},${z}`; if (seen.has(key)) continue; seen.add(key);
+          const ll = toLonLat(x, z), k = 1 / Math.cos(ll.lat * Math.PI / 180), h = W.height(ll.lon, ll.lat) + 0.045; probes.push({ p: [x, (h - 1.6) * k, z], tag: null, route: `junction ${j.node}`, junction: j.node });
+        }
       }
     }
     S.scene.updateMatrixWorld(true);
@@ -340,9 +436,9 @@ try {
         for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = `${x},${z}`; if (!interest.has(k)) continue; let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(tri); triangles++; }
       }
     });
-    const tally = { rays: 0, occluded: 0, missed: 0, examples: [], exits: exitCounts, triangles };
+    const tally = { rays: 0, occluded: 0, missed: 0, examples: [], exits: exitCounts, triangles, junctionProbes: Object.fromEntries(crJunctions.map(j => [j.node, 0])) };
     for (const state of ['flat', 'sphere']) {
-      const u = state === 'sphere' ? 1 : 0, count = { rays: 0, occluded: 0, missed: 0, raised: 0, raisedBy: {}, examples: [], blockers: {}, misses: [] };
+      const u = state === 'sphere' ? 1 : 0, count = { rays: 0, occluded: 0, missed: 0, raised: 0, raisedBy: {}, examples: [], blockers: {}, misses: [], junctionProbes: Object.fromEntries(crJunctions.map(j => [j.node, 0])) };
       const bend = p => { const q = wrap(p); return u ? B.point(q[0], q[1], q[2], 1) : q; };
       const baryXZ = (p, v) => {
         const [a, b, c] = v, den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
@@ -357,6 +453,7 @@ try {
         return w.map(v => v / sum);
       };
       for (const q of probes) {
+        if (q.junction) count.junctionProbes[q.junction]++;
         const p = q.p, nearby = cells.get(key(p[0], p[2])) || []; let roadSurface = null;
         // First locate the sampled point on the actual flat road triangles. On a sphere the
         // shader bends triangle vertices, so bending the ideal point separately can put the
@@ -374,16 +471,18 @@ try {
           const delta = sub(Z, A), len = Math.hypot(...delta), dir = delta.map(v => v / len);
           for (const tri of nearby) { const v = tri.v.map(bend), d = rayHit(A, dir, ...v); if (d !== null && (!best || d < best.d - 1e-4 || (Math.abs(d - best.d) <= 1e-4 && tri.road && !best.road))) best = { d, road: tri.road, name: tri.name }; }
         }
-        count.rays++; if (roadSurface && roadSurface.y > p[1] + 0.06) { count.raised++; const by = count.raisedBy[q.route] || (count.raisedBy[q.route] = { n: 0, at: [] }); by.n++; if (by.at.length < 3) by.at.push(`${p[0].toFixed(2)},${p[2].toFixed(2)} +${(roadSurface.y - p[1]).toFixed(2)} ${roadSurface.tri.name}`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 被其他道路抬高 ${(roadSurface.y - p[1]).toFixed(3)} m`); }
+        count.rays++; if (!q.junction && roadSurface && roadSurface.y > p[1] + 0.06) { count.raised++; const by = count.raisedBy[q.route] || (count.raisedBy[q.route] = { n: 0, at: [] }); by.n++; if (by.at.length < 3) by.at.push(`${p[0].toFixed(2)},${p[2].toFixed(2)} +${(roadSurface.y - p[1]).toFixed(2)} ${roadSurface.tri.name}`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 被其他道路抬高 ${(roadSurface.y - p[1]).toFixed(3)} m`); }
         if (!best) { count.missed++; if (count.misses.length < 8) count.misses.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 附近 ${[...new Set(nearby.map(t => t.name))].slice(0, 8).join('|')}`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 无命中`); }
         else if (!best.road) { count.occluded++; const who = count.blockers[best.name] || (count.blockers[best.name] = { n: 0, at: [] }); who.n++; if (who.at.length < 5) who.at.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)})`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 被 ${best.name} 遮挡`); }
       }
       tally[state] = count;
     }
+    tally.junctionProbes = tally.flat.junctionProbes;
     return tally;
   });
-  const u2ok = ['flat', 'sphere'].every(s => u2[s].rays > 0 && u2[s].occluded === 0 && u2[s].missed === 0 && u2[s].raised === 0) && Object.keys(u2.exits).length === 9 && Object.values(u2.exits).every(n => n > 0);
-  check('U2', u2ok, `实际路网可见三角面竖直射线，铺装每 0.5 m 一行、每行 9 点；平面 ${u2.flat.rays} 点（遮挡 ${u2.flat.occluded}、无命中 ${u2.flat.missed}、其他道路抬高 ${u2.flat.raised}），球形 ${u2.sphere.rays} 点（遮挡 ${u2.sphere.occluded}、无命中 ${u2.sphere.missed}、其他道路抬高 ${u2.sphere.raised}）；九出口 0–6 m 探针 ${Object.entries(u2.exits).map(([k, n]) => `${k} ${n}`).join('、')}；参与相交三角形 ${u2.triangles}${!u2ok ? `；遮挡物 ${JSON.stringify({ flat: u2.flat.blockers, sphere: u2.sphere.blockers })}；抬高分布 ${JSON.stringify(u2.flat.raisedBy)}；无命中例 ${JSON.stringify({ flat: u2.flat.misses, sphere: u2.sphere.misses })}；例：${[...u2.flat.examples, ...u2.sphere.examples].slice(0, 8).join('；')}` : ''}`);
+  const junctionProbeOK = Object.keys(u2.junctionProbes).length === 10 && Object.values(u2.junctionProbes).every(n => n > 0) && ['flat', 'sphere'].every(s => Object.keys(u2[s].junctionProbes).length === 10 && Object.values(u2[s].junctionProbes).every(n => n > 0));
+  const u2ok = ['flat', 'sphere'].every(s => u2[s].rays > 0 && u2[s].occluded === 0 && u2[s].missed === 0 && u2[s].raised === 0) && Object.keys(u2.exits).length === 9 && Object.values(u2.exits).every(n => n > 0) && junctionProbeOK;
+  check('U2', u2ok, `实际路网可见三角面竖直射线，铺装每 0.5 m 一行、每行 9 点，CR01 十个路口的连续沥青带和接入口另加 0.5 m 网格；平面 ${u2.flat.rays} 点（遮挡 ${u2.flat.occluded}、无命中 ${u2.flat.missed}、其他道路抬高 ${u2.flat.raised}），球形 ${u2.sphere.rays} 点（遮挡 ${u2.sphere.occluded}、无命中 ${u2.sphere.missed}、其他道路抬高 ${u2.sphere.raised}）；路口采样 ${Object.entries(u2.junctionProbes).map(([k, n]) => `${k} ${n}`).join('、')}；九出口 0–6 m 探针 ${Object.entries(u2.exits).map(([k, n]) => `${k} ${n}`).join('、')}；参与相交三角形 ${u2.triangles}${!u2ok ? `；遮挡物 ${JSON.stringify({ flat: u2.flat.blockers, sphere: u2.sphere.blockers })}；抬高分布 ${JSON.stringify(u2.flat.raisedBy)}；无命中例 ${JSON.stringify({ flat: u2.flat.misses, sphere: u2.sphere.misses })}；例：${[...u2.flat.examples, ...u2.sphere.examples].slice(0, 8).join('；')}` : ''}`);
   // 30 s after the first frame, the camera cycling through the three states once a second
   const STATES = [{ mapMode: 'flat', target: [-7, 1.2, 20], dist: 34 }, { mapMode: 'flat', target: [-90, 1.2, 60], dist: 30 }, { mapMode: 'sphere', dist: 140 }];
   const rows = [], start = Date.now();

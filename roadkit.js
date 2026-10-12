@@ -254,10 +254,12 @@ function route(W, segs, o = {}) {
   const grid = [...new Set([...classes, ...(abG ? ['RD01B'] : [])].flatMap(c => PROFILES[c].pts.map(q => +q[0].toFixed(3))).concat([-0.6, -0.3, 0, 0.3, 0.6, -1.0, 1.0, -2.0, 2.0], abG ? [-4.8, -4.7, -3.6, 3.6, 4.7, 4.8] : [], o.abutGrid || []))].sort((a, b) => a - b), m = grid.length;
   const evalP = (prof, oo, tc, cls) => {          // lift, colour (linear), bed mix, asphalt share of a profile at lateral offset oo; tc = the terrain's own colour there
     const P = prof.pts, colOf = key => (tc && key === 'grass' ? tc : tc && key === 'grassD' ? tc.map(v => v * 0.92) : lin(COL[key])), at = q => {
+      let l = q[1];
       let c = o.innerShoulderAsphalt && cls === 'RD03' && q[0] > 2.25 && q[0] <= 2.75 ? INNER_SHOULDER_COLOR : colOf(q[2]);
+      if (o.innerShoulderFlat && cls === 'RD03' && q[0] > 2.25 && q[0] <= 2.75) l = 0.045;
       // W8f-c G4: RD05 keeps its darker inner grass, then blends to the exact terrain colour at the outside edge.
       if (tc && cls === 'RD05' && Math.abs(oo) > 1.9) { const u = smooth(1.9, 2.8, Math.abs(oo)); c = c.map((v, i) => v + (tc[i] - v) * u); }
-      return { l: q[1], c, m: q[3] || 0, a: ASPH[q[2]] || 0 };
+      return { l, c, m: q[3] || 0, a: ASPH[q[2]] || 0 };
     };
     if (oo <= P[0][0]) return at(P[0]); if (oo >= P[P.length - 1][0]) return at(P[P.length - 1]);
     let j = 0; while (P[j + 1][0] < oo) j++;
