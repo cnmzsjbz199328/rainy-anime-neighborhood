@@ -518,6 +518,20 @@ function prepareCr01Junctions(W, routes, RK) {
   const byId = Object.fromEntries(routes.map(rt => [rt.def.id, rt])), plans = CR01_JUNCTIONS.map(j => cr01JunctionPlan(W, j, byId, RK)), ring = byId.CR01;
   ring.strip.clipOffset = Float32Array.from({ length: ring.strip.vertexCount }, (_, id) => ring.grid[id % ring.grid.length]);
   const flat = ([lon, lat]) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];
+  // Join each incoming cross-section to the unchanged CR01 asphalt at its edge. This also
+  // brings a ditch or verge up to the mouth instead of leaving a vertical cut at the edge.
+  const gradeToRing = (rt, nodeS, armS) => {
+    const m = rt.grid.length, st = rt.strip;
+    for (let i = 0; i < rt.samples.length; i++) if (Math.abs(rt.samples[i].s - armS) <= 8) for (let k = 0; k < m; k++) {
+      const v = i * m + k, x = st.pos[v * 3], z = st.pos[v * 3 + 2], lon = x / (R * D), lat = Math.atan(Math.sinh(-z / R)) / D,
+        pr = project(ring, lon, lat, nodeS);
+      if (!pr || pr.d2 > 100 || Math.abs(pr.s - nodeS) > 12) continue;
+      const edge = Math.max(-2.25, Math.min(2.75, pr.o)), outside = Math.abs(pr.o - edge);
+      if (outside >= 2) continue;
+      const weight = 1 - smooth(0, 2, outside), target = surfS(ring, pr.s, edge), h = rt.colAlt[v] + (target - rt.colAlt[v]) * weight;
+      rt.colAlt[v] = h; st.pos[v * 3 + 1] = (h - BASE) / Math.cos(lat * D);
+    }
+  };
   const corridor = (rt, s0, s1, half) => {
     const corners = [];
     const limits = Array.isArray(half) ? half : [-half, half];
@@ -535,6 +549,8 @@ function prepareCr01Junctions(W, routes, RK) {
   });
   for (const jp of plans) {
     const j = draw.find(q => q.node === jp.node);
+    const ringS = jp.arms.find(a => a.routeId === 'CR01').nodeS;
+    for (const routeId of jp.routes.filter(id => id !== 'CR01')) gradeToRing(byId[routeId], ringS, jp.arms.find(a => a.routeId === routeId).nodeS);
     for (const routeId of jp.routes.filter(id => id !== 'CR01')) {
       const rt = byId[routeId], clipped = clipStripOutside(rt.strip, j.ringBand);
       j.cuts.push({ routeId, part: 'ring asphalt', ...clipped });

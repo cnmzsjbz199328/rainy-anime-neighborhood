@@ -303,7 +303,7 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
     polyDistance = (p, poly) => inConvex(p, poly) ? 0 : Math.min(...poly.map((a, i) => pointSeg(p, a, poly[(i + 1) % poly.length]))),
     flat = p => [90 * p.lon * Math.PI / 180, -90 * Math.asinh(Math.tan(p.lat * Math.PI / 180))],
     lonLat = (x, z) => ({ lon: x / (90 * Math.PI / 180), lat: Math.atan(Math.sinh(-z / 90)) / (Math.PI / 180) });
-  let nodeErrors = [], overlapCount = 0, overlapAreaTotal = 0, instanceLeaks = [], clippedArea = 0, cutTriangles = 0, removedObjects = 0;
+  let nodeErrors = [], overlapCount = 0, overlapAreaTotal = 0, instanceLeaks = [], clippedArea = 0, cutTriangles = 0, removedObjects = 0, seamError = 0, seamAt = '', seamSamples = 0;
   const clearance = { weed: 0.8, tuft: 0.8, shrubLow: 0.8, lampPool: 1.6, lamp: 1, lampSmall: 1, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
   for (const j of crJ) {
     const expectedEdges = expectedCR01[j.node], actualEdges = net.edges.filter(e => e.from === j.node || e.to === j.node).map(e => e.id).sort();
@@ -316,6 +316,14 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
       const rt = PLAN.routes.find(q => q.def.id === routeId), pos = rt.strip.pos, ix = rt.strip.index;
       for (let t = 0; t < ix.length; t += 3) { const ids = [ix[t], ix[t + 1], ix[t + 2]], tri = ids.map(k => [pos[k * 3], pos[k * 3 + 2]]), tx0 = Math.min(...tri.map(p => p[0])), tx1 = Math.max(...tri.map(p => p[0])), tz0 = Math.min(...tri.map(p => p[1])), tz1 = Math.max(...tri.map(p => p[1]));
         if (tx1 < minX || tx0 > maxX || tz1 < minZ || tz0 > maxZ) continue; const a = overlapArea(tri, j.ringBand); if (a > 1e-5) { overlapCount++; overlapAreaTotal += a; if (overlapCount < 6) nodeErrors.push(`${j.node} 的 ${routeId} 仍进入 CR01 铺装带 ${a.toFixed(6)} m²`); }
+      }
+      for (const v of new Set(ix)) {
+        const x = pos[v * 3], z = pos[v * 3 + 2];
+        if (x < minX - 0.02 || x > maxX + 0.02 || z < minZ - 0.02 || z > maxZ + 0.02 || polyDistance([x, z], j.ringBand) > 0.012) continue;
+        const ll = lonLat(x, z), pr = ROADS.project(ringRoad, ll.lon, ll.lat);
+        if (!pr || pr.o < -2.3 || pr.o > 2.8) continue;
+        const h = pos[v * 3 + 1] * Math.cos(ll.lat * Math.PI / 180) + 1.6, ringH = ROADS.surfS(ringRoad, pr.s, pr.o), error = Math.abs(h - ringH);
+        seamSamples++; if (error > seamError) { seamError = error; seamAt = `${j.node}/${routeId} (${x.toFixed(2)},${z.toFixed(2)})`; }
       }
     }
     // The central asphalt strip is never clipped: every original paved triangle must survive.
@@ -347,8 +355,9 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
   if (crJ.length !== expectedNodes.length || expectedNodes.some(id => !crJ.some(q => q.node === id))) nodeErrors.push(`CR01 统一路口 ${crJ.length} 个，应有 ${expectedNodes.length} 个`);
   if (shoulderLiftError > 0.005) nodeErrors.push(`CR01 内侧 0.5 m 肩带未收平，最大相对抬升误差 ${shoulderLiftError.toFixed(5)} m`);
   if (shoulderColorError > 0.0001) nodeErrors.push(`CR01 内侧 0.5 m 肩带未并入沥青，最大颜色差 ${shoulderColorError.toFixed(6)}`);
+  if (seamError > 0.02) nodeErrors.push(`支路与环路铺装边界高度差 ${seamError.toFixed(4)} m（${seamAt}）`);
   check('U4-CR01-junctions', !nodeErrors.length && overlapCount === 0 && instanceLeaks.length === 0,
-    `10 节点 ${crJ.length} 个，十字/共用节点 ${crJ.filter(j => expectedCR01[j.node]?.length === 4).map(j => j.node).join('、')}；支路全部断面进入 CR01 铺装带 ${overlapCount} 处 / ${overlapAreaTotal.toFixed(6)} m²；草簇、杂草及设施与路口/CR01 车行道净空冲突 ${instanceLeaks.length}；已定位植被站位 ${vegetationProbes.length} 处，仍有植被 ${activeVegetation}；内侧肩带最大高度误差 ${shoulderLiftError.toFixed(5)} m、最大沥青色差 ${shoulderColorError.toFixed(6)}；裁切覆盖面积 ${clippedArea.toFixed(2)} m²、边界三角 ${cutTriangles}、移除实例 ${removedObjects}${nodeErrors.length ? '；问题：' + nodeErrors.slice(0, 12).join('；') : ''}${instanceLeaks.length ? '；设施样例：' + instanceLeaks.slice(0, 6).join('、') : ''}`);
+    `10 节点 ${crJ.length} 个，十字/共用节点 ${crJ.filter(j => expectedCR01[j.node]?.length === 4).map(j => j.node).join('、')}；支路全部断面进入 CR01 铺装带 ${overlapCount} 处 / ${overlapAreaTotal.toFixed(6)} m²；接缝 ${seamSamples} 顶点最大高度差 ${seamError.toFixed(4)} m（${seamAt}）；草簇、杂草及设施与路口/CR01 车行道净空冲突 ${instanceLeaks.length}；已定位植被站位 ${vegetationProbes.length} 处，仍有植被 ${activeVegetation}；内侧肩带最大高度误差 ${shoulderLiftError.toFixed(5)} m、最大沥青色差 ${shoulderColorError.toFixed(6)}；裁切覆盖面积 ${clippedArea.toFixed(2)} m²、边界三角 ${cutTriangles}、移除实例 ${removedObjects}${nodeErrors.length ? '；问题：' + nodeErrors.slice(0, 12).join('；') : ''}${instanceLeaks.length ? '；设施样例：' + instanceLeaks.slice(0, 6).join('、') : ''}`);
 }
 
 // ---- U3 (W10a)
