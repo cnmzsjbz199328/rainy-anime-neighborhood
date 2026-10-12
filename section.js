@@ -65,15 +65,6 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const TREES = ['treeRound', 'cedar', 'pine', 'bamboo'];
     const all = {};
     for (const [t, list] of Object.entries(PLAN.items)) all[t] = list.map(it => ({ ...it, m: matrixOf(it) }));
-    // roads: strips and instances
-    const M = W.roadNetwork.m01South, roadOut = [...M, 'RN11-01'].map(id => global.ROADKIT.build(WS, id));
-    // M01 south (RN02-07, RN06-01/02/03, the former T03) is swept as one chain with a gradual cross-section (asphalt -> cracked lane -> dirt track, weeds creeping
-    // in); the edges' own strips and edge lines are replaced
-    const CH = global.ROADKIT.chain(WS, M, { townHead: global.ROADKIT.TOWN_HEAD }); S.chain = CH;      // W8f-a: exit N08 starts in the town's asphalt
-    for (const r of roadOut.slice(0, M.length)) { r.strips = []; r.lines = {}; }
-    for (const [t, list] of Object.entries(CH.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
-    for (const r of roadOut) for (const [t, list] of Object.entries(r.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
-    S.roadOut = roadOut;
     const mkInst = (name, list, geoName, withHull, mat = floraMat, hmat = hullMat) => {
       const geo = K.geometries[geoName || name]; if (!geo || !list.length) return null;
       const mesh = new THREE.InstancedMesh(geo, mat, list.length); mesh.name = 'sec:' + name;
@@ -105,12 +96,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       const nrm = new Float32Array(st.pos.length); for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(st.index, 1)); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.name = 'sec:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
-    // W8g-b: the chain takes the rows of exit N08's head (made at start-up, terrain.js), and is drawn from the head's last row K on (the head, with its first 6 m in
-    // the town's own asphalt, is the start-up mesh); up normals on both sides of the seam, as every strip of the section
-    { const hd = (TERR.exitHeads || []).find(q => q.exit === 'N08'), st = CH.strip, m = CH.grid.length, n = CH.samples.length;
-      if (hd) { const rows = Math.min(hd.K + 2, hd.rt.samples.length, n); for (let k = 0; k < rows * m * 3; k++) { st.pos[k] = hd.rt.strip.pos[k]; st.col[k] = hd.rt.strip.col[k]; } S.chainHead = { K: hd.K, L: hd.L }; }
-      stripMesh(hd ? { ...st, index: Uint32Array.from(global.TERRAIN.cellsIn(st.index, m, hd.K, n - 1)) } : st, groundMat); }
-    for (const r of roadOut) for (const st of r.strips) stripMesh(st, groundMat);
+    // W10c road surfaces and road-side instances are all rendered by roads.js.
     // (W10a rework, user review 2026-10-10: the section's own TR01 gravel and grass strip is gone. It was swept 3.5 m inwards from the patch's south
     // edge, so it lay inside the town (z 44.0-48.0) under the street, 2 cm below the carriageway with polygon offset -2 / -2, and showed through R02 as a
     // green block whenever the street was seen obliquely, more so from afar. The town edge belongs to W10d: one footprint and its TR01 edge band.)
@@ -173,8 +159,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)); g.computeBoundingSphere();
       const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f2a38, transparent: true, opacity: 0.9 })); l.name = 'sec:wires'; l.matrixAutoUpdate = false; root.add(l); objs.wires = l; S.stats.wireSegments = seg.length / 6;
-      const rope = []; for (const r of roadOut) for (const line of (r.lines.ropes || [])) { let prev = null; for (const q of line) { const f = flatOf(q.lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) rope.push(...prev, ...p); prev = p; } }
-      if (rope.length) { const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rope, 3)); rg.computeBoundingSphere(); const rl = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xb59a74, transparent: true, opacity: 0.9 })); rl.name = 'sec:ropes'; rl.matrixAutoUpdate = false; root.add(rl); }
+      // W10c boardwalk ropes are rendered by roads.js with the road network.
     }
 
     // ---- ink lines: forest edge, plot ridges, road edges, coast (aerial); coast, ridge and ice outlines (panorama)
@@ -197,8 +182,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
         if (cellId[j * (nu + 1) + i + 1] !== a && i + 1 < nu) { const [lo, la] = PLAN.toLL(u + P.step, v), [lo2, la2] = PLAN.toLL(u + P.step, v + P.step); poly([{ lon: lo, lat: la }, { lon: lo2, lat: la2 }], 0.26, segs); }
         if (cellId[(j + 1) * (nu + 1) + i] !== a && j + 1 < nv) { const [lo, la] = PLAN.toLL(u, v + P.step), [lo2, la2] = PLAN.toLL(u + P.step, v + P.step); poly([{ lon: lo, lat: la }, { lon: lo2, lat: la2 }], 0.26, segs); }
       }
-      // road edges
-      for (const r of [...roadOut, CH]) { if (r.lines.edgeL) poly(r.lines.edgeL, 0, segs); if (r.lines.edgeR) poly(r.lines.edgeR, 0, segs); }
+      // W10c road edge lines are rendered by roads.js with the road network.
       addLines('aerial', segs);
       // corridor coast: bisect coastDistance = 0 along each parallel
       const coast = []; for (let u = -16; u <= 42; u += 0.5) { let lo = 34, hi = 50; const f = v => { const [lon, lat] = PLAN.toLL(u, v); return W.coastDistance(lon, lat); }; if (f(lo) <= 0 || f(hi) > 0) continue; for (let n = 0; n < 24; n++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; } const [lon, lat] = PLAN.toLL(u, (lo + hi) / 2); coast.push({ lon, lat, alt: 0.03 }); }

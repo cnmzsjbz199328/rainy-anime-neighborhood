@@ -14,12 +14,71 @@ const hash = (a, b) => { let h = Math.imul(Math.round(a * 997), 374761393) ^ Mat
 const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
 const llOf = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D });
 const wrapLon = lon => { let l = ((lon + 180) % 360 + 360) % 360 - 180; return l === -180 ? 180 : l; };
+function avoidClearance(a, lon, lat) {
+  const Rm = R * D, c = Math.cos(lat * D);
+  const xy = p => { const plon = Array.isArray(p) ? p[0] : p.lon, plat = Array.isArray(p) ? p[1] : p.lat; let dl = plon - lon; dl -= 360 * Math.round(dl / 360); return [dl * c * Rm, (plat - lat) * Rm]; };
+  if (!a.poly) { const [dx, dz] = xy(a); return Math.hypot(dx, dz) - a.r; }
+  const p = [0, 0], poly = a.poly.map(xy); let inside = false, d2 = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const A = poly[j], B = poly[i], dx = B[0] - A[0], dy = B[1] - A[1], t = Math.max(0, Math.min(1, -(A[0] * dx + A[1] * dy) / (dx * dx + dy * dy || 1)));
+    d2 = Math.min(d2, (A[0] + dx * t) ** 2 + (A[1] + dy * t) ** 2);
+    if ((B[1] > 0) !== (A[1] > 0) && 0 < (A[0] - B[0]) * (0 - B[1]) / (A[1] - B[1]) + B[0]) inside = !inside;
+  }
+  const d = Math.sqrt(d2); return inside ? -d : d;
+}
+function createAvoidIndex(W, avoid, cellSize = 12) {
+  const period = 2 * Math.PI * R, toXY = (lon, lat) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))], cells = new Map(), features = [], broad = [];
+  const key = (x, z) => `${x},${z}`, insert = f => {
+    const x0 = Math.floor(f.box[0] / cellSize), x1 = Math.floor(f.box[1] / cellSize), z0 = Math.floor(f.box[2] / cellSize), z1 = Math.floor(f.box[3] / cellSize);
+    if ((x1 - x0 + 1) * (z1 - z0 + 1) > 256) { broad.push(f.id); return; }
+    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = key(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(f.id); }
+  };
+  for (const a of avoid) {
+    if (a.poly) {
+      const baseLon = a.poly[0][0], xy = a.poly.map(([lon, lat]) => { lon += 360 * Math.round((baseLon - lon) / 360); return toXY(lon, lat); }), f = { poly: xy };
+      f.box = [Math.min(...xy.map(p => p[0])), Math.max(...xy.map(p => p[0])), Math.min(...xy.map(p => p[1])), Math.max(...xy.map(p => p[1]))];
+      const copies = [f]; if ((f.box[0] + f.box[1]) / 2 > period / 2) copies.push({ poly: xy.map(([x, z]) => [x - period, z]), box: [f.box[0] - period, f.box[1] - period, f.box[2], f.box[3]] });
+      else if ((f.box[0] + f.box[1]) / 2 < -period / 2) copies.push({ poly: xy.map(([x, z]) => [x + period, z]), box: [f.box[0] + period, f.box[1] + period, f.box[2], f.box[3]] });
+      for (const q of copies) { q.id = features.length; features.push(q); insert(q); }
+    } else {
+      const [lon, lat] = [a.lon, a.lat], [x, z] = toXY(lon, lat), r = a.r || 0, extent = r / Math.max(0.01, Math.cos(lat * D)), f = { point: [x, z], r, box: [x - extent, x + extent, z - extent, z + extent] };
+      f.id = features.length; features.push(f); insert(f);
+      if (x > period / 2 - extent) { const q = { ...f, point: [x - period, z], box: [f.box[0] - period, f.box[1] - period, f.box[2], f.box[3]], id: features.length }; features.push(q); insert(q); }
+      else if (x < -period / 2 + extent) { const q = { ...f, point: [x + period, z], box: [f.box[0] + period, f.box[1] + period, f.box[2], f.box[3]], id: features.length }; features.push(q); insert(q); }
+    }
+  }
+  const candidates = (lon, lat, maxDistance) => {
+    const [x, z] = toXY(lon, lat), extent = Number.isFinite(maxDistance) ? Math.max(0, maxDistance) / Math.max(0.01, Math.cos(lat * D)) + 0.01 : Infinity;
+    if (!Number.isFinite(extent)) return features;
+    const found = new Set(), x0 = Math.floor((x - extent) / cellSize), x1 = Math.floor((x + extent) / cellSize), z0 = Math.floor((z - extent) / cellSize), z1 = Math.floor((z + extent) / cellSize);
+    for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const a = cells.get(key(ix, iz)); if (a) for (const id of a) found.add(id); }
+    for (const id of broad) found.add(id);
+    return [...found].map(id => features[id]);
+  };
+  const clearance = (f, x, z, c) => {
+    if (!f.poly) return Math.hypot((f.point[0] - x) * c, (f.point[1] - z) * c) - f.r;
+    const p = f.poly, px = (q, axis) => (q[axis] - (axis ? z : x)) * c; let inside = false, d2 = Infinity;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const ax = px(p[j], 0), ay = px(p[j], 1), bx = px(p[i], 0), by = px(p[i], 1), dx = bx - ax, dy = by - ay, t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+      d2 = Math.min(d2, (ax + dx * t) ** 2 + (ay + dy * t) ** 2);
+      if ((by > 0) !== (ay > 0) && 0 < (ax - bx) * (0 - by) / (ay - by) + bx) inside = !inside;
+    }
+    const d = Math.sqrt(d2); return inside ? -d : d;
+  };
+  const query = (lon, lat, maxDistance, hitDistance = maxDistance) => {
+    const [x, z] = toXY(lon, lat), c = Math.max(0.01, Math.cos(lat * D)); let min = Infinity;
+    for (const f of candidates(lon, lat, maxDistance)) { const d = clearance(f, x, z, c); if (d < min) min = d; if (d < hitDistance) return { hit: true, clearance: d }; }
+    return { hit: false, clearance: min };
+  };
+  return { features, hit: (lon, lat, r) => query(lon, lat, r).hit, clearance: (lon, lat, maxDistance = 12) => query(lon, lat, maxDistance, -Infinity).clearance };
+}
+function nearAvoidRoads(W, avoid, lon, lat, r) { return createAvoidIndex(W, avoid).hit(lon, lat, r); }
 
 // colours (night palette of WORLD_SPEC / BI05 / TR04, the same as the W4 section)
 const COL = { dry: lin('#5d6b46'), dry2: lin('#6b7650'), fall: lin('#66744a'), fall2: lin('#7a7456'), water: lin('#25414f'), ridge: lin('#6a604e'), ridgeD: lin('#4a4238'), ridgeTop: lin('#7b7260'), tea: lin('#3f6a4e'), teaD: lin('#2f5a42'), wall: lin('#7a7780'), wallD: lin('#5c5a66'), tread: lin('#5a6e48'), treadTea: lin('#4c6a48') };
 const FARM = new Set(['farmland']), VILLAGE = new Set(['village']);
 const GROUP = r => (FARM.has(r.kind) ? 'farm' : VILLAGE.has(r.kind) ? 'village' : null);
-const SP = { du: 7.2, dv: 6.2, ju: 2.2, jv: 1.8, ridgeHalf: 0.18, ridgeH: 0.2, fallowBand: 8 };
+const SP = { du: 7.128, dv: 6.138, ju: 2.178, jv: 1.782, ridgeHalf: 0.18, ridgeH: 0.2, fallowBand: 8 };
 
 // ---- polygon helpers (flat plane)
 function clipHalf(poly, px, pz, nx, nz, off) {         // keep the part where (p - P) . n <= off
@@ -35,7 +94,7 @@ const polyArea = p => { let s = 0; for (let i = 0; i < p.length; i++) { const a 
 const inPoly = (p, x, z) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && (x < (p[j][0] - p[i][0]) * (z - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0])) c = !c; return c; };
 
 function build(W, H, ctx) {
-  const avoid = ctx.avoid || [], corridor = ctx.corridor || null;
+  const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), corridor = ctx.corridor || null;
   const rnd = (a, b) => hash(a, b);
   // ---- seeds: rows every 6.2 true metres, a seed every 7.2 true metres along the row, jittered; the Voronoi cells of the seeds are the plots
   const seeds = []; const grid = new Map(), GS = 14, gkey = (x, z) => `${Math.floor(x / GS)},${Math.floor(z / GS)}`;
@@ -51,7 +110,7 @@ function build(W, H, ctx) {
       lat += dlat; row++;
     } }
   const neighbours = s => { const out = []; const r = Math.ceil(2.6 * SP.du * s.k / GS) + 1, gx = Math.floor(s.x / GS), gz = Math.floor(s.z / GS); for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) { const l = grid.get(`${gx + a},${gz + b}`); if (l) for (const q of l) if (q !== s && Math.hypot(q.x - s.x, q.z - s.z) < 2.6 * SP.du * s.k) out.push(q); } return out; };
-  const nearAvoid = (lon, lat, r) => avoid.some(a => { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D; return dl * dl + dt * dt < (a.r + r) * (a.r + r); });
+  const nearAvoid = (lon, lat, r) => avoidIndex.hit(lon, lat, r);
   const farmAt = (lon, lat) => { const r = W.regionAt(lon, lat), g = GROUP(r); return g && W.height(lon, lat) > 0.5 ? g : null; };
   const inCorridor = (lon, lat) => corridor && corridor(lon, lat);
   // fallow: near the edge of the farmland (a non-farm region within 14 m), TR04
@@ -78,7 +137,7 @@ function build(W, H, ctx) {
     }
     if (outer.length < 3 || inner.length < 3) continue;
     // every corner of the cell must be on dry land of the building belt (farmland, village), clear of roads and landmarks and of the W4 section's own corridor
-    let ok = true; for (const p of outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat); const why = !(farmAt(ll.lon, ll.lat) === g || (r.zone === 'building' && r.kind !== 'town' && W.height(ll.lon, ll.lat) > 0.5)) ? 'region' : nearAvoid(ll.lon, ll.lat, 0.6) ? 'avoid' : inCorridor(ll.lon, ll.lat) ? 'corridor' : W.townPatchDistance(ll.lon, ll.lat) < 3.0 ? 'patch' : null; if (why) { ok = false; (stats.why = stats.why || {})[why] = ((stats.why || {})[why] || 0) + 1; break; } }
+    let ok = true; for (const p of outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat); const why = !(farmAt(ll.lon, ll.lat) === g || (r.zone === 'building' && r.kind !== 'town' && W.height(ll.lon, ll.lat) > 0.5)) ? 'region' : nearAvoid(ll.lon, ll.lat, 0.25) ? 'avoid' : inCorridor(ll.lon, ll.lat) ? 'corridor' : W.townPatchDistance(ll.lon, ll.lat) < 3.0 ? 'patch' : null; if (why) { ok = false; (stats.why = stats.why || {})[why] = ((stats.why || {})[why] || 0) + 1; break; } }
     if (!ok) { stats.skipped++; continue; }
     const areaTrue = Math.abs(polyArea(inner)) / (s.k * s.k); if (areaTrue < 3) continue;
     const kind = g === 'village' ? 'dry' : nearEdge(s.lon, s.lat) ? 'fallow' : rnd(s.id, 7) < 0.62 ? 'water' : 'dry';
@@ -131,29 +190,9 @@ function build(W, H, ctx) {
     // weeds and flowers along the ridges
     for (let e = 0; e < c.outer.length; e++) { if (rnd(s.id * 7 + e, 35) > 0.5) continue; const a = c.outer[e], b = c.outer[(e + 1) % c.outer.length], t = rnd(s.id * 7 + e, 37), ll = llOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); put(rnd(s.id * 7 + e, 39) < 0.78 ? 'tuft' : 'flower', ll.lon, ll.lat, c.flatH + SP.ridgeH - 0.02, { s: [1, 0.9 + 0.5 * rnd(s.id, e), 1] }); }
   }
-  // ---- TR01 town edge, all four sides of the patch: a gravel shoulder 1 m and a grass band 2.4 m wide along the edge (cut where a road leaves the patch and in the W4 corridor,
-  // which has its own), and a bamboo fence every 2 m 3.9 m out (open where a road leaves)
-  const edge = { pos: [], col: [], idx: [] }; const P = W.TOWN_PATCH, X = R * P.lonMax * D, Zs = -R * Math.asinh(Math.tan(P.latMax * D)), Zn = -R * Math.asinh(Math.tan(P.latMin * D));
-  const exits = W.roadNetwork.nodes.filter(n => n.kind === 'town-exit').map(n => ({ ...flatOf(n.lon, n.lat), id: n.id }));
-  // W8g-b (B4): with the footprints of the exit roads (ctx.exitPolys, the polygons the ring is cut by, along the whole exit routes), a row is open where any of its points
-  // lies on a road; without them (tools), within 6 m of an exit node as before
-  const EP = ctx.exitPolys || null, onRoad = (x, z) => EP.some(q => { if (x < q.minX || x > q.maxX || z < q.minZ || z > q.maxZ) return false; let c = false; const Q = q.polygon; for (let a = 0, b = Q.length - 1; a < Q.length; b = a++) if ((Q[a][1] > z) !== (Q[b][1] > z) && x < (Q[b][0] - Q[a][0]) * (z - Q[a][1]) / (Q[b][1] - Q[a][1]) + Q[a][0]) c = !c; return c; });
-  const nearExit = (x, z, r, nrm, k) => (EP ? [0, 1, 2, 3.5, 3.9 + 1].some(o => onRoad(x + nrm[0] * o * k, z + nrm[1] * o * k)) : exits.some(e => Math.hypot(x - e.x, z - e.z) < r * e.k));
-  const sidesDef = [[[-X, Zs], [X, Zs], [0, -1]], [[X, Zs], [X, Zn], [1, 0]], [[X, Zn], [-X, Zn], [0, 1]], [[-X, Zn], [-X, Zs], [-1, 0]]];
-  const offs = [[0, 0.03, COL.ridge], [0.1, 0.05, [0.6, 0.6, 0.65]], [0.9, 0.04, lin('#6a6458')], [1.0, 0.03, lin('#585349')], [1.1, 0, lin('#3f6a50')], [3.2, 0, lin('#4f7d5b')], [3.5, 0, lin('#3f6a50')]];
-  for (const [a, b, nrm] of sidesDef) {
-    const len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.round(len), tx = (b[0] - a[0]) / len, tz = (b[1] - a[1]) / len;
-    let prevRow = null;
-    for (let i = 0; i <= n; i++) {
-      const x = a[0] + tx * len * i / n, z = a[1] + tz * len * i / n, ll = llOf(x, z), k = flatOf(ll.lon, ll.lat).k;
-      const skip = nearExit(x, z, 6, nrm, k) || (ctx.corridor && ctx.corridor(llOf(x + nrm[0] * 6, z + nrm[1] * 6).lon, llOf(x + nrm[0] * 6, z + nrm[1] * 6).lat));
-      if (skip) { prevRow = null; continue; }
-      const row = offs.map(([o, lift, c]) => { const px = x + nrm[0] * o * k, pz = z + nrm[1] * o * k, q = llOf(px, pz); return pushV(edge, px, pz, H(q.lon, q.lat) + lift, c); });
-      if (prevRow) for (let j = 0; j + 1 < row.length; j++) edge.idx.push(prevRow[j], row[j], prevRow[j + 1], prevRow[j + 1], row[j], row[j + 1]);
-      prevRow = row;
-      if (i % 2 === 0 && i < n) { const fx = x + nrm[0] * 3.9 * k, fz = z + nrm[1] * 3.9 * k, fl = llOf(fx, fz); if (!nearAvoid(fl.lon, fl.lat, 1.0) && W.height(fl.lon, fl.lat) > 0.5) put('fenceBamboo', fl.lon, fl.lat, H(fl.lon, fl.lat), { yaw: Math.atan2(-tz, tx), lean: [0, (rnd(fx, fz) - 0.5) * 0.04], tint: tintOf(0.85, 1.05, fx + fz) }); }
-    }
-  }
+  // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
+  // Keep the empty mesh record until the ground-cover consumers no longer require the field.
+  const edge = { pos: [], col: [], idx: [] };
   stats.fences = items.filter(i => i.type === 'fenceBamboo').length;
   return { seeds, cells, meshes: T, edge, items, stats };
 }
@@ -184,8 +223,8 @@ function edgeDistance(W, lon, lat, test, maxD) {      // metres to the nearest p
 // ---- BI02 forest and TR03 forest edge: four tree shapes by patch (cedar stands, broadleaf, pine, bamboo clumps), clearings, understory (shrubs, ferns, moss rocks, logs);
 // the edge is a 5-10 m band of shrubs and saplings whose line wanders with noise; at most 0.27 trees per m2 (BI02 budget derivation, W6_SPEC 3.3)
 function forest(W, H, ctx) {
-  const avoid = ctx.avoid || [], corridor = ctx.corridor || null, items = [], stats = { trees: 0, shrubs: 0, ferns: 0, rocks: 0, logs: 0, saplings: 0, edgeShrubs: 0, area: 0, byRegion: {}, clearings: 0 };
-  const nearAvoid = (lon, lat, r) => avoid.some(a => { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D; return dl * dl + dt * dt < (a.r + r) * (a.r + r); });
+  const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), corridor = ctx.corridor || null, items = [], stats = { trees: 0, shrubs: 0, ferns: 0, rocks: 0, logs: 0, saplings: 0, edgeShrubs: 0, area: 0, byRegion: {}, clearings: 0 };
+  const nearAvoid = (lon, lat, r) => avoidIndex.hit(lon, lat, r);
   const isForest = r => r.kind === 'forest', put = (type, lon, lat, alt, o = {}) => items.push({ type, lon, lat, alt, yaw: o.yaw ?? hash(lon * 91, lat * 77) * 6.283, s: o.s || [1, 1, 1], lean: o.lean || [0, 0], tint: o.tint || [1, 1, 1] });
   const tint = (a, b, k) => { const t = a + (b - a) * hash(k, 9), j = (hash(k, 11) - 0.5) * 0.08; return [t + j, t, t - j]; };
   const slopeAt = (lon, lat) => { const e = 1.0 / (R * D); return Math.hypot((H(lon + e / Math.cos(lat * D), lat) - H(lon - e / Math.cos(lat * D), lat)) / 2, (H(lon, lat + e) - H(lon, lat - e)) / 2); };
@@ -228,8 +267,8 @@ function forest(W, H, ctx) {
 // dry shrubs and rock pillars in the desert; the dunes are a separate overlay mesh (dunes()) that never changes height()
 function grassland(W, H, ctx) { return runAll(grasslandSteps(W, H, ctx)); }
 function* grasslandSteps(W, H, ctx) {
-  const avoid = ctx.avoid || [], corridor = ctx.corridor || null, items = [], stats = { tufts: 0, flowers: 0, rocks: 0, bigRocks: 0, trees: 0, cairns: 0, area: 0, dryTufts: 0, shrubs: 0, pillars: 0, desertRocks: 0, desertArea: 0 };
-  const nearAvoid = (lon, lat, r) => avoid.some(a => { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D; return dl * dl + dt * dt < (a.r + r) * (a.r + r); });
+  const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), corridor = ctx.corridor || null, items = [], stats = { tufts: 0, flowers: 0, rocks: 0, bigRocks: 0, trees: 0, cairns: 0, area: 0, dryTufts: 0, shrubs: 0, pillars: 0, desertRocks: 0, desertArea: 0 };
+  const nearAvoid = (lon, lat, r) => avoidIndex.hit(lon, lat, r);
   const put = (type, lon, lat, alt, o = {}) => items.push({ type, lon, lat, alt, yaw: o.yaw ?? hash(lon * 91, lat * 77) * 6.283, s: o.s || [1, 1, 1], lean: o.lean || [0, 0], tint: o.tint || [1, 1, 1] });
   const tint = (a, b, k) => { const t = a + (b - a) * hash(k, 9), j = (hash(k, 11) - 0.5) * 0.06; return [t + j, t, t - j]; };
   const slopeAt = (lon, lat) => { const e = 1.0 / (R * D); return Math.hypot((H(lon + e / Math.cos(lat * D), lat) - H(lon - e / Math.cos(lat * D), lat)) / 2, (H(lon, lat + e) - H(lon, lat - e)) / 2); };
@@ -257,7 +296,7 @@ function* grasslandSteps(W, H, ctx) {
   // cairns beside the RD05 dirt tracks (RN07, RN08, RN09) and the RD03 country roads (RN05) in grassland: every ~14 m on the left side. The seed is the id of the
   // edge a road comes from (W10b renumbered them), so the cairns stay where they were; a new edge uses its own id
   for (const e of W.roadNetwork.edges.filter(q => ['RD05', 'RD03'].includes(q.class))) {
-    const S = W.roadNetwork.samplePath(e, 0.5), key = e.source || e.id; for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, key.length * 7 + key.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.1) && false) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
+    const S = W.roadNetwork.samplePath(e, 0.5), key = e.source || e.id; for (let s = 9; s < S.length - 4; s += 28) { const p = S[s], r = W.regionAt(p.lon, p.lat); if (!isGrass(r) || hash(s, key.length * 7 + key.charCodeAt(4)) > 0.9) continue; const brg = W.bearing(S[s - 1], S[s + 1]), q = W.destination(p, brg - 90, e.class === 'RD05' ? 2.1 : 2.9); if (nearAvoid(q.lon, q.lat, 0.12)) continue; put('cairn', q.lon, q.lat, H(q.lon, q.lat), {}); stats.cairns++; }
   }
   return { items, stats };
 }
@@ -265,7 +304,7 @@ function* grasslandSteps(W, H, ctx) {
 // roads and the landmarks; sand-coloured with a ripple modulation; the terrain mesh and height() are untouched
 function dunes(W, H, ctx) { return runAll(dunesSteps(W, H, ctx)); }
 function* dunesSteps(W, H, ctx) {
-  const avoid = ctx.avoid || [], reg = W.regions.find(q => q.kind === 'desert'), ring = reg.shape.ring, step = 0.7;
+  const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), reg = W.regions.find(q => q.kind === 'desert'), ring = reg.shape.ring, step = 0.7;
   let lon0 = 1e9, lon1 = -1e9, lat0 = 1e9, lat1 = -1e9; for (const p of ring) { lon0 = Math.min(lon0, p[0]); lon1 = Math.max(lon1, p[0]); lat0 = Math.min(lat0, p[1]); lat1 = Math.max(lat1, p[1]); }
   const out = { pos: [], col: [], idx: [] }, vid = new Map(); let maxH = 0, minH = 0, cells = 0;
   const mesa = W.heightField.features.find(q => q.id === 'mesa-desert'), lm6 = W.landmarks.find(q => q.id === 'LM06'), monoP = lm6 ? W.destination({ lon: lm6.lon, lat: lm6.lat }, lm6.entrances[0].heading + 180, 25) : null;
@@ -274,7 +313,7 @@ function* dunesSteps(W, H, ctx) {
     const r = W.regionAt(lon, lat); if (!isDesertKind(r)) return 0;
     const ed = edgeDistance(W, lon, lat, isDesertKind, 8);
     let m = Math.max(0, Math.min(1, (ed - 1.0) / 6)); m = m * m * (3 - 2 * m);
-    for (const a of avoid) { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D, d = Math.hypot(dl, dt) - a.r; if (d < 5) m *= Math.max(0, d / 5); if (m <= 0) return 0; }
+    const roadClearance = avoidIndex.clearance(lon, lat, 5); if (roadClearance < 5) m *= Math.max(0, roadClearance / 5); if (m <= 0) return 0;
     if (lm6) { const d = R * W.angleBetween(W.vec(lon, lat), W.vec(lm6.lon, lm6.lat)) - lm6.radius; if (d < 5) m *= Math.max(0, d / 5); }
     if (mesa) { const d = R * W.angleBetween(W.vec(lon, lat), W.vec(mesa.lon, mesa.lat)) - mesa.radiusMeters; if (d < 6) m *= Math.max(0, d / 6); }
     if (monoP) { const d = R * W.angleBetween(W.vec(lon, lat), W.vec(monoP.lon, monoP.lat)) - 6; if (d < 5) m *= Math.max(0, d / 5); }       // the LM06 monolith stands on its own flat disc of sand (W7)
@@ -324,8 +363,8 @@ function overlayGrid(W, H, region, step, fn) {                    // cells of `s
   return { mesh: out, cells };
 }
 function highland(W, H, ctx) {
-  const avoid = ctx.avoid || [], items = [], stats = { scree: 0, crags: 0, iceBlocks: 0, lichen: 0, pioneers: 0, vents: 0, tubes: 0 };
-  const nearAvoid = (lon, lat, r) => avoid.some(a => { const dl = (a.lon - lon) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D; return dl * dl + dt * dt < (a.r + r) * (a.r + r); });
+  const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), items = [], stats = { scree: 0, crags: 0, iceBlocks: 0, lichen: 0, pioneers: 0, vents: 0, tubes: 0 };
+  const nearAvoid = (lon, lat, r) => avoidIndex.hit(lon, lat, r);
   const put = (type, lon, lat, alt, o = {}) => items.push({ type, lon, lat, alt, yaw: o.yaw ?? hash(lon * 91, lat * 77) * 6.283, s: o.s || [1, 1, 1], lean: o.lean || [0, 0], tint: o.tint || [1, 1, 1] });
   const tint = (a, b, k) => { const t = a + (b - a) * hash(k, 9); return [t, t, t]; };
   const slopeAt = (lon, lat) => { const e = 1.0 / (R * D); return Math.hypot((H(lon + e / Math.cos(lat * D), lat) - H(lon - e / Math.cos(lat * D), lat)) / 2, (H(lon, lat + e) - H(lon, lat - e)) / 2); };
@@ -353,13 +392,13 @@ function highland(W, H, ctx) {
   // floating ice off the coast of the ice edge (sea side, 0-6 m out): a few blocks on the water
   scatterGrid(2.6, 84, (lon, lat, x, z, key) => {
     const reg = W.regionAt(lon, lat); if (reg.zone !== 'ocean' || Math.abs(lat) < 60) return; const ed = edgeDistance(W, lon, lat, r => r.zone === 'ocean', 8);
-    if (ed < 6 && hash(key, 1) < 0.18 && W.coastDistance(lon, lat) > -6) { const sc = 0.5 + 1.3 * hash(key, 2); put('iceBlock', lon, lat, -0.1, { s: [sc, sc, sc], tint: tint(0.9, 1.05, key) }); stats.iceBlocks++; }
+    if (ed < 6 && hash(key, 1) < 0.18 && W.coastDistance(lon, lat) > -6) { const sc = 0.5 + 1.3 * hash(key, 2); if (!nearAvoid(lon, lat, sc * 0.5)) { put('iceBlock', lon, lat, -0.1, { s: [sc, sc, sc], tint: tint(0.9, 1.05, key) }); stats.iceBlocks++; } }
   });
   return { items, stats };
 }
 function iceField(W, H, ctx) { return runAll(iceFieldSteps(W, H, ctx)); }
 function* iceFieldSteps(W, H, ctx) {                                // BI07 ice undulation, cracks and cliffs as an overlay of 1.0 m cells over both ice caps
-  const avoid = ctx.avoid || [], ICE = lin('#cfe0ee'), ICE2 = lin('#dcebf6'), BLU = lin('#9ec6dc'), CRK = lin('#6aa6bd'), CLF = lin('#b5cfe0');
+  const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), ICE = lin('#cfe0ee'), ICE2 = lin('#dcebf6'), BLU = lin('#9ec6dc'), CRK = lin('#6aa6bd'), CLF = lin('#b5cfe0');
   const stats = { cliffs: 0, cracks: 0, cells: 0, maxCliff: 0, minUnd: 0, maxUnd: 0 };
   const res = [];
   for (const rg of W.regions.filter(q => q.kind === 'ice-north' || q.kind === 'ice-south')) {
@@ -367,7 +406,7 @@ function* iceFieldSteps(W, H, ctx) {                                // BI07 ice 
     const fn = (lonU, lat, x, z, probe) => {
       const inIce = north ? lat > edge(lonU) : lat < edge(lonU); if (!inIce || Math.abs(lat) > 84.5) return probe ? false : { h: Math.abs(lat) > 84.5 ? H(lonU, Math.sign(lat) * 84.5) : H(lonU, lat), color: ICE };
       const dEdge = Math.abs(lat - edge(lonU)) * D * R;                              // metres from the edge into the ice
-      let m = 1; for (const a of avoid) { const dl = (a.lon - lonU) * Math.cos(lat * D) * R * D, dt = (a.lat - lat) * R * D, d = Math.hypot(dl, dt) - a.r; if (d < 6) m *= Math.max(0, d / 6); if (m <= 0) break; }
+      let m = 1; const roadClearance = avoidIndex.clearance(lonU, lat, 6); if (roadClearance < 6) m *= Math.max(0, roadClearance / 6);
       for (const lm of W.landmarks) if (lm.id !== 'TOWN') { const d = R * W.angleBetween(W.vec(lonU, lat), W.vec(lm.lon, lm.lat)) - lm.radius; if (d < 6) m *= Math.max(0, d / 6); }
       if (probe) return m > 0.01 || dEdge < 8;
       const cp = Math.cos(lat * D), px = R * cp * Math.sin(lonU * D), py = R * cp * Math.cos(lonU * D), pz = -R * Math.sin(lat * D);                   // the point on the sphere: 3D noise, isotropic and without a pole
@@ -446,7 +485,7 @@ function terraces(W, H, ctx) {
   return out;
 }
 
-const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, SP, COL, SEED,
+const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, avoidHit: nearAvoidRoads, avoidClearance, createAvoidIndex, SP, COL, SEED,
   grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps };
 
 // ---------------------------------------------------------------- scene part
@@ -657,33 +696,39 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const RD = global.ROADS_API && global.ROADS_API.data(); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     // W8g-b (B4): a road keeps plants beyond its whole cross-section (the footprint of roads.js: paved + shoulder + ditch, per sample), plus the same 0.8 m as before
-    const addFoot = rt => rt.samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: Math.max(Math.abs(rt.footprint[i][2]), Math.abs(rt.footprint[i][3])) + 0.8 }); });
-    if (RD) { for (const r of RD.routes) addFoot(r); for (const b of RD.bridges) addPts(b.samples, 5.2); for (const s of RD.stairs) addPts(s.samples, 1.2); }
-    if (SEC.state.chain) addFoot(SEC.state.chain); for (const r of (SEC.state.roadOut || [])) if (r.centre) addPts(r.centre, 2.0);
+    const addFoot = rt => { for (let i = 0; i + 1 < rt.samples.length; i++) { const side = (j, k) => rt.lateral(j, rt.footprint[j][k] * rt.cf[j]), a = side(i, 2), b = side(i, 3), c = side(i + 1, 3), d = side(i + 1, 2); avoid.push({ poly: [a, b, c, d] }); } };
+    if (RD) {
+      for (const r of RD.routes) addFoot(r);
+      for (const b of RD.bridges) addPts(b.samples, 5.2);
+      for (const s of RD.stairs) addPts(s.samples, 1.2);
+      for (const ex of RD.extras || []) { addPts(ex.centre, 1.6); if (ex.landing) avoid.push({ lon: ex.landing.lon, lat: ex.landing.lat, r: 2.5 }); }
+    }
     for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
+    const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    // the exit routes' footprints as the cut polygons of terrain.js (whole routes: a road that runs along the edge, N04, keeps the town edge strip off it beyond its head)
-    const exitPolys = TERR.builder ? TERR.builder.exitPolygons([...(RD ? RD.routes.filter(r => r.def.exit) : []), ...(SEC.state.chain ? [SEC.state.chain] : [])].map(rt => ({ rt, K: rt.samples.length - 1, exit: rt.def ? rt.def.exit : 'N08' }))) : null;
-    DATA = build(W, H, { avoid, corridor, exitPolys });
+    DATA = build(W, H, { avoid, avoidIndex, corridor });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
     yield;
-    DATA.forest = forest(W, H, { avoid, corridor }); DATA.items.push(...DATA.forest.items);
+    DATA.forest = forest(W, H, { avoid, avoidIndex, corridor }); DATA.items.push(...DATA.forest.items);
     yield;
-    DATA.grass = yield* grasslandSteps(W, H, { avoid, corridor }); DATA.items.push(...DATA.grass.items);
+    DATA.grass = yield* grasslandSteps(W, H, { avoid, avoidIndex, corridor }); DATA.items.push(...DATA.grass.items);
     yield;
-    DATA.high = highland(W, H, { avoid, corridor }); DATA.items.push(...DATA.high.items);
+    DATA.high = highland(W, H, { avoid, avoidIndex, corridor }); DATA.items.push(...DATA.high.items);
     yield;
-    DATA.ice = yield* iceFieldSteps(W, H, { avoid });
+    DATA.ice = yield* iceFieldSteps(W, H, { avoid, avoidIndex });
     yield;
     DATA.lava = lavaField(W, H, { avoid });
     yield;
-    { const TB = global.TERRAIN.builder(W); DATA.dunes = yield* dunesSteps(W, H, { avoid, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
+    { const TB = global.TERRAIN.builder(W); DATA.dunes = yield* dunesSteps(W, H, { avoid, avoidIndex, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
     yield;
     INDEX = indexItems(DATA.items); S.data = DATA;
     buildMeshes(K, M);
+    const roadGrounds = [];
+    S.root.traverse(o => { if (o.isMesh && /^cover:(plots|ridges|ice|lava|dunes|town-edge|terrace-treads)$/.test(o.name)) roadGrounds.push(o); });
+    S.roadCut = TERR.cutGroundMeshes ? TERR.cutGroundMeshes(roadGrounds) : null;
     yield;
     buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
     yield;

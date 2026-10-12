@@ -23,6 +23,7 @@ const JOINT = [0.3, 0.6, 1.0, 2.0, 3.6, 4.7, 4.8];
 const TOPX = (() => { const at = o => { let j = 0; while (TOP[j + 1][0] < o) j++; const t = (o - TOP[j][0]) / (TOP[j + 1][0] - TOP[j][0]), a = lin(COL[TOP[j][2]]), b = lin(COL[TOP[j + 1][2]]); return [o, TOP[j][1] + (TOP[j + 1][1] - TOP[j][1]) * t, a.map((v, i) => v + (b[i] - v) * t)]; };
   return [...TOP, ...JOINT.map(at)].sort((a, b) => a[0] - b[0]); })();
 const TOPCOLS = [...TOPX.map(([o, l, c]) => [-o, l, c]).reverse(), ...TOPX];
+const topAt = o => { const x = Math.abs(o); let j = 0; while (j + 1 < TOPX.length - 1 && TOPX[j + 1][0] < x) j++; const a = TOPX[j], b = TOPX[j + 1], t = Math.max(0, Math.min(1, (x - a[0]) / (b[0] - a[0]))), ca = Array.isArray(a[2]) ? a[2] : lin(COL[a[2]] || COL.concrete), cb = Array.isArray(b[2]) ? b[2] : lin(COL[b[2]] || COL.concrete), c = ca.map((v, i) => v + (cb[i] - v) * t); return [o, a[1] + (b[1] - a[1]) * t, c]; };
 
 function build(W, ids, o = {}) {
   const NET = W.roadNetwork, edges = ids.map(id => NET.edges.find(e => e.id === id));
@@ -58,7 +59,8 @@ function build(W, ids, o = {}) {
   A = A.map((a, i) => { const w = Math.min(4, i, n - 1 - i); let t = 0; for (let k = -w; k <= w; k++) t += A[i + k]; return t / (2 * w + 1); });
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
-  const out = { ids, samples: S, turns: o.turns || [], alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: TOPCOLS.map(q => q[0]) };
+  const topCols = [...TOPCOLS, ...(o.jointColumns || []).filter(x => Math.abs(x) <= DECK.half + 1e-9).map(topAt)].sort((a, b) => a[0] - b[0]).filter((q, i, a) => !i || Math.abs(q[0] - a[i - 1][0]) > 1e-6);
+  const out = { ids, samples: S, turns: o.turns || [], alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: topCols.map(q => q[0]) };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
@@ -89,7 +91,7 @@ function build(W, ids, o = {}) {
     out.strips.push({ name: 'bridge ' + ids.join('+') + ' ' + name, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m, normals: true });
   };
   const gd = DECK.girder, sd = DECK.side;
-  strip('top', TOPCOLS, [0, 1]);
+  strip('top', topCols, [0, 1]);
   strip('side-left', [[-DECK.half, 0.01, 'concreteL'], [-DECK.half, -sd, 'concrete']], [-1, 0], { stain: true });
   strip('side-right', [[DECK.half, 0.01, 'concreteL'], [DECK.half, -sd, 'concrete']], [1, 0], { stain: true });
   strip('chamfer-left', [[-DECK.half, -sd, 'concrete'], [-3.2, -gd, 'concreteD']], [-0.35, -0.94], { stain: true });

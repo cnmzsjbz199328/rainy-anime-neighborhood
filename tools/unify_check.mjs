@@ -13,7 +13,10 @@
 //     U1-town      one edge per layout.js street segment, class and width from layout.js, on the street's own centre line
 //     U1-exits     the nine exits: a straight 6 m connector along the street's axis to the ring, position and direction at the town edge, radius
 //     U1-changes   RN05-01 / RN06-01 outside the ring, RN05-01 on T02-01's line; every edge against the network of `pre-w10b` (unchanged or the design's changes)
-//   U2, U4-U7 belong to W10c-W10g and are reported as not implemented until then. --no-browser runs U0 and U1 only (Node).
+//   U2 (W10c): every road's paved row at 0.5 m spacing and 9 cross-section points is ray-tested against the visible scene geometry in flat and sphere states;
+//              the nine town-exit connectors are separately counted from the town edge to 6 m outward.
+//   U4 (W10c): frozen town alignment, width, level and layout-driven road details.
+//   U5-U7 are added by W10d-W10g. --no-browser runs the data-only checks.
 // Real GPU (ANGLE Metal, as the timing tools): the checks are structural, the renderer does not change them.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -184,6 +187,92 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
   }
 }
 
+// ---- U1-geometry (W10c): every town edge and its outdoor continuation share one swept route row at the frozen layout boundary
+{
+  const require = createRequire(import.meta.url), W = require(path.join(root, 'world.js')), L = require(path.join(root, 'layout.js'));
+  const TERR = require(path.join(root, 'terrain.js'));
+  globalThis.LAYOUT = L; globalThis.ROADKIT = require(path.join(root, 'roadkit.js')); globalThis.BRIDGE = require(path.join(root, 'bridge.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
+  const ROADS = require(path.join(root, 'roads.js')), NET = W.roadNetwork, D = Math.PI / 180, H = TERR.sampler(W, { lonMin: -181, lonMax: 181, latMin: -90, latMax: 90 }), TB = TERR.builder(W),
+    PLAN = ROADS.plan(W, H, (lo, la) => TB.vertex(lo, la).c), md = fs.readFileSync(path.join(root, 'docs/world/ROAD_NETWORK_DESIGN_DRAFT.md'), 'utf8'),
+    part = title => { const a = md.indexOf(title), b = md.indexOf('\n#', a + title.length); return md.slice(a, b < 0 ? undefined : b); },
+    rows = t => t.split('\n').filter(l => /^\|\s*[A-Z]/.test(l)).map(l => l.split('|').slice(1, -1).map(c => c.trim())),
+    exitRows = rows(part('### 2.3')).filter(r => /^N\d\d$/.test(r[0])), probs = [], out = [], absAng = (a, b) => { const d = Math.abs(((a - b + 540) % 360) - 180); return Math.min(d, 180 - d); };
+  for (const [exit, ringCell, connCell] of exitRows) {
+    const ringId = ringCell.split(/\s/)[0], connId = connCell.split('：')[0], n = NET.nodeById[exit], e = NET.edges.find(q => q.id === connId),
+      rt = PLAN.routes.find(q => q.def.segs.some(sg => sg.id === connId)), i = rt ? rt.samples.reduce((best, p, k) => W.arcDistance(p, n) < W.arcDistance(rt.samples[best], n) ? k : best, 0) : -1;
+    if (!rt) { probs.push(`${exit} 没有包含接线与城镇段的共同路线`); continue; }
+    const row = rt.samples[i], pos = W.arcDistance(row, n), prev = rt.flatOf[Math.max(0, i - 1)], next = rt.flatOf[Math.min(rt.samples.length - 1, i + 1)], from = W.lonLatToTown(n.lon, n.lat), to = W.lonLatToTown(NET.nodeById[ringId].lon, NET.nodeById[ringId].lat),
+      ax = next.x - prev.x, az = next.z - prev.z, bx = to.x - from.x, bz = to.z - from.z, dir = Math.acos(Math.min(1, Math.abs((ax * bx + az * bz) / Math.hypot(ax, az) / Math.hypot(bx, bz)))) / D,
+      travel = i < rt.samples.length - 1 ? W.arcDistance(rt.samples[i + 1], n) - W.arcDistance(rt.samples[i], n) : -1, iOut = i === 0 ? 1 : i === rt.samples.length - 1 ? i - 1 : travel >= 0 ? i + 1 : i - 1,
+      half = NET.townClasses[NET.edges.find(q => /^TOWN_/.test(q.class) && (q.from === exit || q.to === exit)).class].carriageway / 2,
+      streetClass = NET.edges.find(q => /^TOWN_/.test(q.class) && (q.from === exit || q.to === exit)).class, roadLevel = streetClass === 'TOWN_ALLEY' ? L.LEVELS.pavement : L.LEVELS.carriageway,
+      h0 = rt.surface(i, 0), groundLevel = W.height(n.lon, n.lat) + roadLevel, heightError = Math.abs(h0 - groundLevel),
+      sidewalkOffsets = half < 2 ? [] : [-6, -4, 4, 6], walkStep = sidewalkOffsets.length ? Math.max(...sidewalkOffsets.map(o => Math.abs(rt.surface(i, o) - rt.surface(iOut, o)))) : 0,
+      shared = rt.strip.vertexCount === rt.samples.length * rt.grid.length && rt.classes.some(c => /^TOWN_/.test(c)) && rt.classes.some(c => !/^TOWN_/.test(c));
+    if (pos > 0.01) probs.push(`${exit} 边界行中线差 ${pos.toFixed(4)} m`); if (dir > 0.5) probs.push(`${exit} 路由方向差 ${dir.toFixed(3)}°`);
+    if (heightError > 0.005) probs.push(`${exit} 路面标高差 ${heightError.toFixed(4)} m`);
+    if (walkStep > 0.02) probs.push(`${exit} 人行道端头相邻行高差 ${walkStep.toFixed(4)} m`); if (!shared) probs.push(`${exit} 没有同一条城镇-城外扫掠网格`);
+    out.push(`${exit}：中线 ${pos.toFixed(4)} m、方向 ${dir.toFixed(3)}°、道路标高 ${heightError.toFixed(4)} m、共用边界行高差 0 m、人行道端头 ${walkStep.toFixed(4)} m、同网格 ${shared}`);
+    void e;
+  }
+  check('U1-geometry', !probs.length, `9 个城镇出口在边界行接入统一扫掠路由（位置 ≤0.01 m、方向 ≤0.5°、标高 ≤0.005 m、路面相邻行 ≤0.01 m、人行道端头 ≤0.02 m）：${out.join('；')}${probs.length ? '；问题：' + probs.join('；') : ''}`);
+}
+
+// ---- U4 (W10c): the frozen town layout still drives every town street and street detail
+{
+  const { execFileSync } = await import('node:child_process');
+  const require = createRequire(import.meta.url), W = require(path.join(root, 'world.js')), L = require(path.join(root, 'layout.js'));
+  globalThis.LAYOUT = L; globalThis.ROADKIT = require(path.join(root, 'roadkit.js')); globalThis.BRIDGE = require(path.join(root, 'bridge.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
+  const TERR = require(path.join(root, 'terrain.js')), ROADS = require(path.join(root, 'roads.js')), H = TERR.sampler(W, { lonMin: -181, lonMax: 181, latMin: -90, latMax: 90 }), TB = TERR.builder(W), PLAN = ROADS.plan(W, H, (lo, la) => TB.vertex(lo, la).c),
+    net = W.roadNetwork, nodes = Object.fromEntries(L.roadNodes.map(n => [n.id, n])), townEdges = net.edges.filter(e => /^TOWN_/.test(e.class)), bySource = new Map(L.roads.flatMap(r => r.nodes.slice(1).map((_, i) => [`${r.id}-${i + 1}`, { a: nodes[r.nodes[i]], b: nodes[r.nodes[i + 1]], half: L.ROAD_TYPES[r.type].carriageway / 2 }]))), issues = [];
+  for (const alley of L.alleys) bySource.set(alley.id, { a: nodes[alley.nodes[0]], b: nodes[alley.nodes[1]], half: L.ALLEY.width / 2 });
+  let centerError = 0, widthError = 0, meshEdgeError = 0, levelError = 0, count = 0;
+  for (const e of townEdges) {
+    const layout = bySource.get(e.source), rt = PLAN.routes.find(q => q.def.segs.some(s => s.id === e.id));
+    if (!layout || !rt) { issues.push(`${e.source || e.id} 没有对应城镇布局或扫掠路由`); continue; }
+    const k = rt.def.segs.findIndex(s => s.id === e.id), { a, b, half } = layout, dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz,
+      level = e.class === 'TOWN_ALLEY' ? L.LEVELS.pavement : L.LEVELS.carriageway;
+    for (let i = 0; i < rt.samples.length; i++) if (rt.edgeOf[i] === k) {
+      const p = W.lonLatToTown(rt.samples[i].lon, rt.samples[i].lat), t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)), d = Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t),
+        cw = rt.carriageway[i], w = Math.max(Math.abs(cw[0] + half), Math.abs(cw[1] - half)), h = rt.surface(i, 0),
+        crossesStreet = e.class === 'TOWN_ALLEY' && L.roads.some(r => r.axis === 'z' && Math.abs(p.x - r.at) <= L.ROAD_TYPES[r.type].carriageway / 2 + 0.5),
+        dh = Math.abs(h - W.height(rt.samples[i].lon, rt.samples[i].lat) - (crossesStreet ? 0.015 : level));
+      centerError = Math.max(centerError, d); widthError = Math.max(widthError, w); levelError = Math.max(levelError, dh); count++;
+      if (rt.joints.every(s => Math.abs(rt.samples[i].s - s) > 20)) {
+        const m = rt.grid.length, F = rt.flatOf[i], T = rt.tangent[i], scale = rt.cf[i] * F.k;
+        const profile = globalThis.ROADKIT.PROFILES[e.class];
+        for (const [j, want] of [[0, profile.pts[0][0]], [m - 1, profile.pts.at(-1)[0]]]) {
+          const x = rt.strip.pos[(i * m + j) * 3], z = rt.strip.pos[(i * m + j) * 3 + 2], offset = ((x - F.x) * -T[1] + (z - F.z) * T[0]) / scale;
+          meshEdgeError = Math.max(meshEdgeError, Math.abs(offset - want));
+        }
+      }
+    }
+  }
+  const layoutBytes = fs.readFileSync(path.join(root, 'layout.js')), frozenBytes = execFileSync('git', ['show', 'pre-w10c:layout.js']);
+  if (!layoutBytes.equals(frozenBytes)) issues.push('layout.js 与 pre-w10c 不同（冻结的街道、街区岛、横道、篦子或水洼数据被改动）');
+  if (centerError > 0.01) issues.push(`城镇路由中线离 layout.js ${centerError.toFixed(4)} m`);
+  if (widthError > 0.01) issues.push(`城镇路由半宽离 layout.js ${widthError.toFixed(4)} m`);
+  if (meshEdgeError > 0.02) issues.push(`城镇实际网格外沿离本路段断面 ${meshEdgeError.toFixed(4)} m`);
+  if (levelError > 0.005) issues.push(`城镇路面标高离 ground + LEVELS ${levelError.toFixed(4)} m`);
+  check('U4-data', !issues.length, `layout.js 冻结数据${layoutBytes.equals(frozenBytes) ? '与 pre-w10c 逐字节相同' : '不一致'}；${townEdges.length} 条城镇等级边、${count} 个断面样本：中线最大差 ${centerError.toFixed(5)} m、半宽最大差 ${widthError.toFixed(5)} m、实际网格外沿最大差 ${meshEdgeError.toFixed(5)} m、路面标高最大差 ${levelError.toFixed(5)} m（限 0.01 / 0.01 / 0.02 / 0.005 m）；街区岛、横道、标线、篦子与水洼仍由 layout.js 数据驱动${issues.length ? '；问题：' + issues.join('；') : ''}`);
+  const ring = PLAN.routes.find(r => r.def.id === 'CR01'), ringNodes = net.nodes.filter(n => n.id.startsWith('C01-')),
+    nearest = (rt, n) => rt.samples.reduce((best, s, i) => { const d = W.arcDistance(s, n); return d < best.d ? { d, i } : best; }, { d: Infinity, i: 0 });
+  let maxJointStep = 0, ringCrossings = 0; const jointIssues = [];
+  for (const n of ringNodes) {
+    const arrivals = PLAN.routes.filter(rt => rt !== ring && rt.def.segs.some(seg => { const e = net.edges.find(q => q.id === seg.id); return e.from === n.id || e.to === n.id; }));
+    for (const rt of arrivals) { const a = nearest(ring, n), b = nearest(rt, n), step = Math.abs(ring.surface(a.i, 0) - rt.surface(b.i, 0)); maxJointStep = Math.max(maxJointStep, step); ringCrossings++; if (step > 0.02) jointIssues.push(`${n.id} ${step.toFixed(4)} m`); }
+  }
+  if (ringCrossings !== 10) jointIssues.push(`环城路交点 ${ringCrossings}，应为 10`);
+  let faces = 0, zeroArea = 0, duplicateFaces = 0;
+  for (const rt of PLAN.routes) { const { pos, index } = rt.strip, seen = new Set(); for (let k = 0; k < index.length; k += 3) {
+    const a = index[k], b = index[k + 1], c = index[k + 2], A = a * 3, B = b * 3, C = c * 3,
+      area2 = (pos[B] - pos[A]) * (pos[C + 2] - pos[A + 2]) - (pos[B + 2] - pos[A + 2]) * (pos[C] - pos[A]), key = [a, b, c].sort((x, y) => x - y).join(',');
+    if (Math.abs(area2) < 1e-10) zeroArea++; if (seen.has(key)) duplicateFaces++; else seen.add(key); faces++;
+  } }
+  check('U4-junctions', !jointIssues.length && zeroArea === 0 && duplicateFaces === 0,
+    `环城路 ${ringCrossings} 个交点中心标高最大差 ${maxJointStep.toFixed(4)} m（限 0.02 m）；道路网格 ${faces} 个三角面，零面积 ${zeroArea}、重复索引面 ${duplicateFaces}${jointIssues.length ? '；问题：' + jointIssues.join('；') : ''}`);
+}
+
 // ---- U3 (W10a)
 if (process.argv.includes('--no-browser')) console.log('（--no-browser：U3 不跑）');
 else {
@@ -206,6 +295,95 @@ try {
   const first = await page.evaluate(() => window.__firstWorld);
   check('U3-first', first.done && first.built.every(Boolean) && first.landmarks === 10 && first.probe === 0,
     `首帧前启动管线完成 ${first.done}、模块已建 ${first.built.join('/')}、地标 ${first.landmarks}、auto 已采帧 ${first.probe}；网格与线 ${first.nodes.length}`);
+  // ---- U2 (W10c): cast against the actual visible, static mesh triangles. Road rows are 0.5 m apart; each row has nine points across its paved width.
+  const u2 = await page.evaluate(() => {
+    const S = window.__scene, T = window.THREE, B = S.bend, W = window.WORLD, D = S.roads.data(), roadSet = new Set(), surfaceSet = new Set(), probes = [], exitCounts = {};
+    S.roads.state.root.traverse(o => { if (o.isMesh && !o.isInstancedMesh) { roadSet.add(o); if (o.name.startsWith('road:route ') || /^road:bridge .* top$/.test(o.name) || o.name === 'road:junction paving') surfaceSet.add(o); } });
+    const atO = (strip, grid, i, o) => {
+      let j = 0; while (j + 2 < grid.length && grid[j + 1] < o) j++;
+      const a = (i * grid.length + j) * 3, b = a + 3, t = Math.max(0, Math.min(1, (o - grid[j]) / (grid[j + 1] - grid[j]))), p = strip.pos;
+      return [0, 1, 2].map(k => p[a + k] + (p[b + k] - p[a + k]) * t);
+    };
+    const addRow = (rt, i, tag = null) => {
+      const [a, b] = rt.paved[i]; for (let k = 0; k <= 8; k++) { const o = a + 0.02 + (b - a - 0.04) * k / 8, p = atO(rt.strip, rt.grid, i, o); probes.push({ p, tag, route: rt.def.id }); if (tag) exitCounts[tag] = (exitCounts[tag] || 0) + 1; }
+    };
+    for (const rt of D.routes) for (let i = 0; i < rt.samples.length; i++) if (rt.samples[i].span !== 'tunnel' && rt.samples[i].span !== 'bridge') addRow(rt, i);
+    // A bridge deck is a road surface too; test its full 10 m deck, including the shoulder and kerbs.
+    for (const br of D.bridges) { const st = br.strips[0], grid = br.topCols; for (let i = 0; i < br.samples.length; i++) for (let k = 0; k <= 8; k++) probes.push({ p: atO(st, grid, i, grid[0] + 0.02 + (grid[grid.length - 1] - grid[0] - 0.04) * k / 8), tag: null, route: br.def?.id || br.id }); }
+    // Nine named exit checks, from each frozen town boundary node out along its approved 6 m connector.
+    const L = window.LAYOUT, nodeById = Object.fromEntries(L.roadNodes.map(n => [n.id, n])), townExits = ['N01', 'N03', 'N04', 'N08', 'N09', 'N10', 'N11', 'N12', 'N13'];
+    for (const id of townExits) {
+      const e = W.roadNetwork.edges.find(q => q.from === id && /^C01-/.test(q.to) || q.to === id && /^C01-/.test(q.from));
+      if (!e) { exitCounts[id] = -1; continue; }
+      const other = e.from === id ? e.to : e.from, n0 = nodeById[id], end = W.lonLatToTown(W.roadNetwork.nodeById[other].lon, W.roadNetwork.nodeById[other].lat), dx = end.x - n0.x, dz = end.z - n0.z, len = Math.hypot(dx, dz), rt = D.routes.find(q => q.def.segs.some(s => s.id === e.id));
+      if (!rt) { exitCounts[id] = -1; continue; }
+      exitCounts[id] = 0;
+      for (let i = 0; i < rt.samples.length; i++) { const p = rt.flatOf[i], s = ((p.x - n0.x) * dx + (p.z - n0.z) * dz) / len, side = Math.abs((p.x - n0.x) * dz - (p.z - n0.z) * dx) / len;
+        if (s >= -0.02 && s <= 6.02 && side <= 0.02) addRow(rt, i, id);
+      }
+    }
+    S.scene.updateMatrixWorld(true);
+    const visible = o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; }, identity = new T.Matrix4(), interest = new Set(), key = (x, z) => `${Math.floor(x)},${Math.floor(z)}`, wrap = p => [B.wrapX(p[0]), p[1], p[2]];
+    for (const q of probes) { q.p = wrap(q.p); interest.add(key(q.p[0], q.p[2])); }
+    const cells = new Map(), sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const rayHit = (o, d, A, C, E) => { const e1 = sub(C, A), e2 = sub(E, A), p = cross(d, e2), det = dot(e1, p); if (Math.abs(det) < 1e-13) return null; const inv = 1 / det, s = sub(o, A), u = dot(s, p) * inv; if (u < -1e-7 || u > 1 + 1e-7) return null; const q = cross(s, e1), v = dot(d, q) * inv; if (v < -1e-7 || u + v > 1 + 1e-7) return null; const t = dot(e2, q) * inv; return t > 0 ? t : null; };
+    const idMatrix = new T.Matrix4(), worldVertex = new T.Vector3(); let triangles = 0;
+    S.scene.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || !o.geometry?.attributes?.position || !visible(o)) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material]; if (mats.some(m => !m || (m.transparent && m.opacity <= 0) || m.blending === T.AdditiveBlending)) return;
+      o.updateMatrixWorld(true); const transformed = !o.matrixWorld.equals(idMatrix);
+      const g = o.geometry, pos = g.attributes.position, ix = g.index, count = ix ? ix.count : pos.count, road = roadSet.has(o), surface = surfaceSet.has(o), name = o.name || o.parent?.name || o.type;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const v = [0, 1, 2].map(k => { const n = ix ? ix.getX(t + k) : t + k; if (transformed) { worldVertex.set(pos.getX(n), pos.getY(n), pos.getZ(n)).applyMatrix4(o.matrixWorld); return [B.wrapX(worldVertex.x), worldVertex.y, worldVertex.z]; } return [B.wrapX(pos.getX(n)), pos.getY(n), pos.getZ(n)]; }), x0 = Math.floor(Math.min(v[0][0], v[1][0], v[2][0])), x1 = Math.floor(Math.max(v[0][0], v[1][0], v[2][0])), z0 = Math.floor(Math.min(v[0][2], v[1][2], v[2][2])), z1 = Math.floor(Math.max(v[0][2], v[1][2], v[2][2]));
+        if ((x1 - x0 + 1) * (z1 - z0 + 1) > 2500) continue;
+        const tri = { v, road, surface, name };
+        for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = `${x},${z}`; if (!interest.has(k)) continue; let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(tri); triangles++; }
+      }
+    });
+    const tally = { rays: 0, occluded: 0, missed: 0, examples: [], exits: exitCounts, triangles };
+    for (const state of ['flat', 'sphere']) {
+      const u = state === 'sphere' ? 1 : 0, count = { rays: 0, occluded: 0, missed: 0, raised: 0, raisedBy: {}, examples: [], blockers: {}, misses: [] };
+      const bend = p => { const q = wrap(p); return u ? B.point(q[0], q[1], q[2], 1) : q; };
+      const baryXZ = (p, v) => {
+        const [a, b, c] = v, den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+        if (Math.abs(den) < 1e-12) return null;
+        const x = ((b[2] - c[2]) * (p[0] - c[0]) + (c[0] - b[0]) * (p[2] - c[2])) / den,
+          y = ((c[2] - a[2]) * (p[0] - c[0]) + (a[0] - c[0]) * (p[2] - c[2])) / den, z = 1 - x - y;
+        // The seam split keeps a 0.2 mm west copy; float32 row coordinates can therefore sit
+        // up to 0.5 mm beyond that exact edge. Accept only this sub-millimetre numeric sliver,
+        // then project the barycentrics back onto the rendered triangle before casting.
+        if (Math.min(x, y, z) < -1e-3) return null;
+        const w = [Math.max(0, x), Math.max(0, y), Math.max(0, z)], sum = w[0] + w[1] + w[2];
+        return w.map(v => v / sum);
+      };
+      for (const q of probes) {
+        const p = q.p, nearby = cells.get(key(p[0], p[2])) || []; let roadSurface = null;
+        // First locate the sampled point on the actual flat road triangles. On a sphere the
+        // shader bends triangle vertices, so bending the ideal point separately can put the
+        // test ray a fraction of a millimetre above the rendered chord and report a false gap.
+        for (const tri of nearby) if (tri.surface) {
+          const w = baryXZ(p, tri.v); if (!w) continue;
+          const y = w[0] * tri.v[0][1] + w[1] * tri.v[1][1] + w[2] * tri.v[2][1];
+          if (!roadSurface || y > roadSurface.y) roadSurface = { tri, w, y };
+        }
+        const flatTarget = roadSurface && [0, 1, 2].map(k => roadSurface.w.reduce((s, w, i) => s + w * roadSurface.tri.v[i][k], 0));
+        const A = roadSurface && bend([flatTarget[0], flatTarget[1] + 80, flatTarget[2]]),
+          Z = roadSurface && (u ? roadSurface.w.reduce((sum, w, i) => { const v = bend(roadSurface.tri.v[i]); return sum.map((x, k) => x + w * v[k]); }, [0, 0, 0]) : flatTarget);
+        let best = null;
+        if (roadSurface) {
+          const delta = sub(Z, A), len = Math.hypot(...delta), dir = delta.map(v => v / len);
+          for (const tri of nearby) { const v = tri.v.map(bend), d = rayHit(A, dir, ...v); if (d !== null && (!best || d < best.d - 1e-4 || (Math.abs(d - best.d) <= 1e-4 && tri.road && !best.road))) best = { d, road: tri.road, name: tri.name }; }
+        }
+        count.rays++; if (roadSurface && roadSurface.y > p[1] + 0.06) { count.raised++; const by = count.raisedBy[q.route] || (count.raisedBy[q.route] = { n: 0, at: [] }); by.n++; if (by.at.length < 3) by.at.push(`${p[0].toFixed(2)},${p[2].toFixed(2)} +${(roadSurface.y - p[1]).toFixed(2)} ${roadSurface.tri.name}`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 被其他道路抬高 ${(roadSurface.y - p[1]).toFixed(3)} m`); }
+        if (!best) { count.missed++; if (count.misses.length < 8) count.misses.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 附近 ${[...new Set(nearby.map(t => t.name))].slice(0, 8).join('|')}`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 无命中`); }
+        else if (!best.road) { count.occluded++; const who = count.blockers[best.name] || (count.blockers[best.name] = { n: 0, at: [] }); who.n++; if (who.at.length < 5) who.at.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)})`); if (count.examples.length < 8) count.examples.push(`${q.tag || q.route} (${p[0].toFixed(3)},${p[2].toFixed(3)}) 被 ${best.name} 遮挡`); }
+      }
+      tally[state] = count;
+    }
+    return tally;
+  });
+  const u2ok = ['flat', 'sphere'].every(s => u2[s].rays > 0 && u2[s].occluded === 0 && u2[s].missed === 0 && u2[s].raised === 0) && Object.keys(u2.exits).length === 9 && Object.values(u2.exits).every(n => n > 0);
+  check('U2', u2ok, `实际路网可见三角面竖直射线，铺装每 0.5 m 一行、每行 9 点；平面 ${u2.flat.rays} 点（遮挡 ${u2.flat.occluded}、无命中 ${u2.flat.missed}、其他道路抬高 ${u2.flat.raised}），球形 ${u2.sphere.rays} 点（遮挡 ${u2.sphere.occluded}、无命中 ${u2.sphere.missed}、其他道路抬高 ${u2.sphere.raised}）；九出口 0–6 m 探针 ${Object.entries(u2.exits).map(([k, n]) => `${k} ${n}`).join('、')}；参与相交三角形 ${u2.triangles}${!u2ok ? `；遮挡物 ${JSON.stringify({ flat: u2.flat.blockers, sphere: u2.sphere.blockers })}；抬高分布 ${JSON.stringify(u2.flat.raisedBy)}；无命中例 ${JSON.stringify({ flat: u2.flat.misses, sphere: u2.sphere.misses })}；例：${[...u2.flat.examples, ...u2.sphere.examples].slice(0, 8).join('；')}` : ''}`);
   // 30 s after the first frame, the camera cycling through the three states once a second
   const STATES = [{ mapMode: 'flat', target: [-7, 1.2, 20], dist: 34 }, { mapMode: 'flat', target: [-90, 1.2, 60], dist: 30 }, { mapMode: 'sphere', dist: 140 }];
   const rows = [], start = Date.now();
@@ -219,24 +397,45 @@ try {
   const same = r => JSON.stringify(r.nodes) === JSON.stringify(first.nodes);
   check('U3-stable', rows.every(same), `首帧后 ${Math.round((Date.now() - start) / 1000)} s、${rows.length} 次采样（城镇 / 平面远处 / 球形轮换）：网格与实例容量${rows.every(same) ? '不变' : '有变化：' + rows.filter(r => !same(r)).map(r => r.mode + ' ' + r.nodes.length).join('、')}`);
   check('U3-display', rows.every(r => r.visible && r.terrain), `三种状态下模块根、全景墨线组、地标组与地形分块都可见${rows.every(r => r.visible && r.terrain) ? '' : '（有隐藏：' + rows.filter(r => !(r.visible && r.terrain)).map(r => r.mode).join('、') + '）'}`);
-  // U3-town (W10a rework after the user's review of N08, 2026-10-10): with every module shown in the town view, none may lie on the town's own streets.
+  // U3-town: terrain, landcover and landmarks must not cover the town streets; the road module owns its own markings and roadside details.
   // On every town carriageway (layout.js roads, every 0.5 m, 9 points across; alleys on a 0.5 m grid) a vertical ray must meet a town surface first, and no
   // world ground layer with a polygon offset may lie within 5 cm below it (an offset lets a layer that is under the street win when it is seen obliquely).
-  // The exit heads and the town's last 0.25 m are left out: that joint is the heads' by design until W10c replaces them (U1, U2).
   const town = await page.evaluate(() => {
-    const S = window.__scene, T = window.THREE, L = window.LAYOUT, world = new Set(), heads = new Set(S.terrain.heads);
-    for (const r of [S.section.state.root, S.cover.state.root, S.ocean.state.root, S.roads.state.root, ...S.terrain.ring, ...S.terrain.rest, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])]) r.traverse(o => world.add(o));
-    const patch = new T.Box3(new T.Vector3(-50, -5, -50), new T.Vector3(50, 5, 50)), box = new T.Box3(), meshes = [];
-    S.scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || heads.has(o)) return; for (let q = o; q; q = q.parent) if (!q.visible) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); if (box.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).intersectsBox(patch)) meshes.push(o); });
+    const S = window.__scene, T = window.THREE, L = window.LAYOUT, world = new Set();
+    for (const r of [S.section.state.root, S.cover.state.root, S.ocean.state.root, ...S.terrain.ring, ...S.terrain.rest, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])]) r.traverse(o => world.add(o));
+    const patch = new T.Box3(new T.Vector3(-50, -5, -50), new T.Vector3(50, 5, 50)), box = new T.Box3(), CELL = 1, cells = new Map(), broad = [], cellKey = (x, z) => `${x},${z}`;
+    const visible = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; }, addTriangle = tri => {
+      const x0 = Math.max(-50, Math.floor(Math.min(...tri.v.map(p => p[0])))), x1 = Math.min(50, Math.floor(Math.max(...tri.v.map(p => p[0])))), z0 = Math.max(-50, Math.floor(Math.min(...tri.v.map(p => p[2])))), z1 = Math.min(50, Math.floor(Math.max(...tri.v.map(p => p[2]))));
+      if (x0 > x1 || z0 > z1) return; const count = (x1 - x0 + 1) * (z1 - z0 + 1); if (count > 2500) { broad.push(tri); return; }
+      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(tri); }
+    };
+    S.scene.updateMatrixWorld(true);
+    S.scene.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || !visible(o) || !o.geometry?.attributes?.position) return;
+      const g = o.geometry, pos = g.attributes.position; if (!g.boundingBox) g.computeBoundingBox(); if (!box.copy(g.boundingBox).applyMatrix4(o.matrixWorld).intersectsBox(patch)) return;
+      const ix = g.index, total = ix ? ix.count : pos.count, start = Math.max(0, g.drawRange.start || 0), end = Math.min(total, start + (Number.isFinite(g.drawRange.count) ? g.drawRange.count : total)), e = o.matrixWorld.elements;
+      for (let t = start - start % 3; t + 2 < end; t += 3) {
+        const material = Array.isArray(o.material) ? (g.groups.find(q => t >= q.start && t + 2 < q.start + q.count) ? o.material[g.groups.find(q => t >= q.start && t + 2 < q.start + q.count).materialIndex] : null) : o.material;
+        if (!material) continue; const v = [];
+        for (let k = 0; k < 3; k++) { const n = ix ? ix.getX(t + k) : t + k, x = pos.getX(n), y = pos.getY(n), z = pos.getZ(n); v.push([e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]]); }
+        const ab = [v[1][0] - v[0][0], v[1][2] - v[0][2]], ac = [v[2][0] - v[0][0], v[2][2] - v[0][2]], area = ab[0] * ac[1] - ab[1] * ac[0], normalY = (v[1][2] - v[0][2]) * (v[2][0] - v[0][0]) - (v[1][0] - v[0][0]) * (v[2][2] - v[0][2]);
+        if (Math.abs(area) < 1e-12 || material.side === T.FrontSide && normalY <= 0 || material.side === T.BackSide && normalY >= 0) continue;
+        addTriangle({ v, object: o });
+      }
+    });
     const pts = [];
     for (const e of L.roads) { const w = L.ROAD_TYPES[e.type].carriageway; for (let i = 0; i + 1 < e.nodes.length; i++) { const a = L.roadNodes.find(n => n.id === e.nodes[i]), b = L.roadNodes.find(n => n.id === e.nodes[i + 1]), len = Math.hypot(b.x - a.x, b.z - a.z), d = [(b.x - a.x) / len, (b.z - a.z) / len];
       for (let s = 0; s <= len; s += 0.5) for (let k = -4; k <= 4; k++) { const o = k / 4 * (w / 2 - 0.25); pts.push([a.x + d[0] * s - d[1] * o, a.z + d[1] * s + d[0] * o]); } } }
     for (const a of L.alleys) for (let x = a.rect[0] + 0.25; x < a.rect[2]; x += 0.5) for (let z = a.rect[1] + 0.25; z < a.rect[3]; z += 0.5) pts.push([x, z]);
     const name = o => { let n = o.name; for (let q = o.parent; !n && q; q = q.parent) n = q.name; return n || o.type; };
-    const rc = new T.Raycaster(), bad = {}; let n = 0, nBad = 0;
-    // (the last 0.25 m before the patch edge is the joint with the exit heads: W10c)
-    for (const [x, z] of pts) { if (Math.abs(x) > 47.75 || Math.abs(z) > 47.75) continue; n++; rc.set(new T.Vector3(x, 30, z), new T.Vector3(0, -1, 0)); const hits = rc.intersectObjects(meshes, false); if (!hits.length) continue;
-      const top = hits[0], wrong = world.has(top.object) ? [top] : hits.slice(1).filter(h => world.has(h.object) && top.point.y - h.point.y < 0.05 && (Array.isArray(h.object.material) ? h.object.material : [h.object.material]).some(m => m.polygonOffset));
+    const bad = {}; let n = 0, nBad = 0;
+    for (const [x, z] of pts) { if (Math.abs(x) > 47.75 || Math.abs(z) > 47.75) continue; n++;
+      const hits = [], candidates = [...(cells.get(cellKey(Math.floor(x), Math.floor(z))) || []), ...broad];
+      for (const tri of candidates) { const [a, b, c] = tri.v, den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]); if (Math.abs(den) < 1e-12) continue;
+        const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / den, v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / den, w = 1 - u - v;
+        if (u < -1e-8 || v < -1e-8 || w < -1e-8) continue; const y = u * a[1] + v * b[1] + w * c[1]; if (y <= 30 + 1e-8) hits.push({ object: tri.object, y }); }
+      hits.sort((a, b) => b.y - a.y); if (!hits.length) continue;
+      const top = hits[0], wrong = world.has(top.object) ? [top] : hits.slice(1).filter(h => world.has(h.object) && top.y - h.y < 0.05 && (Array.isArray(h.object.material) ? h.object.material : [h.object.material]).some(m => m.polygonOffset));
       if (wrong.length) { nBad++; for (const h of wrong) { const k = name(h.object); (bad[k] = bad[k] || { n: 0, at: [] }).n++; if (bad[k].at.length < 3) bad[k].at.push(`(${x.toFixed(1)}, ${z.toFixed(1)})`); } } }
     return { n, nBad, bad };
   });
@@ -244,5 +443,5 @@ try {
   check('U3-errors', !errors.length, errors.join('；') || '无页面错误');
 } finally { await browser.close(); }
 }
-console.log('TODO U2、U4–U7 属于 W10c–W10g，尚未实施（不算通过）');
+console.log('TODO U5–U7 属于 W10d–W10g，尚未实施（不算通过）');
 process.exitCode = failures ? 1 : 0;

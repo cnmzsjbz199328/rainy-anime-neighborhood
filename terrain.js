@@ -3,7 +3,6 @@
 //       x = R lon, z = -R asinh(tan lat), y_flat = (height - 1.6) / cos lat   (bend multiplies y by cos lat again)
 //   - the TR01 ring (everything within 24 m of the town patch) as separate meshes that stay visible at uBend = 0
 //   - two polar caps (|lat| > 85 deg) in native sphere coordinates, excluded from the bend (material.userData.noBend)
-//   - W8g-b: the cut of the ring under the 9 exit heads (their first L metres of road come from roads.js exitHeads, made at start-up)
 // The mesh builder is pure (no THREE, no DOM) so tools/terrain_check.mjs can run it under Node.
 (function (global) {
 'use strict';
@@ -22,6 +21,30 @@ const KIND_COLOR = {
 const ROCK = hex('#6f6b78'), SNOW = hex('#d6e4f0');
 const SHALLOW = hex('#5f8fa0'), DEEP = hex('#1f3a66'), SAND = hex('#8a8794');
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+const polygonAreaXZ = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
+const CUT_EPS = 1e-3; // 1 mm tolerance for Float32 road rows against double-precision cut polygons
+const CUT_PAD = 0.12; // Keep ground a handspan outside the swept right-of-way so Float32 edges cannot leave grass slivers on the pavement.
+const CUT_CAP = 0.30; // The road rows are sampled every 0.5 m; cover their end rows as well as the intervals between them.
+function splitPolygonXZ(poly, a, b, sign) {
+  const inside = [], outside = [], side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -CUT_EPS, iq = sq >= -CUT_EPS;
+    if (ip) inside.push(p); else outside.push(p);
+    if (ip !== iq && sp !== sq) { const t = sp / (sp - sq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; inside.push(x); outside.push(x); }
+  }
+  const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
+  return [clean(inside), clean(outside)];
+}
+function subtractConvexXZ(subject, clip) {
+  let rest = subject; const outside = [], sign = polygonAreaXZ(clip) >= 0 ? 1 : -1;
+  for (let i = 0; i < clip.length && rest.length >= 3; i++) {
+    const [inside, out] = splitPolygonXZ(rest, clip[i], clip[(i + 1) % clip.length], sign);
+    if (out.length >= 3 && Math.abs(polygonAreaXZ(out)) > 1e-10) outside.push(out);
+    rest = inside;
+  }
+  return outside;
+}
 
 function builder(W) {
   const P = W.TOWN_PATCH, EPS = 1e-9;
@@ -50,56 +73,6 @@ function builder(W) {
   // columns included (ruling 5 of the W8g-b breakdown: that contains the cross-section's footprint, paved + shoulder + ditch, plus 0.3 m for every class, and the outer
   // columns lie on the terrain, so the cut edge meets the road at the terrain's own height; a cut at the footprint + 0.3 m can end in a ditch or on a raised verge).
   // The polygon's sides are the strip's own outer edges. heads: [{ exit, rt, L, K }] (roads.js).
-  const exitPolygons = heads => {
-    const out = [];
-    for (const hd of heads || []) {
-      const rt = hd.rt; if (!rt?.strip?.pos || !rt.grid?.length || !rt.footprint?.length) continue;
-      const m = rt.grid.length, pos = rt.strip.pos;
-      const pointAt = (i, o) => {
-        let j = 0;
-        while (j + 1 < m - 1 && rt.grid[j + 1] < o) j++;
-        const t = (o - rt.grid[j]) / (rt.grid[j + 1] - rt.grid[j]), a = (i * m + j) * 3, b = a + 3;
-        return [pos[a] + (pos[b] - pos[a]) * t, pos[a + 2] + (pos[b + 2] - pos[a + 2]) * t];
-      };
-      const lo = rt.grid[0], hi = rt.grid[m - 1];
-      for (let i = 0; i < hd.K; i++) {
-        const lo0 = lo, hi0 = hi, lo1 = lo, hi1 = hi;
-        const quad = [pointAt(i, lo0), pointAt(i + 1, lo1), pointAt(i + 1, hi1), pointAt(i, hi0)];
-        if (Math.abs(polyArea(quad)) < 1e-7) continue;
-        // where the road bends, the inner edge of a band can fold the quad: then it is cut along its interior diagonal into two triangles (the subtraction needs convex pieces)
-        const turn = k => { const a = quad[k], b = quad[(k + 1) % 4], c = quad[(k + 2) % 4]; return (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]); }, tn = [0, 1, 2, 3].map(turn), sg = Math.sign(polyArea(quad));
-        const reflex = tn.findIndex(t => Math.sign(t) === -sg && Math.abs(t) > 1e-12);      // turn k is at vertex k + 1
-        const pieces = reflex < 0 ? [quad] : (() => { const v = (reflex + 1) % 4; return [[quad[v], quad[(v + 1) % 4], quad[(v + 2) % 4]], [quad[v], quad[(v + 2) % 4], quad[(v + 3) % 4]]]; })();
-        for (const polygon of pieces) {
-          if (Math.abs(polyArea(polygon)) < 1e-9) continue;
-          const xs = polygon.map(p => p[0]), zs = polygon.map(p => p[1]);
-          out.push({ polygon, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs), exit: hd.exit, s0: rt.samples[i].s, s1: rt.samples[i + 1].s });
-        }
-      }
-    }
-    return out;
-  };
-  const splitHalfPlane = (poly, a, b, sign) => {
-    const side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])), inside = [], outside = [];
-    for (let i = 0; i < poly.length; i++) {
-      const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -1e-9, iq = sq >= -1e-9;
-      if (ip) inside.push(p); else outside.push(p);
-      if (ip !== iq) { const t = sp / (sp - sq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; inside.push(x); outside.push(x); }
-    }
-    const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
-    return [clean(inside), clean(outside)];
-  };
-  const subtractConvex = (subject, clip) => {
-    let rest = subject; const outside = [], sign = polyArea(clip) >= 0 ? 1 : -1;
-    for (let i = 0; i < clip.length && rest.length >= 3; i++) {
-      const [inside, out] = splitHalfPlane(rest, clip[i], clip[(i + 1) % clip.length], sign);
-      if (out.length >= 3 && Math.abs(polyArea(out)) > 1e-10) outside.push(out);
-      rest = inside;
-    }
-    // Any final `rest` is the portion inside the clearance rectangle and is intentionally replaced by road geometry.
-    return outside;
-  };
-
   // vertex data of one lattice point (height, flat position, local-frame normal, colour)
   const gradOf = (lon, lat) => {
     const s = Math.cos(lat * D), e = 0.75, dlon = e / (R * s) / D, dlat = e / R / D;
@@ -166,11 +139,6 @@ function builder(W) {
       return i;
     };
     const tris = [];   // {a, b, c} as vertex ids, with chunk and ring flag resolved later
-    // W8g-b: the cut polygons by 2 m cell of the flat frame; a triangle visits only the polygons of its cells, in their original order (the others are skipped by the
-    // bounding-box test anyway), so the cut is the same
-    const PB = 2, pcell = new Map();
-    if (opts.exitPolygons?.length) opts.exitPolygons.forEach((r, k) => { for (let ix = Math.floor(r.minX / PB); ix <= Math.floor(r.maxX / PB); ix++) for (let iz = Math.floor(r.minZ / PB); iz <= Math.floor(r.maxZ / PB); iz++) { const key = ix * 100000 + iz; let l = pcell.get(key); if (!l) pcell.set(key, l = []); l.push(k); } });
-    const candidates = box => { const set = new Set(); for (let ix = Math.floor((box.minX - 1e-8) / PB); ix <= Math.floor((box.maxX + 1e-8) / PB); ix++) for (let iz = Math.floor((box.minZ - 1e-8) / PB); iz <= Math.floor((box.maxZ + 1e-8) / PB); iz++) { const l = pcell.get(ix * 100000 + iz); if (l) for (const k of l) set.add(k); } return [...set].sort((a, b) => a - b).map(k => opts.exitPolygons[k]); };
     const keep = (ra, ka, rb, kb, rc, kc) => {
       const A = [rings[ra].lons[ka], rings[ra].lat], B = [rings[rb].lons[kb], rings[rb].lat], C = [rings[rc].lons[kc], rings[rc].lat];
       if (inPatch(A[0], A[1]) && inPatch(B[0], B[1]) && inPatch(C[0], C[1])) return;                    // the town patch is the town's
@@ -179,31 +147,7 @@ function builder(W) {
       if (opts.chunks && !opts.chunks.has(chunkKeyOf(lon, lat))) return;
       const isRing = W.townPatchDistance(lon, lat) < RING_M;
       if (isRing ? !opts.ring : !opts.rest) return;
-      if (opts.exitPolygons?.length) {
-        let pieces = [[[flatX(A[0]), flatZ(A[1])], [flatX(B[0]), flatZ(B[1])], [flatX(C[0]), flatZ(C[1])]]], changed = false;
-        const x0 = pieces[0].map(p => p[0]), z0 = pieces[0].map(p => p[1]), triBox = { minX: Math.min(...x0), maxX: Math.max(...x0), minZ: Math.min(...z0), maxZ: Math.max(...z0) };
-        for (const rect of candidates(triBox)) {
-          if (rect.maxX < triBox.minX - 1e-8 || rect.minX > triBox.maxX + 1e-8 || rect.maxZ < triBox.minZ - 1e-8 || rect.minZ > triBox.maxZ + 1e-8) continue;
-          const before = pieces.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0), next = [];
-          for (const poly of pieces) {
-            const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]);
-            if (rect.maxX < Math.min(...xs) - 1e-8 || rect.minX > Math.max(...xs) + 1e-8 || rect.maxZ < Math.min(...zs) - 1e-8 || rect.minZ > Math.max(...zs) + 1e-8) next.push(poly);
-            else next.push(...subtractConvex(poly, rect.polygon));
-          }
-          const after = next.reduce((sum, p) => sum + Math.abs(polyArea(p)), 0);
-          if (after < before - 1e-8) { pieces = next; changed = true; }
-        }
-        if (changed) {
-          const ids0 = [vid(ra, ka), vid(rb, kb), vid(rc, kc)], triVerts = ids0.map(i => V[i]);
-          for (const poly of pieces) for (let k = 1; k + 1 < poly.length; k++) {
-            const p0 = poly[0], p1 = poly[k], p2 = poly[k + 1]; if (Math.abs(polyArea([p0, p1, p2])) < 5e-5) continue;
-            const x = (p0[0] + p1[0] + p2[0]) / 3, z = (p0[1] + p1[1] + p2[1]) / 3, lo = x / (R * D), la = Math.atan(Math.sinh(-z / R)) / D;
-            const ring = W.townPatchDistance(lo, la) < RING_M;
-            tris.push({ a: clippedVid(p0, triVerts), b: clippedVid(p1, triVerts), c: clippedVid(p2, triVerts), lon: lo, lat: la, ring });
-          }
-          return;
-        }
-      }
+
       tris.push({ a: vid(ra, ka), b: vid(rb, kb), c: vid(rc, kc), lon, lat, ring: isRing });
     };
     for (let r = 0; r + 1 < rings.length; r++) {
@@ -303,7 +247,7 @@ function builder(W) {
     return found.map(q => q.tri);
   }
 
-  return { buildFlat, buildRestChunks, buildRestRow, samplerCell, buildCap, exitPolygons, vertex, vertexColor, lats, ringLons, inPatch, flatX, flatZ, chunkKeyOf };
+  return { buildFlat, buildRestChunks, buildRestRow, samplerCell, buildCap, vertex, vertexColor, lats, ringLons, inPatch, flatX, flatZ, chunkKeyOf };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -382,82 +326,15 @@ TERRAIN.job = function (make, onDone) {
 // run a generator to its end (the synchronous form of a stepped build)
 TERRAIN.runAll = it => { for (;;) { const r = it.next(); if (r.done) return r.value; } };
 
-// ---- W8g-b strip helpers (also used by roads.js and section.js for the road beyond a head)
-// cells (triangles) of `index` whose vertices all lie in rows r0 .. r1 of a strip with m columns, in their order
-const cellsIn = (index, m, r0, r1) => { const out = []; for (let t = 0; t < index.length; t += 3) { const a = index[t], b = index[t + 1], c = index[t + 2], lo = Math.floor(Math.min(a, b, c) / m), hi = Math.floor(Math.max(a, b, c) / m); if (lo >= r0 && hi <= r1) out.push(a, b, c); } return out; };
-// vertex normals of a strip from the cells of `index` in rows n0 .. n1 (three.js computeVertexNormals on just those cells): a head (cells of rows 0 .. K + 1) and the
-// road beyond it (cells of rows K - 1 .. end) sum the same triangles in the same order at the seam row K, so their normals there are the same numbers
-function stripNormals(THREE, pos, index, m, n0, n1) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(cellsIn(index, m, n0, n1)); g.computeVertexNormals(); return g.getAttribute('normal').array; }
-// one mesh per exit head (so the view culls them one by one): its plain cells keep the road's vertex colours and normals (as above); its pure town cells (the first
-// 6 m: town asphalt, N11-N13 the paving colour of 12.4 G6) have their own vertices with the town colour as vertex colour, uv = one texture repeat per 4 m as the town's
-// slabs, normals over those cells alone, and texW = 1: the head material (headMaterial) applies the asphalt grain only there. Each exit keeps only its rows 0 .. K.
-// W8g-b (ruling 6): an end cap at row K, a wall from the road's last row to the terrain under it (H, the sampler), facing back into the town, capW = 1: where the
-// road ends in the town view (the terrain resumes beyond), its ditch or its raised bed would leave an open slit; the material folds the cap away (uCap = 0) while the
-// network road continues from row K (W10a: in every view, so the cap stays folded until W10c removes heads and caps), so the head and the road beyond meet with the same vertices.
-function headGeometry(THREE, heads, colours, H, terrainColour) {
-  const out = [], R = 90, D = Math.PI / 180;
-  for (const hd of heads) {
-    const st = hd.rt.strip, m = hd.rt.grid.length, K = hd.K, last = hd.rt.samples.length - 1, P = { pos: [], col: [], nrm: [], uv: [], tw: [], cw: [], idx: [] };
-    // (N08: the W4 section draws its strips with up normals, so its head does too)
-    const gN = hd.upNormals ? Float32Array.from({ length: st.pos.length }, (_, k) => (k % 3 === 1 ? 1 : 0)) : stripNormals(THREE, st.pos, st.index, m, 0, Math.min(K + 1, last));
-    const town = colours[['N11', 'N12', 'N13'].includes(hd.exit) ? 'paving' : 'asphalt'];
-    const pushPart = (cells, normals, colour, w) => {
-      if (!cells.length) return;
-      const used = [...new Set(cells)].sort((a, b) => a - b), map = new Map(used.map((v, k) => [v, k])), base = P.pos.length / 3;
-      let nTown = null;
-      if (!normals) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(st.pos, 3)); g.setIndex(cells); g.computeVertexNormals(); nTown = g.getAttribute('normal').array; }
-      for (const v of used) { for (let c = 0; c < 3; c++) { P.pos.push(st.pos[v * 3 + c]); P.col.push(colour ? colour[c] : st.col[v * 3 + c]); P.nrm.push((normals || nTown)[v * 3 + c]); } P.uv.push(st.pos[v * 3] / 4, -st.pos[v * 3 + 2] / 4); P.tw.push(w); P.cw.push(0); }
-      for (const v of cells) P.idx.push(base + map.get(v));
-    };
-    pushPart(cellsIn(st.index, m, 0, K), gN, null, 0);
-    pushPart(cellsIn(st.headIndex || [], m, 0, K), null, town, 1);
-    if (H && K > 0) {                                                    // the end cap
-      const a = K * m, b = (K - 1) * m + Math.floor(m / 2), c0 = a + Math.floor(m / 2), dx = st.pos[b * 3] - st.pos[c0 * 3], dz = st.pos[b * 3 + 2] - st.pos[c0 * 3 + 2], dl = Math.hypot(dx, dz) || 1, base = P.pos.length / 3;
-      for (let j = 0; j < m; j++) {
-        const v = a + j, x = st.pos[v * 3], y = st.pos[v * 3 + 1], z = st.pos[v * 3 + 2], lat = Math.atan(Math.sinh(-z / R)) / D, yt = (H(x / (R * D), lat) - 1.6) / Math.cos(lat * D);
-        const tc = terrainColour ? terrainColour(x / (R * D), lat) : [st.col[v * 3], st.col[v * 3 + 1], st.col[v * 3 + 2]];        // an earth wall: the terrain's own colour, a little darker
-        for (const yy of [y, yt]) { P.pos.push(x, yy, z); P.col.push(tc[0] * 0.85, tc[1] * 0.85, tc[2] * 0.85); P.nrm.push(dx / dl, 0, dz / dl); P.uv.push(0, 0); P.tw.push(0); P.cw.push(hd.exit === 'N08' ? 2 : 1); }   // 2: the W4 section's chain continues N08
-      }
-      for (let j = 0; j + 1 < m; j++) {                                 // both windings (the material draws front faces only): seen from the town side and from beyond
-        const t0 = base + j * 2, b0 = t0 + 1, t1 = t0 + 2, b1 = t0 + 3;
-        P.idx.push(t0, b0, t1, t1, b0, b1, t0, t1, b0, t1, b1, b0);
-      }
-    }
-    if (!P.idx.length) continue;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(P.pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(P.col, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(P.nrm, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(P.uv, 2)); g.setAttribute('texW', new THREE.Float32BufferAttribute(P.tw, 1)); g.setAttribute('capW', new THREE.Float32BufferAttribute(P.cw, 1)); g.setIndex(P.idx);
-    g.computeBoundingSphere(); out.push({ exit: hd.exit, geometry: g, surface: ['N11', 'N12', 'N13'].includes(hd.exit) ? 'paving' : 'asphalt' });
-  }
-  return out;
-}
-// the material of the heads: toon with vertex colours and the town asphalt's grain, the grain applied only where texW = 1 (a select, not a blend, so a town cell renders
-// as colour x texel exactly like the town's own textured material, and a road cell as its vertex colour exactly like the ground material of the road strips)
-function headMaterial(THREE, makeMaterial, map, capU) {
-  const mtl = makeMaterial(); mtl.map = map; mtl.polygonOffset = true; mtl.polygonOffsetFactor = -2; mtl.polygonOffsetUnits = -2;
-  mtl.onBeforeCompile = shader => {
-    shader.uniforms.uCap = capU;
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float texW;\nattribute float capW;\nuniform vec2 uCap;\nvarying float vTexW;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvTexW = texW;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nif ((capW > 0.5 && capW < 1.5 && uCap.x < 0.5) || (capW > 1.5 && uCap.y < 0.5)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vTexW;').replace('#include <map_fragment>', '#ifdef USE_MAP\n  vec4 sampledDiffuseColor = texture2D( map, vMapUv );\n  diffuseColor *= vTexW > 0.5 ? sampledDiffuseColor : vec4( 1.0 );\n#endif');
-  };
-  return mtl;
-}
-TERRAIN.cellsIn = cellsIn; TERRAIN.stripNormals = stripNormals;
-
-// opts.exitHeads(sampler, builder) -> the exit heads (roads.js exitHeads): W8g-b, the first metres of the exit roads and the ring's cut are made from them at start-up (W10c replaces them)
-TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts = {}) {
+TERRAIN.attach = function (scene, makeMaterial, BEND) {
   const THREE = global.THREE, W = global.WORLD, B = builder(W);
-  let material, capMat, headMat, root; const capU = { value: new THREE.Vector2(0, 0) };     // the exit heads' end caps (x the network's exits, y N08): W10a, the road beyond always shows, so they stay folded (0) until W10c removes the heads
+  let material, capMat, root;
   withPrivateRandom(() => {
     material = makeMaterial();
     capMat = material.clone(); capMat.userData = { noBend: true };
-    // W8g-b: the exit heads: the first 6 m in the town's own asphalt colour and grain (N11-N13: the paving colour of 12.4 G6 on the same grain), the rest as the
-    // network's road strips (toon, vertex colours, polygon offset -2 / -2 as section.js groundMat), one material for all (headMaterial)
-    headMat = headMaterial(THREE, makeMaterial, townAsphaltMaterial ? townAsphaltMaterial.map : null, capU);
     root = new THREE.Group(); root.name = 'terrain'; scene.add(root);
   });
-  const state = { ring: [], heads: [], rest: [], caps: [], restBuilt: false, stats: {} };
+  const state = { ring: [], rest: [], caps: [], restBuilt: false, stats: {} };
   const geom = (c, index) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', c.posAttr || (c.posAttr = new THREE.BufferAttribute(c.pos, 3)));
@@ -466,6 +343,165 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
     g.setIndex(new THREE.BufferAttribute(index, 1)); return g;
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
+  // Once the unified road plan exists, remove its full cross-section from the planetary ground.
+  // This keeps the rendered terrain from sitting above roads between its much wider lattice samples.
+  function cutRoads(data) {
+    const CELL = 2, PERIOD = 2 * Math.PI * R, polys = [], cells = new Map(), cellKey = (x, z) => `${x},${z}`;
+    const addPoly = p => {
+      if (p.length < 3 || Math.abs(polygonAreaXZ(p)) < 1e-7) return;
+      const centre = p.reduce((s, q) => s + q[0], 0) / p.length, copies = [p];
+      if (centre > Math.PI * R) copies.push(p.map(q => [q[0] - PERIOD, q[1]]));
+      else if (centre < -Math.PI * R) copies.push(p.map(q => [q[0] + PERIOD, q[1]]));
+      for (const poly of copies) {
+        const box = { x0: Math.min(...poly.map(q => q[0])), x1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])) };
+        const id = polys.length; polys.push({ p: poly, box });
+        for (let x = Math.floor((box.x0 - CUT_EPS) / CELL); x <= Math.floor((box.x1 + CUT_EPS) / CELL); x++) for (let z = Math.floor((box.z0 - CUT_EPS) / CELL); z <= Math.floor((box.z1 + CUT_EPS) / CELL); z++) {
+          const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id);
+        }
+      }
+    };
+    // Cut along the swept mesh's actual projected cross-section. `route.lateral()` returns a
+    // geodesic offset for furniture placement, while the road mesh itself offsets its Mercator
+    // rows along `tangent * cf`; mixing those coordinate paths left narrow wedges of ground at
+    // the road centreline, especially at landmark entrances and around the ring.
+    const flatLateral = (rt, i, o, along, nearX) => { const f = rt.flatOf[i], t = rt.tangent[i], scale = rt.cf[i] * f.k; let x = f.x + t[0] * along - t[1] * o * scale; x += PERIOD * Math.round((nearX - x) / PERIOD); return [x, f.z + t[1] * along + t[0] * o * scale]; };
+    const routeRow = (rt, i, along = 0, nearX = rt.flatOf[i].x) => {
+      const f = rt.footprint[i];
+      return [flatLateral(rt, i, f[2] - CUT_PAD, along, nearX), flatLateral(rt, i, f[3] + CUT_PAD, along, nearX)];
+    };
+    for (const rt of data.routes || []) for (let i = 0; i + 1 < rt.samples.length; i++) {
+      const x = rt.flatOf[i].x, a = routeRow(rt, i, 0, x), b = routeRow(rt, i + 1, 0, x);
+      addPoly([a[0], a[1], b[1], b[0]]);
+    }
+    // Close the mask over the first and last half metre of each strip. The road mesh has a
+    // complete cross-section at those rows, while an interval-only mask would leave the end
+    // row exposed to the terrain and landmark lawns.
+    for (const rt of data.routes || []) if (rt.samples.length > 1) {
+      const first = routeRow(rt, 0), firstCap = routeRow(rt, 0, -CUT_CAP);
+      addPoly([firstCap[0], firstCap[1], first[1], first[0]]);
+      const lastIndex = rt.samples.length - 1, last = routeRow(rt, lastIndex), lastCap = routeRow(rt, lastIndex, CUT_CAP);
+      addPoly([last[0], last[1], lastCap[1], lastCap[0]]);
+    }
+    for (const br of data.bridges || []) {
+      const st = br.strips && br.strips[0], m = br.topCols && br.topCols.length; if (!st || !m) continue;
+      for (let i = 0; i + 1 < br.samples.length; i++) { const a = (i * m) * 3, b = (i * m + m - 1) * 3, c = ((i + 1) * m + m - 1) * 3, d = ((i + 1) * m) * 3, x = br.flatOf[i].x,
+        flat = j => { let xx = st.pos[j]; xx += PERIOD * Math.round((x - xx) / PERIOD); return [xx, st.pos[j + 2]]; };
+        addPoly([flat(a), flat(b), flat(c), flat(d)]); }
+    }
+    for (const j of data.junctions || []) if (j.strip && j.strip.index) for (let t = 0; t + 2 < j.strip.index.length; t += 3) {
+      const s = j.strip, at = k => { const n = s.index[t + k] * 3; return [s.pos[n], s.pos[n + 2]]; }; addPoly([at(0), at(1), at(2)]);
+    }
+
+    state.roadPolygons = polys;
+    let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0;
+    const meshes = [...state.ring, ...state.rest];
+    for (const mesh of meshes) {
+      const g = mesh.geometry, pos = g.attributes.position, normal = g.attributes.normal, color = g.attributes.color, ix = g.index;
+      const count = ix ? ix.count : pos.count, index = [], extraPos = [], extraNorm = [], extraColor = []; let meshClipped = 0;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const ids = [0, 1, 2].map(k => ix ? ix.getX(t + k) : t + k), v = ids.map(i => [pos.getX(i), pos.getY(i), pos.getZ(i)]), tri = v.map(p => [p[0], p[2]]);
+        trianglesBefore++;
+        const box = { x0: Math.min(...tri.map(p => p[0])), x1: Math.max(...tri.map(p => p[0])), z0: Math.min(...tri.map(p => p[1])), z1: Math.max(...tri.map(p => p[1])) }, nx0 = Math.floor(box.x0 / CELL), nx1 = Math.floor(box.x1 / CELL), nz0 = Math.floor(box.z0 / CELL), nz1 = Math.floor(box.z1 / CELL), found = new Set();
+        if ((nx1 - nx0 + 1) * (nz1 - nz0 + 1) <= 256) {
+          for (let x = nx0; x <= nx1; x++) for (let z = nz0; z <= nz1; z++) for (const id of cells.get(cellKey(x, z)) || []) found.add(id);
+        } else {
+          for (let id = 0; id < polys.length; id++) { const b = polys[id].box; if (b.x1 >= box.x0 && b.x0 <= box.x1 && b.z1 >= box.z0 && b.z0 <= box.z1) found.add(id); }
+        }
+        const candidates = [...found].filter(id => { const b = polys[id].box; return b.x1 >= box.x0 - CUT_EPS && b.x0 <= box.x1 + CUT_EPS && b.z1 >= box.z0 - CUT_EPS && b.z0 <= box.z1 + CUT_EPS; });
+        if (!candidates.length) { index.push(...ids); trianglesAfter++; continue; }
+        let pieces = [tri];
+        for (const id of candidates) {
+          const cut = polys[id], next = [];
+          for (const poly of pieces) {
+            const pb = { x0: Math.min(...poly.map(q => q[0])), x1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])) };
+            if (cut.box.x1 < pb.x0 - 1e-7 || cut.box.x0 > pb.x1 + 1e-7 || cut.box.z1 < pb.z0 - 1e-7 || cut.box.z0 > pb.z1 + 1e-7) next.push(poly);
+            else next.push(...subtractConvexXZ(poly, cut.p));
+          }
+          pieces = next; if (!pieces.length) break;
+        }
+        const area = Math.abs(polygonAreaXZ(tri)), remain = pieces.reduce((sum, p) => sum + Math.abs(polygonAreaXZ(p)), 0);
+        if (area < 1e-10) { index.push(...ids); trianglesAfter++; continue; }
+        if (remain >= area - Math.max(1e-7, area * 1e-7)) { index.push(...ids); trianglesAfter++; continue; }
+        clippedTriangles++; meshClipped++; removedArea += Math.max(0, area - remain);
+        const den = (v[1][2] - v[2][2]) * (v[0][0] - v[2][0]) + (v[2][0] - v[1][0]) * (v[0][2] - v[2][2]);
+        const addVertex = p => {
+          const w0 = ((v[1][2] - v[2][2]) * (p[0] - v[2][0]) + (v[2][0] - v[1][0]) * (p[1] - v[2][2])) / den, w1 = ((v[2][2] - v[0][2]) * (p[0] - v[2][0]) + (v[0][0] - v[2][0]) * (p[1] - v[2][2])) / den, w2 = 1 - w0 - w1, weights = [w0, w1, w2], out = pos.count + extraPos.length / 3;
+          extraPos.push(p[0], weights.reduce((sum, w, k) => sum + w * v[k][1], 0), p[1]);
+          if (normal) for (let c = 0; c < 3; c++) extraNorm.push(weights.reduce((sum, w, k) => sum + w * normal.array[ids[k] * 3 + c], 0));
+          if (color) for (let c = 0; c < 3; c++) extraColor.push(weights.reduce((sum, w, k) => sum + w * color.array[ids[k] * 3 + c], 0));
+          return out;
+        };
+        for (const poly of pieces) { const vids = poly.map(addVertex); for (let k = 1; k + 1 < vids.length; k++) { index.push(vids[0], vids[k], vids[k + 1]); trianglesAfter++; } }
+      }
+      if (meshClipped) {
+        const basePos = Array.from(pos.array), baseNorm = normal ? Array.from(normal.array) : null, baseColor = color ? Array.from(color.array) : null;
+        g.setAttribute('position', new THREE.Float32BufferAttribute(basePos.concat(extraPos), 3));
+        if (normal) g.setAttribute('normal', new THREE.Float32BufferAttribute(baseNorm.concat(extraNorm), 3));
+        if (color) g.setAttribute('color', new THREE.Float32BufferAttribute(baseColor.concat(extraColor), 3));
+        g.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1)); g.computeBoundingSphere();
+      }
+    }
+    state.stats.roadCut = { roadPolygons: polys.length, terrainMeshes: meshes.length, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
+    return state.stats.roadCut;
+  }
+  // Reuse the exact road footprint for any sampled ground overlays which are built after the
+  // road plan (section fields, landcover surfaces, and landmark lawns/ice). Interpolate every
+  // vertex attribute, including UVs, so textured overlays keep their mapping at the new edge.
+  function cutGroundMeshes(meshes, localYRange = null) {
+    const polys = state.roadPolygons || [], CELL = 2, cells = new Map(), cellKey = (x, z) => `${x},${z}`;
+    if (!polys.length || !meshes.length) return { meshes: 0, trianglesBefore: 0, trianglesAfter: 0, clippedTriangles: 0, removedArea: 0 };
+    for (let id = 0; id < polys.length; id++) {
+      const b = polys[id].box;
+      for (let x = Math.floor((b.x0 - CUT_EPS) / CELL); x <= Math.floor((b.x1 + CUT_EPS) / CELL); x++) for (let z = Math.floor((b.z0 - CUT_EPS) / CELL); z <= Math.floor((b.z1 + CUT_EPS) / CELL); z++) {
+        const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id);
+      }
+    }
+    const read = (a, i, c) => [a.getX, a.getY, a.getZ, a.getW][c].call(a, i), identity = new THREE.Matrix4();
+    let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0, clippedMeshes = 0;
+    for (const mesh of meshes) {
+      const g = mesh.geometry, pos = g && g.attributes && g.attributes.position;
+      if (!pos || mesh.isInstancedMesh) continue;
+      mesh.updateWorldMatrix(true, false); if (!mesh.matrixWorld.equals(identity)) continue;
+      const ix = g.index, count = ix ? ix.count : pos.count, attrs = Object.entries(g.attributes).map(([name, a]) => ({ name, itemSize: a.itemSize, data: Array.from({ length: a.count * a.itemSize }, (_, j) => read(a, Math.floor(j / a.itemSize), j % a.itemSize)), extra: [] })), byName = new Map(attrs.map(a => [a.name, a])), index = [];
+      let meshClipped = 0;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const ids = [0, 1, 2].map(k => ix ? ix.getX(t + k) : t + k), v = ids.map(i => [pos.getX(i), pos.getY(i), pos.getZ(i)]), tri = v.map(p => [p[0], p[2]]);
+        trianglesBefore++;
+        const local = g.userData.local;
+        if (localYRange && local && ids.some(i => local[i * 3 + 1] < localYRange[0] - 1e-6 || local[i * 3 + 1] > localYRange[1] + 1e-6)) { index.push(...ids); trianglesAfter++; continue; }
+        const box = { x0: Math.min(...tri.map(p => p[0])), x1: Math.max(...tri.map(p => p[0])), z0: Math.min(...tri.map(p => p[1])), z1: Math.max(...tri.map(p => p[1])) }, nx0 = Math.floor(box.x0 / CELL), nx1 = Math.floor(box.x1 / CELL), nz0 = Math.floor(box.z0 / CELL), nz1 = Math.floor(box.z1 / CELL), found = new Set();
+        if ((nx1 - nx0 + 1) * (nz1 - nz0 + 1) <= 256) { for (let x = nx0; x <= nx1; x++) for (let z = nz0; z <= nz1; z++) for (const id of cells.get(cellKey(x, z)) || []) found.add(id); }
+        else for (let id = 0; id < polys.length; id++) { const b = polys[id].box; if (b.x1 >= box.x0 && b.x0 <= box.x1 && b.z1 >= box.z0 && b.z0 <= box.z1) found.add(id); }
+        const candidates = [...found].filter(id => { const b = polys[id].box; return b.x1 >= box.x0 - CUT_EPS && b.x0 <= box.x1 + CUT_EPS && b.z1 >= box.z0 - CUT_EPS && b.z0 <= box.z1 + CUT_EPS; });
+        if (!candidates.length) { index.push(...ids); trianglesAfter++; continue; }
+        let pieces = [tri];
+        for (const id of candidates) {
+          const cut = polys[id], next = [];
+          for (const poly of pieces) {
+            const pb = { x0: Math.min(...poly.map(q => q[0])), x1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])) };
+            if (cut.box.x1 < pb.x0 - 1e-7 || cut.box.x0 > pb.x1 + 1e-7 || cut.box.z1 < pb.z0 - 1e-7 || cut.box.z0 > pb.z1 + 1e-7) next.push(poly);
+            else next.push(...subtractConvexXZ(poly, cut.p));
+          }
+          pieces = next; if (!pieces.length) break;
+        }
+        const area = Math.abs(polygonAreaXZ(tri)), remain = pieces.reduce((sum, p) => sum + Math.abs(polygonAreaXZ(p)), 0);
+        if (area < 1e-10 || remain >= area - Math.max(1e-7, area * 1e-7)) { index.push(...ids); trianglesAfter++; continue; }
+        clippedTriangles++; meshClipped++; removedArea += Math.max(0, area - remain);
+        const den = (v[1][2] - v[2][2]) * (v[0][0] - v[2][0]) + (v[2][0] - v[1][0]) * (v[0][2] - v[2][2]);
+        const addVertex = p => {
+          const w0 = ((v[1][2] - v[2][2]) * (p[0] - v[2][0]) + (v[2][0] - v[1][0]) * (p[1] - v[2][2])) / den, w1 = ((v[2][2] - v[0][2]) * (p[0] - v[2][0]) + (v[0][0] - v[2][0]) * (p[1] - v[2][2])) / den, weights = [w0, w1, 1 - w0 - w1], positionAttr = byName.get('position'), out = (positionAttr.data.length + positionAttr.extra.length) / 3;
+          for (const a of attrs) for (let c = 0; c < a.itemSize; c++) a.extra.push(weights.reduce((sum, w, k) => sum + w * read(g.attributes[a.name], ids[k], c), 0));
+          return out;
+        };
+        for (const poly of pieces) { const vids = poly.map(addVertex); for (let k = 1; k + 1 < vids.length; k++) { index.push(vids[0], vids[k], vids[k + 1]); trianglesAfter++; } }
+      }
+      if (meshClipped) {
+        for (const a of attrs) g.setAttribute(a.name, new THREE.Float32BufferAttribute(a.data.concat(a.extra), a.itemSize));
+        g.clearGroups(); g.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1)); g.computeBoundingSphere(); g.computeBoundingBox(); clippedMeshes++;
+      }
+    }
+    return { meshes: clippedMeshes, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
+  }
   // W8g-a: the rest chunks by key, each made once (for the rest meshes or, earlier, for the sampler near a point); the same chunk objects as one global build
   const restChunk = new Map();
   const restChunks = keys => {
@@ -475,25 +511,16 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
   };
   const restRow = cy => restChunks(Array.from({ length: 24 }, (_, cx) => cy * 24 + cx));
   const t0 = performance.now();
-  // the uncut ring: the planes of the rendered ground, which the sampler reads (inside a road's cut the road stands on that plane)
+  // the ring: the planes of the rendered ground, which the sampler reads
   const flatRingData = B.buildFlat({ ring: true, rest: false, window: RING_WINDOW });
+  const ringData = flatRingData;
   // height of the rendered mesh over the whole planet (W.height inside the town patch). W8g-a: before the rest exists, built cell by cell from the chunks near
   // the point (lazySampler: the same values as the global index over [...flatRingData, ...restData], without meshing the planet first); once the rest exists, the
   // global index itself (one pass over its chunks, for the planet-wide builds that ask everywhere)
   state.sampler = () => (state.restBuilt ? state.samplerFull || (state.samplerFull = samplerFromChunks(W, [...flatRingData, ...state.restData]))
     : state.samplerLazy || (state.samplerLazy = lazySampler(W, B.samplerCell)));
-  // W8g-b (W8_SPEC 13.2 B1, B2): the exit heads, and one ring for the flat and the sphere view, cut under each head's whole cross-section (paved + shoulder + ditch)
-  // plus 0.3 m (the road's verge beyond covers that margin)
-  const th = performance.now(), heads = opts.exitHeads ? opts.exitHeads(state.sampler(), B) : [];
-  state.stats.headsMs = Math.round(performance.now() - th);
-  const exitPolygons = B.exitPolygons(heads);
-  const ringData = exitPolygons.length ? B.buildFlat({ ring: true, rest: false, window: RING_WINDOW, exitPolygons }) : flatRingData;
-  state.exitHeads = heads; state.stats.exitClearancePolygons = exitPolygons.length;
-  state.headCaps = () => capU.value.toArray();
   withPrivateRandom(() => {
     for (const c of ringData) if (c.ringIndex) add(geom(c, c.ringIndex), material, 'ring', state.ring, { cx: c.cx, cy: c.cy });
-    const townColour = { asphalt: new THREE.Color(townAsphaltMaterial ? townAsphaltMaterial.color : '#46505b').toArray(), paving: new THREE.Color('#8f8a7c').toArray() };
-    for (const part of headGeometry(THREE, heads, townColour, state.sampler(), (lo, la) => B.vertexColor(lo, la))) add(part.geometry, headMat, 'head', state.heads, { exit: part.exit, surface: part.surface });
   });
   state.stats.ringBuildMs = Math.round(performance.now() - t0);
 
@@ -526,7 +553,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND, townAsphaltMaterial, opts 
   state.restJob = restJob;
   state.samplerJob = TERRAIN.job(function* () { state.sampler(); });   // after restJob (worldgen.js deps): the global sampler index over the ring and the rest
   state.root = root; state.builder = B;   // (B keeps its vertex cache: roads.js colours its verges with it)
-  state.stats.triangles = () => [...state.ring, ...state.heads, ...state.rest, ...state.caps].reduce((s, m) => s + m.geometry.index.count / 3, 0);
+  state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps].reduce((s, m) => s + m.geometry.index.count / 3, 0);
+  state.cutRoads = cutRoads;
+  state.cutGroundMeshes = cutGroundMeshes;
   return state;
 };
 

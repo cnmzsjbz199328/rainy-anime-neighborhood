@@ -13,20 +13,22 @@ const lin = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16)
 
 // ---- the W5a plan. Routes are chains of edges swept as one strip (roadkit.route); the town end of every exit starts with the town's own asphalt and wears
 // into the road class (W5_SPEC 3.0): RD01 9 m asphalt -> 7 m with gravel shoulders within 15 m; RD03 fraying edges, cracks, weeds; RD05 from a 4.5 m asphalt apron.
-const LEAD01 = { cls: 'RD01T', at: 8 };
 const ROUTES = [
-  { id: 'N03-east', exit: 'N03', segs: [{ id: 'RN01-19' }, { id: 'RN01-01' }, { id: 'RN01-02' }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'] } },
-  { id: 'N01-west', exit: 'N01', segs: [{ id: 'RN01-16', rev: true }, { id: 'RN01-15', rev: true }, { id: 'RN01-14', rev: true }], opts: { lead: LEAD01, townStart: true, wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 11, barrier: ['end'] } },
+  { id: 'N03-east', exit: 'N03', segs: [{ id: 'RN01-18' }, { id: 'RN01-19' }, { id: 'RN01-01' }, { id: 'RN01-02' }], opts: { wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 10, barrier: ['end'] } },
+  { id: 'N01-west', exit: 'N01', segs: [{ id: 'RN01-17', rev: true }, { id: 'RN01-16', rev: true }, { id: 'RN01-15', rev: true }, { id: 'RN01-14', rev: true }], opts: { wearMax: 0.35, wearLen: 30 }, furnish: { kind: 'RD01', firstLamp: 3, busStop: 11, barrier: ['end'] } },
   { id: 'RN01-ridge', segs: [{ id: 'RN01-04' }, { id: 'RN01-05' }, { id: 'RN01-06' }], opts: { wearMax: 0.3, wearLen: 40 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'], tunnel: true } },
   { id: 'RN01-west', segs: [{ id: 'RN01-10' }, { id: 'RN01-11' }, { id: 'RN01-12' }], opts: { wearMax: 0.3, wearLen: 50 }, furnish: { kind: 'RD01', firstLamp: 6, barrier: ['start', 'end'] } },
-  // W10b: the other exits end at the ring road CR01 (W10_SPEC 2.1): their 6 m connectors straight out along the street axis, RD03 (N04, N09, N10) and RD05
-  // (N11-N13, from a 4.5 m apron as in 12.4 G6). They are the exit heads until W10c draws the ring and its junctions; no furniture on them.
-  { id: 'N04-C01', exit: 'N04', segs: [{ id: 'RN02-01', rev: true }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
-  { id: 'N09-C01', exit: 'N09', segs: [{ id: 'RN03-01', rev: true }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
-  { id: 'N10-C01', exit: 'N10', segs: [{ id: 'RN03-04' }], opts: { townStart: true, wearMax: 0.5, wearLen: 24 } },
-  { id: 'N11-C01', exit: 'N11', segs: [{ id: 'RN13-01', rev: true }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
-  { id: 'N12-C01', exit: 'N12', segs: [{ id: 'RN13-04' }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
-  { id: 'N13-C01', exit: 'N13', segs: [{ id: 'RN14-01', rev: true }], opts: { lead: { cls: 'RD03', at: 3 }, blend: 2, townStart: true, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  // Town streets, CR01 connections, ring and M01 south chain are swept as one network below.
+  { id: 'N04-C01', exit: 'N04', segs: [{ id: 'RN02-04', rev: true }, { id: 'RN02-03', rev: true }, { id: 'RN02-02', rev: true }, { id: 'RN02-01', rev: true }], opts: { wearMax: 0.5, wearLen: 24 } },
+  { id: 'N09-C01', exit: 'N09', segs: [{ id: 'RN03-02', rev: true }, { id: 'RN03-01', rev: true }], opts: { wearMax: 0.5, wearLen: 24 } },
+  { id: 'N10-C01', exit: 'N10', segs: [{ id: 'RN03-03' }, { id: 'RN03-04' }], opts: { wearMax: 0.5, wearLen: 24 } },
+  { id: 'N11-C01', exit: 'N11', segs: [{ id: 'RN13-02', rev: true }, { id: 'RN13-01', rev: true }], opts: { blend: 2, wearMax: 1, wearLen: 8, weedsPerBin: 4 } },
+  { id: 'N12-C01', exit: 'N12', segs: [{ id: 'RN13-03' }, { id: 'RN13-04' }], opts: { blend: 2, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  { id: 'N13-C01', exit: 'N13', segs: [{ id: 'RN14-02', rev: true }, { id: 'RN14-01', rev: true }], opts: { blend: 2, wearMax: 1, wearLen: 6, weedsPerBin: 4 } },
+  { id: 'M01-south', segs: [{ id: 'RN02-05' }, { id: 'RN02-06' }, { id: 'RN02-07' }, { id: 'RN06-01' }, { id: 'RN06-02' }, { id: 'RN06-03' }], opts: { wearMax: 1, wearLen: 24, blend: 2 } },
+  // CR01 is the town's orderly perimeter route: keep its RD03 section clean and continuous,
+  // without the random edge fray and verge tufts used on older country roads.
+  { id: 'CR01', segs: Array.from({ length: 18 }, (_, i) => ({ id: `RN04-${String(i + 1).padStart(2, '0')}` })), opts: { wearMax: 0, wearLen: 24, weeds: false, innerShoulderAsphalt: true } },
   // RN05-01 (T02-01 cut at the ring, W10b): from C01-T02 to LM02. The lamp, the bus stop and the poles beyond the cut keep their stations of the whole T02-01
   // (31, 38, 48 m from N04) less the 28.892 m cut; the lamp, poles and sign of the part inside the ring went with it.
   { id: 'RN05-RD03', segs: [{ id: 'RN05-01' }], opts: { wearMax: 0.5, wearLen: 24 }, furnish: { kind: 'RD03', lamps: [2.108], poles: [9.108, 19.108], mirror: 'bend', busStop: 2.108 } },
@@ -126,6 +128,13 @@ const PAVE_LIFT = 0.01;                              // junction paving above th
 const RING = [['N03-east', 1], ['RN01-03', 1], ['RN01-ridge', 1], ['RN01-07+08+09', 1], ['RN01-west', 1], ['RN01-13', 1], ['N01-west', -1]];
 // T junctions: minor road (branch) on RD01 (trunk); paving class and corner radius (RD03 3 m asphalt, RD05 2 m rammed earth)
 const JUNCTIONS = [
+  { node: 'C01-N', trunk: 'CR01', branch: 'N04-C01', paving: 'asphalt', r: 2 },
+  { node: 'C01-W-N09', trunk: 'CR01', branch: 'N09-C01', paving: 'asphalt', r: 2 },
+  { node: 'C01-E-N10', trunk: 'CR01', branch: 'N10-C01', paving: 'asphalt', r: 2 },
+  { node: 'C01-W-N11', trunk: 'CR01', branch: 'N11-C01', paving: 'paving', r: 2 },
+  { node: 'C01-E-N12', trunk: 'CR01', branch: 'N12-C01', paving: 'paving', r: 2 },
+  { node: 'C01-E-N13', trunk: 'CR01', branch: 'N13-C01', paving: 'paving', r: 2 },
+  { node: 'C01-T02', trunk: 'CR01', branch: 'RN05-RD03', paving: 'asphalt', r: 2 },
   { node: 'J-T07', trunk: 'RN01-ridge', branch: 'RN07-RD05', paving: 'dirt', r: 2 },
   { node: 'J-T08', trunk: 'RN01-west', branch: 'RN08-RD05', paving: 'dirt', r: 2 },
   { node: 'J-T09', trunk: 'RN01-west', branch: 'RN09-RD05', paving: 'dirt', r: 2 },
@@ -207,8 +216,10 @@ function abutments(W, BR, routeIds) {                // routeIds (W8g-b): only t
 }
 // chainage of the ring pieces: { c0, dir } with c = c0 + dir * s
 function ringChain(W) {
-  const NET = W.roadNetwork, len = id => NET.edgeLength(NET.edges.find(e => e.id === id)), out = {}; let c = 0;
-  for (const [id, dir] of RING) { const r = ROUTES.find(q => q.id === id), b = BRIDGES.find(q => q.id === id), L = (r ? r.segs.map(q => q.id) : b.ids).reduce((a, x) => a + len(x), 0); out[id] = dir > 0 ? { c0: c, dir: 1 } : { c0: c + L, dir: -1 }; c += L; }
+  const NET = W.roadNetwork, byId = Object.fromEntries(NET.edges.map(e => [e.id, e])), len = id => NET.edgeLength(byId[id]), out = {}; let c = 0;
+  for (const [id, dir] of RING) { const r = ROUTES.find(q => q.id === id), b = BRIDGES.find(q => q.id === id), segs = r ? r.segs : b.ids.map(x => ({ id: x })), lengths = segs.map(q => len(q.id)), town = segs.map(q => /^TOWN_/.test(byId[q.id].class));
+    const firstRural = town.indexOf(false), townPrefix = firstRural < 0 ? lengths.reduce((a, v) => a + v, 0) : lengths.slice(0, firstRural).reduce((a, v) => a + v, 0), L = lengths.reduce((a, v, i) => a + (town[i] ? 0 : v), 0);
+    out[id] = dir > 0 ? { c0: c - townPrefix, dir: 1 } : { c0: c + L + townPrefix, dir: -1 }; c += L; }
   return out;
 }
 // junction layout in the node's plane, from world.js alone (before any road is swept). The trunk is two straight legs through the node (it turns by 1-3 deg at J-T07 ... J-T09):
@@ -220,8 +231,13 @@ function junctionPlan(W, J, RK) {
   const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1], right = d => [d[1], -d[0]];
   let sJ = 0, iSeg = 0; for (; iSeg < tr.segs.length; iSeg++) { if (routeNode(NET, tr.segs[iSeg], 'start') === J.node) break; sJ += NET.edgeLength(NET.edges.find(e => e.id === tr.segs[iSeg].id)); }
   const dF = unit(P.to(nearNode(W, tr.segs[iSeg].id, N0, 4))), dB = unit(P.to(nearNode(W, tr.segs[iSeg - 1].id, N0, 4)).map(v => -v)), dM = unit([dF[0] + dB[0], dF[1] + dB[1]]);
-  const bEdge = br.segs[0].id, bd = unit(P.to(nearNode(W, bEdge, N0, 4))), sigma = dot(bd, right(dM)) > 0 ? 1 : -1;
-  const h = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved[1], vE = 3.5, r = J.r, nB = right(bd);
+  const branchEnd = routeNode(NET, br.segs[br.segs.length - 1], 'end') === J.node ? 'end' : routeNode(NET, br.segs[0], 'start') === J.node ? 'start' : null;
+  if (!branchEnd) throw new Error(`junction ${J.node}: branch ${J.branch} does not terminate at node`);
+  const bEdge = branchEnd === 'end' ? br.segs[br.segs.length - 1].id : br.segs[0].id, bd = unit(P.to(nearNode(W, bEdge, N0, 4))), sigma = dot(bd, right(dM)) > 0 ? 1 : -1;
+  const localBranchPaved = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved;
+  const h = Math.max(Math.abs(localBranchPaved[0]), Math.abs(localBranchPaved[1])),
+    frontHalf = Math.max(Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg].id).class].paved[0]), Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg].id).class].paved[1])),
+    backHalf = Math.max(Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg - 1].id).class].paved[0]), Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg - 1].id).class].paved[1])), vE = Math.max(frontHalf, backHalf), r = J.r, nB = right(bd);
   const legs = { back: { d: dB, p: right(dB).map(v => v * sigma * vE) }, fwd: { d: dF, p: right(dF).map(v => v * sigma * vE) } };
   const meet = (p1, d1, p2, d2) => { const det = d1[0] * -d2[1] - d1[1] * -d2[0], rx = p2[0] - p1[0], rz = p2[1] - p1[1], l = (rx * -d2[1] - rz * -d2[0]) / det; return [p1[0] + l * d1[0], p1[1] + l * d1[1]]; };
   // station (signed metres from the node along the trunk) and distance from the trunk centre of a point of the plane (the nearer leg)
@@ -229,6 +245,11 @@ function junctionPlan(W, J, RK) {
   // each branch edge meets the edge line of the leg it lands on at X; its corner opens along that line away from the branch: backward for the edge on the branch's back side
   // (smaller station), forward for the other (the acute and the obtuse corner of a skewed junction)
   const hits = [-1, 1].map(e => { const p2 = nB.map(v => v * e * h), Xf = meet(legs.fwd.p, legs.fwd.d, p2, bd), fwd = dot(Xf, dF) >= 0, X = fwd ? Xf : meet(legs.back.p, legs.back.d, p2, bd); return { e, p2, X, fwd, u: fwd ? dot(X, dF) : dot(X, dB) }; });
+  const travel = branchEnd === 'start' ? bd : bd.map(v => -v), acute = Math.min(...[dF, dB].map(d => { const a = Math.acos(Math.max(-1, Math.min(1, dot(travel, d)))) / D; return Math.min(a, 180 - a); }));
+  if (acute < 12) {
+    const branchLength = br.segs.reduce((sum, q) => sum + NET.edgeLength(NET.edges.find(e => e.id === q.id)), 0);
+    return { ...J, N0, P, toUV: q => P.to(q), fromUV: (x, y) => P.from([x, y]), sJ, sigma, h, vE, bd, nB, dF, dB, branchEnd, shallowMerge: true, mergeAngle: acute, mergeLength: Math.min(16, branchLength), lamEnd: 0, mouth: { s0: Math.max(0, sJ - 12), s1: sJ + 1, side: sigma, from: vE + 0.2, to: vE + 3.7 }, corners: [{ corner: acute }, { corner: 180 - acute }], coverage: 1, triangles: 0, pts: [] };
+  }
   const edges = hits.map(hi => {
     const { e, p2, X, fwd } = hi, ahead = hi.u >= Math.min(...hits.map(q => q.u)) + 1e-9 ? 1 : -1, leg = fwd ? dF : dB, h1 = leg.map(v => v * ahead), cg = Math.max(-1, Math.min(1, dot(h1, bd))), g = Math.acos(cg), t = r / Math.tan(g / 2);
     const T1 = [X[0] + h1[0] * t, X[1] + h1[1] * t], T2 = [X[0] + bd[0] * t, X[1] + bd[1] * t], w = unit([h1[0] + bd[0], h1[1] + bd[1]]), C = [X[0] + w[0] * r / Math.sin(g / 2), X[1] + w[1] * r / Math.sin(g / 2)];
@@ -237,10 +258,10 @@ function junctionPlan(W, J, RK) {
     return { e, X, leg: fwd ? 'fwd' : 'back', C, T1, T2, arc, lam: dot(T2, bd), corner: g / D, line: { p: p2, d: bd } };
   });
   const lamEnd = Math.max(...edges.map(q => q.lam)) + 0.6, band = [];
-  for (const q of edges) { const end = [q.line.p[0] + lamEnd * bd[0], q.line.p[1] + lamEnd * bd[1]], line = [...q.arc, end]; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f <= 1; f += 0.1) { const c = onTrunk([line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f]); if (c.o >= 4.4 && c.o <= 7.3) band.push(c.s); } }
-  const xc = onTrunk(bd.map(v => v * 5.1 / Math.max(0.2, Math.abs(dot(bd, right(dM)))))), half = h / Math.max(0.2, Math.abs(dot(bd, right(dM)))) + 1;
+  for (const q of edges) { const end = [q.line.p[0] + lamEnd * bd[0], q.line.p[1] + lamEnd * bd[1]], line = [...q.arc, end]; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f <= 1; f += 0.1) { const c = onTrunk([line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f]); if (c.o >= vE + 0.9 && c.o <= vE + 3.8) band.push(c.s); } }
+  const xc = onTrunk(bd.map(v => v * (vE + 1.6) / Math.max(0.2, Math.abs(dot(bd, right(dM)))))), half = h / Math.max(0.2, Math.abs(dot(bd, right(dM)))) + 1;
   const u0 = Math.min(...band, xc.s - half) - 0.3, u1 = Math.max(...band, xc.s + half) + 0.3;
-  return { ...J, N0, P, toUV: q => P.to(q), fromUV: (x, y) => P.from([x, y]), sJ, sigma, h, bd, nB, dF, dB, edges, lamEnd, mouth: { s0: sJ + u0, s1: sJ + u1, side: sigma, to: 7.2 }, branchEnd: routeNode(NET, br.segs[0], 'start') === J.node ? 'start' : 'end' };
+  return { ...J, N0, P, toUV: q => P.to(q), fromUV: (x, y) => P.from([x, y]), sJ, sigma, h, vE, bd, nB, dF, dB, edges, lamEnd, mouth: { s0: sJ + u0, s1: sJ + u1, side: sigma, from: vE + 0.2, to: vE + 3.7 }, branchEnd };
 }
 // a route at a fractional station: index and fraction, lateral point (with the approach's lateral factor), surface altitude
 const atS = (rt, s) => { const S = rt.samples, n = S.length; let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return { i, t: Math.max(0, Math.min(1, (s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s))) }; };
@@ -282,9 +303,14 @@ function earClip(P) {
   return out;
 }
 function paving(W, jp, trunk, branch) {
-  const iE = jp.branchEnd === 'end' ? branch.samples.length - 1 : 0, ends = [-1, 1].map(sd => { const [lo, la] = branch.lateral(iE, sd * jp.h); return jp.toUV({ lon: lo, lat: la }); });
+  const nodeS = branch.sNode(jp.branchEnd), endS = jp.branchEnd === 'end' ? nodeS - jp.lamEnd : nodeS + jp.lamEnd,
+    iE = Math.max(0, Math.min(branch.samples.length - 1, atS(branch, endS).i)), branchBase = branch.colAlt.slice(), ends = [-1, 1].map(sd => { const [lo, la] = branch.lateral(iE, sd * jp.h * branch.cf[iE]); return jp.toUV({ lon: lo, lat: la }); });
+  const branchSurface = (s, o) => {
+    const { i, t } = atS(branch, s), row = k => { let j = 0; while (j + 2 < branch.grid.length && branch.grid[j + 1] < o) j++; const f = Math.max(0, Math.min(1, (o - branch.grid[j]) / (branch.grid[j + 1] - branch.grid[j]))); return branchBase[k * branch.grid.length + j] + (branchBase[k * branch.grid.length + j + 1] - branchBase[k * branch.grid.length + j]) * f; };
+    return row(i) + (row(i + 1) - row(i)) * t;
+  };
   const dLine = (q, p) => Math.abs((p[0] - q.line.p[0]) * -q.line.d[1] + (p[1] - q.line.p[1]) * q.line.d[0]), stOf = g => { const ll = jp.fromUV(g[0], g[1]); return project(trunk, ll.lon, ll.lat, jp.sJ).s; };
-  const edgeAt = s => { const [lo, la] = latS(trunk, s, jp.sigma * 3.5); return jp.toUV({ lon: lo, lat: la }); };          // the trunk's actual carriageway edge at station s
+  const edgeAt = s => { const [lo, la] = latS(trunk, s, jp.sigma * jp.vE); return jp.toUV({ lon: lo, lat: la }); };          // the trunk's actual carriageway edge at station s
   const sides = jp.edges.map(q => { const sX = stOf(q.X), sT = stOf(q.T1); return { q, E: dLine(q, ends[0]) < dLine(q, ends[1]) ? ends[0] : ends[1], sX, X: edgeAt(sX), T1: edgeAt(sT), sT }; }).sort((a, b) => a.sX - b.sX);
   // the body: the branch's footprint down to the trunk edge (between the two X), with T2 on its sides; two corner fans from X over the arcs (T1 snapped onto the actual edge)
   const nB = Math.max(1, Math.ceil((sides[1].sX - sides[0].sX) / 0.5)), bottom = Array.from({ length: nB + 1 }, (_, k) => k === 0 ? sides[0].X : k === nB ? sides[1].X : edgeAt(sides[0].sX + (sides[1].sX - sides[0].sX) * k / nB));
@@ -303,9 +329,23 @@ function paving(W, jp, trunk, branch) {
     if (k === 1) { const [A, B, C] = lp ? [p, q, r] : lq ? [q, r, p] : [r, p, q], m = mid(A, B); st.push([A, m, C], [m, B, C]); continue; }
     const [A, B, C] = !lr ? [p, q, r] : !lp ? [q, r, p] : [r, p, q], m1 = mid(A, B), m2 = mid(B, C); st.push([m1, B, m2], [A, m1, m2], [A, m2, C]);
   }
-  const pos = [], col = [], pts = [], C = jp.paving === 'asphalt' ? [lin('#2f3645'), lin('#353c4b')] : [lin('#6a5a46'), lin('#5a4c3b')];
+  const pos = [], col = [], pts = [], C = jp.paving === 'asphalt' ? [lin('#2f3645'), lin('#353c4b')] : [lin('#6a5a46'), lin('#5a4c3b')],
+    heightAt = ll => {
+      const pr = project(trunk, ll.lon, ll.lat, jp.sJ), trunkH = surfS(trunk, pr.s, pr.o) + PAVE_LIFT,
+        bp = project(branch, ll.lon, ll.lat, endS), branchH = bp ? branchSurface(bp.s, bp.o) : trunkH,
+        fromNode = bp ? (jp.branchEnd === 'end' ? nodeS - bp.s : bp.s - nodeS) : 0,
+        across = smooth(jp.vE, jp.vE + 1, Math.abs(pr.o)), w = branch.def.exit && jp.lamEnd > 1e-6 && bp ? smooth(0, jp.lamEnd, fromNode) * across : 0;
+      return trunkH + (branchH - trunkH) * w;
+    };
+  if (branch.def.exit) {
+    const m = branch.grid.length;
+    for (let j = 0; j < m; j++) if (Math.abs(branch.grid[j]) <= jp.h + 1e-6) {
+      const [lon, lat] = branch.lateral(iE, branch.grid[j] * branch.cf[iE]), h = heightAt({ lon, lat }), k = (iE * m + j) * 3;
+      branch.colAlt[iE * m + j] = h; branch.strip.pos[k + 1] = (h - BASE) / Math.cos(lat * D);
+    }
+  }
   for (const g of V) {
-    const ll = jp.fromUV(g[0], g[1]), pr = project(trunk, ll.lon, ll.lat, jp.sJ), h = surfS(trunk, pr.s, pr.o) + PAVE_LIFT, k = 1 / Math.cos(ll.lat * D);
+    const ll = jp.fromUV(g[0], g[1]), pr = project(trunk, ll.lon, ll.lat, jp.sJ), h = heightAt(ll), k = 1 / Math.cos(ll.lat * D);
     pos.push(R * ll.lon * D, (h - BASE) * k, -R * Math.asinh(Math.tan(ll.lat * D))); pts.push({ lon: ll.lon, lat: ll.lat, h, s: pr.s, o: pr.o });
     const hz = hash(g[0] * 1.3, g[1] * 1.1), c = C[0].map((v2, ci) => (v2 + (C[1][ci] - v2) * hz) * (0.97 + 0.05 * hash(g[0] * 2.3, g[1] * 1.9))); col.push(c[0], c[1], c[2]);
   }
@@ -316,9 +356,9 @@ function paving(W, jp, trunk, branch) {
   let triArea = 0; for (let t = 0; t < idx.length; t += 3) { const [a, b2, c2] = [V[idx[t]], V[idx[t + 1]], V[idx[t + 2]]]; triArea += Math.abs((b2[0] - a[0]) * (c2[1] - a[1]) - (b2[1] - a[1]) * (c2[0] - a[0])) / 2; }
   const bodyArea = polyA(body), fanArea = [left, right].map((arc, k) => { const X = sides[k].X; let a = 0; for (let j = 0; j + 1 < arc.length; j++) a += Math.abs((arc[j][0] - X[0]) * (arc[j + 1][1] - X[1]) - (arc[j][1] - X[1]) * (arc[j + 1][0] - X[0])) / 2; return a; });
   const inkOf = line => { const ptsL = []; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f < 1; f += 0.25) ptsL.push([line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f]); ptsL.push(line[line.length - 1]);
-    return ptsL.map(g => { const ll = jp.fromUV(g[0], g[1]), pr = project(trunk, ll.lon, ll.lat, jp.sJ); return { lon: ll.lon, lat: ll.lat, alt: surfS(trunk, pr.s, pr.o) + PAVE_LIFT + 0.06 }; }); };
+    return ptsL.map(g => { const ll = jp.fromUV(g[0], g[1]); return { lon: ll.lon, lat: ll.lat, alt: heightAt(ll) + 0.06 }; }); };
   return { strip: { name: 'junction ' + jp.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3 }, ink: [inkOf([...left, sides[0].E]), inkOf([...right, sides[1].E])], pts, outline, triangles: idx.length / 3,
-    coverage: triArea / Math.max(1e-9, bodyArea + fanArea[0] + fanArea[1]), corners: sides.map(q => ({ leg: q.q.leg, corner: q.q.corner, s: q.sT, sX: q.sX })), ends: sides.map(q => q.E) };
+    coverage: triArea / Math.max(1e-9, bodyArea + fanArea[0] + fanArea[1]), corners: sides.map(q => ({ leg: q.q.leg, corner: q.q.corner, s: q.sT, sX: q.sX })), ends: sides.map(q => q.E), surfaceAt: (lon, lat) => heightAt({ lon, lat }) };
 }
 // abutment end wall: a vertical concrete curtain under the road's last cross-section, from its surface down to below the girder (|o| <= 5) or into the terrain (the embankment's
 // end), facing the bridge: it closes the box girder's open end and the end of the approach's fill above the terrain
@@ -337,75 +377,46 @@ function abutWall(W, rt, ab, deckAlt) {
 }
 
 // W8f-a: the abutments, the ring's chainage and the junction layout come first (the trunks' mouths and the branches' trims are known before any road is swept).
-// `junctions` limits the junction plans (W8g-b: the exit heads need only the two junctions that exits meet); each plan depends on its own junction only.
+// Each plan depends only on its own junction and the frozen road network.
 function routeContext(WS, junctions = JUNCTIONS, routeIds) {
   const RK = global.ROADKIT, BR = global.BRIDGE, lm09Turn = nodeTurn(WS, ROUTES.find(r => r.id === 'N01-west').segs, 'LM09-north');
   return { AB: abutments(WS, BR, routeIds), CH: ringChain(WS), lm09Turn, JP: junctions.map(J => junctionPlan(WS, J, RK)) };
 }
-// the options of a route (plan() and the exit heads share it, so that a head is swept exactly like its route)
-const ALLEY_EXITS = ['N11', 'N12', 'N13'];
+// the options of a route
 function routeOpts(def, ctx, tc) {
   const RK = global.ROADKIT, { AB, CH, lm09Turn, JP } = ctx, o = { ...def.opts, terrainColor: tc };
-  if (def.exit) o.townHead = ALLEY_EXITS.includes(def.exit) ? RK.TOWN_HEAD_PAVING : RK.TOWN_HEAD;      // W8g-b: the alley exits keep the paving of 12.4 G6
   if (CH[def.id]) o.chain = CH[def.id];
   if (def.id === 'N01-west') o.turns = [lm09Turn];
   for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
+  const ownAbuts = AB.filter(q => q.route === def.id);
+  if (ownAbuts.length) {
+    const cols = Object.values(RK.PROFILES).flatMap(p => p.pts.map(q => Math.abs(q[0]))).filter(x => x <= 5 + 1e-9);
+    cols.push(0.075, 0.1, 0.3, 0.6, 1, 2, 3.6, 4.7, 4.8);
+    o.abutGrid = [...new Set(cols.flatMap(x => [-x, x]))];
+  }
   const mo = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (mo.length) o.mouths = mo;
-  const jb = JP.find(j => j.branch === def.id); if (jb) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
+  const jb = JP.find(j => j.branch === def.id);
+  // The six town exits include a short connector between the frozen town boundary and CR01.
+  // Keep that connector in the same route so its class blend and junction ramp happen outside
+  // the town; trimming it to the junction fan moved the ramp onto the town boundary row.
+  if (jb && !jb.shallowMerge && !def.exit) { if (jb.branchEnd === 'end') o.trimEnd = Math.max(o.trimEnd || 0, jb.lamEnd); else o.trimStart = Math.max(o.trimStart || 0, jb.lamEnd); }
   return o;
 }
 // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
-const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
-
-// ---- W8g-b (W8_SPEC 13.2 B1): the exit heads (W10c replaces them). The first L metres of every exit's own road (L = the 12.4 G6 length: min(15 m, the first
-// edge)), made at start-up from the same route() call as the network's: a route no longer than L + HEAD_MARGIN, or one that ends at a bridge abutment (N01, N03:
-// the approach and its cross-section blend reach back into the head), is made whole (abutment, ramp and taper of its far end included); a longer one is cut there (route option `until`; its abutment only keeps its columns, gridAbut). The network road later takes the head's
-// rows 0 .. K + 1 (K: the head's last row) as its own (applyHead), so the two meet with the same vertices; normals at the seam come from the same triangles on
-// both sides (headGeometry / the strip of roads.js). N08 is the W4 section's chain, M01 south (RN02-07, then RN06, the former T03). Each head: { exit, id, rt, L, K, whole }.
-const HEAD_MARGIN = 12, HEAD_CUT = 6;   // a route within L + 12 m (or ending at an abutment) is made whole; a longer one is cut at L + 6 m
-function exitHeads(W, H, tc) {
-  const RK = global.ROADKIT, NET = W.roadNetwork, WS = Object.assign(Object.create(W), { height: H }), exits = ROUTES.filter(r => r.exit), ids = exits.map(r => r.id);
-  const ctx = routeContext(WS, JUNCTIONS.filter(J => ids.includes(J.trunk) || ids.includes(J.branch)), ids), byId = {}, out = [];
-  const len = id => NET.edgeLength(NET.edges.find(e => e.id === id)), lastRow = (S, L) => { let k = 0; while (k + 1 < S.length && S[k + 1].s <= L + 1e-9) k++; return k; };
-  const branchOf = def => ctx.JP.find(j => j.branch === def.id);
-  for (const def of [...exits.filter(d => !branchOf(d)), ...exits.filter(branchOf)]) {
-    const L = Math.min(15, len(def.segs[0].id)), total = def.segs.reduce((a, q) => a + len(q.id), 0), o = routeOpts(def, ctx, tc), whole = total <= L + HEAD_MARGIN + 1e-9 || !!o.abut, jp = branchOf(def);
-    if (whole && jp) o.ramp = branchRamp(jp, byId[jp.trunk]);
-    if (!whole) { o.until = L + HEAD_CUT; if (o.abut) { delete o.abut; o.gridAbut = true; } delete o.taperEnd; }
-    const rt = RK.route(WS, def.segs, o); rt.def = def; if (whole) byId[def.id] = rt;
-    out.push({ exit: def.exit, id: def.id, rt, L, K: lastRow(rt.samples, L), whole });
-  }
-  { const M = NET.m01South, L = Math.min(15, len(M[0])), ch = RK.chain(WS, M, { townHead: RK.TOWN_HEAD, until: L + HEAD_CUT }); out.push({ exit: 'N08', id: 'M01-south', rt: ch, L, K: lastRow(ch.samples, L), whole: false, upNormals: true }); }
-  return out;
-}
-// the network's road takes the head's rows 0 .. K + 1: position, colour, surface altitude (things stand on it), paving and footprint; returns the largest change
-function applyHead(rt, head) {
-  const m = rt.grid.length, h = head.rt, rows = Math.min(head.K + 2, h.samples.length, rt.samples.length);
-  if (h.grid.length !== m || h.grid.some((v, j) => v !== rt.grid[j])) throw new Error(`exit head ${head.exit}: columns differ from the route's`);
-  let d = 0;
-  for (let k = 0; k < rows * m * 3; k++) { d = Math.max(d, Math.abs(rt.strip.pos[k] - h.strip.pos[k])); rt.strip.pos[k] = h.strip.pos[k]; rt.strip.col[k] = h.strip.col[k]; }
-  if (rt.colAlt && h.colAlt) for (let k = 0; k < rows * m; k++) rt.colAlt[k] = h.colAlt[k];
-  for (let i = 0; i < rows; i++) { rt.paved[i] = h.paved[i].slice(); if (rt.footprint && h.footprint) rt.footprint[i] = h.footprint[i].slice(); }
-  rt.head = { exit: head.exit, L: head.L, K: head.K, rows, maxChange: d };
-  return d;
-}
-// geometry of a strip between rows r0 and r1 (cells of `index` whose rows all lie in [r0, r1]); normals from the cells of `index` in [n0, n1] (W8g-b: the head and the
-// road beyond it take their seam normals from the same cells on both sides of the seam row)
-function stripCells(index, m, r0, r1) { const out = []; for (let t = 0; t < index.length; t += 3) { const a = index[t], b = index[t + 1], c = index[t + 2], lo = Math.floor(Math.min(a, b, c) / m), hi = Math.floor(Math.max(a, b, c) / m); if (lo >= r0 && hi <= r1) out.push(a, b, c); } return out; }
-
-function* planSteps(W, H, tc, heads) {
+const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: jp.shallowMerge ? jp.mergeLength : d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
+function* planSteps(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   const ctx = routeContext(WS), { AB, CH, lm09Turn, JP } = ctx,
     bridgeTurnDefs = { 'RN01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'RN01-07+08+09').ids.map(id => ({ id })), node)) };
   void lm09Turn;
   yield;
   const optsOf = def => routeOpts(def, ctx, tc);
-  const byId = {}, branchOf = def => JP.find(j => j.branch === def.id), headOf = def => heads && def.exit && heads.find(q => q.exit === def.exit);
-  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); if (headOf(def)) applyHead(rt, headOf(def)); byId[def.id] = rt; yield; }
+  const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
+  for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
   for (const def of ROUTES.filter(branchOf)) {
     const jp = branchOf(def), trunk = byId[jp.trunk], o = optsOf(def);
     o.ramp = branchRamp(jp, trunk);
-    const rt = RK.route(WS, def.segs, o); rt.def = def; if (headOf(def)) applyHead(rt, headOf(def)); byId[def.id] = rt;
+    const rt = RK.route(WS, def.segs, o); rt.def = def; byId[def.id] = rt;
     yield;
   }
   const routes = ROUTES.map(def => byId[def.id]);
@@ -415,7 +426,9 @@ function* planSteps(W, H, tc, heads) {
   const bridges = BRIDGES.map(def => {
     const o = { ...def, chain: CH[def.id], abut: {} };
     if (bridgeTurnDefs[def.id]) o.turns = bridgeTurnDefs[def.id];
-    for (const a of AB.filter(q => q.bridge === def.id)) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
+    const bridgeAbuts = AB.filter(q => q.bridge === def.id);
+    for (const a of bridgeAbuts) { o.abut[a.bEnd] = { at: a.fillet.at, T: a.fillet.Tb, brg: a.fillet.brg }; o[a.bEnd === 'start' ? 'startAlt' : 'endAlt'] = byId[a.route].approaches.find(q => q.which === a.rEnd).alt; }
+    o.jointColumns = bridgeAbuts.length ? Object.values(RK.PROFILES).flatMap(p => p.pts.map(q => Math.abs(q[0]))).filter(x => x <= 5 + 1e-9).flatMap(x => [-x, x]).concat([-0.075, 0, 0.075, -0.3, 0.3, -0.6, 0.6, -1, 1, -2, 2, -3.6, 3.6, -4.7, 4.7, -4.8, 4.8]) : [];
     const b = BR.build(WS, def.ids, o); b.def = def; return b;
   });
   yield;
@@ -430,12 +443,15 @@ function* planSteps(W, H, tc, heads) {
       const k = Math.round((rt.strip.pos[d] - top.pos[s2]) / P2); rt.strip.pos[d] = k ? shifted(top.pos[s2], k) : top.pos[s2]; rt.strip.pos[d + 1] = top.pos[s2 + 1]; rt.strip.pos[d + 2] = top.pos[s2 + 2]; });
   }
   const abuts = AB.map(a => { const rt = byId[a.route], ap = rt.approaches.find(q => q.which === a.rEnd); return { ...a, approach: ap, wall: abutWall(WS, rt, a, ap.alt) }; });
-  const junctions = JP.map(jp => ({ ...jp, ...paving(WS, jp, byId[jp.trunk], byId[jp.branch]) }));
+  const junctions = JP.map(jp => jp.shallowMerge ? jp : ({ ...jp, ...paving(WS, jp, byId[jp.trunk], byId[jp.branch]) }));
+  // Crossings share their road surface directly. A raised round pad here obscures the frozen crosswalks and creates a second material/height over the road.
   // lit polylines for the light band: RD01 along the bed (with a gap in the tunnel), RD02 along the deck; the sea parts for the reflections
   const lit = [], sea = [];
   for (const rt of routes) { if (!(rt.lamps && rt.lamps.length)) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
   for (const b of bridges) { lit.push(b.samples.map((p, i) => ({ lon: p.lon, lat: p.lat, alt: b.alt[i] }))); let cur = []; b.samples.forEach((p, i) => { if (p.h < -0.2) cur.push({ lon: p.lon, lat: p.lat, alt: 0.03 }); else { if (cur.length > 1) sea.push(cur); cur = []; } }); if (cur.length > 1) sea.push(cur); }
   const stairs = STAIRS.map(id => global.STEPS.build(WS, id));
+  // RN11-01 is the W4 shore boardwalk. Draw it in the unified network; section.js keeps only its fields and water.
+  const extras = [RK.build(WS, 'RN11-01')];
   // closures at the landmark entrances: two guide posts across the end of the road that reaches the entrance (W5-C7); the entrance of LM04 belongs to the W4 section
   const markers = [], items = [...routes.map(rt => ({ kind: 'route', rt, hw: rt.def.furnish && rt.def.furnish.kind === 'RD05' ? 1.5 : rt.def.furnish && rt.def.furnish.kind === 'RD08' ? 1.0 : rt.def.furnish && rt.def.furnish.kind === 'RD03' ? 2.25 : 4.5 })), ...stairs.map(st => ({ kind: 'stairs', rt: st, hw: 0.8 }))];
   for (const nd of W.roadNetwork.nodes.filter(q => q.kind === 'landmark-entrance')) {
@@ -447,16 +463,16 @@ function* planSteps(W, H, tc, heads) {
     const { it, i } = best, T = it.rt.tangent, yaw = Math.atan2(T[i][0], T[i][1]);
     for (const sd of [-1, 1]) { const [lo, la] = it.rt.lateral(i, sd * (it.hw + 0.75)); markers.push({ type: 'gatePost', lon: lo, lat: la, alt: (it.rt.surface ? it.rt.surface(i, sd * (it.hw + 0.75)) : WS.height(lo, la)), yaw, s: [1, 1, 1], lean: [0, 0], tint: [1, 1, 1], node: nd.id }); }
   }
-  return { routes, bridges, stairs, markers, lit, sea, WS, abutments: abuts, junctions };
+  return { routes, bridges, stairs, extras, markers, lit, sea, WS, abutments: abuts, junctions };
 }
-function plan(W, H, tc, heads) { const it = planSteps(W, H, tc, heads); for (;;) { const r = it.next(); if (r.done) return r.value; } }
+function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
-const ROADS = { plan, planSteps, exitHeads, applyHead, stripCells, routeContext, routeOpts, HEAD_MARGIN, ALLEY_EXITS, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
+const ROADS = { plan, planSteps, routeContext, routeOpts, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const THREE = global.THREE, W = global.WORLD;
-  const S = { built: false, stats: {}, root: null, band: null, nav: [], ink: {} };
+  const S = { built: false, stats: {}, root: null, band: null, nav: [], ink: {}, puddleWeight: 1 };
   const objs = { inst: [], hulls: [], glows: [], strips: [], lines: { aerial: [], bridge: [], near: [] }, nav: null };
   const tintC = new THREE.Color(), qE = new THREE.Euler(), qQ = new THREE.Quaternion(), mP = new THREE.Vector3(), mS = new THREE.Vector3(), mM = new THREE.Matrix4();
   const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
@@ -466,9 +482,14 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
     const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
-    // W8g-b: the exit routes take the rows of the heads made at start-up (terrain.js cut the ring under them then); the network draws them from the head's last row
-    const TB = TERR.builder || global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertexColor(lo, la), TERR.exitHeads); S.data = DATA;
+    const TB = TERR.builder || global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertexColor(lo, la)); S.data = DATA;
+    S.terrainCut = TERR.cutRoads ? TERR.cutRoads(DATA) : null;
+    const plotGrounds = []; SEC.state.root.traverse(o => { if (o.isMesh && o.name === 'sec:plots') plotGrounds.push(o); });
+    S.plotCut = TERR.cutGroundMeshes ? TERR.cutGroundMeshes(plotGrounds) : null;
     const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
+    const townDetails = ctx.buildTownRoadDetails ? ctx.buildTownRoadDetails(root) : { puddles: [] };
+    const townPuddles = townDetails.puddles || [];
+    S.townDetails = townDetails; S.townPuddles = townPuddles;
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -489,21 +510,16 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
       else if (st.normals) g.computeVertexNormals(); else { const nrm = new Float32Array(st.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); }
       g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.name = 'road:' + st.name; m.matrixAutoUpdate = false; root.add(m); objs.strips.push(m); return m;
     };
-    // W8g-b: an exit route from its head's last row K on (the head is the start-up mesh of terrain.js); normals over the cells from row K - 1, the same as the head's at K
-    const TT = global.TERRAIN;
-    for (const rt of DATA.routes) {
-      if (!rt.head) { stripMesh({ ...rt.strip, normals: true }, M.groundMat); continue; }
-      const m = rt.grid.length, n = rt.samples.length, K = rt.head.K, cells = TT.cellsIn(rt.strip.index, m, K, n - 1);
-      if (cells.length) stripMesh({ ...rt.strip, index: Uint32Array.from(cells), normal: TT.stripNormals(THREE, rt.strip.pos, rt.strip.index, m, K - 1, n - 1) }, M.groundMat);
-    }
+    for (const rt of DATA.routes) stripMesh({ ...rt.strip, normals: true }, M.groundMat);
+    for (const ex of DATA.extras) for (const st of ex.strips) stripMesh(st, bridgeMat);
     for (const b of DATA.bridges) for (const st of b.strips) stripMesh(st, bridgeMat);
-    // the junction paving (biased over the trunk's shoulder it lies on) and the abutment walls, each kind one mesh (one draw call): the five pavings, the six walls
-    // (W8g-b: the first 6 m of the exits in the town's own asphalt are part of the start-up heads, terrain.js)
+    // junction paving and abutment walls, each kind one mesh (one draw call)
     const merge = (name, parts, withUV) => { const pos = [], col = [], uv = [], idx = []; for (const q of parts) { const base = pos.length / 3; for (let k = 0; k < q.pos.length; k++) pos.push(q.pos[k]); for (let k = 0; k < q.col.length; k++) col.push(q.col[k]); if (withUV) for (let k = 0; k < q.pos.length; k += 3) uv.push(q.pos[k] / 4, -q.pos[k + 2] / 4); for (const v of q.index) idx.push(base + v); }
       return { name, pos: Float32Array.from(pos), col: Float32Array.from(col), uv: withUV ? Float32Array.from(uv) : null, index: Uint32Array.from(idx), vertexCount: pos.length / 3, normals: true }; };
     const pavingMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -6 });
     S.materials.pavingMat = pavingMat;
-    if (DATA.junctions.length) stripMesh({ ...merge('junction paving', DATA.junctions.map(j => j.strip)), normals: false }, pavingMat);      // up normals: an even surface, no facets
+    const junctionPads = DATA.junctions.filter(j => j.strip && j.strip.index.length);
+    if (junctionPads.length) stripMesh({ ...merge('junction paving', junctionPads.map(j => j.strip)), normals: false }, pavingMat);      // up normals: an even surface, no facets
     if (DATA.abutments.length) stripMesh(merge('abutment walls', DATA.abutments.map(a => a.wall)), bridgeMat);
 
     // ---- tunnel (RN01-05): a half-round arch tube along the bed, outer concrete shell, dark inner lining, a portal ring and a black void disc at each end
@@ -512,6 +528,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     // ---- instances
     const all = {};
     for (const rt of DATA.routes) for (const [t, list] of Object.entries(rt.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
+    for (const ex of DATA.extras) for (const [t, list] of Object.entries(ex.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const b of DATA.bridges) for (const [t, list] of Object.entries(b.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     for (const st of DATA.stairs) for (const [t, list] of Object.entries(st.instances)) (all[t] = all[t] || []).push(...list.map(it => ({ ...it, m: matrixOfAlt(it) })));
     (all.gatePost = all.gatePost || []).push(...DATA.markers.map(it => ({ ...it, m: matrixOfAlt(it) })));
@@ -529,12 +546,13 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
       if (GLOW[type]) { const g = new THREE.InstancedMesh(K.geometries[GLOW[type][0]], GLOW[type][1], list.length); g.instanceMatrix = mesh.instanceMatrix; g.computeBoundingSphere(); g.name = 'road:' + type + ':glow'; if (type === 'navLight') { list.forEach((it, i) => g.setColorAt(i, tintC.setRGB(1, 1, 1))); g.instanceColor.needsUpdate = true; objs.nav = g; } root.add(g); objs.glows.push(g); }
     }
     // road puddle ripples (RD01 card, same look as the town's puddles): two rings near each lamp pool, scaled and faded by hand each frame (instanced, additive)
-    { const spots = []; for (const rt of DATA.routes) for (const l of (rt.lamps || [])) for (let k = 0; k < 2; k++) { const it = (rt.instances.lamp || [])[0]; void it; const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(rt.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = rt.lateral(i, o); spots.push({ lon: lo, lat: la, alt: rt.surface(i, o) + 0.012, phase: hash(l.s, k + 5) }); }
+    { const spots = []; for (const rt of DATA.routes) for (const l of (rt.lamps || [])) for (let k = 0; k < 2; k++) { const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(rt.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = rt.lateral(i, o); spots.push({ lon: lo, lat: la, alt: rt.surface(i, o) + 0.012, phase: hash(l.s, k + 5) }); }
       for (const b of DATA.bridges) for (const l of b.lamps) for (let k = 0; k < 2; k++) { const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(b.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = b.lateral(i, o); spots.push({ lon: lo, lat: la, alt: b.alt[i] + 0.05, phase: hash(l.s, k + 5) }); }
+      for (const [i, p] of townPuddles.entries()) for (let k = 0; k < (i % 3 ? 1 : 2); k++) { const dx = (hash(p.x + i, k + 7) - 0.5) * p.rx, dz = (hash(p.z + i, k + 13) - 0.5) * p.rz, q = W.townToLonLat(p.x + dx, p.z + dz); spots.push({ lon: q.lon, lat: q.lat, alt: BASE + p.y + 0.014, phase: hash(p.x + i, p.z + k), scale: Math.max(0.35, Math.min(p.rx, p.rz) * 0.65) }); }
       const rg = new THREE.RingGeometry(0.93, 1, 24); rg.rotateX(-Math.PI / 2);
       const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
       const mesh = new THREE.InstancedMesh(rg, rm, spots.length); mesh.name = 'road:ripple'; mesh.frustumCulled = false; for (let i = 0; i < spots.length; i++) { mesh.setMatrixAt(i, new THREE.Matrix4()); mesh.setColorAt(i, tintC.setRGB(0, 0, 0)); }
-      root.add(mesh); S.ripples = { mesh, spots, mats: spots.map(sp => { const f = flatOf(sp.lon, sp.lat); return { x: f.x, y: (sp.alt - BASE) * f.k, z: f.z, k: f.k }; }) }; objs.inst.push(mesh); S.counts.ripple = spots.length; }
+      root.add(mesh); S.ripples = { mesh, spots, mats: spots.map(sp => { const f = flatOf(sp.lon, sp.lat); return { x: f.x, y: (sp.alt - BASE) * f.k, z: f.z, k: f.k * (sp.scale || 1) }; }) }; objs.inst.push(mesh); S.counts.ripple = spots.length; }
     // navigation lights pulse slowly (period 6 s, phase per pier, never below 28 % of full): updated in tick
     S.nav = DATA.bridges.flatMap(b => b.navLights.map(n => n.phase));
 
@@ -543,7 +561,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const poly = (pts, out) => { let prev = null, lon0 = null; for (const q of pts) { const lon = lon0 === null ? q.lon : lon0 + (((q.lon - lon0) % 360 + 540) % 360 - 180); lon0 = lon; const f = flatOf(lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
     const addLines = (layer, segs, color) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, color ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, fog: false }) : lineMat()); l.name = 'road:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; return l; };
     { const segs = []; for (const rt of DATA.routes) { const clip = line => { let run = []; line.forEach((q, i) => { if (rt.samples[i].span === 'tunnel') { if (run.length > 1) poly(run, segs); run = []; } else run.push(q); }); if (run.length > 1) poly(run, segs); }; clip(rt.lines.edgeL); clip(rt.lines.edgeR); }
-      for (const j of DATA.junctions) for (const line of j.ink) poly(line, segs);         // W8f-a: the curb lines of the junction paving
+      for (const j of DATA.junctions) for (const line of (j.ink || [])) poly(line, segs); // shallow merges have no added curb outline
       addLines('aerial', segs); }
     { const segs = [], white = []; for (const b of DATA.bridges) { for (const k of ['edgeL', 'edgeR', 'edgeLU', 'edgeRU']) poly(b.lines[k], segs); for (const j of b.lines.joints) poly(j, segs); for (const st of (b.lines.stays || [])) poly(st, white); }
       addLines('bridge', segs); addLines('bridge', white, 0xe6ebf2); }
@@ -560,9 +578,10 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
 
     // ---- light band (RD01, RD02 and RD03 routes), with dots for the lanterns of the stairs and the small lamps of the boardwalk and the maintenance stair
     const dots = []; for (const st of DATA.stairs) for (const l of st.lanterns) dots.push({ lon: l.lon, lat: l.lat, alt: l.alt + 0.6 });
-    for (const rec of ((SEC.state.roadOut || []).flatMap(r => r.instances.lampSmall || []))) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
+    for (const rec of DATA.extras.flatMap(r => r.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
     for (const b of DATA.bridges) for (const rec of (b.instances.lampSmall || [])) dots.push({ lon: rec.lon, lat: rec.lat, alt: rec.alt + 1.2 });
-    S.band = global.LIGHTBAND.make(THREE, root); S.band.build(DATA.lit, DATA.sea, dots); S.dots = dots.length;
+    const SHOW_CONTINUOUS_LIGHTBAND = false; // Temporarily hide the core/sea ribbons; keep discrete lamps.
+    S.band = global.LIGHTBAND.make(THREE, root); S.band.build(SHOW_CONTINUOUS_LIGHTBAND ? DATA.lit : [], SHOW_CONTINUOUS_LIGHTBAND ? DATA.sea : [], dots); S.dots = dots.length;
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the RN01-13 deck faces, its ink and the band are cut where the seam crosses the bridge
     root.visible = true; S.built = true;
     return root;
@@ -614,12 +633,12 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:(lamp|lampSmall|lampPool)(:glow|:ink)?$/;
     S.materials.poolMat.opacity = lampK;
     const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
-    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || SEC.state.settings.rain);
+    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || (SEC.state.settings.rain && S.puddleWeight > 0.001));
     for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
     for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); if (l.userData.baseOpacity === undefined) l.userData.baseOpacity = l.material.opacity > 0.95 ? 1 : 0.9; l.material.opacity = Math.min(l.userData.baseOpacity, o); l.visible = o > 0.01; }
-    if (S.ripples && near && SEC.state.settings.rain) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
+    if (S.ripples && near && SEC.state.settings.rain && S.puddleWeight > 0.001) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * S.puddleWeight; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
     if (!S.bandManual) S.band.set(N ? { opacity: S.band.max * N.band } : { distance: ink.distance });
     S.band.breathe(t);
@@ -628,6 +647,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const api = {
     tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
+    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },
     setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
     data: () => DATA, objects: objs,

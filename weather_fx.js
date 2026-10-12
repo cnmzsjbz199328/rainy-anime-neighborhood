@@ -35,6 +35,7 @@ function attach(THREE, scene, ctx) {
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
     // blend towards the rain look with height: 1 + (m - 1) * wl
     mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = (1 + (pud - 1) * wl) * dry; rain *= dry; fogAdd *= wl; const fogK = w.fog * wl;
+    st.last = { ...st.last, puddleWeight: pud };
     sync();
     if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
     if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }
@@ -42,7 +43,6 @@ function attach(THREE, scene, ctx) {
     if (fogK > 0) { if (own.fogColor === null) base.fogColor.copy(scene.fog.color); scene.fog.color.copy(base.fogColor).lerp(fogTint, Math.min(1, fogK)); if (scene.background && scene.background.isColor) scene.background.copy(scene.fog.color); own.fogColor = scene.fog.color.clone(); }
     else if (own.fogColor !== null) { scene.fog.color.copy(base.fogColor); if (scene.background && scene.background.isColor) scene.background.copy(base.fogColor); own.fogColor = null; }
     if (rain !== 1) ctx.rainMat.opacity *= rain;
-    if (pud !== 1) for (const g of ctx.rings) g.a.material.opacity *= pud;
     // snow: falls round the target, opacity by the snow weight and the height blend
     const sw = w.snow * wl;
     if (sw > 0.001) { const S = snowLayer(), c = view.target; S.o.visible = true; S.m.opacity = 0.85 * sw; S.o.position.set(c[0], 0, c[2]);

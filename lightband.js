@@ -60,7 +60,7 @@ function make(THREE, root) {
   const mesh = (d, name) => { const m = glowMesh(THREE, d, name); root.add(m); st.meshes.push(m); return m; };
   // polys: lit road polylines; sea: the same routes' bridge parts (reflections on the sea surface at altitude 0.03)
   st.build = (polys, sea, dots = []) => {
-    st.core = mesh(ribbon(polys, CORE, 0.2, AMBER), 'lightband:core');
+    st.core = polys.length ? mesh(ribbon(polys, CORE, 0.2, AMBER), 'lightband:core') : null;
     st.sea = sea.length ? mesh(ribbon(sea, SEA, 0, SEACOL), 'lightband:sea') : null;
     // dots: short soft ribbons for the intermittent lights (stair lanterns, small boardwalk lamps)
     if (dots.length) st.dots = mesh(discs(dots, 2.2, AMBER.map(v => v * 0.5), 0.2), 'lightband:dots');
