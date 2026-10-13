@@ -2966,6 +2966,11 @@
 - `docs/world/w10c/ring-review-after/` 的 20 张图与 README/manifest 已按连续环路方案重新生成，所有节点记录独立补面 0 面和道路边 ID；图像由用户最终确认。W10c 仍为进行中，不合并。
 - 最终性能：`node tools/perf_baseline.mjs --views-only --quality high --loads 3 --label w10c-ring-continuous-fast`，Metal Apple M4；完整首帧 4,043 / 3,914 / 3,951 ms，中位 3,951 ms（≤4,000 ms，单次最大仍为 4,043 ms）；默认机位 16.6 / 18.7 ms、2,489 calls（预算 17 / 25 ms、2,611 calls）；球形 d140 39.2 / 40.6 ms，d400 38.7 / 40.3 ms（中位 / p95），均未比 `pre-w10a` 的 39.6 / 43.3 与 40.1 / 41.4 ms 慢 10%。`index.html` 2,936,475 bytes，比 `pre-w10c` 增 13,452 bytes（≤0.6 MB）；页面错误 0。该性能记录对应最后一次裁切循环优化与重建的页面；几何断面未随此优化改变。
 
+### C01-S 栈道入口设施净空修复（2026-10-13，视觉待用户确认）
+
+- 用户截图指出路灯、标牌和围栏侵入 CR01。`section_plan.js` 将两盏入口灯、圆牌、公交牌、反光镜、金属护栏、竹篱和右侧电杆移出路口，电线随电杆连接更新；W4 物件按 CR01 全断面、转弯口及南延道路净空剔除，保留道路、节点与 `layout.js` 不变。修复前/后同机位截图均在本地 `docs/world/w10c/c01-s-furniture-review/`，用户看 `top-clear.png`、`approach-rain.png`、`oblique-clear.png`；截图未提交、Agent 未代替用户判视觉通过。
+- `node tools/c01_s_clearance.mjs`：独立按 `world.js` 路网 0.25 m 采样核对，入口范围 448 件保留物件、5 段电线，物件与道路全断面（额外 0.5 m 退让）冲突 0，电线悬挂端点均保留。`python3 build.py`、`node tools/measure_samples.mjs`、`node tools/layout_check.mjs --png`（C1–C12）、`node tools/road_check.mjs`（11 项）、完整 `node tools/unify_check.mjs` 的 U0/U1/U2/U3/U4 均通过；U2 平面/球形各 29,314 点无漏底或遮挡，截图脚本浏览器错误 0。`node tools/section_check.mjs` 在 W4-C2 因已移除的 `RK.chain` 调用抛错，未用于本次通过判定。W10c 总阶段仍待用户视觉确认。
+
 ### CR01 接缝顺坡复核（2026-10-13）
 
 - 进一步量测发现，支路网格在 CR01 原沥青边界的高度差最高约 0.345 m，主要来自边沟/草地断面在裁切线处直接终止；铺装部分最高约 0.065 m。`roads.js` 现在把支路末端约 2 m 范围内的横断面高度顺坡接到原 CR01 沥青边缘，CR01 网格仍保持原样，不增加补面。U4 新增实际裁切边界顶点的高度检查：十节点 3,928 点最大差 0.0131 m（C01-S），限 0.02 m；U2 平面/球形各 29,314 点继续无漏底、遮挡或抬高；`road_check` 11/11 通过。

@@ -39,7 +39,7 @@ function plan(W) {
   const smallOcc = {};
   const put = (type, u, v, o = {}) => {
     const [lon, lat] = toLL(u, v);
-    const it = { type, u, v, lon, lat, yaw: o.yaw ?? uniform(0, Math.PI * 2), s: o.s || [1, 1, 1], tint: o.tint || [1, 1, 1], lean: o.lean || [0, 0], dy: o.dy || 0 };
+    const it = { type, u, v, lon, lat, yaw: o.yaw ?? uniform(0, Math.PI * 2), s: o.s || [1, 1, 1], tint: o.tint || [1, 1, 1], lean: o.lean || [0, 0], dy: o.dy || 0, clearance: o.r || 0.3 };
     (items[type] = items[type] || []).push(it);
     if (o.r) { if (o.r >= 0.5) occupied.push({ u, v, r: o.r }); else (smallOcc[type] = smallOcc[type] || []).push({ u, v, r: o.r }); }
     return it;
@@ -72,16 +72,17 @@ function plan(W) {
   const coastV = (() => { for (let v = 30; v < 62; v += 0.02) if (W.coastDistance(-1, LAT0 - v / (R * D)) <= 0) return v; return null; })();
 
   // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
-  put('lamp', ...(() => { const b = beside('RN02-07', 1.2, 3.4); return [b.u, b.v]; })(), { yaw: Math.PI / 2 - 0.0, r: 0.6, lean: [0, 0] });
-  { const b = beside('RN02-07', 5.8, -3.5); put('lamp', b.u, b.v, { yaw: -Math.PI / 2, r: 0.6 }); }   // RD03: a lamp at the junction as well
-  { const b = beside('RN02-07', 4.2, -3.4); put('signRound', b.u, b.v, { yaw: b.yaw, r: 0.4 }); }
-  { const b = beside('RN02-07', 2.6, -3.4); put('signBus', b.u, b.v, { yaw: b.yaw + Math.PI, r: 0.4 }); }
-  { const b = beside('RN02-07', 5.4, 3.5); put('mirror', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.4 }); }
+  // C01-S: keep the entrance furniture beyond the ring's full section and the turning mouth.
+  put('lamp', -6.2, 12.5, { yaw: Math.PI / 2, r: 0.6 });
+  put('lamp', 10.5, 13.2, { yaw: -Math.PI / 2, r: 0.6 });
+  put('signRound', 10.5, 16.0, { yaw: 0, r: 0.4 });
+  put('signBus', 10.5, 19.0, { yaw: Math.PI, r: 0.4 });
+  put('mirror', -6.2, 15.0, { yaw: Math.PI / 2, r: 0.4 });
   { const b = beside('RN02-07', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
-  for (let s = 0.8; s <= 5.6; s += 2.0) { const b = beside('RN02-07', s, 3.6 + 1.2); put('guardrailMetal', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 0.8 }); }
-  for (const [u0, u1] of [[-12, -4.2], [5.8, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 3.9, { yaw: 0, r: 0.8 });
+  for (let v = 18; v <= 22; v += 2.0) put('guardrailMetal', -6.4, v, { yaw: Math.PI / 2, r: 1.0 });
+  for (const [u0, u1] of [[-12, -7.2], [8.2, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 11.2, { yaw: 0, r: 1.0 });
   // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
-  const poleA = [[-8.0, 2.4, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[4.3, 1.8, 0.0], [5.0, 12.8, 0.08], [3.6, 21.0, 0.2]];
+  const poleA = [[-8.0, 0.2, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[8.0, 0.2, 0.0], [10.0, 12.8, 0.08], [8.0, 21.0, 0.2]];
   const wires = [];
   for (const chain of [poleA, poleB]) {
     const placed = chain.map(([u, v, lean], i) => put('pole', u, v, { yaw: Math.PI / 2 + (i % 2 ? 0.2 : 0), lean: [lean * 0.4, lean], r: 0.5 }));
@@ -169,7 +170,26 @@ function plan(W) {
 
   // spacing check helper for the trees: reported to the checks
   const trees = ['treeRound', 'cedar', 'pine', 'bamboo'].reduce((s, t) => s + (items[t] || []).length, 0);
-  return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, plots, cellOf, wires, treeCount: trees, forestTrees, seed: SEED };
+  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches
+  // the ring's full RD03 section or the C01-S turning mouth, including scattered plants.
+  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat);
+  const distanceToRing = it => Math.abs(W.lonLatToTown(it.lon, it.lat).z - center.z);
+  const removedAtRing = {};
+  for (const [type, list] of Object.entries(items)) {
+    items[type] = list.filter(it => {
+      const p = W.lonLatToTown(it.lon, it.lat), radius = it.clearance + 0.5;
+      const ring = Math.abs(p.x) <= 12 && distanceToRing(it) < 3.55 + radius;
+      const mouth = Math.abs(p.z - center.z) <= 7 && Math.abs(p.x - center.x) < 4.4 + radius;
+      const approach = it.v < 24 && roadDist(it.u, it.v).d < radius;
+      const conflict = ring || mouth || approach;
+      if (conflict) removedAtRing[type] = (removedAtRing[type] || 0) + 1;
+      return !conflict;
+    });
+  }
+  // The wire endpoints use the same item objects; drop any wire whose pole was culled.
+  const keptPoles = new Set(items.pole || []);
+  const safeWires = wires.filter(w => keptPoles.has(w.a) && keptPoles.has(w.b));
+  return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
 const PLAN = { plan, SEED };
