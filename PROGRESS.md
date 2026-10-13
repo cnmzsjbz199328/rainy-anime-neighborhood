@@ -2966,6 +2966,12 @@
 - `docs/world/w10c/ring-review-after/` 的 20 张图与 README/manifest 已按连续环路方案重新生成，所有节点记录独立补面 0 面和道路边 ID；图像由用户最终确认。W10c 仍为进行中，不合并。
 - 最终性能：`node tools/perf_baseline.mjs --views-only --quality high --loads 3 --label w10c-ring-continuous-fast`，Metal Apple M4；完整首帧 4,043 / 3,914 / 3,951 ms，中位 3,951 ms（≤4,000 ms，单次最大仍为 4,043 ms）；默认机位 16.6 / 18.7 ms、2,489 calls（预算 17 / 25 ms、2,611 calls）；球形 d140 39.2 / 40.6 ms，d400 38.7 / 40.3 ms（中位 / p95），均未比 `pre-w10a` 的 39.6 / 43.3 与 40.1 / 41.4 ms 慢 10%。`index.html` 2,936,475 bytes，比 `pre-w10c` 增 13,452 bytes（≤0.6 MB）；页面错误 0。该性能记录对应最后一次裁切循环优化与重建的页面；几何断面未随此优化改变。
 
+### 移除城镇人行道浅蓝重复面（2026-10-13）
+
+- 用户圈出的人行道浅蓝层来自统一道路的 TOWN_MAIN / TOWN_BRANCH 两侧混凝土断面，覆盖了 `scene.js` 已有的铺砖人行道；此前运行时实测高出原面约 0.9–3.7 mm，且有深度偏移。`roads.js` 现在按 `layout.js` 六个人行道岛的真实圆角边界裁除重复道路面，保留原铺砖、设施带、坡道、路口圆角外侧铺装和城镇外断面。内巷的通行面及跨人行道坡接继续由统一道路提供。已重建 `index.html`，没有改 `layout.js`。
+- 新增 `node tools/town_pavement_check.mjs --png`：从当前 HTML 的渲染网格检测 1,821 个人行道点，重复道路覆盖 0、页面错误 0；60 个圆角/坡口点与 39 个内巷交叉点单独排除，未据此宣称这些位置通过人行道专检。完整 `unify_check` U0–U4 通过，其中 U2 平面/球形各 29,314 点无漏底、遮挡或抬高；`measure_samples` 通过后 `layout_check --png` C1–C12 通过；`road_check` 11 项通过。道路三角面从 177,489 减至 162,959。
+- 本地复核图：`docs/world/w10c/pavement-review/X01-top.png`、`X02-top.png`，机位为两个城镇十字路口俯视，雨夜；看点是路口两侧原有砖纹恢复、设施带与坡道完整。未查看截图作视觉判断，W10c 整体视觉闸门仍待用户确认；本次删除任务的机器验证已完成。未新增待办项。
+
 ### C01-S 栈道入口设施净空修复（2026-10-13，视觉待用户确认）
 
 - 用户截图指出路灯、标牌和围栏侵入 CR01。`section_plan.js` 将两盏入口灯、圆牌、公交牌、反光镜、金属护栏、竹篱和右侧电杆移出路口，电线随电杆连接更新；W4 物件按 CR01 全断面、转弯口及南延道路净空剔除，保留道路、节点与 `layout.js` 不变。修复前/后同机位截图均在本地 `docs/world/w10c/c01-s-furniture-review/`，用户看 `top-clear.png`、`approach-rain.png`、`oblique-clear.png`；截图未提交、Agent 未代替用户判视觉通过。

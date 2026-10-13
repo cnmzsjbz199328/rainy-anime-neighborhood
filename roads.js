@@ -619,6 +619,33 @@ function routeOpts(def, ctx, tc) {
 }
 // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
 const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: jp.shallowMerge ? jp.mergeLength : d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
+// The raised town islands already supply paving, facility bands and curb ramps.
+// Remove the route sheet only inside their rounded footprint; keeping the curved
+// corner wedges and everything outside the town preserves junctions and exit joins.
+function removeTownPavementDuplicates(routes) {
+  const L = global.LAYOUT;
+  if (!L) return;
+  const radius = L.INTERSECTION.curbRadius;
+  const polygons = L.islands.map(is => {
+    const [x0, z0, x1, z1] = is.rect, corners = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], names = ['NW', 'NE', 'SE', 'SW'], pts = [];
+    for (let i = 0; i < 4; i++) {
+      const c = corners[i], prev = corners[(i + 3) % 4], next = corners[(i + 1) % 4];
+      if (!is.round[names[i]]) { pts.push(c); continue; }
+      const dx = Math.sign(c[0] - prev[0]), dz = Math.sign(c[1] - prev[1]), nx = Math.sign(next[0] - c[0]), nz = Math.sign(next[1] - c[1]),
+        ox = c[0] + Math.sign((x0 + x1) / 2 - c[0]) * radius, oz = c[1] + Math.sign((z0 + z1) / 2 - c[1]) * radius,
+        a = Math.atan2(c[1] - dz * radius - oz, c[0] - dx * radius - ox);
+      let delta = Math.atan2(c[1] + nz * radius - oz, c[0] + nx * radius - ox) - a;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      for (let k = 0; k <= 12; k++) pts.push([ox + radius * Math.cos(a + delta * k / 12), oz + radius * Math.sin(a + delta * k / 12)]);
+    }
+    return pts;
+  });
+  for (const rt of routes.filter(r => r.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH'))) {
+    rt.pavementCuts = polygons.map((polygon, i) => ({ island: L.islands[i].id, ...clipStripOutside(rt.strip, polygon) }));
+  }
+}
+
 function* planSteps(W, H, tc) {
   const WS = Object.assign(Object.create(W), { height: H }), RK = global.ROADKIT, BR = global.BRIDGE;
   const ctx = routeContext(WS), { AB, CH, lm09Turn, JP } = ctx,
@@ -637,6 +664,7 @@ function* planSteps(W, H, tc) {
   const routes = ROUTES.map(def => byId[def.id]);
   for (const rt of routes) if (rt.def.furnish) furnish(WS, rt, rt.def.furnish);
   const cr01Junctions = prepareCr01Junctions(WS, routes, RK);
+  removeTownPavementDuplicates(routes);
   yield;
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
