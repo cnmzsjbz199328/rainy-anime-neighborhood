@@ -14,26 +14,43 @@ try {
  await page.goto(pathToFileURL(htmlArg>=0?path.resolve(process.argv[htmlArg+1]):path.join(root,'index.html')).href);
  await page.waitForFunction(()=>!!window.__scene,null,{timeout:120000});
  const result=await page.evaluate(()=>{
-  const S=window.__scene,T=window.THREE,L=window.LAYOUT,roads=[],paving=[];
+  const S=window.__scene,T=window.THREE,L=window.LAYOUT,roads=[],paving=[],baseMeshes=[];
+  const mainNames=new Set(S.roads.data().routes.filter(r=>r.classes.some(c=>c==='TOWN_MAIN'||c==='TOWN_BRANCH')).map(r=>'road:'+r.strip.name));
   S.scene.updateMatrixWorld(true);
   S.scene.traverse(o=>{if(!o.isMesh||o.isInstancedMesh)return;
    if(o.name.startsWith('road:route '))roads.push(o);
+   if(o.parent?.name==='base')baseMeshes.push(o);
    if(o.parent?.name==='base'&&o.material?.map&&o.material?.color?.getHexString()==='87908c')paving.push(o);
   });
   const ray=new T.Raycaster(),leaks=[],missing=[];let tested=0,skippedCorners=0,alleyCrossings=0;
-  for(const s of L.surfaces.filter(s=>s.kind==='sidewalk')){
+  for(const s of L.surfaces.filter(s=>s.kind==='sidewalk'||s.kind==='band')){
    const [x0,z0,x1,z1]=s.rect;
    for(let x=x0+.2;x<x1-.1;x+=.8)for(let z=z0+.2;z<z1-.1;z+=.8){
-    // Alley crossings carry their own unified paving and ramp through the sidewalk.
-    // They are not the duplicate TOWN_MAIN/TOWN_BRANCH concrete sheet being removed.
-    if(L.alleys.some(a=>{const ends=a.nodes.map(id=>L.roadNodes.find(n=>n.id===id));return x>=Math.min(...ends.map(n=>n.x))&&x<=Math.max(...ends.map(n=>n.x))&&Math.abs(z-ends[0].z)<L.ALLEY.width/2;})){alleyCrossings++;continue;}
+    const alley=L.alleys.some(a=>{const ends=a.nodes.map(id=>L.roadNodes.find(n=>n.id===id));return x>=Math.min(...ends.map(n=>n.x))&&x<=Math.max(...ends.map(n=>n.x))&&Math.abs(z-ends[0].z)<L.ALLEY.width/2;});
     ray.set(new T.Vector3(x,10,z),new T.Vector3(0,-1,0));
+    if(alley){alleyCrossings++;const hits=ray.intersectObjects(roads,false);if(!hits.some(h=>!mainNames.has(h.object.name)))missing.push({x,z,kind:'alley crossing'});if(hits.some(h=>mainNames.has(h.object.name)&&h.point.y>.04))leaks.push({x,z,kind:'duplicate over alley crossing'});continue;}
     const base=ray.intersectObjects(paving,false).find(h=>Math.abs(h.point.y-L.LEVELS.pavement)<.001);
     // Rounded corners and curb cuts have their own geometry and are checked by U2/layout checks.
     if(!base){skippedCorners++;continue;}
     tested++;
     const hit=ray.intersectObjects(roads,false).find(h=>h.point.y>=L.LEVELS.pavement-.05);
     if(hit)leaks.push({x,z,y:hit.point.y,mesh:hit.object.name});
+   }
+  }
+  const streetVertexLeaks=[];let streetVertices=0;
+  for(const mesh of roads.filter(o=>mainNames.has(o.name))){const g=mesh.geometry,p=g.attributes.position,c=g.attributes.color;
+   for(const i of new Set(g.index.array)){const x=p.getX(i),y=p.getY(i),z=p.getZ(i);if(Math.abs(x)>L.BASE.half+1e-5||Math.abs(z)>L.BASE.half+1e-5)continue;
+    streetVertices++;if(y>.03||Math.max(c.getX(i),c.getY(i),c.getZ(i))>.07)streetVertexLeaks.push({mesh:mesh.name,x,y,z});
+   }
+  }
+  let rampTested=0;const rampLeaks=[];
+  for(const cut of L.curbCuts){if(cut.kind==='driveway'&&/^A0/.test(cut.id))continue;
+   for(const t of [.15,.5,.85]){const along=(cut.s0+cut.s1)/2,across=cut.at+cut.dir*cut.depth*t,x=cut.line==='x'?across:along,z=cut.line==='x'?along:across;
+    ray.set(new T.Vector3(x,10,z),new T.Vector3(0,-1,0));rampTested++;
+    const expected=L.LEVELS.carriageway+(L.LEVELS.pavement-L.LEVELS.carriageway)*t;
+    const hits=ray.intersectObjects(baseMeshes,false),hit=hits.find(h=>Math.abs(h.point.y-expected)<.001);
+    if(!hit)rampLeaks.push({x,z,kind:'missing original ramp',expected});
+    if(ray.intersectObjects(roads,false).some(h=>mainNames.has(h.object.name)&&h.point.y>expected+.001))rampLeaks.push({x,z,kind:'road overlay above ramp'});
    }
   }
   // Probe the actual road-side wedges outside all eight rounded pavement corners.
@@ -56,16 +73,16 @@ try {
    }
   }
   if(!paving.length||tested<500||cornerTested<400)missing.push('insufficient paving/corner coverage');
-  return {tested,skippedCorners,alleyCrossings,leaks,missing,cornerTested,cornerLeaks,cornerMissing};
+  return {tested,skippedCorners,alleyCrossings,leaks,missing,streetVertices,streetVertexLeaks,rampTested,rampLeaks,cornerTested,cornerLeaks,cornerMissing};
  });
  console.log(JSON.stringify({...result,errors},null,2));
  if(process.argv.includes('--png')){
   const out=path.join(root,'docs/world/w10c/pavement-review');fs.mkdirSync(out,{recursive:true});
-  for(const [id,target,dist]of [['X01-top',[0,.15,15],32],['X02-top',[0,.15,-15],32],['X01-corner',[4.5,.15,20],9],['X02-corner',[-4.5,.15,-10.5],9]]){
+  for(const [id,target,dist]of [['town-top',[0,.15,0],145],['main-edge',[20,.15,19],24],['branch-edge',[3,.15,0],24],['alley-mouth',[0,.15,32.25],18],['X01-top',[0,.15,15],32],['X02-top',[0,.15,-15],32],['X01-corner',[4.5,.15,20],9],['X02-corner',[-4.5,.15,-10.5],9]]){
    const url=await page.evaluate(([target,dist])=>{const S=window.__scene;S.weather.lock('rain');S.view.set({target,dist,yaw:0,pitch:1.52});window.__step(1);S.renderer.render(S.scene,S.camera);return S.renderer.domElement.toDataURL('image/png');},[target,dist]);
    fs.writeFileSync(path.join(out,id+'.png'),Buffer.from(url.split(',')[1],'base64'));
   }
   fs.writeFileSync(path.join(out,'check.json'),JSON.stringify({...result,errors},null,2)+'\n');
  }
- process.exitCode=result.leaks.length||result.missing.length||result.cornerLeaks.length||result.cornerMissing.length||errors.length?1:0;
+ process.exitCode=result.leaks.length||result.missing.length||result.streetVertexLeaks.length||result.rampLeaks.length||result.cornerLeaks.length||result.cornerMissing.length||errors.length?1:0;
 }finally{await browser.close();}
