@@ -5036,8 +5036,8 @@ function routeOpts(def, ctx, tc) {
 // branches: their last row is lifted to the paving (the trunk's surface + PAVE_LIFT); the change fades over 3-8 m (<= 6 % of extra grade)
 const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: jp.shallowMerge ? jp.mergeLength : d => Math.max(3, Math.min(8, d / 0.06)), target: (lo, la) => { const pr = project(trunk, lo, la, jp.sJ); return pr ? surfS(trunk, pr.s, pr.o) + PAVE_LIFT : null; } });
 // The raised town islands already supply paving, facility bands and curb ramps.
-// Remove the route sheet only inside their rounded footprint; keeping the curved
-// corner wedges and everything outside the town preserves junctions and exit joins.
+// Remove the route sheet inside their rounded footprint. The remaining corner
+// wedges belong to the carriageway and must have asphalt at road level.
 function removeTownPavementDuplicates(routes) {
   const L = global.LAYOUT;
   if (!L) return;
@@ -5059,6 +5059,18 @@ function removeTownPavementDuplicates(routes) {
   });
   for (const rt of routes.filter(r => r.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH'))) {
     rt.pavementCuts = polygons.map((polygon, i) => ({ island: L.islands[i].id, ...clipStripOutside(rt.strip, polygon) }));
+    const asphalt = global.ROADKIT.lin(global.ROADKIT.COL.asphalt), st = rt.strip;
+    for (const v of new Set(st.index)) {
+      const x = st.pos[v * 3], z = st.pos[v * 3 + 2];
+      const cornerWedge = L.islands.some(is => {
+        const [x0, z0, x1, z1] = is.rect;
+        return [['NW', x0, z0, 1, 1], ['NE', x1, z0, -1, 1], ['SE', x1, z1, -1, -1], ['SW', x0, z1, 1, -1]].some(([name, cx, cz, sx, sz]) =>
+          is.round[name] && (x - cx) * sx >= -1e-5 && (x - cx) * sx <= radius + 1e-5 && (z - cz) * sz >= -1e-5 && (z - cz) * sz <= radius + 1e-5);
+      });
+      if (!cornerWedge) continue;
+      st.pos[v * 3 + 1] = L.LEVELS.carriageway;
+      st.col.set(asphalt, v * 3);
+    }
   }
 }
 

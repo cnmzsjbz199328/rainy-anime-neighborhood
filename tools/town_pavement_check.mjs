@@ -10,7 +10,8 @@ try {
  const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(INIT);
- await page.goto(pathToFileURL(path.join(root,'index.html')).href);
+ const htmlArg=process.argv.indexOf('--html');
+ await page.goto(pathToFileURL(htmlArg>=0?path.resolve(process.argv[htmlArg+1]):path.join(root,'index.html')).href);
  await page.waitForFunction(()=>!!window.__scene,null,{timeout:120000});
  const result=await page.evaluate(()=>{
   const S=window.__scene,T=window.THREE,L=window.LAYOUT,roads=[],paving=[];
@@ -35,17 +36,36 @@ try {
     if(hit)leaks.push({x,z,y:hit.point.y,mesh:hit.object.name});
    }
   }
-  if(!paving.length||tested<500)missing.push('insufficient paving coverage');
-  return {tested,skippedCorners,alleyCrossings,leaks,missing};
+  // Probe the actual road-side wedges outside all eight rounded pavement corners.
+  // These are not covered by the straight sidewalk probes or U2's lane rows.
+  let cornerTested=0;const cornerLeaks=[],cornerMissing=[];
+  for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,R=L.INTERSECTION.curbRadius;
+   for(const [name,cx,cz,sx,sz]of [['NW',x0,z0,1,1],['NE',x1,z0,-1,1],['SE',x1,z1,-1,-1],['SW',x0,z1,1,-1]]){
+    if(!is.round[name])continue;
+    for(let u=.05;u<R;u+=.15)for(let v=.05;v<R;v+=.15){
+     const x=cx+sx*u,z=cz+sz*v;
+     ray.set(new T.Vector3(x,10,z),new T.Vector3(0,-1,0));
+     if(ray.intersectObjects(paving,false).some(h=>h.point.y>.1))continue;
+     cornerTested++;
+     const hit=ray.intersectObjects(roads,false)[0];
+     if(!hit){cornerMissing.push({island:is.id,name,x,z});continue;}
+     const colors=hit.object.geometry.attributes.color,face=hit.face;
+     const bright=Math.max(...[face.a,face.b,face.c].flatMap(i=>[colors.getX(i),colors.getY(i),colors.getZ(i)]));
+     if(hit.point.y>L.LEVELS.carriageway+.005||bright>.07)cornerLeaks.push({island:is.id,name,x,z,y:hit.point.y,bright});
+    }
+   }
+  }
+  if(!paving.length||tested<500||cornerTested<400)missing.push('insufficient paving/corner coverage');
+  return {tested,skippedCorners,alleyCrossings,leaks,missing,cornerTested,cornerLeaks,cornerMissing};
  });
  console.log(JSON.stringify({...result,errors},null,2));
  if(process.argv.includes('--png')){
   const out=path.join(root,'docs/world/w10c/pavement-review');fs.mkdirSync(out,{recursive:true});
-  for(const [id,z]of [['X01',15],['X02',-15]]){
-   const url=await page.evaluate(z=>{const S=window.__scene;S.weather.lock('rain');S.view.set({target:[0,.15,z],dist:32,yaw:0,pitch:1.52});window.__step(1);S.renderer.render(S.scene,S.camera);return S.renderer.domElement.toDataURL('image/png');},z);
-   fs.writeFileSync(path.join(out,id+'-top.png'),Buffer.from(url.split(',')[1],'base64'));
+  for(const [id,target,dist]of [['X01-top',[0,.15,15],32],['X02-top',[0,.15,-15],32],['X01-corner',[4.5,.15,20],9],['X02-corner',[-4.5,.15,-10.5],9]]){
+   const url=await page.evaluate(([target,dist])=>{const S=window.__scene;S.weather.lock('rain');S.view.set({target,dist,yaw:0,pitch:1.52});window.__step(1);S.renderer.render(S.scene,S.camera);return S.renderer.domElement.toDataURL('image/png');},[target,dist]);
+   fs.writeFileSync(path.join(out,id+'.png'),Buffer.from(url.split(',')[1],'base64'));
   }
   fs.writeFileSync(path.join(out,'check.json'),JSON.stringify({...result,errors},null,2)+'\n');
  }
- process.exitCode=result.leaks.length||result.missing.length||errors.length?1:0;
+ process.exitCode=result.leaks.length||result.missing.length||result.cornerLeaks.length||result.cornerMissing.length||errors.length?1:0;
 }finally{await browser.close();}
