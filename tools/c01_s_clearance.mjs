@@ -22,7 +22,8 @@ const roads = ids.map(id => {
 const errors = [], counts = {};
 for (const [type, list] of Object.entries(P.items)) for (const it of list) {
   if (it.v < 0 || it.v > 24 || Math.abs(it.u) > 13) continue;
-  const p = flat(it), r = it.clearance + 0.5;
+  // The bamboo mesh extends two metres to one side of its origin (flora.js).
+  const p = flat(it), r = Math.max(it.clearance, type === 'fenceBamboo' ? 2.1 : 0) + 0.5;
   for (const road of roads) {
     const d = road.pts.slice(1).reduce((best, q, i) => Math.min(best, segmentDistance(p, road.pts[i], q)), Infinity);
     if (d < road.half + r - 0.01) {

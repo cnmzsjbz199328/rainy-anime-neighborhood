@@ -2969,7 +2969,7 @@
 ### C01-S 栈道入口设施净空修复（2026-10-13，视觉待用户确认）
 
 - 用户截图指出路灯、标牌和围栏侵入 CR01。`section_plan.js` 将两盏入口灯、圆牌、公交牌、反光镜、金属护栏、竹篱和右侧电杆移出路口，电线随电杆连接更新；W4 物件按 CR01 全断面、转弯口及南延道路净空剔除，保留道路、节点与 `layout.js` 不变。修复前/后同机位截图均在本地 `docs/world/w10c/c01-s-furniture-review/`，用户看 `top-clear.png`、`approach-rain.png`、`oblique-clear.png`；截图未提交、Agent 未代替用户判视觉通过。
-- `node tools/c01_s_clearance.mjs`：独立按 `world.js` 路网 0.25 m 采样核对，入口范围 448 件保留物件、5 段电线，物件与道路全断面（额外 0.5 m 退让）冲突 0，电线悬挂端点均保留。`python3 build.py`、`node tools/measure_samples.mjs`、`node tools/layout_check.mjs --png`（C1–C12）、`node tools/road_check.mjs`（11 项）、完整 `node tools/unify_check.mjs` 的 U0/U1/U2/U3/U4 均通过；U2 平面/球形各 29,314 点无漏底或遮挡，截图脚本浏览器错误 0。`node tools/section_check.mjs` 在 W4-C2 因已移除的 `RK.chain` 调用抛错，未用于本次通过判定。W10c 总阶段仍待用户视觉确认。
+- `node tools/c01_s_clearance.mjs`：独立按 `world.js` 路网 0.25 m 采样核对，入口范围 448 件保留物件、5 段电线，物件与道路全断面（额外 0.5 m 退让）冲突 0，电线悬挂端点均保留。竹篱净空按 `flora.js` 实际横杆相对摆放原点向一侧伸出约 2 m 计；复核加强后仍为 0 冲突。`python3 build.py`、`node tools/measure_samples.mjs`、`node tools/layout_check.mjs --png`（C1–C12）、`node tools/road_check.mjs`（11 项）、完整 `node tools/unify_check.mjs` 的 U0/U1/U2/U3/U4 均通过；U2 平面/球形各 29,314 点无漏底或遮挡，截图脚本浏览器错误 0。`node tools/section_check.mjs` 在 W4-C2 因已移除的 `RK.chain` 调用抛错，未用于本次通过判定。W10c 总阶段仍待用户视觉确认。
 
 ### CR01 接缝顺坡复核（2026-10-13）
 

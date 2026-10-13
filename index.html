@@ -3040,7 +3040,7 @@ function plan(W) {
   const smallOcc = {};
   const put = (type, u, v, o = {}) => {
     const [lon, lat] = toLL(u, v);
-    const it = { type, u, v, lon, lat, yaw: o.yaw ?? uniform(0, Math.PI * 2), s: o.s || [1, 1, 1], tint: o.tint || [1, 1, 1], lean: o.lean || [0, 0], dy: o.dy || 0, clearance: o.r || 0.3 };
+    const it = { type, u, v, lon, lat, yaw: o.yaw ?? uniform(0, Math.PI * 2), s: o.s || [1, 1, 1], tint: o.tint || [1, 1, 1], lean: o.lean || [0, 0], dy: o.dy || 0, clearance: o.clearance ?? o.r ?? 0.3 };
     (items[type] = items[type] || []).push(it);
     if (o.r) { if (o.r >= 0.5) occupied.push({ u, v, r: o.r }); else (smallOcc[type] = smallOcc[type] || []).push({ u, v, r: o.r }); }
     return it;
@@ -3081,7 +3081,7 @@ function plan(W) {
   put('mirror', -6.2, 15.0, { yaw: Math.PI / 2, r: 0.4 });
   { const b = beside('RN02-07', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
   for (let v = 18; v <= 22; v += 2.0) put('guardrailMetal', -6.4, v, { yaw: Math.PI / 2, r: 1.0 });
-  for (const [u0, u1] of [[-12, -7.2], [8.2, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 11.2, { yaw: 0, r: 1.0 });
+  for (const [u0, u1] of [[-12, -7.2], [8.2, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 11.2, { yaw: 0, r: 1.0, clearance: 2.1 });
   // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
   const poleA = [[-8.0, 0.2, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[8.0, 0.2, 0.0], [10.0, 12.8, 0.08], [8.0, 21.0, 0.2]];
   const wires = [];
