@@ -72,17 +72,39 @@ try {
     }
    }
   }
+  // All nine town-to-ring links: the original route must cover its lane and
+  // have no leftover raised side sheet between the ±48 m edge and CR01.
+  const connectorLeaks=[],connectorMissing=[];let connectorTested=0;
+  const W=window.WORLD,network=W.roadNetwork;
+  for(const rt of S.roads.data().routes.filter(r=>r.connectorCuts?.length)){
+   const id=rt.connectorCuts[0].exit,n=network.nodeById[id],p=W.lonLatToTown(n.lon,n.lat),
+    edge=rt.def.segs.map(s=>network.edges.find(e=>e.id===s.id)).find(e=>e.class.startsWith('TOWN_')),
+    half=network.townClasses[edge.class].carriageway/2,axis=Math.abs(p.x)>Math.abs(p.z)?'x':'z',sign=Math.sign(p[axis]),lateral=axis==='x'?'z':'x',
+    mesh=roads.find(o=>o.name==='road:'+rt.strip.name);
+   if(!mesh){connectorMissing.push({id,kind:'route mesh'});continue;}
+   for(const distance of [.5,1,1.5,2,2.5]){
+    for(const offset of [0,-half+.35,half-.35,-half-.35,half+.35,-half-1,half+1,-half-2,half+2]){
+     const x=axis==='x'?sign*(L.BASE.half+distance):p.x+offset,
+      z=axis==='z'?sign*(L.BASE.half+distance):p.z+offset;
+     ray.set(new T.Vector3(x,10,z),new T.Vector3(0,-1,0));
+     const hit=ray.intersectObject(mesh,false)[0];connectorTested++;
+     if(Math.abs(offset)<half-.1&&!hit)connectorMissing.push({id,x,z,offset,kind:'lane'});
+     if(Math.abs(offset)>half+.1&&hit)connectorLeaks.push({id,x,z,offset,y:hit.point.y});
+    }
+   }
+  }
   if(!paving.length||tested<500||cornerTested<400)missing.push('insufficient paving/corner coverage');
-  return {tested,skippedCorners,alleyCrossings,leaks,missing,streetVertices,streetVertexLeaks,rampTested,rampLeaks,cornerTested,cornerLeaks,cornerMissing};
+  if(connectorTested<300)missing.push('insufficient connector coverage');
+  return {tested,skippedCorners,alleyCrossings,leaks,missing,streetVertices,streetVertexLeaks,rampTested,rampLeaks,cornerTested,cornerLeaks,cornerMissing,connectorTested,connectorLeaks,connectorMissing};
  });
  console.log(JSON.stringify({...result,errors},null,2));
  if(process.argv.includes('--png')){
   const out=path.join(root,'docs/world/w10c/pavement-review');fs.mkdirSync(out,{recursive:true});
-  for(const [id,target,dist]of [['town-top',[0,.15,0],145],['main-edge',[20,.15,19],24],['branch-edge',[3,.15,0],24],['alley-mouth',[0,.15,32.25],18],['X01-top',[0,.15,15],32],['X02-top',[0,.15,-15],32],['X01-corner',[4.5,.15,20],9],['X02-corner',[-4.5,.15,-10.5],9]]){
+  for(const [id,target,dist]of [['town-top',[0,.15,0],145],['main-edge',[20,.15,19],24],['branch-edge',[3,.15,0],24],['alley-mouth',[0,.15,32.25],18],['X01-top',[0,.15,15],32],['X02-top',[0,.15,-15],32],['X01-corner',[4.5,.15,20],9],['X02-corner',[-4.5,.15,-10.5],9],['N01-connector',[-51,.15,15],20],['N03-connector',[51,.15,15],20],['N04-connector',[0,.15,-51],20],['N08-connector',[0,.15,51],20],['N09-connector',[-51,.15,-15],20],['N10-connector',[51,.15,-15],20],['N11-connector',[-51,.15,32.25],20],['N12-connector',[51,.15,32.25],20],['N13-connector',[51,.15,-33.5],20]]){
    const url=await page.evaluate(([target,dist])=>{const S=window.__scene;S.weather.lock('rain');S.view.set({target,dist,yaw:0,pitch:1.52});window.__step(1);S.renderer.render(S.scene,S.camera);return S.renderer.domElement.toDataURL('image/png');},[target,dist]);
    fs.writeFileSync(path.join(out,id+'.png'),Buffer.from(url.split(',')[1],'base64'));
   }
   fs.writeFileSync(path.join(out,'check.json'),JSON.stringify({...result,errors},null,2)+'\n');
  }
- process.exitCode=result.leaks.length||result.missing.length||result.streetVertexLeaks.length||result.rampLeaks.length||result.cornerLeaks.length||result.cornerMissing.length||errors.length?1:0;
+ process.exitCode=result.leaks.length||result.missing.length||result.streetVertexLeaks.length||result.rampLeaks.length||result.cornerLeaks.length||result.cornerMissing.length||result.connectorLeaks.length||result.connectorMissing.length||errors.length?1:0;
 }finally{await browser.close();}

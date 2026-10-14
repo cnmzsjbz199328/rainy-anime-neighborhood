@@ -622,7 +622,7 @@ const branchRamp = (jp, trunk) => ({ end: jp.branchEnd, len: jp.shallowMerge ? j
 // The raised town islands already supply paving, facility bands and curb ramps.
 // Remove the route sheet inside their rounded footprint. Every remaining part
 // of a town main/branch route belongs to the carriageway, not just corner wedges.
-function removeTownPavementDuplicates(routes) {
+function removeTownPavementDuplicates(routes, W) {
   const L = global.LAYOUT;
   if (!L) return;
   const radius = L.INTERSECTION.curbRadius;
@@ -641,8 +641,35 @@ function removeTownPavementDuplicates(routes) {
     }
     return pts;
   });
-  for (const rt of routes.filter(r => r.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH'))) {
-    rt.pavementCuts = polygons.map((polygon, i) => ({ island: L.islands[i].id, ...clipStripOutside(rt.strip, polygon) }));
+  for (const rt of routes.filter(r => r.classes.some(c => c.startsWith('TOWN_')))) {
+    rt.pavementCuts = rt.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH')
+      ? polygons.map((polygon, i) => ({ island: L.islands[i].id, ...clipStripOutside(rt.strip, polygon) })) : [];
+    // The nine six-metre links to CR01 have no sidewalk. The town profile used to
+    // carry its raised concrete sides past the ±48 m boundary, leaving blue slabs
+    // between the original paving and the ring. Cut both sides down to the actual
+    // carriageway; the ring's own continuous sheet supplies the junction surface.
+    const townEdges = rt.def.segs.map(s => W.roadNetwork.edges.find(e => e.id === s.id)).filter(e => e.class.startsWith('TOWN_'));
+    const exits = [...new Set(townEdges.flatMap(e => [e.from, e.to]))].filter(id => {
+      const n = W.roadNetwork.nodeById[id], p = W.lonLatToTown(n.lon, n.lat);
+      return Math.abs(Math.max(Math.abs(p.x), Math.abs(p.z)) - L.BASE.half) < 1e-3;
+    });
+    rt.connectorCuts = [];
+    for (const id of exits) {
+      const n = W.roadNetwork.nodeById[id], p = W.lonLatToTown(n.lon, n.lat),
+        edge = townEdges.find(e => e.from === id || e.to === id),
+        // Allow for the Mercator width scale and the sampled junction lip.
+        half = W.roadNetwork.townClasses[edge.class].carriageway / 2 + 0.1,
+        axis = Math.abs(p.x) > Math.abs(p.z) ? 'x' : 'z', side = Math.sign(p[axis]), lateral = axis === 'x' ? 'z' : 'x',
+        along = [side * L.BASE.half, side * W.roadNetwork.CR01.half].sort((a, b) => a - b);
+      for (const direction of [-1, 1]) {
+        const across = [p[lateral] + direction * half, p[lateral] + direction * 16].sort((a, b) => a - b),
+          polygon = axis === 'x'
+            ? [[along[0], across[0]], [along[1], across[0]], [along[1], across[1]], [along[0], across[1]]]
+            : [[across[0], along[0]], [across[1], along[0]], [across[1], along[1]], [across[0], along[1]]];
+        rt.connectorCuts.push({ exit: id, side: direction, ...clipStripOutside(rt.strip, polygon) });
+      }
+    }
+    if (!rt.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH')) continue;
     const asphalt = global.ROADKIT.lin(global.ROADKIT.COL.asphalt), st = rt.strip;
     for (const v of new Set(st.index)) {
       const x = st.pos[v * 3], z = st.pos[v * 3 + 2];
@@ -672,7 +699,7 @@ function* planSteps(W, H, tc) {
   const routes = ROUTES.map(def => byId[def.id]);
   for (const rt of routes) if (rt.def.furnish) furnish(WS, rt, rt.def.furnish);
   const cr01Junctions = prepareCr01Junctions(WS, routes, RK);
-  removeTownPavementDuplicates(routes);
+  removeTownPavementDuplicates(routes, WS);
   yield;
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
