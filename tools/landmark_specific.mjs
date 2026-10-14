@@ -7,10 +7,10 @@ CHECKS.LM01 = async ({ page, info, fail, f, W, lm, M }) => {
   if (peak < 25.9 || peak > 26.1) fail('山顶海拔不在 25.9–26.1');
   info.push(`火山口：岩块 ${st.rimBlocks} 块围成直径约 12 m 的口（内半径 5.1 m、外半径 6.4 m），口内灰烬地面、湖、喷气孔 ${st.vents} 处；石灯笼 ${st.lanterns} 盏（≤ 10，弱暖光）；小祠与石标在山径最后一段的旁边`);
   if (st.lanterns > 10) fail('石灯笼 > 10'); if (st.vents < 1) fail('没有喷气孔');
-  // ember: the additive disc has opacity 0.09-0.11 and a dark red colour; a street lamp's glow decal is 0.32 (scene.js town lamps) / the W5 lamp pool peaks at 0.2 and the lamp head is a self-lit white-yellow (1.0)
-  const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2], ember = [0x7a / 255, 0x2a / 255, 0x1e / 255], lamp = [1, 0.894, 0.69];
+  // ember: the additive disc has opacity 0.09-0.11 and a dark red colour; a road lamp's pool peaks at 0.32 (town) / 0.22 and its head is a self-lit warm white (W10c, streetlights.js: #ffd9a0 at 1.0)
+  const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2], ember = [0x7a / 255, 0x2a / 255, 0x1e / 255], lamp = [1, 0xd9 / 255, 0xa0 / 255];
   const e = lum(ember.map(v => Math.pow(v, 2.2))) * st.emberOpacity, l = lum(lamp.map(v => Math.pow(v, 2.2))) * 1.0;
-  info.push(`火山口红光：加色光盘不透明度 ${st.emberOpacity}、颜色 #7a2a1e，峰值相对亮度 ${f(e, 4)}；路灯灯头（自发光 #ffe4b0）相对亮度 ${f(l, 3)}；红光 / 路灯 = ${f(e / l * 100, 2)}%（要求 < 10%，「必须极弱」）`);
+  info.push(`火山口红光：加色光盘不透明度 ${st.emberOpacity}、颜色 #7a2a1e，峰值相对亮度 ${f(e, 4)}；路灯灯头（自发光 #ffd9a0）相对亮度 ${f(l, 3)}；红光 / 路灯 = ${f(e / l * 100, 2)}%（要求 < 10%，「必须极弱」）`);
   if (e / l > 0.1) fail('红光不够弱');
 };
 
@@ -122,8 +122,8 @@ CHECKS.LM08 = async ({ page, info, fail, f, W, lm, M }) => {
 // ---- shared by LM05-LM07: the clue light against the street lamps (peak self-light luminance of the clue colour against the dimmest lamp head)
 const lumLin = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
 async function clueBrightness({ page, info, fail, f, M }) {
-  const st = M.stats, peak = lumLin(st.color) * st.peak, lamp = lumLin('#ffe4b0');
-  info.push(`线索光：颜色 ${st.color}（冷青白），峰值自发光相对亮度 ${f(peak, 3)}；最暗的路灯灯头（#ffe4b0）${f(lamp, 3)}；比值 ${f(peak / lamp, 2)}（要求 ≤ 0.5，「明显低于任何路灯」）；周期 ${st.period} s，与 LM06、LM07 共用 CLUE.phase`);
+  const st = M.stats, peak = lumLin(st.color) * st.peak, lamp = lumLin('#ffd9a0');     // W10c: every road lamp's head (streetlights.js COLOR.light)
+  info.push(`线索光：颜色 ${st.color}（冷青白），峰值自发光相对亮度 ${f(peak, 3)}；最暗的路灯灯头（#ffd9a0）${f(lamp, 3)}；比值 ${f(peak / lamp, 2)}（要求 ≤ 0.5，「明显低于任何路灯」）；周期 ${st.period} s，与 LM06、LM07 共用 CLUE.phase`);
   if (peak > 0.5 * lamp) fail('线索光不够暗');
 }
 CHECKS.LM05 = async (ctx) => {

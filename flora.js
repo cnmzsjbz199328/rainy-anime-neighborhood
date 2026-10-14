@@ -110,10 +110,8 @@ function make(THREE) {
   T('hutRusty', b => shed(b, PAL.rust, 0.08).add(ico(0.7, 0), PAL.vine, { p: [0.7, 1.9, 0.2], top: PAL.moss }));
   T('oldMachine', b => b.add(box, PAL.rust, { p: [0, 0.7, 0], s: [1.8, 0.9, 1.1], noise: 0.08 }).add(cyl(0.45, 0.45, 0.2, 8), PAL.rustD, { r: [Math.PI / 2, 0, 0], p: [0.7, 0.45, 0.6] }).add(cyl(0.45, 0.45, 0.2, 8), PAL.rustD, { r: [Math.PI / 2, 0, 0], p: [0.7, 0.45, -0.8] }).add(ico(0.8, 1), PAL.vine, { p: [-0.2, 1.2, 0], top: PAL.moss, s: [1.6, 0.6, 1.0] }).add(cyl(0.05, 0.05, 0.9, 5), PAL.metal, { p: [-0.7, 1.2, 0.3] }));
 
-  // ---- road furniture
+  // ---- road furniture (the road lamps are streetlights.js's own family, W10c)
   T('pole', b => b.add(cyl(0.14, 0.11, 8.5, 6), PAL.concrete, { noise: 0.05 }).add(box, PAL.woodD, { p: [0, 7.7, 0], s: [1.9, 0.1, 0.1] }).add(box, PAL.woodD, { p: [0, 7.0, 0], s: [1.5, 0.08, 0.08] }).add(cyl(0.04, 0.04, 0.2, 4), PAL.white, { p: [-0.8, 7.75, 0] }).add(cyl(0.04, 0.04, 0.2, 4), PAL.white, { p: [0.8, 7.75, 0] }).add(cyl(0.04, 0.04, 0.2, 4), PAL.white, { p: [0, 7.75, 0] }).add(box, PAL.concreteD, { p: [0.14, 3.2, 0], s: [0.1, 0.6, 0.06] }));
-  T('lamp', b => b.add(cyl(0.1, 0.06, 6.2, 6), PAL.metal).add(cyl(0.05, 0.05, 1.6, 5), PAL.metal, { p: [0.45, 5.75, 0], r: [0, 0, -1.2] }).add(box, PAL.lampHead, { p: [1.15, 6.3, 0], s: [0.75, 0.13, 0.28] }));
-  T('lampGlow', b => b.add(box, PAL.glowWarm, { p: [1.15, 6.2, 0], s: [0.62, 0.04, 0.2] }));
   T('vending', b => b.add(box, PAL.concreteD, { p: [0, 0.9, 0], s: [1.0, 1.8, 0.8] }).add(box, PAL.metal, { p: [0, 1.82, 0], s: [1.06, 0.06, 0.86] }));
   T('vendingGlow', b => b.add(box, PAL.glowCool, { p: [0, 1.0, 0.41], s: [0.82, 1.4, 0.03] }));
   T('signRound', b => b.add(cyl(0.035, 0.035, 2.4, 4), PAL.metal).add(cyl(0.3, 0.3, 0.03, 12), PAL.white, { p: [0, 2.2, 0.04], r: [Math.PI / 2, 0, 0] }).add(tor(0.27, 0.035), PAL.red, { p: [0, 2.5, 0.06] }));
@@ -142,7 +140,7 @@ function make(THREE) {
   T('seaMark', b => b.add(cyl(0.06, 0.05, 2.2, 5), PAL.woodD).add(box, PAL.red, { p: [0, 2.1, 0], s: [0.3, 0.3, 0.05] }));
   T('wallBlock', b => b.add(box, PAL.concrete, { p: [0, 0.5, 0], s: [1.9, 1.0, 0.8], noise: 0.05 }));
 
-  // ---- W5 road parts: concrete barrier, milestone, bridge piers (column, cap, waterline foot, footing), navigation light, lamp pool
+  // ---- W5 road parts: concrete barrier, milestone, bridge piers (column, cap, waterline foot, footing), navigation light
   T('barrierConcrete', b => { b.add(box, PAL.concrete, { p: [0, 0.4, 0], s: [1.98, 0.8, 0.3], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, 0.78, 0], s: [1.98, 0.08, 0.34] }); for (const x of [-0.99, 0.99]) b.add(box, PAL.concreteD, { p: [x, 0.4, 0], s: [0.04, 0.8, 0.34] }); return b; });
   T('milestone', b => b.add(box, PAL.stone, { p: [0, 0.3, 0], s: [0.22, 0.6, 0.16], top: PAL.white, noise: 0.05 }).add(box, PAL.red, { p: [0, 0.62, 0], s: [0.23, 0.06, 0.17] }));
   T('pierColumn', b => b.add(box, PAL.concrete, { p: [0, 0.5, 0], s: [1.3, 1, 1.3], noise: 0.04, top: PAL.concreteD }));
@@ -151,7 +149,6 @@ function make(THREE) {
   T('pierFooting', b => b.add(box, PAL.concreteD, { p: [0, 0.4, 0], s: [2.6, 0.8, 2.6], noise: 0.06 }));
   T('navLight', b => b.add(cyl(0.05, 0.05, 0.9, 5), PAL.metal).add(box, PAL.lampHead, { p: [0, 0.95, 0], s: [0.2, 0.16, 0.2] }));
   T('navLightGlow', b => b.add(box, '#ffb870', { p: [0, 0.95, 0], s: [0.14, 0.11, 0.14] }));
-  T('lampPool', b => b.add(new THREE.CircleGeometry(3.4, 18).rotateX(-Math.PI / 2), '#ffd9a0', { p: [0, 0.03, 0] }));
   T('pylonTop', b => { for (const x of [-5.9, 5.9]) b.add(box, PAL.concrete, { p: [x, 6.5, 0], s: [1.1, 13, 1.1], noise: 0.04, top: PAL.concreteD }); return b.add(box, PAL.concrete, { p: [0, 12.5, 0], s: [12.9, 1.0, 1.0], noise: 0.04 }).add(box, PAL.concreteD, { p: [0, 7.6, 0], s: [11.8, 0.6, 0.8] }); });
   // ---- W5b: stone step block (origin at its underside, 1 m cube scaled per step), jizo statue, snow-route pole, orange refuge hut, spiral steel stair, gate post
   T('stoneStep', b => b.add(box, PAL.stone, { p: [0, 0.5, 0], s: [1, 1, 1], top: PAL.moss, noise: 0.07 }));

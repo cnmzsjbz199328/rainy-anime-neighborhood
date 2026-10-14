@@ -1,6 +1,7 @@
 // Night light of the planet by the camera's height (W8c, W8_SPEC section 5). Pure curves first (no DOM, no THREE), then attach(), which every frame drives the parts that
 // already exist from h = the camera's height above the ground at the target (the same h as the weather: scene.js weatherView) and uBend:
-//   lampOf(h)   = 1 - smoothstep(40, 60, h)      the real lamps of the roads, their light pools: instances load within 60 m (W4); roads.js applies it
+//   lampOf(h)   = 1 - smoothstep(40, 60, h)      the small lamps of the boardwalk and the maintenance stair (lampSmall); roads.js applies it. W10c: the road lamps (streetlights.js)
+//                                                no longer hand over by height: they follow their pole's size on screen
 //   bandOf(h)   = smoothstep(40, 120, h)         the light band (lightband.js, W5) that stands for the lamps from far away; full from 120 m; crosses the lamps between 40 and 60 m
 //   far lights  = bandOf(h)                      warm dots for the places that "can become the focus of the panorama" (WORLD_SPEC): the convenience store (the anchor of the
 //                                                town), the onsen village LM02, the harbour LM10 and the lighthouse lamp LM08. They stand for windows, lanterns and the light post, which are

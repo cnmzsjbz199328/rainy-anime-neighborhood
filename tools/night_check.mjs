@@ -3,10 +3,11 @@
 // W8e-c (D9 revised): the night exists only on the flat map; the sphere is a clear day (tools/day_check.mjs). Every check below runs in flat mode (uBend = 0, the map explored away
 // from the town); the four hemispheres and two poles of the old night panorama became six places of the flat map (front, east, back, west of the town, north, south), and C3 / C4
 // check that stars and the readable light never appear (flat: their uBend factor is 0; sphere: daytime).
-//   C1  hand-over of the road lights by camera height: h = 30 ... 130 m (about every 10 m) over a lit road on the planet. The lamp factor and the band follow nightlight.js (lamps fade
-//       out between 40 and 60 m, the band comes in between 40 and 120 m), the lamp instances and the light pools follow the lamp factor, and the road lights' own share of the picture
-//       (the frame minus the same frame without the band, the far lights, the lamp glows and the pools) has no jump: no 10 m step larger than 40 % of its peak, and the dip while the
-//       two cross stays above 40 % of the value before it
+//   C1  the road lights by camera height: h = 30 ... 130 m (about every 10 m) over a lit road on the planet. The lamp factor and the band follow nightlight.js (the small lamps of the
+//       boardwalk and the maintenance stair fade out between 40 and 60 m, the band comes in between 40 and 120 m) and the lampSmall instances follow the lamp factor. W10c: the road
+//       lamps (streetlights.js) no longer hand over by height (the former criterion: their heads and pools followed the 40-60 m factor); they follow their pole's size on screen (1-2 px),
+//       so here, where every pole is far above 2 px, all of them and their pools stay on. The road lights' own share of the picture (the frame minus the same frame without the band,
+//       the far lights, the small lamps' glows, the road lamps' lenses and pools) has no jump: no 10 m step larger than 40 % of its peak, and no dip below 35 % of the value at 30 m
 //   C2  brightness order on the four hemispheres of the clear panorama (uBend = 1, d = 350) and the two poles. Every light is measured on a dark render (all scene lights at 0, so only
 //       what shines by itself is left over the sky colour) as its own contribution: the frame minus the same frame without it, the largest increase in levels (0-255). The reference
 //       is the band's core ribbon alone (what stands for the street lamps: one layer on land, no sea reflection). The store, the onsen village, the harbour and the lighthouse (their far
@@ -68,7 +69,7 @@ const CLUE = 0.95;
    // lowest share of the road light where the lamps hand over to the band (W8c: 40 % on the sphere; measured on the flat map since W8e-c)
 const BAND = 'S.roads.state.band.meshes', FARM = '[S.night.light.far().mesh]', NOTCORE = "S.roads.state.band.meshes.filter(m => m.name !== 'lightband:core')";
 const EMBER = "(() => { const o = []; for (const g of S.landmarks.info.LM01.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.color && m.material.color.getHexString() === '7a2a1e') o.push(m); }); return o; })()";
-const LAMPS = "[...S.roads.objects.glows.filter(m => /lamp/.test(m.name)), ...S.roads.objects.inst.filter(m => /lampPool/.test(m.name))]";
+const LAMPS = "[...S.roads.objects.glows.filter(m => /lampSmall/.test(m.name)), S.streetlights.objects.pool, ...S.streetlights.objects.lenses]";
 
 const page = await open();
 // ---- C1
@@ -78,19 +79,19 @@ if (want('c1')) {
   for (let hh = 30; hh <= 130; hh += 10) {
     const st = await page.evaluate(([lon, lat, hh]) => { const S = window.__scene, q = window.WORLD.lonLatToTown(lon, lat); S.weather.lock('rain'); S.view.set({ target: [q.x, 1.2, q.z], dist: hh / Math.sin(0.9), pitch: 0.9, yaw: 0.4 }); window.__step(4);
       S.view.set({ dist: S.view.get().dist * hh / S.night.light.get().h }); window.__step(6);
-      const N = S.night.api, g = S.night.light.get(), RD = S.roads, lampMeshes = RD.objects.inst.filter(m => /^road:(lamp|lampSmall|lampPool)$/.test(m.name));
-      return { h: g.h, band: g.band, lamp: g.lamp, wantBand: N.bandOf(g.h), wantLamp: N.lampOf(g.h), pool: RD.state.materials.poolMat.opacity, bandOp: RD.state.band.opacity, bandMax: RD.state.band.max, shown: lampMeshes.length ? lampMeshes.every(m => m.visible === (g.lamp > 0.001)) : null, n: lampMeshes.length }; }, [r.lon, r.lat, hh]);
+      const N = S.night.api, g = S.night.light.get(), RD = S.roads, SL = S.streetlights, lampMeshes = RD.objects.inst.filter(m => /^road:lampSmall$/.test(m.name));
+      return { h: g.h, band: g.band, lamp: g.lamp, wantBand: N.bandOf(g.h), wantLamp: N.lampOf(g.h), roadLamps: SL.state.win.filter((v, i) => i % 2 === 1).every(v => v === 1) && SL.objects.pool.visible, minPx: Math.min(...SL.state.px), bandOp: RD.state.band.opacity, bandMax: RD.state.band.max, shown: lampMeshes.length ? lampMeshes.every(m => m.visible === (g.lamp > 0.001)) : null, n: lampMeshes.length }; }, [r.lon, r.lat, hh]);
     const A = await shot(page), B = await without(page, `[...${BAND}, ...${FARM}, ...${LAMPS}]`, () => shot(page)), an = await analyse(page, A, B, []);
     // the light's share: mean brightness difference of the two frames (positive part is all there is: every one of these is additive)
     const share = await page.evaluate(async ([A, B]) => { const load = async u => { const i = new Image(); i.src = u; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const q = c.getContext('2d'); q.drawImage(i, 0, 0); return q.getImageData(0, 0, c.width, c.height).data; }; const a = await load(A), b = await load(B); let s = 0; for (let k = 0; k < a.length; k += 4) s += (0.2126 * a[k] + 0.7152 * a[k + 1] + 0.0722 * a[k + 2]) - (0.2126 * b[k] + 0.7152 * b[k + 1] + 0.0722 * b[k + 2]); return s / (a.length / 4); }, [A, B]);
     vals.push(share); void an;
-    const good = Math.abs(st.band - st.wantBand) < 1e-9 && Math.abs(st.lamp - st.wantLamp) < 1e-9 && Math.abs(st.pool - st.lamp) < 1e-6 && Math.abs(st.bandOp - st.bandMax * st.band) < 1e-6 && (st.shown !== false); if (!good) ok = false;
-    rows.push(`h ≈ ${f(st.h, 1)}：光带 ${f(st.band, 3)}（不透明度 ${f(st.bandOp, 3)}），路灯 ${f(st.lamp, 3)}（光池不透明度 ${f(st.pool, 3)}，${st.n} 组路灯实例${st.shown ? '显示状态与路灯系数一致' : '显示状态不一致'}），道路灯光对画面平均亮度的贡献 ${f(share, 3)}`);
+    const good = Math.abs(st.band - st.wantBand) < 1e-9 && Math.abs(st.lamp - st.wantLamp) < 1e-9 && st.roadLamps && Math.abs(st.bandOp - st.bandMax * st.band) < 1e-6 && (st.shown !== false); if (!good) ok = false;
+    rows.push(`h ≈ ${f(st.h, 1)}：光带 ${f(st.band, 3)}（不透明度 ${f(st.bandOp, 3)}），矮灯系数 ${f(st.lamp, 3)}（${st.n} 组 lampSmall 实例${st.shown ? '显示状态与系数一致' : '显示状态不一致'}），普通道路灯全部显示且光池绘制 ${st.roadLamps}（最小投影杆高 ${f(st.minPx, 1)} px），道路灯光对画面平均亮度的贡献 ${f(share, 3)}`);
   }
   const peak = Math.max(...vals); let maxStep = 0; for (let i = 1; i < vals.length; i++) maxStep = Math.max(maxStep, Math.abs(vals[i] - vals[i - 1]));
   const dipI = vals.indexOf(Math.min(...vals.slice(0, 6))), dip = vals[dipI] / vals[0];
   if (!(maxStep <= 0.4 * peak) || !(dip >= DIP)) ok = false;
-  out(ok, 'W8c-C1（平面模式）光带与路灯按相机高度交接（路灯 40–60 m 淡出，光带 40–120 m 淡入），无跳变', [...rows, `道路灯光贡献的峰值 ${f(peak, 3)}；相邻档（约 10 m）的最大变化 ${f(maxStep, 3)}（${f(maxStep / peak * 100, 0)}% 的峰值，≤ 40%）；交叉处的最低值是 h ≈ 30 m 时的 ${f(dip * 100, 0)}%（≥ ${DIP * 100}%；两条曲线按规格取 40–60 与 40–120，交叉处有一段偏暗；W8e-c 起在平面上测，平铺的光带与路灯光池比例与球面不同，阈值由球面时的 40% 改为 35%）`]);
+  out(ok, 'W8c-C1（平面模式）光带与栈道矮灯按相机高度交接（矮灯 40–60 m 淡出，光带 40–120 m 淡入），普通道路灯按像素规则不随高度退场，无跳变', [...rows, `道路灯光贡献的峰值 ${f(peak, 3)}；相邻档（约 10 m）的最大变化 ${f(maxStep, 3)}（${f(maxStep / peak * 100, 0)}% 的峰值，≤ 40%）；最低值是 h ≈ 30 m 时的 ${f(dip * 100, 0)}%（≥ ${DIP * 100}%；W10c 前道路灯头与光池在 40–60 m 淡出，交叉处偏暗，此判据保留）`]);
 }
 // ---- C2 and the hemisphere shots
 const shotsDir = path.join(root, 'docs', 'world', 'w8e'), HEMIS = [['front', -25, 32], ['east', 90, 0], ['back', 180, 0], ['west', -125, 0], ['north', 100, 74], ['south', 30, -74]];   // W8e-c: places of the flat map (west of the seam is shown at its east end)

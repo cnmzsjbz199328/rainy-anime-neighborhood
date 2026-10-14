@@ -385,6 +385,14 @@ W8g-b 的 B5 只在出口路自己的横断面上打射线，只比较“道路�
 
 - 为满足 U2 或 U4，必须改街道中线或宽度。
 
+**追加专项：道路路灯规范化（2026-10-14 计划，同日实施，待用户确认）**
+
+- 依据 [STREETLIGHT_NORMALIZATION_PLAN](STREETLIGHT_NORMALIZATION_PLAN.md)；属于 W10c，不新开行，不改变 W10c 既有闸门。
+- 普通道路灯（城镇 26 盏 + 便利店旧样板、RD01、三座桥、RD03 的 CR01 与 RN05、W4 两盏入口灯）由 `streetlights.js` 一张灯表、一套几何族（town / rural / trunk / bridge 四型）、一套光照（自发光灯头 + 贴面光池，无点光源）与一套显示规则（投影杆高 1–2 px 抖动交接，不再按相机高度 40–60 m 退场）生成；`scene.js` 旧样板灯与城镇灯建模、`roads.js` / `bridge.js` / `section.js` 的路灯与光池实例、`rt.lamps` / `junctionLampRemovals` 元数据同批删除。巷灯、栈道矮灯、石灯笼、航道灯、建筑灯不在范围内。
+- 冻结不变：`layout.js`、`world.js`；城镇与 W4 灯位；田块与地表覆盖（灯在其后规划，只避让）。
+- 数据检查：`tools/streetlight_check.mjs` SL1–SL6（报告 `docs/world/w10c/streetlights/report.json`）；`road_check` 的 W5-C5、`unify_check` 的 U4-CR01、`night_check` 的 C1、`c01_s_clearance` 改读灯表，旧判据在各工具注释中写明。
+- 看点与遗留见 PROGRESS「W10c 道路路灯规范化 实施与交付」。
+
 ### W10d 一份地面：去掉底座
 
 **改动与删除**

@@ -73,8 +73,8 @@ function plan(W) {
 
   // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
   // C01-S: keep the entrance furniture beyond the ring's full section and the turning mouth.
-  put('lamp', -6.2, 12.5, { yaw: Math.PI / 2, r: 0.6 });
-  put('lamp', 10.5, 13.2, { yaw: -Math.PI / 2, r: 0.6 });
+  // The two entrance lamps are road lamps: streetlights.js registers them at these sites (W10c); the sites stay reserved for the rest of the plan.
+  const lampSites = [[-6.2, 12.5], [10.5, 13.2]].map(([u, v]) => { const [lon, lat] = toLL(u, v); occupied.push({ u, v, r: 0.6 }); return { u, v, lon, lat, clearance: 0.6 }; });
   put('signRound', 10.5, 16.0, { yaw: 0, r: 0.4 });
   put('signBus', 10.5, 19.0, { yaw: Math.PI, r: 0.4 });
   put('mirror', -6.2, 15.0, { yaw: Math.PI / 2, r: 0.4 });
@@ -189,7 +189,7 @@ function plan(W) {
   // The wire endpoints use the same item objects; drop any wire whose pole was culled.
   const keptPoles = new Set(items.pole || []);
   const safeWires = wires.filter(w => keptPoles.has(w.a) && keptPoles.has(w.b));
-  return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
+  return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, lampSites, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
 const PLAN = { plan, SEED };

@@ -61,7 +61,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     S.materials = { floraMat, treeMat, glowMat, groundMat, hullMat, treeHullMat, inkW };
 
     // ---- instanced objects: one InstancedMesh (plus outline hull) per type
-    const GLOW = { lamp: 'lampGlow', lantern: 'lanternGlow', vending: 'vendingGlow', lampSmall: 'lampSmallGlow' };
+    const GLOW = { lantern: 'lanternGlow', vending: 'vendingGlow', lampSmall: 'lampSmallGlow' };      // the entrance lamps are streetlights.js's (W10c)
     const TREES = ['treeRound', 'cedar', 'pine', 'bamboo'];
     const all = {};
     for (const [t, list] of Object.entries(PLAN.items)) all[t] = list.map(it => ({ ...it, m: matrixOf(it) }));

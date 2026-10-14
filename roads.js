@@ -1,5 +1,6 @@
 // Planet road network, batch W5a (W5_SPEC): RD01 trunk road with its town-exit transitions, RD02 bridges (bridge.js), the RD01 tunnel portals, the exits
-// of the other classes (RD03 N04/N09/N10, RD05 N11-N13), street furniture of RD01/RD02 and the night light band (lightband.js).
+// of the other classes (RD03 N04/N09/N10, RD05 N11-N13), street furniture of RD01/RD02 and the night light band (lightband.js). The road lamps are planned and drawn
+// by streetlights.js from one table (W10c); this file keeps the puddle ripples, which take the lamps' ripple spots from it.
 // Pure part: plan(W, H) builds all data from world.js and a ground height function (no THREE, no DOM; tools/road_check.mjs runs it under Node).
 // Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a); the network shows in every view.
 // Geometry is stored in flat Mercator coordinates and rolled onto the sphere by bend.js (docs/world/W3_SPEC.md section 2); instances are scaled by
@@ -45,25 +46,14 @@ const BRIDGES = [
   { id: 'RN01-13', ids: ['RN01-13'] },
 ];
 const NAV_PERIOD = 6;                                // navigation lights: one slow pulse per 6 s (card: period >= 4 s, no flicker)
-const SPACING = { human: 16, wild: 40 };            // RD01 lamps (card): inhabited land 16 m, wilderness 40 m
 
-// RD01 street furniture on a swept route: lamps by zone, concrete barriers near bridges and portals, milestones, bus stops, the tunnel portal data.
+// RD01 street furniture on a swept route: concrete barriers near bridges and portals, milestones, bus stops, the tunnel portal data (the lamps: streetlights.js).
 function furnish(W, rt, cfg) {
   if (cfg.kind === 'RD03') return furnishRD03(W, rt, cfg);
   if (cfg.kind === 'RD05') return furnishRD05(W, rt, cfg);
   if (cfg.kind === 'RD08') return furnishRD08(W, rt, cfg);
   const S = rt.samples, n = S.length, add = (type, i, o, alt, ex = {}) => { const [lo, la] = rt.lateral(i, o); (rt.instances[type] = rt.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: ex.yaw || 0, s: ex.s || [1, 1, 1], lean: ex.lean || [0, 0], tint: ex.tint || [1, 1, 1] }); };     // W8f-a: the lean is kept (it was dropped)
-  const T = rt.tangent, yawAlong = i => Math.atan2(-T[i][1], T[i][0]), yawToward = (dx, dz) => Math.atan2(-dz, dx), yawFace = (dx, dz) => Math.atan2(dx, dz), right = i => [-T[i][1], T[i][0]];
-  rt.lamps = [];
-  let next = cfg.firstLamp || 3, side = 1;
-  while (next < rt.length - 2) {
-    const i = Math.min(n - 1, Math.round(next / 0.5)), zone = W.regionAt(S[i].lon, S[i].lat).zone, sp = zone === 'building' ? SPACING.human : SPACING.wild;
-    if (S[i].span === 'tunnel') { next += 1; continue; }
-    const r = right(i), it = add('lamp', i, side * 4.3, rt.surface(i, side * 4.3), { yaw: yawToward(-side * r[0], -side * r[1]) });
-    rt.lamps.push({ i, s: S[i].s, zone: zone === 'building' ? 'human' : 'wild', side }); void it;
-    add('lampPool', i, side * 1.5, rt.surface(i, side * 1.5) + 0.02, { yaw: Math.atan2(-T[i][1], T[i][0]), lean: [0, Math.atan((rt.bed[Math.min(n - 1, i + 2)] - rt.bed[Math.max(0, i - 2)]) / Math.max(1e-6, S[Math.min(n - 1, i + 2)].s - S[Math.max(0, i - 2)].s))] });      // W8f-a: tilted with the road (approaches climb to 14.8 %)
-    side = -side; next += sp;
-  }
+  const T = rt.tangent, yawAlong = i => Math.atan2(-T[i][1], T[i][0]), yawFace = (dx, dz) => Math.atan2(dx, dz), right = i => [-T[i][1], T[i][0]];
   // concrete barriers on both shoulders: the last 14 m before a bridge abutment and 10 m outside each tunnel portal
   // W8f-a (W8_SPEC 12.1 C1, C2): next to an abutment the 1.98 m pieces stand at exact stations 1, 3, 5 ... m from the node, continuing the deck's parapet (flush with the
   // abutment, bridge.js), on the kerb line 4.85 m (x the deck's lateral factor) where the approach is RD01B, 4.62 m on the old shoulder before it; none in a junction mouth
@@ -95,12 +85,10 @@ function placer(rt) {
   return { add, idxAt, S, n, T, yawAlong: i => Math.atan2(-T[i][1], T[i][0]), yawAcross: i => Math.atan2(T[i][0], T[i][1]), yawToward: (dx, dz) => Math.atan2(-dz, dx), yawFace: (dx, dz) => Math.atan2(dx, dz), right: i => [-T[i][1], T[i][0]] };
 }
 
-// RD03 country road (card): lamps about every 25 m (junction and bus stop included), utility poles that are never in a perfect row (jittered along and across, a small
-// lean), convex mirror, signs, a vending machine or a jizo shrine at the junction, a bus stop sign with a bench.
+// RD03 country road (card): utility poles that are never in a perfect row (jittered along and across, a small lean), convex mirror, signs, a vending machine or a
+// jizo shrine at the junction, a bus stop sign with a bench. The lamps (about every 25 m, the junction and the bus stop included; cfg.lamps) are streetlights.js's.
 function furnishRD03(W, rt, cfg) {
-  const P = placer(rt), { add, idxAt, S, n } = P; rt.lamps = []; rt.poles = [];
-  let side = 1;
-  for (const s of cfg.lamps) { const i = idxAt(s), r = P.right(i), o = 3.15 * side; add('lamp', i, o, rt.surface(i, o), { yaw: P.yawToward(-side * r[0], -side * r[1]), s: [0.8, 0.8, 0.8] }); add('lampPool', i, side * 1.3, rt.surface(i, side * 1.3) + 0.02); rt.lamps.push({ i, s: S[i].s, side, zone: 'rd03' }); side = -side; }
+  const P = placer(rt), { add, idxAt, S, n } = P; rt.poles = [];
   cfg.poles.forEach((s0, k) => { const s = s0 + (hash(s0, 3) - 0.5) * 3, o = 3.9 + (hash(s0, 5) - 0.5) * 1.0, i = idxAt(s), rec = add('pole', i, o, rt.surface(i, o), { yaw: P.yawAcross(i) + (hash(s0, 7) - 0.5) * 0.25, lean: [(hash(s0, 9) - 0.5) * 0.07, (hash(s0, 11) - 0.5) * 0.07] }); rt.poles.push({ i, s: S[i].s, rec }); });
   for (const sg of (cfg.sign || [])) { const i = idxAt(sg.s), r = P.right(i), o = 2.9; add(sg.type, i, o, rt.surface(i, o), { yaw: P.yawFace(-r[0], -r[1]) }); }
   if (cfg.mirror) { let best = 0, bi = n - 2; if (cfg.mirror === 'end') bi = n - 8; else for (let i = 2; i < n - 2; i++) { const a = Math.abs(((rt.brg[i + 1] - rt.brg[i - 1] + 540) % 360) - 180); if (a > best) { best = a; bi = i; } } const r = P.right(bi); add('mirror', bi, -3.0, rt.surface(bi, -3.0), { yaw: P.yawFace(r[0], r[1]) }); }
@@ -486,7 +474,7 @@ function clipStripOutside(st, polygon, shouldClip = () => true) {
   if (offsets) st.clipOffset = Float32Array.from(offsets);
   return { clippedTriangles, removedTriangles, removedArea, before: original.length / 3, after: indices.length / 3 };
 }
-const INSTANCE_CLEARANCE = { weed: 0.8, tuft: 0.8, lampPool: 1.6, lamp: 1.0, lampSmall: 1.0, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1.0, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
+const INSTANCE_CLEARANCE = { weed: 0.8, tuft: 0.8, lampSmall: 1.0, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1.0, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
 function clearJunctionInstances(rt, junctions, ring) {
   const removed = [];
   const ringConflict = (p, radius) => {
@@ -506,12 +494,6 @@ function clearJunctionInstances(rt, junctions, ring) {
     }
     rt.instances[type] = keep;
   }
-  const lampKeep = [], lampRemoved = [];
-  for (const l of rt.lamps || []) {
-    const i = Math.max(0, Math.min(rt.samples.length - 1, l.i)), p = rt.samples[i], [lon, lat] = rt.lateral(i, 3.15 * l.side), q = [R * lon * D, -R * Math.asinh(Math.tan(lat * D))], center = [R * p.lon * D, -R * Math.asinh(Math.tan(p.lat * D))], jp = junctions.find(j => polygonDistance(center, j.polygon) <= 3.5), ringNode = jp ? null : ringConflict(q, 1.0);
-    if (jp || ringNode) lampRemoved.push({ node: jp ? jp.node : ringNode, station: l.s, zone: l.zone, side: l.side }); else lampKeep.push(l);
-  }
-  rt.lamps = lampKeep; rt.junctionLampRemovals = [...(rt.junctionLampRemovals || []), ...lampRemoved];
   return removed;
 }
 function prepareCr01Junctions(W, routes, RK) {
@@ -724,9 +706,9 @@ function* planSteps(W, H, tc) {
   const abuts = AB.map(a => { const rt = byId[a.route], ap = rt.approaches.find(q => q.which === a.rEnd); return { ...a, approach: ap, wall: abutWall(WS, rt, a, ap.alt) }; });
   const junctions = [...cr01Junctions, ...JP.map(jp => jp.shallowMerge ? jp : ({ ...jp, ...paving(WS, jp, byId[jp.trunk], byId[jp.branch]) }))];
   // Crossings share their road surface directly. A raised round pad here obscures the frozen crosswalks and creates a second material/height over the road.
-  // lit polylines for the light band: RD01 along the bed (with a gap in the tunnel), RD02 along the deck; the sea parts for the reflections
+  // lit polylines for the light band: the RD01 routes along the bed (with a gap in the tunnel), RD02 along the deck; the sea parts for the reflections
   const lit = [], sea = [];
-  for (const rt of routes) { if (!(rt.lamps && rt.lamps.length)) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
+  for (const rt of routes) { if (!(rt.def.furnish && rt.def.furnish.kind === 'RD01')) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
   for (const b of bridges) { lit.push(b.samples.map((p, i) => ({ lon: p.lon, lat: p.lat, alt: b.alt[i] }))); let cur = []; b.samples.forEach((p, i) => { if (p.h < -0.2) cur.push({ lon: p.lon, lat: p.lat, alt: 0.03 }); else { if (cur.length > 1) sea.push(cur); cur = []; } }); if (cur.length > 1) sea.push(cur); }
   const stairs = STAIRS.map(id => global.STEPS.build(WS, id));
   // RN11-01 is the W4 shore boardwalk. Draw it in the unified network; section.js keeps only its fields and water.
@@ -746,7 +728,7 @@ function* planSteps(W, H, tc) {
 }
 function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
-const ROADS = { plan, planSteps, routeContext, routeOpts, furnish, ROUTES, STAIRS, BRIDGES, SPACING, NAV_PERIOD, JUNCTIONS: [...CR01_JUNCTIONS, ...JUNCTIONS], RING_JUNCTIONS: CR01_JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
+const ROADS = { plan, planSteps, routeContext, routeOpts, furnish, ROUTES, STAIRS, BRIDGES, NAV_PERIOD, JUNCTIONS: [...CR01_JUNCTIONS, ...JUNCTIONS], RING_JUNCTIONS: CR01_JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -772,15 +754,8 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-    const poolMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-    { // lamp light pool: a disc that fades from warm amber at the foot of the lamp to black (additive, so black adds nothing)
-      const radii = [0, 1.1, 2.2, 3.4], lum = [0.2, 0.12, 0.05, 0], seg = 24, pos = [], col = [], idx = [], amber = new THREE.Color('#ffc27a');
-      radii.forEach((r, ri) => { for (let a = 0; a < (ri ? seg : 1); a++) { const th = a / seg * Math.PI * 2; pos.push(Math.cos(th) * r, 0.03, Math.sin(th) * r); col.push(amber.r * lum[ri], amber.g * lum[ri], amber.b * lum[ri]); } });
-      for (let a = 0; a < seg; a++) idx.push(0, 1 + (a + 1) % seg, 1 + a);
-      for (let ri = 1; ri < 3; ri++) for (let a = 0; a < seg; a++) { const o0 = 1 + (ri - 1) * seg, o1 = 1 + ri * seg, a2 = (a + 1) % seg; idx.push(o0 + a, o0 + a2, o1 + a, o0 + a2, o1 + a2, o1 + a); }
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(idx); g.computeBoundingSphere(); S.poolGeo = g; }
     const lineMat = () => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, fog: false });
-    S.materials = { bridgeMat, navMat, poolMat };
+    S.materials = { bridgeMat, navMat };
 
     // ---- strips: route surfaces (up normals, ground material) and bridge girder faces (computed normals)
     const stripMesh = (st, mat) => {
@@ -813,25 +788,22 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     (all.gatePost = all.gatePost || []).push(...DATA.markers.map(it => ({ ...it, m: matrixOfAlt(it) })));
     S.counts = {};
     const lanternMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xb89870 }), poleGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xcfe6ff });     // lanterns glow faintly (card: weak warm light); pole reflectors faintly cool
-    const GLOW = { lamp: ['lampGlow', M.glowMat], navLight: ['navLightGlow', navMat], lantern: ['lanternGlowOut', lanternMat], vending: ['vendingGlow', M.glowMat], snowPole: ['snowPoleGlow', poleGlowMat] };
-    const NOHULL = ['tuft', 'weed', 'lampPool', 'steelStep', 'steelPost'];
+    const GLOW = { navLight: ['navLightGlow', navMat], lantern: ['lanternGlowOut', lanternMat], vending: ['vendingGlow', M.glowMat], snowPole: ['snowPoleGlow', poleGlowMat] };
+    const NOHULL = ['tuft', 'weed', 'steelStep', 'steelPost'];
     for (const [type, list] of Object.entries(all)) {
-      const geo = type === 'lampPool' ? S.poolGeo : K.geometries[type]; if (!geo || !list.length) continue; S.counts[type] = list.length;
-      const mat = type === 'lampPool' ? poolMat : M.floraMat;
+      const geo = K.geometries[type]; if (!geo || !list.length) continue; S.counts[type] = list.length;
+      const mat = M.floraMat;
       const mesh = new THREE.InstancedMesh(geo, mat, list.length); mesh.name = 'road:' + type;
       list.forEach((it, i) => { mesh.setMatrixAt(i, it.m); mesh.setColorAt(i, tintC.setRGB(it.tint[0], it.tint[1], it.tint[2])); });
       mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; mesh.computeBoundingSphere(); root.add(mesh); objs.inst.push(mesh);
       if (!NOHULL.includes(type)) { const hull = new THREE.InstancedMesh(geo, M.hullMat, list.length); hull.instanceMatrix = mesh.instanceMatrix; hull.count = list.length; hull.computeBoundingSphere(); hull.name = 'road:' + type + ':ink'; root.add(hull); objs.hulls.push(hull); }
       if (GLOW[type]) { const g = new THREE.InstancedMesh(K.geometries[GLOW[type][0]], GLOW[type][1], list.length); g.instanceMatrix = mesh.instanceMatrix; g.computeBoundingSphere(); g.name = 'road:' + type + ':glow'; if (type === 'navLight') { list.forEach((it, i) => g.setColorAt(i, tintC.setRGB(1, 1, 1))); g.instanceColor.needsUpdate = true; objs.nav = g; } root.add(g); objs.glows.push(g); }
     }
-    // road puddle ripples (RD01 card, same look as the town's puddles): two rings near each lamp pool, scaled and faded by hand each frame (instanced, additive)
-    { const spots = []; for (const rt of DATA.routes) for (const l of (rt.lamps || [])) for (let k = 0; k < 2; k++) { const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(rt.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = rt.lateral(i, o); spots.push({ lon: lo, lat: la, alt: rt.surface(i, o) + 0.012, phase: hash(l.s, k + 5) }); }
-      for (const b of DATA.bridges) for (const l of b.lamps) for (let k = 0; k < 2; k++) { const o = (k ? -1 : 1) * (1.0 + 0.8 * hash(l.s, k)), i = Math.min(b.samples.length - 1, Math.round((l.s + (k ? -2.2 : 2.0)) / 0.5)), [lo, la] = b.lateral(i, o); spots.push({ lon: lo, lat: la, alt: b.alt[i] + 0.05, phase: hash(l.s, k + 5) }); }
+    // puddle ripples (RD01 card, same look as the town's puddles): the town's puddles here, the two rings near each road lamp's pool from streetlights.js
+    // (setLampRipples); one instanced additive mesh, scaled and faded by hand each frame
+    S.townRipples = []; { const spots = S.townRipples;
       for (const [i, p] of townPuddles.entries()) for (let k = 0; k < (i % 3 ? 1 : 2); k++) { const dx = (hash(p.x + i, k + 7) - 0.5) * p.rx, dz = (hash(p.z + i, k + 13) - 0.5) * p.rz, q = W.townToLonLat(p.x + dx, p.z + dz); spots.push({ lon: q.lon, lat: q.lat, alt: BASE + p.y + 0.014, phase: hash(p.x + i, p.z + k), scale: Math.max(0.35, Math.min(p.rx, p.rz) * 0.65) }); }
-      const rg = new THREE.RingGeometry(0.93, 1, 24); rg.rotateX(-Math.PI / 2);
-      const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
-      const mesh = new THREE.InstancedMesh(rg, rm, spots.length); mesh.name = 'road:ripple'; mesh.frustumCulled = false; for (let i = 0; i < spots.length; i++) { mesh.setMatrixAt(i, new THREE.Matrix4()); mesh.setColorAt(i, tintC.setRGB(0, 0, 0)); }
-      root.add(mesh); S.ripples = { mesh, spots, mats: spots.map(sp => { const f = flatOf(sp.lon, sp.lat); return { x: f.x, y: (sp.alt - BASE) * f.k, z: f.z, k: f.k * (sp.scale || 1) }; }) }; objs.inst.push(mesh); S.counts.ripple = spots.length; }
+      buildRipples([]); }
     // navigation lights pulse slowly (period 6 s, phase per pier, never below 28 % of full): updated in tick
     S.nav = DATA.bridges.flatMap(b => b.navLights.map(n => n.phase));
 
@@ -866,6 +838,14 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     return root;
   }
   const job = global.TERRAIN.job(build, ms => { S.stats.buildMs = ms; });
+  // the one ripple mesh: the town's puddle spots and the lamps' spots (streetlights.js hands them over once, before the first frame)
+  function buildRipples(lampSpots) {
+    if (S.ripples) { S.ripples.mesh.removeFromParent(); S.ripples.mesh.geometry.dispose(); objs.inst.splice(objs.inst.indexOf(S.ripples.mesh), 1); }
+    const spots = [...lampSpots, ...S.townRipples], rg = new THREE.RingGeometry(0.93, 1, 24); rg.rotateX(-Math.PI / 2);
+    const rm = S.rippleMat || (S.rippleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 }));
+    const mesh = new THREE.InstancedMesh(rg, rm, spots.length); mesh.name = 'road:ripple'; mesh.frustumCulled = false; for (let i = 0; i < spots.length; i++) { mesh.setMatrixAt(i, new THREE.Matrix4()); mesh.setColorAt(i, tintC.setRGB(0, 0, 0)); }
+    S.root.add(mesh); S.ripples = { mesh, spots, mats: spots.map(sp => { const f = flatOf(sp.lon, sp.lat); return { x: f.x, y: (sp.alt - BASE) * f.k, z: f.z, k: f.k * (sp.scale || 1) }; }) }; objs.inst.push(mesh); S.counts.ripple = spots.length;
+  }
 
   function buildTunnel(rt, root, stripMesh, mat) {
     const tn = rt.tunnel, idx = tn.idx, F = rt.flatOf, T = rt.tangent, n = idx.length;
@@ -904,13 +884,12 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   function tick(t, camera) {
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
-    // the real lamps, their light pools, the small furniture and the navigation lights exist only near the surface (the light band stands for them from far away)
+    // the small furniture and the navigation lights exist only near the surface (the light band stands for them from far away)
     const near = ink.distance < 120;
-    // W8c: the lamps (heads, glows, light pools) hand over to the light band between 40 and 60 m of camera height (NIGHTLIGHT.lampOf); scene.js gives the numbers once per frame
-    // through setNight(), so a tool that calls tick() by hand keeps the 120 m rule. The pools fade with it; the heads and glows are sub-pixel by then and go with it at 60 m.
+    // W8c: the small lamps of the boardwalk and the maintenance stair (lampSmall) hand over to the light band between 40 and 60 m of camera height (NIGHTLIGHT.lampOf);
+    // scene.js gives the numbers once per frame through setNight(), so a tool that calls tick() by hand keeps the 120 m rule. The road lamps follow their pixel size (streetlights.js).
     const N = S.night; S.night = null;
-    const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:(lamp|lampSmall|lampPool)(:glow|:ink)?$/;
-    S.materials.poolMat.opacity = lampK;
+    const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:lampSmall(:glow|:ink)?$/;
     const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
     for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || (SEC.state.settings.rain && S.puddleWeight > 0.001));
     for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
@@ -927,6 +906,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
     setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },
+    setLampRipples(spots) { buildRipples(spots); },          // W10c: the ripple spots of the road lamps (streetlights.js), once before the first frame
     setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
     data: () => DATA, objects: objs,

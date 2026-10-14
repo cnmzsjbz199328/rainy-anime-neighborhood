@@ -26,7 +26,7 @@ const junctions = await page.evaluate(() => {
     return { node: j.node, x: p.x, z: p.z, yaw: Math.atan2(-dx, -dz), edges: j.edges || j.edgeIds, routes: j.routes, arms: j.arms, area: j.area, paving: j.paving, separateFaces: j.strip.index.length,
       cuts: j.cuts.map(c => ({ routeId: c.routeId, edgeId: c.edgeId || null, part: c.part, clippedTriangles: c.clippedTriangles, removedTriangles: c.removedTriangles, removedArea: c.removedArea, before: c.before, after: c.after })),
       removedInstances: j.removedInstances.map(q => ({ routeId: q.routeId, type: q.type, station: q.station, clearance: q.clearance })),
-      lampRemovals: D.routes.flatMap(r => (r.junctionLampRemovals || []).filter(q => q.node === j.node).map(q => ({ routeId: r.def.id, station: q.station, zone: q.zone }))) };
+      lamps: (S.streetlights.data().junctions.find(q => q.node === j.node) || {}) };      // W10c: the junction's lamp (or the lamp it merged with) from the one lamp table
   });
 });
 if (junctions.length !== 10) throw new Error(`Expected ten CR01 junctions, received ${junctions.length}`);

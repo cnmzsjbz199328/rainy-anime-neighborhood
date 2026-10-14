@@ -15,7 +15,8 @@ const TERR = require(path.join(root, 'terrain.js'));
 const RK = globalThis.ROADKIT = require(path.join(root, 'roadkit.js'));
 const BR = globalThis.BRIDGE = require(path.join(root, 'bridge.js'));
 require(path.join(root, 'steps.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
-const ROADS = require(path.join(root, 'roads.js'));
+const ROADS = globalThis.ROADS = require(path.join(root, 'roads.js'));
+const STREETLIGHTS = require(path.join(root, 'streetlights.js')), SECP = require(path.join(root, 'section_plan.js'));
 const D = Math.PI / 180, R = 90, BASE = 1.6;
 const results = [];
 const f = (v, n = 3) => (typeof v === 'number' ? v.toFixed(n) : String(v));
@@ -176,28 +177,23 @@ check('W5-C4', '桥与隧道：桥面高出海面 4.0–8.0 m、坡度 ≤ 15%�
 });
 
 // ---------------------------------------------------------------- W5-C5
-check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1），RD01 间距人类活动区 16 ± 2 m、荒野 40 ± 4 m，RD03 约 25 m 一盏（W10b 起），航道灯周期 ≥ 4 s', ({ info, fail }) => {
-  const lampsOf = rt => rt.lamps || [];
-  const rd01R = PLAN.routes.filter(r => r.def.furnish && r.def.furnish.kind === 'RD01'), rd01 = rd01R.flatMap(lampsOf), n01 = rd01.length;
-  const gaps = { human: [], wild: [] }, lampGapAtJunction = (rt, a, b) => (rt.junctionLampRemovals || []).some(q => q.station > a && q.station < b);
-  for (const rt of rd01R) { const L = lampsOf(rt); for (let i = 1; i < L.length; i++) if (L[i].zone === L[i - 1].zone && !lampGapAtJunction(rt, L[i - 1].s, L[i].s)) gaps[L[i].zone].push(L[i].s - L[i - 1].s); }
+check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1），RD01 间距人类活动区 16 ± 2 m、荒野 40 ± 4 m，RD03 ≤ 30 m（W10c：CR01 闭环、RN05 公交站），航道灯周期 ≥ 4 s', ({ info, fail }) => {
+  // W10c: every road lamp comes from one table (streetlights.js). Here it is planned from the same roads and W4 plan without the land cover, which can only move a lamp
+  // along its road or across it; the page's final table is checked lamp by lamp by tools/streetlight_check.mjs (SL1, SL2)
+  const SL = STREETLIGHTS.plan({ W: Object.assign(Object.create(W), { height: H }), L: globalThis.LAYOUT, roads: PLAN, RK: ROADS, section: SECP.plan(W), cover: { cells: [], items: [] }, town: { puddles: [], alleyLamps: [] } });
+  const cov = id => SL.coverage.find(c => c.road === id), rd01 = SL.lamps.filter(q => q.model === 'trunk'), n01 = rd01.length, gaps = { human: [], wild: [] };
+  for (const rt of PLAN.routes.filter(r => r.def.furnish && r.def.furnish.kind === 'RD01')) for (const g of cov(rt.def.id).gaps) if (!g.tunnel && g.zone !== 'mixed') gaps[g.zone].push(g.g);
   for (const [z, want, tol] of [['human', 16, 2], ['wild', 40, 4]]) if (gaps[z].some(g => Math.abs(g - want) > tol)) fail(`RD01 ${z} 间距 ${gaps[z].map(g => f(g, 1))} 不在 ${want} ± ${tol}`);
-  info(`RD01：${n01} 盏（W10b 路线长度变化后按分区间距核验；人类活动区 ${rd01.filter(l => l.zone === 'human').length}、荒野 ${rd01.filter(l => l.zone === 'wild').length}）；同区相邻间距 人类活动区 ${gaps.human.map(g => f(g, 1)).join('、') || '—'} m，荒野 ${gaps.wild.map(g => f(g, 1)).join('、') || '—'} m；隧道内无灯`);
-  const n02 = PLAN.bridges.reduce((s, b) => s + b.lamps.length, 0), bg = PLAN.bridges.flatMap(b => b.lamps.slice(1).map((l, i) => l.s - b.lamps[i].s));
+  if (Math.abs(n01 - 8) > 1) fail(`RD01 灯 ${n01} 盏，规格约 8（±1）`);
+  info(`RD01：${n01} 盏（城镇主街段由城镇灯照明，W5 规则在那里的 6 个站位移除；人类活动区 ${rd01.filter(l => l.zone === 'human').length}、荒野 ${rd01.filter(l => l.zone === 'wild').length}）；同区相邻间距 人类活动区 ${gaps.human.map(g => f(g, 1)).join('、') || '—'} m，荒野 ${gaps.wild.map(g => f(g, 1)).join('、') || '—'} m；隧道内无灯`);
+  const br = SL.lamps.filter(q => q.model === 'bridge'), n02 = br.length, bg = PLAN.bridges.flatMap(b => cov(b.def.id).gaps.map(g => g.g)).filter(g => g < 24);
   if (n02 < 18 || n02 > 20) fail(`RD02 灯 ${n02} 盏，规格约 19（±1）`); if (bg.some(g => Math.abs(g - 16) > 2)) fail(`RD02 灯距 ${bg.map(g => f(g, 1))} 不在 16 ± 2`);
-  info(`RD02：${n02} 盏（桥 ${PLAN.bridges.map(b => `${b.def.id}:${b.lamps.length}`).join('、')}），间距 ${f(Math.min(...bg), 1)}–${f(Math.max(...bg), 1)} m；航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏，周期 ${ROADS.NAV_PERIOD} s（≥ 4 s，亮度 28%–100% 正弦，不闪烁）`);
+  info(`RD02：${n02} 盏（桥 ${PLAN.bridges.map(b => `${b.def.id}:${cov(b.def.id).lamps}`).join('、')}），间距 ${f(Math.min(...bg), 1)}–${f(Math.max(...bg), 1)} m（塔旁跳过的 32 m 不计）；航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏，周期 ${ROADS.NAV_PERIOD} s（≥ 4 s，亮度 28%–100% 正弦，不闪烁）`);
   if (ROADS.NAV_PERIOD < 4) fail('航道灯周期 < 4 s');
-  const n03 = PLAN.routes.reduce((s, r) => s + (r.def.furnish && r.def.furnish.kind === 'RD03' ? r.lamps.length : 0), 0), g03 = [];
-  for (const r of PLAN.routes) if (r.def.furnish && r.def.furnish.kind === 'RD03') for (let i = 1; i < r.lamps.length; i++) if (!lampGapAtJunction(r, r.lamps[i - 1].s, r.lamps[i].s)) g03.push(r.lamps[i].s - r.lamps[i - 1].s);
-  // W10c removes lamps whose 3.5 m clearance disk touches a CR01 patch. Gaps that span such
-  // a removal are reported separately; the ordinary spacing rule still applies everywhere else.
-  for (const r of PLAN.routes.filter(q => q.def.furnish && q.def.furnish.kind === 'RD03')) {
-    const want = Math.max(1, Math.floor(r.length / 25)), removed = (r.junctionLampRemovals || []).length;
-    if (r.lamps.length < Math.max(0, want - removed)) fail(`${r.def.id} 长 ${f(r.length, 1)} m 只有 ${r.lamps.length} 盏灯；扣除路口净空移除 ${removed} 盏后仍少于 ${want}`);
-  }
-  if (g03.some(g => g > 30)) fail(`RD03 同一条路相邻灯距 ${g03.map(g => f(g, 1)).join('、')} m 超过 30 m`);
-  const junctionLampCuts = PLAN.routes.reduce((n, r) => n + (r.junctionLampRemovals || []).length, 0);
-  info(`RD03：${n03} 盏；交点净空移除 ${junctionLampCuts} 盏，跨越这些净空范围的间距不计，其余相邻间距 ${g03.map(g => f(g, 1)).join('、')} m（约 25 m）；电杆 ${PLAN.routes.reduce((s, r) => s + (r.poles ? r.poles.length : 0), 0)} 根（沿路抖动，不成排）；反光镜 ${PLAN.routes.reduce((s, r) => s + ((r.instances.mirror || []).length), 0)} 面`);
+  const ring = cov('CR01'), rn05 = cov('RN05-RD03'), g03 = ring.gaps.map(g => g.g);
+  if (g03.some(g => g > 30)) fail(`CR01 相邻灯距 ${g03.map(g => f(g, 1)).join('、')} m 超过 30 m`); if (ring.nodes.some(n => n.d > 12)) fail('CR01 有路口 12 m 内无光池');
+  if (!rn05.lamps || rn05.busStop > 5) fail(`RN05 公交站灯缺失或偏离 ${rn05.busStop} m`);
+  info(`RD03：CR01 闭环 ${f(ring.length, 1)} m 照亮它的灯 ${ring.gaps.length} 盏，相邻 ${f(Math.min(...g03), 1)}–${f(Math.max(...g03), 1)} m（≤ 30 m，含首尾），十个路口最近光池 ≤ ${f(Math.max(...ring.nodes.map(n => n.d)), 1)} m；RN05-01 ${rn05.lamps} 盏（公交站灯，离站 ${f(rn05.busStop, 1)} m）；电杆 ${PLAN.routes.reduce((s, r) => s + (r.poles ? r.poles.length : 0), 0)} 根（沿路抖动，不成排）；反光镜 ${PLAN.routes.reduce((s, r) => s + ((r.instances.mirror || []).length), 0)} 面`);
   { const rt = PLAN.routes.find(r => r.def.furnish && r.def.furnish.kind === 'RD08'), per = { '-1': [], 1: [] }; for (const q of rt.poles8) per[q.side].push(q.s); const gaps = Object.values(per).flatMap(a => a.slice(1).map((v, i) => v - a[i]));
     if (gaps.some(g => Math.abs(g - 8) > 1)) fail(`RD08 标杆间距 ${gaps.map(g => f(g, 1))} 不在 8 ± 1 m`);
     info(`RD08：标杆 ${rt.poles8.length} 根（每侧 ${per[1].length}），同侧间距 ${gaps.map(g => f(g, 1)).join('、')} m（8 ± 1），高 2.0 m（几何高度在页面部分核对）；避难小屋在 s = ${f(rt.shelter.s, 1)} m（橙色，半埋）`); }
@@ -207,7 +203,8 @@ check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1）�
     if (st.riser < 0.15 || st.riser > 0.18) fail(`石阶 ${st.id} 踏步高 ${f(st.riser, 3)} 不在 0.15–0.18`); if (st.count < want[0] || st.count > want[1]) fail(`石阶 ${st.id} 级数 ${st.count} 不在 ${want[0]}–${want[1]}`); if (st.lanterns.length > 10) fail(`石阶 ${st.id} 灯笼 ${st.lanterns.length} > 10`);
     info(`石阶 ${st.id}：${st.count} 级（规格 ${want[0]}–${want[1]}），踏步高 ${f(st.riser, 3)} m（0.15–0.18），踏面 ${f(Math.min(...tr), 2)}–${f(Math.max(...tr), 2)} m，平均 ${f(st.length / st.count, 2)} m，平台 ${st.platforms.length} 处，灯笼 ${st.lanterns.length} 盏（≤ 10），绳索扶手立柱 ${st.stats.ropePosts} 根，鸟居 1、地藏 ${(st.instances.jizo || []).length}、长凳 ${(st.instances.busBench || []).length}、指路石柱 ${(st.instances.stonePost || []).length}`); void sd;
   }
-  info(`全球灯数（W5）：RD01 ${n01} + RD02 ${n02} + RD03 ${n03} = ${n01 + n02 + n03} 盏路灯，另有石阶灯笼 ${PLAN.stairs.reduce((s, st) => s + st.lanterns.length, 0)} 盏、RD07 小灯柱 4 盏（W4）、RN12-01 平台灯 1 盏、航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏（规格估计「全球约 35–40 盏路灯」）`);
+  const n03 = SL.lamps.filter(q => q.model === 'rural' && q.owner === 'route').length;
+  info(`全球灯数：RD01 ${n01} + RD02 ${n02} + RD03 ${n03}（CR01 与 RN05）= ${n01 + n02 + n03} 盏路灯（另有城镇 27、W4 入口 2，共 ${SL.lamps.length} 盏普通道路灯），另有石阶灯笼 ${PLAN.stairs.reduce((s, st) => s + st.lanterns.length, 0)} 盏、RD07 小灯柱 4 盏（W4）、RN12-01 平台灯 1 盏、航道灯 ${PLAN.bridges.reduce((s, b) => s + b.navLights.length, 0)} 盏（规格估计「全球约 35–40 盏路灯」）`);
 });
 
 // ---------------------------------------------------------------- W5-C6
@@ -227,7 +224,7 @@ check('W5-C6', '落地：路上与桥上的实例底面与路面（扫出的面�
   const per = {}; let total = 0, worstAll = 0, miss = 0;
   const test = (label, st, m, n, samples, list) => {
     for (const it of list) {
-      if (!['lamp', 'barrierConcrete', 'milestone', 'signBus', 'weed', 'tuft', 'lampPool', 'pole', 'mirror', 'signRound', 'signTri', 'vending', 'jizo', 'snowPole', 'bollard', 'stonePost', 'busBench'].includes(it.type)) continue;
+      if (!['barrierConcrete', 'milestone', 'signBus', 'weed', 'tuft', 'pole', 'mirror', 'signRound', 'signTri', 'vending', 'jizo', 'snowPole', 'bollard', 'stonePost', 'busBench'].includes(it.type)) continue;
       const F = flat(it.lon, it.lat); let b = 0, bd = Infinity; samples.forEach((p, i) => { const d = arc(p, it); if (d < bd) { bd = d; b = i; } });
       { const ref = col(st, m, b, 0)[0]; F.x += 2 * Math.PI * R * Math.round((ref - F.x) / (2 * Math.PI * R)); }      // chains across the dateline use unwrapped longitudes
       const y = heightIn(st, m, n, b - 3, b + 2, F.x, F.z); total++; if (y === null) { miss++; continue; }

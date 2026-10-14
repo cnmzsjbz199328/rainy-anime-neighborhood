@@ -304,7 +304,7 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
     flat = p => [90 * p.lon * Math.PI / 180, -90 * Math.asinh(Math.tan(p.lat * Math.PI / 180))],
     lonLat = (x, z) => ({ lon: x / (90 * Math.PI / 180), lat: Math.atan(Math.sinh(-z / 90)) / (Math.PI / 180) });
   let nodeErrors = [], overlapCount = 0, overlapAreaTotal = 0, instanceLeaks = [], clippedArea = 0, cutTriangles = 0, removedObjects = 0, seamError = 0, seamAt = '', seamSamples = 0;
-  const clearance = { weed: 0.8, tuft: 0.8, shrubLow: 0.8, lampPool: 1.6, lamp: 1, lampSmall: 1, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
+  const clearance = { weed: 0.8, tuft: 0.8, shrubLow: 0.8, lamp: 1, lampSmall: 1, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
   for (const j of crJ) {
     const expectedEdges = expectedCR01[j.node], actualEdges = net.edges.filter(e => e.from === j.node || e.to === j.node).map(e => e.id).sort();
     if (!expectedEdges || JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges.slice().sort())) nodeErrors.push(`${j.node} 拓扑 ${actualEdges.join('/')}，应为 ${(expectedEdges || []).join('/')}`);
@@ -338,16 +338,20 @@ check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`)
     }
     if (asphaltArea < 5) nodeErrors.push(`${j.node} 原 CR01 沥青带覆盖仅 ${asphaltArea.toFixed(2)} m²`);
   }
-  for (const rt of PLAN.routes) for (const [type, list] of Object.entries(rt.instances || {})) for (const it of list) {
+  // W10c: the road lamps' feet come from one table (streetlights.js), planned here from the same roads and W4 plan (the land cover only moves a lamp along or across its road;
+  // tools/streetlight_check.mjs checks the page's final table); a lamp of the ring itself stands beside the carriageway by construction, the others must keep out of the junctions
+  const SLP = require(path.join(root, 'streetlights.js')).plan({ W: Object.assign(Object.create(W), { height: H }), L, roads: PLAN, RK: ROADS, section: require(path.join(root, 'section_plan.js')).plan(W), cover: { cells: [], items: [] }, town: { puddles: [], alleyLamps: [] } });
+  const placed = [...PLAN.routes.flatMap(rt => Object.entries(rt.instances || {}).flatMap(([type, list]) => list.map(it => ({ rt: rt.def.id, type, it })))), ...SLP.lamps.filter(q => q.owner !== 'town').map(q => ({ rt: q.line === 'CR01' ? 'CR01' : 'streetlights', type: 'lamp', it: { lon: q.lon, lat: q.lat, station: q.id } }))];
+  for (const { rt: routeId, type, it } of placed) {
     const p = flat(it), radius = clearance[type] ?? 0.6;
     let conflict = crJ.find(j => polyDistance(p, j.polygon) <= radius + 1e-6)?.node || null;
-    if (!conflict && rt.def.id !== 'CR01' && crJ.some(j => polyDistance(p, j.polygon) <= 18)) {
+    if (!conflict && routeId !== 'CR01' && crJ.some(j => polyDistance(p, j.polygon) <= 18)) {
       const pr = ROADS.project(ringRoad, it.lon, it.lat); if (pr) {
         const nearest = crJ.map(j => { const a = j.arms.filter(q => q.routeId === 'CR01').reduce((best, q) => Math.abs(q.nodeS - pr.s) < best.d ? { d: Math.abs(q.nodeS - pr.s), s: q.nodeS } : best, { d: Infinity, s: 0 }), delta = Math.abs(a.s - pr.s); return { node: j.node, d: Math.min(delta, Math.max(0, ringRoad.length - delta)) }; }).sort((a, b) => a.d - b.d)[0];
         if (nearest && nearest.d <= 18) { const q = ROADS.atS(ringRoad, pr.s), bounds = ringRoad.carriageway[q.i].map((v, side) => v + (ringRoad.carriageway[q.i + 1][side] - v) * q.t); if (pr.o >= bounds[0] - radius && pr.o <= bounds[1] + radius) conflict = `${nearest.node}/CR01-carriageway`; }
       }
     }
-    if (conflict) { instanceLeaks.push(`${conflict}/${rt.def.id}/${type} s=${it.station ?? '—'}`); }
+    if (conflict) { instanceLeaks.push(`${conflict}/${routeId}/${type} s=${it.station ?? '—'}`); }
   }
   const vegetationProbes = [['N11-C01', 48.41], ['N12-C01', 48.41], ['N13-C01', 48.41], ['N13-C01', 49.11], ['RN05-RD03', 6.18], ['RN05-RD03', 13.97], ['RN05-RD03', 18.04]],
     activeVegetation = vegetationProbes.reduce((n, [id, s]) => { const rt = PLAN.routes.find(q => q.def.id === id); return n + ['weed', 'tuft'].flatMap(t => rt.instances[t] || []).filter(q => Math.abs((q.station ?? -1000) - s) < 0.2).length; }, 0);

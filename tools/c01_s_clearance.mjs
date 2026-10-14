@@ -20,7 +20,8 @@ const roads = ids.map(id => {
   return { id, half: { RD03: 3.55, RD04: 2.75, RD05: 2.0 }[e.class], pts: W.roadNetwork.samplePath(e, 0.25).map(flat) };
 });
 const errors = [], counts = {};
-for (const [type, list] of Object.entries(P.items)) for (const it of list) {
+// W10c: the two entrance lamps are road lamps registered by streetlights.js at the sites section_plan.js keeps (lampSites); they are checked here at those sites
+for (const [type, list] of [...Object.entries(P.items), ['lamp', P.lampSites]]) for (const it of list) {
   if (it.v < 0 || it.v > 24 || Math.abs(it.u) > 13) continue;
   // The bamboo mesh extends two metres to one side of its origin (flora.js).
   const p = flat(it), r = Math.max(it.clearance, type === 'fenceBamboo' ? 2.1 : 0) + 0.5;

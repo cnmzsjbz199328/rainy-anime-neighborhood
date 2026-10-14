@@ -32,8 +32,9 @@ const colors=['#da8b80','#e7c978','#78aaa2','#7e99b5','#bd9abb','#ece2be'];
 // remaining fixtures and every building keep their exact line work.
 seed=679665027;
 group('guardRail');for(let i=0;i<3;i++){let x=-2.1+i*1.25;cyl(x,.63,3.13,.045,.8,'#b5c3b6');}line([[-2.1,.91,3.13],[.4,.91,3.13]],'#b5c3b6',.045);
-// Lamp and utility pole: careful silhouette above the small roof.
-group('streetLamp');cyl(-3.7,2.27,2.6,.06,4.4,'#596f80');line([[-3.7,4.45,2.6],[-3.7,4.64,2.6],[-3.3,4.69,2.6],[-2.93,4.64,2.6]],'#597082',.055);box(-2.95,4.59,2.6,.48,.12,.25,'#b7c6bb');box(-2.95,4.515,2.6,.39,.015,.19,new THREE.MeshBasicMaterial({color:'#ffe4b0'}),false);light(-2.95,3.8,2.6,0xffdeaa,16,7);
+// The convenience-store lamp (the former sample) is a road lamp of streetlights.js now (W10c); its one outlined box drew 72 jitter values, which are
+// still drawn so that the pole and signal below keep their ink. Utility pole: careful silhouette above the small roof.
+for(let i=0;i<72;i++)rnd();
 group('utilityPole');cyl(-4.7,2.91,-3.85,.1,5.7,'#7c8290');box(-4.7,5.25,-3.85,1.28,.08,.09,'#748f9b');for(let i=0;i<3;i++){cyl(-5.2+i*.5,5.39,-3.85,.05,.2,'#a6bcb5');line([[-5.2+i*.5,5.49,-3.85],[-2+i*.5,4.97,-4.9],[5.7,5.4,-4.9]],'#283746',.018);}
 label('止まれ',-4.71,2.25,-3.72,.57,.5,'#b6797b','#eee1c6',170);
 box(-4.71,3.1,-3.72,.7,.24,.025,'#648b9e');label('小路  KOMOREBI',-4.71,3.1,-3.7,.65,.2,'#648b9e','#e5e7d8',65);
@@ -193,16 +194,15 @@ const SHOW_OUTER_DRAIN_OUTLETS=false; // Temporary visual simplification; retain
 if(SHOW_OUTER_DRAIN_OUTLETS)for(const o of L.outlets){const [fx,fz]=o.face,y=-.22,g=new THREE.Group();g.position.set(o.x,0,o.z);g.rotation.y=faceY(o.face);root.add(g);
   box(0,y,.03,.55,.36,.06,'#7d8584',true,g);const p=cyl(0,y,.09,.12,.14,'#5d6668',g);p.rotation.x=Math.PI/2;mesh(new THREE.CircleGeometry(.085,16),new THREE.MeshBasicMaterial({color:'#11161d'}),0,y,.161,false,g);
   mesh(new THREE.PlaneGeometry(.22,1.1),stain,0,y-.72,.004,false,g);}
-// Street lamps, alley security lamps, utility poles with catenary wires, signals and stop signs.
+// Alley security lamps, utility poles with catenary wires, signals and stop signs; the street lamps are road lamps of streetlights.js (W10c).
 group('streetFurniture',parent);
 const glowTex=canvasTex(128,128,(q,W)=>{const g=q.createRadialGradient(W/2,W/2,0,W/2,W/2,W/2);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.4,'rgba(255,255,255,.35)');g.addColorStop(1,'rgba(255,255,255,0)');q.fillStyle=g;q.fillRect(0,0,W,W);});
 const glowMat=(c,o)=>new THREE.MeshBasicMaterial({map:glowTex,color:c,transparent:true,opacity:o,depthWrite:false,blending:THREE.AdditiveBlending,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-8});
-const lampHead=new THREE.MeshBasicMaterial({color:'#ffe4b0'}),ledHead=new THREE.MeshBasicMaterial({color:'#eef2e4'});
+const ledHead=new THREE.MeshBasicMaterial({color:'#eef2e4'});
 const lamps=[];
-for(const f of L.furniture){const g=new THREE.Group();g.position.set(f.x,LV.pavement,f.z);root.add(g);
-  if(f.kind==='lamp'){g.rotation.y=faceY(f.face);cyl(0,2.2,0,.06,4.4,'#596f80',g);line([[0,4.35,0],[0,4.6,.05],[0,4.66,.45],[0,4.6,.85]],'#597082',.05,g);box(0,4.56,.85,.25,.12,.48,'#b7c6bb',true,g);box(0,4.49,.85,.19,.015,.39,lampHead,false,g);
-    lamps.push({x:f.x+f.face[0]*.85,z:f.z+f.face[1]*.85,c:'#ffd9a0',r:3.6,o:.32});}
-  else if(f.kind==='alley-lamp'){g.rotation.y=faceY(f.face);cyl(0,1.6,0,.045,3.2,'#8a9096',g);box(0,3.05,.22,.08,.08,.4,'#8a9096',true,g);box(0,2.98,.4,.22,.09,.13,'#c9cec6',true,g);box(0,2.93,.4,.18,.01,.1,ledHead,false,g);
+for(const f of L.furniture){if(f.kind==='lamp'){for(let i=0;i<72;i++)rnd();continue;}   // a street lamp's outlined head box drew 72 jitter values: keep the later fixtures' ink
+  const g=new THREE.Group();g.position.set(f.x,LV.pavement,f.z);root.add(g);
+  if(f.kind==='alley-lamp'){g.rotation.y=faceY(f.face);cyl(0,1.6,0,.045,3.2,'#8a9096',g);box(0,3.05,.22,.08,.08,.4,'#8a9096',true,g);box(0,2.98,.4,.22,.09,.13,'#c9cec6',true,g);box(0,2.93,.4,.18,.01,.1,ledHead,false,g);
     lamps.push({x:f.x+f.face[0]*.4,z:f.z+f.face[1]*.4,c:'#dfe9e2',r:2.4,o:.26});}
   else if(f.kind==='pole'){g.rotation.y=faceY(f.across);cyl(0,2.85,0,.1,5.7,'#7c8290',g);box(0,5.1,0,.09,.08,1.28,'#748f9b',true,g);for(let i=0;i<3;i++)cyl(0,5.24,-.5+i*.5,.05,.2,'#a6bcb5',g);
     box(0,2.6,.105,.3,.9,.012,'#cfd5c4',true,g);}   // the usual tin address plate
@@ -220,22 +220,20 @@ for(const pl of L.poleLines)for(const [a,b] of pl.spans){const A=attach(byId[a])
 // X01 phases: N–S traffic follows the original signal (green 0–19 s of a 30 s cycle), E–W gets green
 // after a short all-red, then amber.
 phased=L.furniture.filter(f=>f.kind==='signal').map(f=>({h:f.heads,ns:L.roads.find(r=>r.id===f.road).axis==='z'}));
-// Light pools under the lamps: additive washes rather than real lights, so 35 lamps stay cheap.
+// Light pools under the alley lamps: additive washes rather than real lights (the street lamps' pools are streetlights.js's).
 for(const l of lamps)decal(null,l.r*2,l.r*2,l.x,LV.pavement,l.z,[0,-1],glowMat(l.c,l.o));
-// Wet ground: puddles along the gutters and alley channels, ripples, restrained reflections of lamps.
+// Wet ground: puddles along the gutters and alley channels (their ripples: roads.js; the lamps' reflections in them: streetlights.js, from the final lamp table).
 group('wetStreet',parent);
 const puddleMat=new THREE.MeshStandardMaterial({color:'#456a80',transparent:true,opacity:.45,metalness:.6,roughness:.22,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4});
 
-L.puddles.forEach((p,i)=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mesh(new THREE.CircleGeometry(1,32),puddleMat,p.x,y,p.z,false);a.rotation.x=-Math.PI/2;a.scale.set(p.rx,p.rz,1);
-  const near=lamps.find(l=>Math.hypot(l.x-p.x,l.z-p.z)<5.5);if(near){const r=decal(null,Math.min(p.rx,p.rz)*1.4,Math.max(p.rx,p.rz)*1.6,p.x,y,p.z,p.rx>p.rz?[1,0]:[0,1],glowMat(near.c,.22));}
-});
+L.puddles.forEach(p=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mesh(new THREE.CircleGeometry(1,32),puddleMat,p.x,y,p.z,false);a.rotation.x=-Math.PI/2;a.scale.set(p.rx,p.rz,1);});
 
-root=previousRoot;townSignalPhases=phased;return {puddles:L.puddles.map(p=>({x:p.x,z:p.z,rx:p.rx,rz:p.rz,y:p.on==='road'?LV.carriageway:LV.pavement})),markings:L.markings,gutters:L.gutters,channels:L.channels,grates:L.grates,outlets:L.outlets};
+root=previousRoot;townSignalPhases=phased;return {puddles:L.puddles.map(p=>({x:p.x,z:p.z,rx:p.rx,rz:p.rz,y:p.on==='road'?LV.carriageway:LV.pavement})),alleyLamps:lamps,markings:L.markings,gutters:L.gutters,channels:L.channels,grates:L.grates,outlets:L.outlets};
 };
 // Buildings move as whole groups (translate, rotate about Y, uniform scale); see layout.js.
 for(const s of L.structures)for(const p of s.parts){const g=groups[p.group],t=s.transform;g.position.set(t.x,0,t.z);g.rotation.y=t.rotY;g.scale.setScalar(t.scale??L.SAMPLE_SCALE);}
-// Original street furniture goes to provisional slots in the facility bands, foot on the band.
-for(const f of L.legacyFurniture){const g=groups[f.group],{x,z,rotY}=f.slot,c=Math.cos(rotY),n=Math.sin(rotY),[ax,az]=f.anchor,y0=new THREE.Box3().setFromObject(g,true).min.y;
+// Original street furniture goes to provisional slots in the facility bands, foot on the band (the store's lamp: streetlights.js).
+for(const f of L.legacyFurniture.filter(f=>f.group!=='streetLamp')){const g=groups[f.group],{x,z,rotY}=f.slot,c=Math.cos(rotY),n=Math.sin(rotY),[ax,az]=f.anchor,y0=new THREE.Box3().setFromObject(g,true).min.y;
   g.rotation.y=rotY;g.position.set(x-(ax*c+az*n),LV.pavement-y0,z-(-ax*n+az*c));}
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
@@ -340,7 +338,7 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);if(window.ROADS_API)window.ROADS_API.setPuddleWeight(weatherFx.get()?.puddleWeight??1);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of townSignalPhases){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
+rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);if(window.ROADS_API)window.ROADS_API.setPuddleWeight(weatherFx.get()?.puddleWeight??1);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of townSignalPhases){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);streetlights.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
@@ -355,6 +353,8 @@ const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj,tow
 const roads=ROADS.attach(scene,{ramp,renderer,townAsphalt:matT('#46505b','asphalt'),buildTownRoadDetails},BEND,terrain,section);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
 const quality=QUALITY.create();const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer,quality},BEND,terrain,section);
+// W10c: every ordinary road lamp from one table (streetlights.js), planned once the land cover exists so that a lamp steps aside and the fields never do
+const streetlights=STREETLIGHTS.attach(scene,{ramp,renderer},BEND,terrain,section);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
 // W10a (W10_SPEC 2.4): the whole world is built before the first frame (worldgen.js), behind the loading screen of build.py; the canvas stays hidden
@@ -369,10 +369,11 @@ const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('
   {name:'roads',deps:['section'],label:'正在连接道路',job:roads.job},
   {name:'ocean',deps:['roads'],label:'正在绘制海岸',job:ocean.job},
   {name:'landcover',deps:['ocean'],label:'正在种植森林',job:cover.job},
+  {name:'streetlights',deps:['landcover'],label:'正在点亮路灯',job:streetlights.job},
   {name:'landmarks',deps:['landcover'],label:'正在安放村落',job:landmarkJob}
 ]});
 worldgen.start().then(()=>{
-window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

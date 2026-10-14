@@ -485,8 +485,19 @@ function terraces(W, H, ctx) {
   return out;
 }
 
+// W8g-c: the dithered hand-over (D14). Each instance or vertex carries a window [lo, hi) of an 8 x 8 ordered dither; the pixels whose threshold falls
+// outside it are discarded. The window comes from the attribute aWin, or from the expression `win` over the declarations `pars` (streetlights.js reads it
+// from a uniform array by lamp).
+const LOD_GLSL = 'varying vec2 vLodWin;\nfloat lodBayer(vec2 fc) { ivec2 p = ivec2(fc) & ivec2(7); int a = p.x ^ p.y; return (float(((a & 1) << 5) | ((p.y & 1) << 4) | ((a & 2) << 2) | ((p.y & 2) << 1) | ((a & 4) >> 1) | ((p.y & 4) >> 2)) + 0.5) / 64.0; }';
+function lodDither(shader, pars = 'attribute vec2 aWin;', win = 'aWin') {
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\n' + pars + '\nvarying vec2 vLodWin;').replace('void main() {', 'void main() {\n\tvLodWin = ' + win + ';');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + LOD_GLSL).replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n\t{ float lodT = lodBayer(gl_FragCoord.xy); if (lodT < vLodWin.x || lodT >= vLodWin.y) discard; }');
+}
+// a dithered copy of a material (the W4 section keeps its materials as they are): the material's own shader edit, then the dither
+const ditherCopy = (base, name) => { const m = base.clone(), own = base._bendUserCompile; m.onBeforeCompile = function (shader, renderer) { if (own) own.call(base, shader, renderer); lodDither(shader); }; m.customProgramCacheKey = () => 'bend|lod|' + name; return m; };
+
 const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, avoidHit: nearAvoidRoads, avoidClearance, createAvoidIndex, SP, COL, SEED,
-  grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps };
+  grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps, lodDither, ditherCopy };
 
 // ---------------------------------------------------------------- scene part
 LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
@@ -543,13 +554,6 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   const Q = ctx.quality || null;
   function applyTier() { if (!Q) return; const p = Q.params(); Object.assign(LOD, { tier: Q.tier(), nearFar: p.nearFar, farCanopy: p.farCanopy, fadeOut: p.fadeOut, density: p.density, canopyDetail: p.canopyDetail }); lastKey = ''; }
   if (Q) { applyTier(); Q.onChange(applyTier); }
-  const LOD_GLSL = 'varying vec2 vLodWin;\nfloat lodBayer(vec2 fc) { ivec2 p = ivec2(fc) & ivec2(7); int a = p.x ^ p.y; return (float(((a & 1) << 5) | ((p.y & 1) << 4) | ((a & 2) << 2) | ((p.y & 2) << 1) | ((a & 4) >> 1) | ((p.y & 4) >> 2)) + 0.5) / 64.0; }';
-  function lodDither(shader) {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aWin;\nvarying vec2 vLodWin;').replace('void main() {', 'void main() {\n\tvLodWin = aWin;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + LOD_GLSL).replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n\t{ float lodT = lodBayer(gl_FragCoord.xy); if (lodT < vLodWin.x || lodT >= vLodWin.y) discard; }');
-  }
-  // the land cover's own copies of the section's materials (the W4 section keeps its materials as they are): the material's own shader edit, then the dither
-  const ditherCopy = (base, name) => { const m = base.clone(), own = base._bendUserCompile; m.onBeforeCompile = function (shader, renderer) { if (own) own.call(base, shader, renderer); lodDither(shader); }; m.customProgramCacheKey = () => 'bend|lod|' + name; return m; };
   // a geometry of its own (the kit's attributes shared) with the per-instance window: the section's instanced meshes use the same kit geometries
   const lodGeometry = (geo, cap) => { const g = new THREE.BufferGeometry(); for (const [k, a] of Object.entries(geo.attributes)) g.setAttribute(k, a); if (geo.index) g.setIndex(geo.index); for (const gr of geo.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
     if (!geo.boundingSphere) geo.computeBoundingSphere(); g.boundingSphere = geo.boundingSphere.clone(); g.setAttribute('aWin', new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2).setUsage(THREE.DynamicDrawUsage)); return g; };

@@ -1,8 +1,8 @@
 // RD02 bridges and the RD01 tunnel (W5): pure data (no THREE, no DOM), driven by world.js and the ground height function it is given.
 // build(W, ids) sweeps one bridge (a chain of consecutive RD02 edges) as a box girder along the great-circle centre line: deck top, two side
-// faces, two chamfers and the underside as separate strips (each with its own computed normals), concrete parapets, lamps, expansion joints,
+// faces, two chamfers and the underside as separate strips (each with its own computed normals), concrete parapets, expansion joints,
 // twin-column piers with caps, waterline feet and seabed footings (all along the local radial), navigation lights and, at J-LM08, the low
-// cable-stayed tower with its white stays. Every width and height below comes from the RD02 card and W5_SPEC; the plan comes from world.js.
+// cable-stayed tower with its white stays (the deck's lamps: streetlights.js). Every width and height below comes from the RD02 card and W5_SPEC; the plan comes from world.js.
 // Geometry is stored in flat Mercator coordinates (see docs/world/W3_SPEC.md section 2): positions already carry the 1/cos(lat) factor and
 // instance records give the altitude directly (section.js / roads.js scale them).
 (function (global) {
@@ -15,7 +15,7 @@ const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a
 
 const COL = { top: '#3a4152', asphalt: '#2f3645', asphaltL: '#3a4152', line: '#c9cfc4', concreteL: '#8a8f99', concrete: '#7c828c', concreteD: '#5f6672', stain: '#4a525e' };
 // deck cross-section: width 10 m (card), girder 1.55 m deep; lane layout as RD01 (7 m carriageway, 1 m shoulders), 0.5 m concrete kerb outside
-const DECK = { half: 5.0, girder: 1.55, side: 0.95, slope: 0.148, base: 4.2, hump: 1.8, humpHalf: 20, pierEvery: 11, lampEvery: 16, jointEvery: 12, towerAbove: 13.5, towerLegO: 5.9 };
+const DECK = { half: 5.0, girder: 1.55, side: 0.95, slope: 0.148, base: 4.2, hump: 1.8, humpHalf: 20, pierEvery: 11, jointEvery: 12, towerAbove: 13.5, towerLegO: 5.9 };
 const TOP = [[0.075, 0.046, 'dash'], [0.1, 0.045, 'asphalt'], [3.12, 0.03, 'asphalt'], [3.18, 0.032, 'line'], [3.3, 0.032, 'line'], [3.36, 0.03, 'asphalt'], [3.5, 0.025, 'asphalt'], [4.5, 0.015, 'asphaltL'], [4.6, 0.01, 'concreteL'], [5.0, 0.01, 'concreteL']];
 // W8f-a: the deck's top also has a column at every offset where an RD01 approach has one (0.3 ... 4.8 m; lift and colour interpolated, the look is unchanged), so that
 // the road's last cross-section and the deck's first one share every vertex (no T-junction, no hairline crack on the sphere)
@@ -60,12 +60,11 @@ function build(W, ids, o = {}) {
   for (let i = 0; i < n; i++) cf[i] = R / (R + (A[i] - BASE));
   const accessS = o.access ? (o.access.atJoint !== undefined ? joints[o.access.atJoint] : o.access.s) : null;
   const topCols = [...TOPCOLS, ...(o.jointColumns || []).filter(x => Math.abs(x) <= DECK.half + 1e-9).map(topAt)].sort((a, b) => a[0] - b[0]).filter((q, i, a) => !i || Math.abs(q[0] - a[i - 1][0]) > 1e-6);
-  const out = { ids, samples: S, turns: o.turns || [], alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], lamps: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: topCols.map(q => q[0]) };
+  const out = { ids, samples: S, turns: o.turns || [], alt: A, length: L, joints, strips: [], instances: {}, lines: {}, pylon: null, piers: [], navLights: [], flatOf: F, tangent: T, lateral, bearing: brg, topCols: topCols.map(q => q[0]) };
   const add = (type, i, oo, alt, extra = {}) => { const [lo, la] = lateral(i, oo); (out.instances[type] = out.instances[type] || []).push({ type, lon: lo, lat: la, alt, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: extra.tint || [1, 1, 1] }); return out.instances[type][out.instances[type].length - 1]; };
   const yawAlong = i => Math.atan2(-T[i][1], T[i][0]);              // local +x along the road
   const yawAcross = i => Math.atan2(T[i][0], T[i][1]);              // local +z along the road, +x across it (piers, caps, tower)
   const pitchAt = i => { const a = Math.max(0, i - 2), c = Math.min(n - 1, i + 2); return Math.atan((A[c] - A[a]) / Math.max(1e-6, S[c].s - S[a].s)); };   // the deck rises up to 14 %: rigid barrier pieces follow it
-  const yawToward = (dx, dz) => Math.atan2(-dz, dx);
   const rightOf = i => [-T[i][1], T[i][0]];
 
   // ---- girder strips. cols: [offset, dy, colour]; outward: [lateral, vertical] direction the face looks
@@ -98,21 +97,13 @@ function build(W, ids, o = {}) {
   strip('chamfer-right', [[DECK.half, -sd, 'concrete'], [3.2, -gd, 'concreteD']], [0.35, -0.94], { stain: true });
   strip('under', [[-3.2, -gd, 'concreteD'], [3.2, -gd, 'concreteD']], [0, -1], { stain: true });
 
-  // ---- parapets (concrete barrier pieces on both kerbs), lamps (alternating sides every 16 m), expansion joints
+  // ---- parapets (concrete barrier pieces on both kerbs), expansion joints
   // W8f-a: round(L / 2) pieces at exact stations, each stretched to L / round(L / 2) (1.9-2.1 m), so that the parapet is flush with both abutments and meets the road's barriers
   const jointSeg = [], nBar = Math.max(1, Math.round(L / 2)), bSp = L / nBar;
   const atS = s => { let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return { i, t: Math.max(0, Math.min(1, (s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s))) }; };
   const addS = (type, s, oo, dy, extra) => { const { i, t } = atS(s), a = lateral(i, oo), b = lateral(i + 1, oo), lon = a[0] + ((((b[0] - a[0]) % 360) + 540) % 360 - 180) * t;
     (out.instances[type] = out.instances[type] || []).push({ type, lon, lat: a[1] + (b[1] - a[1]) * t, alt: A[i] + (A[i + 1] - A[i]) * t + dy, yaw: extra.yaw || 0, s: extra.s || [1, 1, 1], lean: extra.lean || [0, 0], tint: [1, 1, 1], station: s }); };
   for (let kb = 0; kb < nBar; kb++) { const s = (kb + 0.5) * bSp, i = atS(s).i; for (const side of [-1, 1]) if (!(o.access && side === -1 && s > accessS - 1.2 && s < accessS + 2.4)) addS('barrierConcrete', s, side * 4.85, 0.01, { yaw: yawAlong(i), lean: [0, pitchAt(i)], s: [bSp / 2, 1, 1] }); }
-  let lampN = 0;
-  for (let s = DECK.lampEvery / 2; s < L; s += DECK.lampEvery) {
-    const i = Math.min(n - 1, Math.round(s / 0.5)), side = lampN++ % 2 ? 1 : -1, r = rightOf(i);
-    if (pylonS !== null && Math.abs(S[i].s - pylonS) < 2) continue;
-    const it = add('lamp', i, side * 4.4, A[i] + 0.01, { yaw: yawToward(-side * r[0], -side * r[1]) }); it.s = [0.85, 0.85, 0.85];
-    out.lamps.push({ i, s: S[i].s, side });
-    add('lampPool', i, side * 1.2, A[i] + 0.03, { yaw: yawAlong(i), lean: [0, pitchAt(i)] });      // W8f-a: tilted with the deck (14.8 % at the ends), not cut by it
-  }
   for (let s = DECK.jointEvery; s < L - 3; s += DECK.jointEvery) {
     const i = Math.min(n - 1), ii = Math.round(s / 0.5), [la, lb] = [lateral(ii, -DECK.half + 0.2), lateral(ii, DECK.half - 0.2)];
     jointSeg.push([{ lon: la[0], lat: la[1], alt: A[ii] + 0.06 }, { lon: lb[0], lat: lb[1], alt: A[ii] + 0.06 }]); void i;
