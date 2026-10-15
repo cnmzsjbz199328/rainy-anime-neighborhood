@@ -12,6 +12,8 @@
 
 ## 2. 两条轨道与状态表
 
+W10c 当前返工（2026-10-15）：用户学校旁红框实际为西北 CR01/RN05 浅角接入，已确认固定局部裁切遗漏后段交叠、描边未同步裁切；按 [根因与执行计划](docs/world/CR01_NW_REPAIR_PLAN.md) 已实施（全环真实网格求交与归属、闭环焊接、描边/设施同步，见 PROGRESS「W10c 西北 CR01/RN05 浅角接入返工 实施」），机器检查通过，复核图在 `docs/world/w10c/nw-road-review/`，待用户视觉确认。确认前不启动 W10d。
+
 - **W 轨道**：星球。指令入口 [docs/world/WORLD_AGENT_START.md](docs/world/WORLD_AGENT_START.md)。
 - **S 轨道**：三栋旧样板升级。指令入口 [docs/buildings/SAMPLE_UPGRADE_AGENT_START.md](docs/buildings/SAMPLE_UPGRADE_AGENT_START.md)，细节见 [SAMPLE_UPGRADE_PLAN.md](docs/buildings/SAMPLE_UPGRADE_PLAN.md)。
 

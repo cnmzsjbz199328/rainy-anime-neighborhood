@@ -32,7 +32,7 @@ const junctions = await page.evaluate(() => {
 if (junctions.length !== 10) throw new Error(`Expected ten CR01 junctions, received ${junctions.length}`);
 const frames = [];
 for (const j of junctions) {
-  const pass = j.paving === 'continuous-asphalt' && j.separateFaces === 0 && j.cuts.length === j.routes.filter(id => id !== 'CR01').length + j.arms.filter(a => a.routeId !== 'CR01').length && j.cuts.every(c => c.clippedTriangles > 0 || c.removedArea === 0);
+  const pass = j.paving === 'continuous-asphalt' && j.separateFaces === 0 && j.routes.filter(id => id !== 'CR01').every(id => j.cuts.some(c => c.routeId === id)) && j.cuts.every(c => c.clippedTriangles > 0 || c.removedArea === 0);      // CR01 merge: one cut record per road cut near the node
   for (const view of [{ name: 'top', dist: 24, pitch: 1.52 }, { name: 'close', dist: 14, pitch: 0.88 }]) {
     const file = `${j.node}-${view.name}.png`;
     if (renderImages) {

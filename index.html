@@ -4917,13 +4917,16 @@ function clipToConvex(poly, clip, keepInside = true) {
 }
 function polyArea(poly) { return poly.length < 3 ? 0 : Math.abs(poly.reduce((s, p, i) => { const q = poly[(i + 1) % poly.length], py = p.length > 2 ? p[2] : p[1], qy = q.length > 2 ? q[2] : q[1]; return s + p[0] * qy - q[0] * py; }, 0)) / 2; }
 function clipStripOutside(st, polygon, shouldClip = () => true) {
-  const pos = Array.from(st.pos), col = Array.from(st.col), indices = [], original = st.index, bb = {
+  // the cut vertices are appended (the strip's own arrays are copied once, only if a triangle is cut); they interpolate the lateral attributes of the
+  // CR01 merge too (each vertex's column offset and its row's paved range)
+  const nv0 = st.vertexCount, xPos = [], xCol = [], xOff = [], xPaved = [], indices = [], original = st.index, bb = {
     minX: Math.min(...polygon.map(p => p[0])), maxX: Math.max(...polygon.map(p => p[0])),
     minZ: Math.min(...polygon.map(p => p[1])), maxZ: Math.max(...polygon.map(p => p[1])),
   }, sign = area2(polygon) >= 0 ? 1 : -1;
-  const offsets = st.clipOffset ? Array.from(st.clipOffset) : null;
-  const read = k => [st.pos[k * 3], st.pos[k * 3 + 1], st.pos[k * 3 + 2], st.col[k * 3], st.col[k * 3 + 1], st.col[k * 3 + 2], offsets ? offsets[k] : 0],
-    add = v => { const i = pos.length / 3; pos.push(v[0], v[1], v[2]); col.push(v[3], v[4], v[5]); if (offsets) offsets.push(v[6]); return i; };
+  const offsets = st.clipOffset || null, pavedAt = st.clipPaved || null;
+  const read = k => [st.pos[k * 3], st.pos[k * 3 + 1], st.pos[k * 3 + 2], st.col[k * 3], st.col[k * 3 + 1], st.col[k * 3 + 2], offsets ? offsets[k] : 0, pavedAt ? pavedAt[k * 2] : 0, pavedAt ? pavedAt[k * 2 + 1] : 0],
+    add = v => { const i = nv0 + xPos.length / 3; xPos.push(v[0], v[1], v[2]); xCol.push(v[3], v[4], v[5]); xOff.push(v[6]); xPaved.push(v[7], v[8]); return i; },
+    px = (i, c) => xPos[(i - nv0) * 3 + c];
   let removedArea = 0, clippedTriangles = 0, removedTriangles = 0;
   for (let t = 0; t < original.length; t += 3) {
     const ids = [original[t], original[t + 1], original[t + 2]], p0 = ids[0] * 3, p1 = ids[1] * 3, p2 = ids[2] * 3,
@@ -4946,24 +4949,29 @@ function clipStripOutside(st, polygon, shouldClip = () => true) {
       candidates = next;
     }
     for (const p of outside) { const base = p.map(add); for (let k = 1; k + 1 < base.length; k++) {
-      const a = base[0], b = base[k], c = base[k + 1], ax = Math.fround(pos[a * 3]), az = Math.fround(pos[a * 3 + 2]), bx = Math.fround(pos[b * 3]), bz = Math.fround(pos[b * 3 + 2]), cx = Math.fround(pos[c * 3]), cz = Math.fround(pos[c * 3 + 2]), area2 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+      const a = base[0], b = base[k], c = base[k + 1], ax = Math.fround(px(a, 0)), az = Math.fround(px(a, 2)), bx = Math.fround(px(b, 0)), bz = Math.fround(px(b, 2)), cx = Math.fround(px(c, 0)), cz = Math.fround(px(c, 2)), area2 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
       if (Math.abs(area2) > 1e-7) indices.push(a, b, c);
     } }
   }
-  st.pos = Float32Array.from(pos); st.col = Float32Array.from(col); st.index = Uint32Array.from(indices); st.vertexCount = st.pos.length / 3;
-  if (offsets) st.clipOffset = Float32Array.from(offsets);
+  if (clippedTriangles) {
+    const grow = (arr, extra) => { const out = new Float32Array(arr.length + extra.length); out.set(arr); out.set(extra, arr.length); return out; };
+    st.pos = grow(st.pos, xPos); st.col = grow(st.col, xCol); if (offsets) st.clipOffset = grow(offsets, xOff); if (pavedAt) st.clipPaved = grow(pavedAt, xPaved);
+    st.index = Uint32Array.from(indices); st.vertexCount = st.pos.length / 3;
+  }
   return { clippedTriangles, removedTriangles, removedArea, before: original.length / 3, after: indices.length / 3 };
 }
 const INSTANCE_CLEARANCE = { weed: 0.8, tuft: 0.8, lampSmall: 1.0, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1.0, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
-function clearJunctionInstances(rt, junctions, ring) {
-  const removed = [];
+// The furniture and plants of the other roads keep out of the CR01 junction outlines and of the ring's carriageway (+- the item's clearance) wherever
+// along the ring they stand (W10c CR01 NW repair: RN05 runs beside the ring for some 25 m, beyond any window round its node); a removal is booked to the
+// junction nearest along the ring.
+function clearJunctionInstances(rt, junctions, ring, ringAt) {
+  const removed = [], nodeS = junctions.map(j => ({ node: j.node, s: j.arms.find(q => q.routeId === 'CR01').nodeS }));
+  const nearestNode = s => nodeS.map(q => { const d = Math.abs(q.s - s); return { node: q.node, d: Math.min(d, ring.length - d) }; }).sort((a, b) => a.d - b.d)[0].node;
   const ringConflict = (p, radius) => {
-    if (!ring || rt.def.id === 'CR01' || !junctions.some(j => polygonDistance(p, j.polygon) <= 18)) return null;
-    const lon = p[0] / (R * D), lat = Math.atan(Math.sinh(-p[1] / R)) / D, pr = project(ring, lon, lat); if (!pr) return null;
-    const nearest = junctions.map(j => { const a = j.arms.filter(q => q.routeId === 'CR01').reduce((best, q) => Math.abs(q.nodeS - pr.s) < best.d ? { d: Math.abs(q.nodeS - pr.s), s: q.nodeS } : best, { d: Infinity, s: 0 }), delta = Math.abs(a.s - pr.s); return { node: j.node, d: Math.min(delta, Math.max(0, ring.length - delta)), s: a.s }; }).sort((a, b) => a.d - b.d)[0];
-    if (!nearest || nearest.d > 18) return null;
+    if (rt === ring) return null;
+    const pr = ringAt(p[0], p[1]); if (!pr) return null;
     const q = atS(ring, pr.s), bounds = ring.carriageway[q.i].map((v, side) => v + (ring.carriageway[q.i + 1][side] - v) * q.t);
-    return pr.o >= bounds[0] - radius && pr.o <= bounds[1] + radius ? nearest.node : null;
+    return pr.o >= bounds[0] - radius && pr.o <= bounds[1] + radius ? nearestNode(pr.s) : null;
   };
   for (const [type, list] of Object.entries(rt.instances || {})) {
     const radius = INSTANCE_CLEARANCE[type] ?? 0.6, keep = [];
@@ -4976,65 +4984,312 @@ function clearJunctionInstances(rt, junctions, ring) {
   }
   return removed;
 }
-function prepareCr01Junctions(W, routes, RK) {
-  const byId = Object.fromEntries(routes.map(rt => [rt.def.id, rt])), plans = CR01_JUNCTIONS.map(j => cr01JunctionPlan(W, j, byId, RK)), ring = byId.CR01;
-  ring.strip.clipOffset = Float32Array.from({ length: ring.strip.vertexCount }, (_, id) => ring.grid[id % ring.grid.length]);
-  const flat = ([lon, lat]) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];
-  // Join each incoming cross-section to the unchanged CR01 asphalt at its edge. This also
-  // brings a ditch or verge up to the mouth instead of leaving a vertical cut at the edge.
-  const gradeToRing = (rt, nodeS, armS) => {
-    const m = rt.grid.length, st = rt.strip;
-    for (let i = 0; i < rt.samples.length; i++) if (Math.abs(rt.samples[i].s - armS) <= 8) for (let k = 0; k < m; k++) {
-      const v = i * m + k, x = st.pos[v * 3], z = st.pos[v * 3 + 2], lon = x / (R * D), lat = Math.atan(Math.sinh(-z / R)) / D,
-        pr = project(ring, lon, lat, nodeS);
-      if (!pr || pr.d2 > 100 || Math.abs(pr.s - nodeS) > 12) continue;
-      const edge = Math.max(-2.25, Math.min(2.75, pr.o)), outside = Math.abs(pr.o - edge);
-      if (outside >= 2) continue;
-      const weight = 1 - smooth(0, 2, outside), target = surfS(ring, pr.s, edge), h = rt.colAlt[v] + (target - rt.colAlt[v]) * weight;
-      rt.colAlt[v] = h; st.pos[v * 3 + 1] = (h - BASE) / Math.cos(lat * D);
-    }
+
+// ---- W10c CR01 merge (docs/world/CR01_NW_REPAIR_PLAN.md). Every road strip that meets the closed ring is cut against the ring's own swept mesh,
+// round the whole ring and over the whole branch (no range along either): the CR01 paving (its asphalt from -2.25 m outside to 2.75 m inside, the
+// inner shoulder included) belongs to CR01; any other point where two strips overlap belongs to the road whose own paving is nearer (CR01 on a tie),
+// so a branch's paving and its verges push the ring's gravel, ditch and grass aside and the ring's verges push a branch's aside. A branch keeps its
+// cross-section up to that line and takes the ring's surface on it: no step, no gap, the ground under both stays cut by both footprints.
+// Convex pieces in the flat plane: a vertex is [x, y, z, r, g, b, column offset, paved left, paved right] (the offsets in true metres); a region is a
+// list of functions of a vertex, each >= 0 inside it (an edge's signed distance or an affine field of the offsets).
+const area2XZ = p => { let a = 0; for (let i = 0; i < p.length; i++) { const u = p[i], w = p[(i + 1) % p.length]; a += u[0] * w[2] - w[0] * u[2]; } return a; };
+const boxXZ = p => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const v of p) { if (v[0] < x0) x0 = v[0]; if (v[0] > x1) x1 = v[0]; if (v[2] < z0) z0 = v[2]; if (v[2] > z1) z1 = v[2]; } return [x0, x1, z0, z1]; };
+// the part of a convex polygon where fn * sign >= 0; a cut vertex interpolates every attribute (fn is affine, so the cut lies exactly on its zero line)
+function clipBy(poly, fn, sign) {
+  const out = []; if (!poly.length) return out;
+  let prev = poly[poly.length - 1], vp = fn(prev) * sign;
+  for (const cur of poly) {
+    const vc = fn(cur) * sign;
+    if ((vc >= 0) !== (vp >= 0)) { const t = vp / (vp - vc), q = prev.map((v, k) => v + (cur[k] - v) * t); if (!out.length || Math.hypot(q[0] - out[out.length - 1][0], q[2] - out[out.length - 1][2]) > 1e-12) out.push(q); }
+    if (vc >= 0 && (!out.length || out[out.length - 1] !== cur)) out.push(cur);
+    prev = cur; vp = vc;
+  }
+  return out;
+}
+const regionPart = (poly, fns) => { let q = poly; for (const g of fns) { q = clipBy(q, g, 1); if (q.length < 3) return []; } return q; };
+// a convex polygon less a convex region: the pieces outside each of the region's half-planes in turn (all convex); untouched if they do not meet
+function subtractRegion(poly, fns) {
+  const out = []; let cur = poly;
+  for (const g of fns) {
+    const outside = clipBy(cur, g, -1); if (outside.length >= 3 && Math.abs(area2XZ(outside)) > 2e-12) out.push(outside);
+    cur = clipBy(cur, g, 1); if (cur.length < 3 || Math.abs(area2XZ(cur)) <= 2e-12) return [poly];
+  }
+  return out;
+}
+const edgeFn = (a, b, s) => { const dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1; return v => s * (dx * (v[2] - a[2]) - dz * (v[0] - a[0])) / l; };
+const sidesOf = poly => { const s = area2XZ(poly) >= 0 ? 1 : -1; return poly.map((a, i) => edgeFn(a, poly[(i + 1) % poly.length], s)); };
+// the affine field over a triangle that takes the value val(v) at its three corners
+function affineXZ(tri, val) {
+  const [p, q, r] = tri, v0 = val(p), x1 = q[0] - p[0], z1 = q[2] - p[2], x2 = r[0] - p[0], z2 = r[2] - p[2], d1 = val(q) - v0, d2 = val(r) - v0, den = x1 * z2 - x2 * z1;
+  const a = (d1 * z2 - d2 * z1) / den, b = (x1 * d2 - x2 * d1) / den;
+  return v => v0 + a * (v[0] - p[0]) + b * (v[2] - p[2]);
+}
+const vertexOf = (st, k) => [st.pos[k * 3], st.pos[k * 3 + 1], st.pos[k * 3 + 2], st.col[k * 3], st.col[k * 3 + 1], st.col[k * 3 + 2], st.clipOffset[k], st.clipPaved[k * 2], st.clipPaved[k * 2 + 1]];
+// a uniform 1 m grid over items with a box [x0, x1, z0, z1]
+function boxGrid(items) {
+  const cells = new Map(), key = (a, b) => a * 1048576 + b;
+  items.forEach((it, id) => { for (let a = Math.floor(it.box[0]); a <= Math.floor(it.box[1]); a++) for (let b = Math.floor(it.box[2]); b <= Math.floor(it.box[3]); b++) { const k = key(a, b); let l = cells.get(k); if (!l) cells.set(k, l = []); l.push(id); } });
+  return {
+    query(box) { const seen = new Set(), out = []; for (let a = Math.floor(box[0]); a <= Math.floor(box[1]); a++) for (let b = Math.floor(box[2]); b <= Math.floor(box[3]); b++) for (const id of cells.get(key(a, b)) || []) {
+      if (seen.has(id)) continue; seen.add(id); const it = items[id]; if (it.box[1] >= box[0] && it.box[0] <= box[1] && it.box[3] >= box[2] && it.box[2] <= box[3]) out.push(it); } return out; },
+    at(x, z) { return (cells.get(key(Math.floor(x), Math.floor(z))) || []).map(id => items[id]); },
+    any(box) { for (let a = Math.floor(box[0]); a <= Math.floor(box[1]); a++) for (let b = Math.floor(box[2]); b <= Math.floor(box[3]); b++) if (cells.has(key(a, b))) return true; return false; },
   };
-  const corridor = (rt, s0, s1, half) => {
-    const corners = [];
-    const limits = Array.isArray(half) ? half : [-half, half];
-    for (let s = s0; s <= s1 + 1e-6; s += 0.5) for (const offset of limits) corners.push(flat(latS(rt, Math.min(s, s1), offset)));
-    for (const offset of limits) corners.push(flat(latS(rt, s1, offset)));
-    return convexHull(corners);
-  };
-  const draw = plans.map(jp => {
-    const ringS = jp.arms.find(a => a.routeId === 'CR01').nodeS,
-      reach = Math.max(...jp.arms.filter(a => a.routeId !== 'CR01').map(a => byId[a.routeId].grid.at(-1) - byId[a.routeId].grid[0])) / 2 + 2,
-      band = corridor(ring, Math.max(0, ringS - reach), Math.min(ring.length, ringS + reach), [-2.25, 2.75]);
-    return { kind: 'CR01', node: jp.node, paving: 'continuous-asphalt', polygon: jp.polygon, bounds: jp.bounds, area: jp.area,
-      edges: jp.edgeIds, routes: jp.routes, arms: jp.arms, ringBand: band, strip: { index: new Uint32Array(0) },
-      coverage: 1, ink: [], cuts: [], mouths: [], removedInstances: [] };
-  });
-  for (const jp of plans) {
-    const j = draw.find(q => q.node === jp.node);
-    const ringS = jp.arms.find(a => a.routeId === 'CR01').nodeS;
-    for (const routeId of jp.routes.filter(id => id !== 'CR01')) gradeToRing(byId[routeId], ringS, jp.arms.find(a => a.routeId === routeId).nodeS);
-    for (const routeId of jp.routes.filter(id => id !== 'CR01')) {
-      const rt = byId[routeId], clipped = clipStripOutside(rt.strip, j.ringBand);
-      j.cuts.push({ routeId, part: 'ring asphalt', ...clipped });
+}
+// the height of the strip triangles of a boxGrid at (x, z): the triangle that contains it best (stored corners are Float32, a cut point float64: a point
+// on a corner or an edge may lie a few micrometres outside every triangle), its weights clamped; null more than 1 cm outside them all
+function surfaceY(index, x, z) {
+  let best = null;
+  for (const q of index.at(x, z)) {
+    const [a, b, c] = q.tri, den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]); if (Math.abs(den) < 1e-14) continue;
+    const w0 = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / den, w1 = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / den, w = [w0, w1, 1 - w0 - w1], low = Math.min(...w);
+    if (!best || low > best.low) best = { low, w, q };
+  }
+  if (!best) return null;
+  const { w, q } = best, [a, b, c] = q.tri, e = Math.max(Math.hypot(a[0] - b[0], a[2] - b[2]), Math.hypot(b[0] - c[0], b[2] - c[2]), Math.hypot(c[0] - a[0], c[2] - a[2]));
+  if (best.low * e < -0.01) return null;
+  const k = w.map(v => Math.max(0, v)), sum = k[0] + k[1] + k[2];
+  return (k[0] * a[1] + k[1] * b[1] + k[2] * c[1]) / sum;
+}
+// a route's centre line as a spatial index: station and lateral offset (true metres, + right of travel) of a flat point within `reach` (flat metres) of
+// it, the arithmetic of project() over the whole route (no station hint, no window; across the start of a closed ring as anywhere else)
+function routeFrame(rt, reach) {
+  const F = rt.flatOf, S = rt.samples, n = S.length, C = 2, cells = new Map(), key = (a, b) => a * 1048576 + b;
+  for (let i = 0; i + 1 < n; i++) for (let a = Math.floor((Math.min(F[i].x, F[i + 1].x) - reach) / C); a <= Math.floor((Math.max(F[i].x, F[i + 1].x) + reach) / C); a++)
+    for (let b = Math.floor((Math.min(F[i].z, F[i + 1].z) - reach) / C); b <= Math.floor((Math.max(F[i].z, F[i + 1].z) + reach) / C); b++) { const k = key(a, b); let l = cells.get(k); if (!l) cells.set(k, l = []); l.push(i); }
+  return (x, z) => {
+    let best = null;
+    for (const i of cells.get(key(Math.floor(x / C), Math.floor(z / C))) || []) {
+      const ax = F[i].x, az = F[i].z, dx = F[i + 1].x - ax, dz = F[i + 1].z - az, l2 = dx * dx + dz * dz || 1e-12, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)), qx = ax + dx * t, qz = az + dz * t, d2 = (x - qx) ** 2 + (z - qz) ** 2;
+      if (!best || d2 < best.d2) { const k = F[i].k, Tx = rt.tangent[i][0] + (rt.tangent[i + 1][0] - rt.tangent[i][0]) * t, Tz = rt.tangent[i][1] + (rt.tangent[i + 1][1] - rt.tangent[i][1]) * t, side = ((x - qx) * -Tz + (z - qz) * Tx) >= 0 ? 1 : -1;
+        best = { d2, s: S[i].s + (S[i + 1].s - S[i].s) * t, o: side * Math.sqrt(d2) / k / (rt.cf[i] + (rt.cf[i + 1] - rt.cf[i]) * t), i, t }; }
     }
-    for (const arm of jp.arms.filter(a => a.routeId !== 'CR01')) {
-      const rt = byId[arm.routeId],
-        s1 = Math.max(0, Math.min(rt.length, arm.nodeS + arm.dir * 5)),
-        widths = rt.samples.flatMap((p, i) => (p.s - arm.nodeS) * arm.dir >= -1e-6 && (p.s - arm.nodeS) * arm.dir <= 5 + 1e-6 ? [Math.min(-rt.paved[i][0], rt.paved[i][1])] : []),
-        mouthHalf = Math.min(arm.half, ...widths), mouth = corridor(rt, Math.min(arm.nodeS, s1), Math.max(arm.nodeS, s1), mouthHalf);
-      j.mouths.push({ edgeId: arm.edgeId, polygon: mouth });
-      const clipped = clipStripOutside(ring.strip, mouth, (ids, tri) => {
-        const offsets = tri.map(v => v[6]);
-        return offsets.every(o => o <= -2.25 + 1e-6) || offsets.every(o => o >= 2.75 - 1e-6);
-      });
-      j.cuts.push({ routeId: 'CR01', edgeId: arm.edgeId, part: 'outer section', ...clipped });
+    return best && best.d2 <= reach * reach ? best : null;
+  };
+}
+// The closed ring's two end rows, both at C01-NW, become one cross-section: the last takes the first's (the straight's direction, the arc's true tangent
+// at that tangent point) instead of the chord of the arc's last 0.5 m, which turned it by about 2 deg and left a wedge open outside the centre line (to
+// 0.19 m at the verge's edge) and a doubled one inside. Only the last row moves; the centre line, the nodes and the widths stay.
+function weldClosure(rt) {
+  const n = rt.samples.length, m = rt.grid.length, st = rt.strip, P = st.pos, a = rt.flatOf[0], b = rt.flatOf[n - 1], gap = Math.hypot(a.x - b.x, a.z - b.z);
+  if (gap > 1e-6) throw new Error(`${rt.def.id}: the end rows are ${gap} m apart, not a closed route`);
+  const T0 = rt.tangent[0], T1 = rt.tangent[n - 1], angle = Math.asin(Math.max(-1, Math.min(1, T1[0] * T0[1] - T1[1] * T0[0]))) / D; let shift = 0;
+  for (let j = 0; j < m; j++) {
+    const p = j * 3, q = ((n - 1) * m + j) * 3; shift = Math.max(shift, Math.hypot(P[p] - P[q], P[p + 2] - P[q + 2]));
+    for (let c = 0; c < 3; c++) { P[q + c] = P[p + c]; st.col[q + c] = st.col[p + c]; }
+    rt.colAlt[(n - 1) * m + j] = rt.colAlt[j];
+  }
+  rt.tangent[n - 1] = rt.tangent[0].slice(); rt.brg[n - 1] = rt.brg[0];
+  for (const k of ['edgeL', 'edgeR']) rt.lines[k][n - 1] = { ...rt.lines[k][0] };
+  return { angle: +angle.toFixed(4), shift: +shift.toFixed(4) };
+}
+// Part 1, before the town's own cuts: the closure, the lateral attributes of every vertex (its column offset and its row's paved range, kept through
+// every later cut) and the ramp: every vertex of another road within 2 m of the ring's paving (measured across the ring, wherever along it) moves toward
+// the ring's surface at the paving's edge, fully on the paving and fading to nothing 2 m out, so the ditch or verge of a branch comes up to the ring.
+function prepareCr01(W, routes, RK) {
+  const t0 = Date.now(), byId = Object.fromEntries(routes.map(rt => [rt.def.id, rt])), ring = byId.CR01;
+  if (ring.classes.some(c => c !== 'RD03')) throw new Error('CR01 is expected to be RD03 all round');
+  const paved = [RK.PROFILES.RD03.paved[0], ring.def.opts.innerShoulderAsphalt ? RK.PROFILES.RD03.foot.sh[1] : RK.PROFILES.RD03.paved[1]], weld = weldClosure(ring);
+  for (const rt of routes) {
+    const st = rt.strip, m = rt.grid.length;
+    if (st.vertexCount !== rt.samples.length * m) throw new Error(`${rt.def.id}: the strip was cut before the CR01 merge`);
+    st.clipOffset = Float32Array.from({ length: st.vertexCount }, (_, v) => rt.grid[v % m]);
+    st.clipPaved = new Float32Array(st.vertexCount * 2);
+    for (let v = 0; v < st.vertexCount; v++) { const pv = rt === ring ? paved : rt.paved[Math.floor(v / m)]; st.clipPaved[v * 2] = pv[0]; st.clipPaved[v * 2 + 1] = pv[1]; }
+  }
+  const ringAt = routeFrame(ring, 8); let graded = 0;
+  for (const rt of routes) if (rt !== ring) {
+    const st = rt.strip, P = st.pos;
+    for (let v = 0; v < st.vertexCount; v++) {
+      const x = P[v * 3], z = P[v * 3 + 2], pr = ringAt(x, z); if (!pr) continue;
+      const edge = Math.max(paved[0], Math.min(paved[1], pr.o)), outside = Math.abs(pr.o - edge); if (outside >= 2) continue;
+      const lat = Math.atan(Math.sinh(-z / R)) / D, weight = 1 - smooth(0, 2, outside), target = surfS(ring, pr.s, edge), h = rt.colAlt[v] + (target - rt.colAlt[v]) * weight;
+      rt.colAlt[v] = h; P[v * 3 + 1] = (h - BASE) / Math.cos(lat * D); graded++;
     }
   }
+  return { ring, byId, paved, weld, ringAt, graded, ms: Date.now() - t0 };
+}
+// Part 2, after the town's own cuts: the ownership cut, the ink, the furniture and plants, the junction records. A generator: the start-up pipeline
+// (worldgen.js) gets the main thread back between the branches, the ring and the rest.
+function* mergeCr01(W, routes, prep, RK) {
+  const t0 = Date.now(), { ring, byId, paved: PV, ringAt } = prep, n = ring.samples.length, m = ring.grid.length, rs = ring.strip, AREA = 2e-10;
+  const plans = CR01_JUNCTIONS.map(j => cr01JunctionPlan(W, j, byId, RK)), flat = p => [R * p.lon * D, -R * Math.asinh(Math.tan(p.lat * D))];
+  const draw = plans.map(jp => ({ kind: 'CR01', node: jp.node, paving: 'continuous-asphalt', polygon: jp.polygon, bounds: jp.bounds, area: jp.area,
+    edges: jp.edgeIds, routes: jp.routes, arms: jp.arms, strip: { index: new Uint32Array(0) }, coverage: 1, ink: [], cuts: [], removedInstances: [] }));
+  const nodeXZ = draw.map(j => flat(W.roadNetwork.nodeById[j.node]));
+  const book = (routeId, poly, area, whole) => {
+    const c = poly.reduce((s, v) => [s[0] + v[0] / poly.length, s[1] + v[2] / poly.length], [0, 0]), j = draw[nodeXZ.reduce((b, q, k) => Math.hypot(q[0] - c[0], q[1] - c[1]) < Math.hypot(nodeXZ[b][0] - c[0], nodeXZ[b][1] - c[1]) ? k : b, 0)];
+    let q = j.cuts.find(e => e.routeId === routeId); if (!q) j.cuts.push(q = { routeId, part: routeId === 'CR01' ? 'ring verges' : 'section over CR01', clippedTriangles: 0, removedTriangles: 0, removedArea: 0 });
+    q.clippedTriangles++; if (whole) q.removedTriangles++; q.removedArea += area;
+  };
+  // the ring: the paving as one quad per swept row cell (its triangles tile it exactly: the columns of a row lie on one straight line), every other
+  // triangle as a side band with its distance outside the paving (an affine field of the column offsets over the triangle)
+  const jL = ring.grid.indexOf(PV[0]), jR = ring.grid.indexOf(PV[1]); if (jL < 0 || jR < 0) throw new Error('CR01 has no column at its paving edges');
+  const quads = [], sides = [], all = [];
+  for (let i = 0; i + 1 < n; i++) {
+    const q = [vertexOf(rs, i * m + jL), vertexOf(rs, i * m + jR), vertexOf(rs, (i + 1) * m + jR), vertexOf(rs, (i + 1) * m + jL)], s = Math.sign(area2XZ(q));
+    for (let k = 0; k < 4; k++) { const a = q[k], b = q[(k + 1) % 4], c = q[(k + 2) % 4]; if (Math.sign((b[0] - a[0]) * (c[2] - b[2]) - (b[2] - a[2]) * (c[0] - b[0])) !== s) throw new Error(`CR01 paving cell ${i} is not convex`); }
+    quads.push({ poly: q, fns: sidesOf(q), box: boxXZ(q) });
+  }
+  for (let t = 0; t < rs.index.length; t += 3) {
+    const ids = [rs.index[t], rs.index[t + 1], rs.index[t + 2]], tri = ids.map(k => vertexOf(rs, k)), o = tri.map(v => v[6]), it = { ids, tri, box: boxXZ(tri) };
+    all.push(it); if (o.every(v => v >= PV[0] - 1e-6 && v <= PV[1] + 1e-6)) continue;
+    const outer = o.every(v => v <= PV[0] + 1e-6); if (!outer && !o.every(v => v >= PV[1] - 1e-6)) throw new Error('CR01 triangle across a paving edge');
+    sides.push(Object.assign(it, { fns: sidesOf(tri), dr: affineXZ(tri, outer ? v => PV[0] - v[6] : v => v[6] - PV[1]) }));
+  }
+  const quadIndex = boxGrid(quads), sideIndex = boxGrid(sides), allIndex = boxGrid(all), RB = boxXZ(all.flatMap(q => q.tri)), ringY = (x, z) => surfaceY(allIndex, x, z);
+  // the cut of one strip: its triangles less the regions, the fragments fanned out of new vertices (an untouched corner keeps its index)
+  const stats = { ms: 0, prepareMs: prep.ms, parts: {}, weld: prep.weld, graded: prep.graded, triangles: {}, removedArea: {}, unsnapped: 0, tJunctions: 0, ink: {} };
+  // near(box): a cheap first test on a triangle's plan box; only the triangles that pass it are read as vertices and handed to cutOf
+  const rebuild = (rt, near, cutOf) => {
+    const st = rt.strip, P = st.pos, out = [], extra = [], nv0 = st.vertexCount, snapped = new Set(); let changed = false;
+    for (let t = 0; t < st.index.length; t += 3) {
+      const ids = [st.index[t], st.index[t + 1], st.index[t + 2]], a = ids[0] * 3, b = ids[1] * 3, c = ids[2] * 3,
+        box = [Math.min(P[a], P[b], P[c]), Math.max(P[a], P[b], P[c]), Math.min(P[a + 2], P[b + 2], P[c + 2]), Math.max(P[a + 2], P[b + 2], P[c + 2])];
+      if (!near(box, ids)) { out.push(...ids); continue; }
+      const tri = ids.map(k => vertexOf(st, k)), res = cutOf(tri, box);
+      if (!res) { out.push(...ids); continue; }
+      changed = true; book(rt.def.id, tri, res.area, !res.frags.length);
+      const index = new Map(tri.map((v, k) => [v, ids[k]])), idOf = v => { let k = index.get(v); if (k === undefined) { k = nv0 + extra.length; extra.push(v); index.set(v, k); if (res.snapped.has(v)) snapped.add(k); } return k; };
+      for (const fr of res.frags) for (let k = 1; k + 1 < fr.length; k++) {
+        const a = fr[0], b = fr[k], c = fr[k + 1], ax = Math.fround(a[0]), az = Math.fround(a[2]), a2 = (Math.fround(b[0]) - ax) * (Math.fround(c[2]) - az) - (Math.fround(b[2]) - az) * (Math.fround(c[0]) - ax);
+        if (Math.abs(a2) > 1e-7) out.push(idOf(a), idOf(b), idOf(c));
+      }
+    }
+    if (!changed) return;
+    // a corner that took the other road's height must be a corner of every piece whose edge it lies on (the pieces of one cut meet in T-junctions; a
+    // moved corner in the middle of a neighbour's edge would open a crack): such a triangle is refanned round its centre with that corner in its outline
+    const at = id => (id < nv0 ? vertexOf(st, id) : extra[id - nv0]), xz = id => { const v = at(id); return [v[0], v[2]]; }, final = [];
+    const moved = boxGrid([...snapped].map(id => { const p = xz(id); return { id, p, box: [p[0], p[0], p[1], p[1]] }; }));
+    for (let t = 0; t < out.length; t += 3) {
+      const ids = [out[t], out[t + 1], out[t + 2]], P = ids.map(xz), box = [Math.min(P[0][0], P[1][0], P[2][0]), Math.max(P[0][0], P[1][0], P[2][0]), Math.min(P[0][1], P[1][1], P[2][1]), Math.max(P[0][1], P[1][1], P[2][1])];
+      const near = snapped.size ? moved.query(box).filter(q => !ids.includes(q.id)) : [];
+      const outline = []; let inserted = 0;
+      for (let e = 0; e < 3; e++) {
+        const a = P[e], b = P[(e + 1) % 3], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1e-24, on = []; outline.push(ids[e]);
+        for (const q of near) { const u = ((q.p[0] - a[0]) * dx + (q.p[1] - a[1]) * dz) / l2; if (u <= 1e-9 || u >= 1 - 1e-9) continue; if (Math.abs((q.p[0] - a[0]) * dz - (q.p[1] - a[1]) * dx) / Math.sqrt(l2) < 1e-7) on.push([u, q.id]); }
+        on.sort((u, v) => u[0] - v[0]); for (const [, id] of on) if (!outline.includes(id)) { outline.push(id); inserted++; }
+      }
+      if (!inserted) { final.push(...ids); continue; }
+      const vs = outline.map(at), c = vs[0].map((_, k) => vs.reduce((sum, v) => sum + v[k], 0) / vs.length), cid = nv0 + extra.length; extra.push(c); stats.tJunctions++;
+      const cx = Math.fround(c[0]), cz = Math.fround(c[2]);
+      for (let k = 0; k < outline.length; k++) { const p = at(outline[k]), q = at(outline[(k + 1) % outline.length]), a2 = (Math.fround(p[0]) - cx) * (Math.fround(q[2]) - cz) - (Math.fround(p[2]) - cz) * (Math.fround(q[0]) - cx);
+        if (Math.abs(a2) > 1e-7) final.push(cid, outline[k], outline[(k + 1) % outline.length]); }
+    }
+    stats.triangles[rt.def.id] = [st.index.length / 3, final.length / 3];
+    const grow = (arr, k, pick) => { const a = new Float32Array(arr.length + extra.length * k); a.set(arr); extra.forEach((v, e) => pick(v).forEach((x, c) => { a[arr.length + e * k + c] = x; })); return a; };
+    st.pos = grow(st.pos, 3, v => [v[0], v[1], v[2]]); st.col = grow(st.col, 3, v => [v[3], v[4], v[5]]); st.clipOffset = grow(st.clipOffset, 1, v => [v[6]]); st.clipPaved = grow(st.clipPaved, 2, v => [v[7], v[8]]);
+    st.index = Uint32Array.from(final); st.vertexCount = st.pos.length / 3;
+  };
+  // the other roads: the regions they lose (the ring's paving; a ring side triangle where the ring's paving is no farther than theirs), each triangle split
+  // first where its own distance outside its paving changes form (left verge, paving, right verge: the row's paved range is a vertex attribute)
+  let lap = t0; const time = part => { const now = Date.now(); stats.parts[part] = now - lap; lap = now; };
+  time('setup'); yield; lap = Date.now(); const pieces = [], branchPaving = [];
+  const piecesOf = tri => { const A = affineXZ(tri, v => v[6] - v[7]), B = affineXZ(tri, v => v[6] - v[8]);
+    return [{ fns: [v => -A(v)], db: v => -A(v) }, { fns: [A, v => -B(v)], db: () => 0, paved: true }, { fns: [B], db: B }].map(p => ({ ...p, poly: regionPart(tri, p.fns) })).filter(p => p.poly.length >= 3 && Math.abs(area2XZ(p.poly)) > AREA); };
+  for (const rt of routes) if (rt !== ring) {
+    let removed = 0;
+    rebuild(rt, box => box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && (quadIndex.any(box) || sideIndex.any(box)), (tri, box) => {
+      const qs = quadIndex.query(box), ss = sideIndex.query(box); if (!qs.length && !ss.length) return null;
+      const ps = piecesOf(tri).map(p => ({ ...p, box: boxXZ(p.poly) })), own = ps.find(p => p.paved);
+      for (const p of ps) pieces.push({ route: rt, fns: [...sidesOf(tri), ...p.fns], db: p.db, paved: !!p.paved, box: p.box });
+      const regions = [];
+      const meets = (a, b) => a[1] >= b[0] && a[0] <= b[1] && a[3] >= b[2] && a[2] <= b[3];
+      for (const q of qs) { const part = regionPart(tri, q.fns); if (part.length >= 3 && Math.abs(area2XZ(part)) > AREA) regions.push({ fns: q.fns, part }); }
+      for (const s of ss) for (const p of ps) { if (!meets(s.box, p.box)) continue; const fns = [...s.fns, ...p.fns, v => p.db(v) - s.dr(v)], part = regionPart(tri, fns); if (part.length >= 3 && Math.abs(area2XZ(part)) > AREA) regions.push({ fns, part }); }
+      if (!regions.length) { if (own) branchPaving.push({ route: rt.def.id, poly: own.poly.map(v => [v[0], v[2]]) }); return null; }
+      let frags = [tri]; for (const q of regions) frags = frags.flatMap(fr => subtractRegion(fr, q.fns));
+      frags = frags.filter(fr => Math.abs(area2XZ(fr)) > AREA);
+      // a new corner on the line the ring keeps takes the ring's surface there
+      const snapped = new Set();
+      for (const fr of frags) for (const v of fr) if (!tri.includes(v) && !snapped.has(v) && regions.some(q => q.fns.every(g => g(v) >= -1e-7))) { const y = ringY(v[0], v[2]); if (y === null) stats.unsnapped++; else { v[1] = y; snapped.add(v); } }
+      if (own) for (const fr of frags) { const part = regionPart(fr, own.fns); if (part.length >= 3 && Math.abs(area2XZ(part)) > AREA) branchPaving.push({ route: rt.def.id, poly: part.map(v => [v[0], v[2]]) }); }
+      const area = regions.reduce((s, q) => s + Math.abs(area2XZ(q.part)) / 2, 0); removed += area;
+      return { frags, area, snapped };
+    });
+    if (removed) { stats.removedArea[rt.def.id] = +removed.toFixed(4); const now = Date.now(); stats.parts.branches = (stats.parts.branches || 0) + now - lap; yield; lap = Date.now(); }
+  }
+  // the ring's side bands: the regions a branch owns (its paving, or its verge where its paving is nearer than the ring's). A new corner of the ring on
+  // such a region takes the branch's final surface: along the equal-distance line that is the ring's own height again (the branch took it above), and
+  // where a narrow branch ends inside the ring's verge (its strip's outer edge) the ring's ditch or verge comes up to that edge instead of a step.
+  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip; for (let t = 0; t < st.index.length; t += 3) {
+    const tri = [0, 1, 2].map(k => { const v = st.index[t + k]; return [st.pos[v * 3], st.pos[v * 3 + 1], st.pos[v * 3 + 2]]; }), box = boxXZ(tri);
+    if (box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box)) branchFinal.push({ tri, box }); } }
+  const branchFinalIndex = boxGrid(branchFinal), branchY = (x, z) => surfaceY(branchFinalIndex, x, z);
+  const pieceIndex = boxGrid(pieces); let ringRemoved = 0;
+  const O = rs.clipOffset;
+  rebuild(ring, (box, ids) => !ids.every(k => O[k] >= PV[0] - 1e-6 && O[k] <= PV[1] + 1e-6) && pieceIndex.any(box), (tri, rbox) => {
+    const o = tri.map(v => v[6]);
+    const outer = o.every(v => v <= PV[0] + 1e-6), dr = affineXZ(tri, outer ? v => PV[0] - v[6] : v => v[6] - PV[1]), regions = [];
+    for (const p of pieceIndex.query(rbox)) { const fns = [...p.fns, v => dr(v) - p.db(v)], part = regionPart(tri, fns); if (part.length >= 3 && Math.abs(area2XZ(part)) > AREA) regions.push({ fns, part }); }
+    if (!regions.length) return null;
+    let frags = [tri]; for (const q of regions) frags = frags.flatMap(fr => subtractRegion(fr, q.fns));
+    frags = frags.filter(fr => Math.abs(area2XZ(fr)) > AREA);
+    const snapped = new Set(), onPaving = v => Math.abs(v[6] - PV[0]) < 1e-6 || Math.abs(v[6] - PV[1]) < 1e-6;         // the paving's edge keeps the ring's own height (the branch took it there)
+    for (const fr of frags) for (const v of fr) if (!tri.includes(v) && !snapped.has(v) && !onPaving(v) && regions.some(q => q.fns.every(g => g(v) >= -1e-7))) { const y = branchY(v[0], v[2]); if (y === null) stats.unsnapped++; else { v[1] = y; snapped.add(v); } }
+    const area = regions.reduce((s, q) => s + Math.abs(area2XZ(q.part)) / 2, 0); ringRemoved += area;
+    return { frags, area, snapped };
+  });
+  stats.removedArea.CR01 = +ringRemoved.toFixed(4); time('ring'); yield; lap = Date.now();
+  // the ink: each route's two edge lines, split at its tunnels as before, then cut where they run inside the merged paving: a branch's line on the CR01
+  // paving, a CR01 line where a branch's paving lies beyond the ring's own asphalt edge. The test runs on the line and on the line moved to its own
+  // road's paving edge + 5 cm on its outer side (a CR01 edge line lies on its asphalt, 0.5 m inside the inner shoulder), so a line along a shared
+  // edge goes too; the cut ends are exact (each segment against each convex piece).
+  const quadPolys = quads.map(q => ({ poly: q.poly.map(v => [v[0], v[2]]), box: q.box })), bpIndex = boxGrid(branchPaving.map(q => ({ ...q, box: [Math.min(...q.poly.map(v => v[0])), Math.max(...q.poly.map(v => v[0])), Math.min(...q.poly.map(v => v[1])), Math.max(...q.poly.map(v => v[1]))] })));
+  const qpIndex = boxGrid(quadPolys), EPS = 0.05;
+  const union = list => { const out = []; for (const c of list.filter(Boolean).sort((u, v) => u[0] - v[0])) { if (out.length && c[0] <= out[out.length - 1][1] + 1e-9) out[out.length - 1][1] = Math.max(out[out.length - 1][1], c[1]); else out.push(c.slice()); } return out; };
+  const meet = (A, B) => { const out = []; for (const a of A) for (const b of B) { const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]); if (hi - lo > 1e-9) out.push([lo, hi]); } return union(out); };
+  const segIn = (p0, p1, poly) => {
+    let t0 = 0, t1 = 1; const s = poly.reduce((a, p, i) => { const q = poly[(i + 1) % poly.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0) >= 0 ? 1 : -1, dx = p1[0] - p0[0], dz = p1[1] - p0[1];
+    for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], ex = b[0] - a[0], ez = b[1] - a[1], f0 = s * (ex * (p0[1] - a[1]) - ez * (p0[0] - a[0])), df = s * (ex * dz - ez * dx);
+      if (Math.abs(df) < 1e-15) { if (f0 < 0) return null; continue; } const tc = -f0 / df; if (df > 0) t0 = Math.max(t0, tc); else t1 = Math.min(t1, tc); if (t0 >= t1) return null; }
+    return t1 - t0 > 1e-9 ? [t0, t1] : null;
+  };
+  const rowPoint = (rt, k, o) => { const f = rt.flatOf[k], T = rt.tangent[k], sc = o * rt.cf[k] * f.k; return [f.x - T[1] * sc, f.z + T[0] * sc]; };
   for (const rt of routes) {
-    const removed = clearJunctionInstances(rt, draw, byId.CR01);
+    const isRing = rt === ring, index = isRing ? bpIndex : qpIndex, runs = []; let cutLen = 0;
+    for (const [key, sd] of [['edgeL', -1], ['edgeR', 1]]) {
+      const L = rt.lines[key], N = L.length, tunnel = k => rt.samples[k].span === 'tunnel', edge = k => (isRing ? PV : rt.paved[k])[sd < 0 ? 0 : 1];
+      let run = [], pen = false; const flush = () => { if (run.length > 1) runs.push(run); run = []; pen = false; };
+      const at = (k, t) => { if (t <= 0) return L[k]; if (t >= 1) return L[k + 1]; const a = flat(L[k]), b = flat(L[k + 1]), x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t; return { lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D, alt: L[k].alt + (L[k + 1].alt - L[k].alt) * t }; };
+      for (let k = 0; k + 1 < N; k++) {
+        if (tunnel(k)) { flush(); continue; }
+        if (tunnel(k + 1)) continue;
+        let kept = [[0, 1]];
+        const a = flat(L[k]), b = flat(L[k + 1]), ta = rowPoint(rt, k, edge(k) + sd * EPS), tb = rowPoint(rt, k + 1, edge(k + 1) + sd * EPS),
+          box = [Math.min(a[0], b[0], ta[0], tb[0]), Math.max(a[0], b[0], ta[0], tb[0]), Math.min(a[1], b[1], ta[1], tb[1]), Math.max(a[1], b[1], ta[1], tb[1])];
+        if (!(box[1] < RB[0] || box[0] > RB[1] || box[3] < RB[2] || box[2] > RB[3])) {
+          let merged = union(index.query(box).flatMap(q => [segIn(a, b, q.poly), segIn(ta, tb, q.poly)]));
+          // a branch's line with paving on both sides (its own or the ring's): folded back over its own paving by the rows of a sharp turn near the ring (C01-S)
+          if (!isRing) { const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, e = EPS * rt.flatOf[k].k, nx = -(b[1] - a[1]) / l * e, nz = (b[0] - a[0]) / l * e, wide = [box[0] - e, box[1] + e, box[2] - e, box[3] + e],
+              paving = [...bpIndex.query(wide).filter(q => q.route === rt.def.id), ...qpIndex.query(wide)];
+            if (paving.length) { const side = g => union(paving.map(q => segIn([a[0] + g * nx, a[1] + g * nz], [b[0] + g * nx, b[1] + g * nz], q.poly))); merged = union([...merged, ...meet(side(1), side(-1))]); } }
+          if (merged.length) { kept = []; let t = 0; for (const [c0, c1] of merged) { if (c0 > t + 1e-9) kept.push([t, c0]); t = Math.max(t, c1); } if (t < 1 - 1e-9) kept.push([t, 1]);
+            cutLen += merged.reduce((s, [c0, c1]) => s + (c1 - c0), 0) * Math.hypot(b[0] - a[0], b[1] - a[1]); }
+        }
+        for (const [u, v] of kept) { if (!(u <= 1e-9 && pen)) { flush(); run.push(at(k, u)); } run.push(at(k, v)); pen = v >= 1 - 1e-9; if (!pen) flush(); }
+        if (!kept.length) flush();
+      }
+      flush();
+    }
+    rt.ink = runs; if (cutLen) stats.ink[rt.def.id] = +cutLen.toFixed(3);
+  }
+  time('ink');
+  // furniture and plants: clear of the junctions and the ring's carriageway; the plants (on the swept rows of their own road until now) stand on the
+  // final surface wherever a strip of this merge moved under them (the ramp, a cut line)
+  for (const rt of routes) {
+    const removed = clearJunctionInstances(rt, draw, ring, ringAt);
     for (const q of removed) draw.find(j => j.node === q.node).removedInstances.push({ routeId: rt.def.id, ...q });
   }
-  return draw;
+  const finals = []; for (const rt of routes) { const st = rt.strip; for (let t = 0; t < st.index.length; t += 3) { const tri = [0, 1, 2].map(k => { const v = st.index[t + k]; return [st.pos[v * 3], st.pos[v * 3 + 1], st.pos[v * 3 + 2]]; }), box = boxXZ(tri); if (box[1] >= RB[0] - 1 && box[0] <= RB[1] + 1 && box[3] >= RB[2] - 1 && box[2] <= RB[3] + 1) finals.push({ tri, box }); } }
+  const finalIndex = boxGrid(finals); let replanted = 0;
+  for (const rt of routes) for (const type of ['weed', 'tuft']) for (const it of rt.instances[type] || []) {
+    if (it.station === undefined) continue; const [x, z] = flat(it), k = Math.cos(it.lat * D); if (x < RB[0] - 1 || x > RB[1] + 1 || z < RB[2] - 1 || z > RB[3] + 1) continue;
+    const top = surfaceY(finalIndex, x, z);
+    if (top !== null) { const alt = BASE + top * k; if (Math.abs(alt - it.alt) > 1e-4) replanted++; it.alt = alt; }
+  }
+  stats.replanted = replanted; time('clear'); stats.ms = Object.values(stats.parts).reduce((a, v) => a + v, 0);
+  return { junctions: draw, data: { stats, paving: quadPolys.map(q => q.poly), branchPaving } };
 }
 
 // abutment end wall: a vertical concrete curtain under the road's last cross-section, from its surface down to below the girder (|o| <= 5) or into the terrain (the embankment's
@@ -5160,8 +5415,11 @@ function* planSteps(W, H, tc) {
   }
   const routes = ROUTES.map(def => byId[def.id]);
   for (const rt of routes) if (rt.def.furnish) furnish(WS, rt, rt.def.furnish);
-  const cr01Junctions = prepareCr01Junctions(WS, routes, RK);
+  // the CR01 merge (W10c): the closure, the attributes and the ramp first; the town's own cuts; then the ownership cut against the ring
+  const cr01 = prepareCr01(WS, routes, RK);
   removeTownPavementDuplicates(routes, WS);
+  yield;
+  const merged = yield* mergeCr01(WS, routes, cr01, RK), cr01Junctions = merged.junctions;
   yield;
   // bridges: their ends on the shared fillets, starting at the approaches' altitude
   const bridges = BRIDGES.map(def => {
@@ -5204,7 +5462,7 @@ function* planSteps(W, H, tc) {
     const { it, i } = best, T = it.rt.tangent, yaw = Math.atan2(T[i][0], T[i][1]);
     for (const sd of [-1, 1]) { const [lo, la] = it.rt.lateral(i, sd * (it.hw + 0.75)); markers.push({ type: 'gatePost', lon: lo, lat: la, alt: (it.rt.surface ? it.rt.surface(i, sd * (it.hw + 0.75)) : WS.height(lo, la)), yaw, s: [1, 1, 1], lean: [0, 0], tint: [1, 1, 1], node: nd.id }); }
   }
-  return { routes, bridges, stairs, extras, markers, lit, sea, WS, abutments: abuts, junctions };
+  return { routes, bridges, stairs, extras, markers, lit, sea, WS, abutments: abuts, junctions, cr01: merged.data };
 }
 function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
@@ -5291,7 +5549,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     // a line keeps its longitudes continuous (no 360 degree jump where it crosses the date line, W8e-b): bend.js then moves each segment as a whole at the seam
     const poly = (pts, out) => { let prev = null, lon0 = null; for (const q of pts) { const lon = lon0 === null ? q.lon : lon0 + (((q.lon - lon0) % 360 + 540) % 360 - 180); lon0 = lon; const f = flatOf(lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
     const addLines = (layer, segs, color) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, color ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, userData: { inkFog: true } }) : lineMat()); l.name = 'road:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; return l; };
-    { const segs = []; for (const rt of DATA.routes) { const clip = line => { let run = []; line.forEach((q, i) => { if (rt.samples[i].span === 'tunnel') { if (run.length > 1) poly(run, segs); run = []; } else run.push(q); }); if (run.length > 1) poly(run, segs); }; clip(rt.lines.edgeL); clip(rt.lines.edgeR); }
+    { const segs = []; for (const rt of DATA.routes) for (const run of rt.ink) poly(run, segs);       // the edge lines split at tunnels and cut out of the merged CR01 paving (mergeCr01)
       for (const j of DATA.junctions) for (const line of (j.ink || [])) poly(line, segs); // shallow merges have no added curb outline
       addLines('aerial', segs); }
     { const segs = [], white = []; for (const b of DATA.bridges) { for (const k of ['edgeL', 'edgeR', 'edgeLU', 'edgeRU']) poly(b.lines[k], segs); for (const j of b.lines.joints) poly(j, segs); for (const st of (b.lines.stays || [])) poly(st, white); }
