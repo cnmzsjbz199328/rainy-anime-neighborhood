@@ -172,11 +172,13 @@ function route(W, segs, o = {}) {
   const NET = W.roadNetwork, BL = o.blend || BLEND, AB = o.abut || {}, ENDS = ['start', 'end'].filter(k => AB[k]), TURNS = o.turns || [];
   const edges = segs.map(sg => NET.edges.find(e => e.id === sg.id));
   let classes = edges.map(e => e.class);
-  const S = [], edgeOf = []; let off = 0; let joints = [];
+  const S = [], edgeOf = [], spans = []; let off = 0; let joints = [];
   edges.forEach((e, k) => {
     let P = NET.samplePath(e, 0.5); const len = NET.edgeLength(e);
     if (segs[k].rev) P = P.slice().reverse().map(p => ({ ...p, s: len - p.s }));
     P.forEach((p, i) => { if (k > 0 && i === 0) return; S.push({ ...p, h: W.height(p.lon, p.lat), s: p.s + off }); edgeOf.push(k); });
+    // the edge's spans (world.js metres along the edge) in the route's own chainage: their exact ends, which the 0.5 m sample rows straddle
+    for (const sp of e.spans || []) { const a = sp.fromMeters, b = sp.toMeters === 'end' ? len : sp.toMeters; spans.push({ type: sp.type, edge: e.id, s0: off + (segs[k].rev ? len - b : a), s1: off + (segs[k].rev ? len - a : b) }); }
     off += len; if (k + 1 < edges.length) joints.push(off);
   });
   if (joints.some((jt, k) => k && jt <= joints[k - 1])) throw new Error(`roadkit.route ${segs.map(q => q.id).join('+')}: class joints out of order (${joints.join(', ')})`);
@@ -445,7 +447,7 @@ function route(W, segs, o = {}) {
   };
   for (const t of ['weed', 'tuft']) for (const it of instances[t] || []) if (it.station !== undefined) snapPlant(it);
   const lines = { edgeL: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][0] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }), edgeR: S.map((p, i) => { const [lo, la] = lateral(i, paved[i][1] * cf[i]); return { lon: lo, lat: la, alt: bedAlt[i] + 0.07 }; }) };
-  return { ids: segs.map(q => q.id), classes, joints, samples: S, turns: TURNS, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m }, grid, paved, carriageway, footprint: foot, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
+  return { ids: segs.map(q => q.id), classes, joints, spans, samples: S, turns: TURNS, edgeOf, instances, strip: { name: 'route ' + segs.map(q => q.id).join('+'), pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: n * m }, grid, paved, carriageway, footprint: foot, wear: wearOf, lines, length: total, bed: bedAlt, brg, lateral, tangent: T, flatOf: F, surface, colAlt, cf, approach: aW, approaches, chainAt, sNode: sNodeOf, trim: { start: o.trimStart || 0, end: o.trimEnd || 0 }, mouths: MO, kinks, ramp: RP ? { end: RP.end, len: rampLen, delta: rampD.slice(), i: iR } : null };
 }
 
 const ROADKIT = { build, sweep, route, PROFILES, DECK, COL, lin, BLEND };

@@ -74,7 +74,8 @@ function furnish(W, rt, cfg) {
   for (let s = 12; s < rt.length - 4; s += 25) { const i = Math.round(s / 0.5); if (S[i].span === 'tunnel' || near.some(([a, b]) => s > a - 1 && s < b + 1)) continue; add('milestone', i, 4.1, rt.surface(i, 4.1), { yaw: yawAlong(i) + Math.PI / 2 }); }
   if (cfg.busStop) { const i = Math.round(cfg.busStop / 0.5), r = right(i); add('signBus', i, 4.2, rt.surface(i, 4.2), { yaw: yawFace(-r[0], -r[1]) }); }
   // tunnel: the samples of the span with the bed altitude (the arch geometry is made in the scene part)
-  if (cfg.tunnel) { const idx = []; S.forEach((p, i) => { if (p.span === 'tunnel') idx.push(i); }); rt.tunnel = { idx, s0: S[idx[0]].s, s1: S[idx[idx.length - 1]].s, innerR: 4.7, wallH: 1.0, shell: 0.7 }; }
+  // (the portal rings stand on the first and last rows, ringDepth deep; the black void closes the opening voidDepth behind each ring face)
+  if (cfg.tunnel) { const idx = []; S.forEach((p, i) => { if (p.span === 'tunnel') idx.push(i); }); rt.tunnel = { idx, s0: S[idx[0]].s, s1: S[idx[idx.length - 1]].s, innerR: 4.7, wallH: 1.0, shell: 0.7, ringDepth: 1.4, voidDepth: 0.2 }; }
 }
 
 // generic placing helper for a swept route
@@ -865,16 +866,16 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     mk('shell', 1 + tn.shell / tn.innerR, '#7c828c', false);
     // portal rings: a flat band between the inner profile (walls and arch) and a 1.2 m wider outer profile, 1.4 m deep, with moss on the upper half; a black fan fills the opening
     for (const [i0, dirSign] of [[idx[0], -1], [idx[n - 1], 1]]) {
-      const k = F[i0].k, tx = T[i0][0], tz = T[i0][1], bx = -tz, bz = tx, base = rt.bed[i0], depth = 1.4, outerR = tn.innerR + 1.2;
+      const k = F[i0].k, tx = T[i0][0], tz = T[i0][1], bx = -tz, bz = tx, base = rt.bed[i0], depth = tn.ringDepth, outerR = tn.innerR + 1.2;
       const at = (o, dy, back) => { const dz = back * -dirSign; return [F[i0].x + bx * o * k + tx * dz * k, (base + dy - BASE) * k, F[i0].z + bz * o * k + tz * dz * k]; };
       const outerOf = ([o, dy]) => { if (dy <= tn.wallH + 1e-6 && Math.abs(Math.abs(o) - tn.innerR) < 1e-6) return [Math.sign(o) * outerR, dy]; const vx = o, vy = dy - tn.wallH, l = Math.hypot(vx, vy); return [vx / l * outerR, tn.wallH + vy / l * outerR]; };
       const c0 = new THREE.Color('#8a8f99'), moss = new THREE.Color('#4f7a56'), dark = new THREE.Color('#5f6672'), ringPos = [], ringCol = [], ringIdx = [];
       prof.forEach((p, a) => { const q = outerOf(p), up = p[1] > tn.wallH + 0.2 ? 1 : 0; for (const [pt, back, kind] of [[p, 0, 0], [q, 0, 1], [q, depth, 2], [p, depth, 3]]) { ringPos.push(...at(pt[0], pt[1], back)); const mv = up ? 0.25 + 0.3 * hash(a, kind) : 0.08 * hash(a, kind); const c = (kind === 3 ? dark : c0).clone().lerp(moss, mv); ringCol.push(c.r, c.g, c.b); } });
       const m = 4, N = prof.length; for (let a = 0; a + 1 < N; a++) for (let j = 0; j < m; j++) { const j2 = (j + 1) % m, a0 = a * m + j, b0 = a * m + j2, c1 = (a + 1) * m + j, d0 = (a + 1) * m + j2; ringIdx.push(a0, c1, b0, b0, c1, d0); }
       stripMesh({ name: 'tunnel portal ring', pos: Float32Array.from(ringPos), col: Float32Array.from(ringCol), index: Uint32Array.from(ringIdx), vertexCount: ringPos.length / 3, normals: true }, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide }));
-      // void: a fan from the road-level centre of the opening over the whole inner profile, recessed 0.2 m behind the ring face
-      const vp = [...at(0, 0.05, 0.2)], vc = [0.03, 0.04, 0.06], vi = [];
-      prof.forEach(p => { vp.push(...at(p[0], p[1], 0.2)); vc.push(0.02, 0.025, 0.04); });
+      // void: a fan from the road-level centre of the opening over the whole inner profile, recessed voidDepth (0.2 m) behind the ring face
+      const vp = [...at(0, 0.05, tn.voidDepth)], vc = [0.03, 0.04, 0.06], vi = [];
+      prof.forEach(p => { vp.push(...at(p[0], p[1], tn.voidDepth)); vc.push(0.02, 0.025, 0.04); });
       for (let a = 1; a < prof.length; a++) vi.push(0, a, a + 1);
       stripMesh({ name: 'tunnel void', pos: Float32Array.from(vp), col: Float32Array.from(vc), index: Uint32Array.from(vi), vertexCount: vp.length / 3, normals: true }, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     }

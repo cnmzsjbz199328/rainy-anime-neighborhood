@@ -343,18 +343,24 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     g.setIndex(new THREE.BufferAttribute(index, 1)); return g;
   };
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
-  // Once the unified road plan exists, remove its full cross-section from the planetary ground.
-  // This keeps the rendered terrain from sitting above roads between its much wider lattice samples.
+  // Once the unified road plan exists, remove the ground that a graded road replaces from the planetary ground: the swept cross-section between its rows
+  // (and a short cap past each open end). This keeps the rendered terrain from sitting above roads between its much wider lattice samples.
+  // W10c: a bridge stands over the ground and a tunnel runs under it, so neither replaces any: the seabed under a deck and the hill over RN01-05 stay.
+  // The spans of world.js (roadkit.js gives them in each route's chainage) cut the rows they straddle at their exact ends (the row there interpolated, as
+  // the mesh is linear between rows); a route that ends on an abutment has no cap there (the deck goes on from its last row). Every polygon keeps its
+  // source (kind, route or junction, chainage); state.stats.groundCut lists the structures left uncut. The roads' full footprints stay as they are for
+  // their other uses (paving, verges, the clearance of plants and furniture).
+  const STRUCTURES = new Set(['tunnel', 'bridge']);
   function cutRoads(data) {
-    const CELL = 2, PERIOD = 2 * Math.PI * R, polys = [], cells = new Map(), cellKey = (x, z) => `${x},${z}`;
-    const addPoly = p => {
+    const CELL = 2, PERIOD = 2 * Math.PI * R, polys = [], cells = new Map(), cellKey = (x, z) => `${x},${z}`, kept = [];
+    const addPoly = (p, src) => {
       if (p.length < 3 || Math.abs(polygonAreaXZ(p)) < 1e-7) return;
       const centre = p.reduce((s, q) => s + q[0], 0) / p.length, copies = [p];
       if (centre > Math.PI * R) copies.push(p.map(q => [q[0] - PERIOD, q[1]]));
       else if (centre < -Math.PI * R) copies.push(p.map(q => [q[0] + PERIOD, q[1]]));
       for (const poly of copies) {
         const box = { x0: Math.min(...poly.map(q => q[0])), x1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])) };
-        const id = polys.length; polys.push({ p: poly, box });
+        const id = polys.length; polys.push({ p: poly, box, src });
         for (let x = Math.floor((box.x0 - CUT_EPS) / CELL); x <= Math.floor((box.x1 + CUT_EPS) / CELL); x++) for (let z = Math.floor((box.z0 - CUT_EPS) / CELL); z <= Math.floor((box.z1 + CUT_EPS) / CELL); z++) {
           const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id);
         }
@@ -369,30 +375,83 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       const f = rt.footprint[i];
       return [flatLateral(rt, i, f[2] - CUT_PAD, along, nearX), flatLateral(rt, i, f[3] + CUT_PAD, along, nearX)];
     };
+    // the chainage ranges of a route that stand on structures: its tunnel and bridge spans, and beyond an end that meets an abutment. A tunnel's portals
+    // stand on its first and last rows inside the span (roads.js buildTunnel): the strip between the span's end and the portal face is the open approach in
+    // front of the portal, cut like it so that no ground lies over the road there, and registered as a portal opening
+    const structureRanges = rt => {
+      const S = rt.samples, n = S.length, ranges = [], openings = [];
+      for (const q of rt.spans || []) if (STRUCTURES.has(q.type)) {
+        let a = q.s0, b = q.s1;
+        if (q.type === 'tunnel' && rt.tunnel) { a = Math.max(a, rt.tunnel.s0); b = Math.min(b, rt.tunnel.s1); if (a > q.s0) openings.push({ s0: q.s0, s1: a, end: 'start' }); if (b < q.s1) openings.push({ s0: b, s1: q.s1, end: 'end' }); }
+        ranges.push([a, b]); kept.push({ type: q.type, route: rt.def.id, edge: q.edge, s0: +q.s0.toFixed(3), s1: +q.s1.toFixed(3), kept: [+a.toFixed(3), +b.toFixed(3)] });
+      }
+      for (const op of openings) kept.push({ type: 'tunnel-portal', route: rt.def.id, end: op.end, s0: +op.s0.toFixed(3), s1: +op.s1.toFixed(3), length: +(op.s1 - op.s0).toFixed(3) });
+      for (const ap of rt.approaches || []) { const s = ap.which === 'end' ? S[n - 1].s : S[0].s; ranges.push(ap.which === 'end' ? [s, Infinity] : [-Infinity, s]); kept.push({ type: 'abutment', route: rt.def.id, end: ap.which, s: +s.toFixed(3) }); }
+      return { ranges, openings };
+    };
+    // [a, b] less the ranges (or, inside, their intersection with it); the parts within a portal opening are labelled
+    const outside = (a, b, ranges) => {
+      let parts = [[a, b]];
+      for (const [r0, r1] of ranges) parts = parts.flatMap(([p0, p1]) => (r1 <= p0 || r0 >= p1 ? [[p0, p1]] : [...(r0 > p0 ? [[p0, r0]] : []), ...(r1 < p1 ? [[r1, p1]] : [])]));
+      return parts.filter(([p0, p1]) => p1 - p0 > 1e-6);
+    };
+    const inside = (a, b, ranges) => ranges.map(([r0, r1]) => [Math.max(a, r0), Math.min(b, r1)]).filter(([p0, p1]) => p1 - p0 > 1e-6);
+    const pieces = (a, b, I) => outside(a, b, I.ranges).flatMap(([p0, p1]) => {
+      let parts = [[p0, p1, null]];
+      for (const op of I.openings) parts = parts.flatMap(([q0, q1, tag]) => (tag || op.s1 <= q0 || op.s0 >= q1 ? [[q0, q1, tag]] : [...(op.s0 > q0 ? [[q0, op.s0, null]] : []), [Math.max(q0, op.s0), Math.min(q1, op.s1), 'tunnel-portal'], ...(op.s1 < q1 ? [[op.s1, q1, null]] : [])]));
+      return parts.filter(([q0, q1]) => q1 - q0 > 1e-6);
+    });
+    const lerpRow = (a, b, t) => [0, 1].map(k => [a[k][0] + (b[k][0] - a[k][0]) * t, a[k][1] + (b[k][1] - a[k][1]) * t]);
+    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [];
     for (const rt of data.routes || []) for (let i = 0; i + 1 < rt.samples.length; i++) {
-      const x = rt.flatOf[i].x, a = routeRow(rt, i, 0, x), b = routeRow(rt, i + 1, 0, x);
-      addPoly([a[0], a[1], b[1], b[0]]);
+      const x = rt.flatOf[i].x, a = routeRow(rt, i, 0, x), b = routeRow(rt, i + 1, 0, x), sa = rt.samples[i].s, sb = rt.samples[i + 1].s, I = info.get(rt), row = s => (s === sa ? a : s === sb ? b : lerpRow(a, b, (s - sa) / (sb - sa)));
+      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); addPoly([A[0], A[1], Bq[1], Bq[0]], { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}) }); }
+      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push([A[0], A[1], Bq[1], Bq[0]]); }      // the uncut footprint over the structure
+    }
+    // A tunnel mouth: the ground inside the opening between the portal face and the black void behind it (rt.tunnel.voidDepth) would stand in front of the
+    // void, so it is cut within the opening's width (the inner profile, +-innerR). Only this short strip: the hill over the tunnel stays (tools/
+    // terrain_structure_check.mjs checks that the ground cut there lies under the opening's profile, nothing above the crown).
+    for (const rt of data.routes || []) if (rt.tunnel && rt.tunnel.voidDepth) {
+      const tn = rt.tunnel, S = rt.samples, rowO = (s, o, nearX) => { let i = 0; while (i + 2 < S.length && S[i + 1].s < s) i++; const t = (s - S[i].s) / (S[i + 1].s - S[i].s), a = flatLateral(rt, i, o, 0, nearX), b = flatLateral(rt, i + 1, o, 0, nearX); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+      for (const [end, f0, f1] of [['start', tn.s0, tn.s0 + tn.voidDepth], ['end', tn.s1 - tn.voidDepth, tn.s1]]) {
+        const x = rt.flatOf[tn.idx[0]].x, A = [rowO(f0, -tn.innerR, x), rowO(f0, tn.innerR, x)], Bq = [rowO(f1, -tn.innerR, x), rowO(f1, tn.innerR, x)];
+        addPoly([A[0], A[1], Bq[1], Bq[0]], { kind: 'tunnel-mouth', id: rt.def.id, end, s0: +f0.toFixed(3), s1: +f1.toFixed(3), structure: 'tunnel-portal' });
+        kept.push({ type: 'tunnel-mouth', route: rt.def.id, end, s0: +f0.toFixed(3), s1: +f1.toFixed(3), halfWidth: tn.innerR });
+      }
     }
     // Close the mask over the first and last half metre of each strip. The road mesh has a
     // complete cross-section at those rows, while an interval-only mask would leave the end
-    // row exposed to the terrain and landmark lawns.
+    // row exposed to the terrain and landmark lawns. A cap does not reach onto a structure.
     for (const rt of data.routes || []) if (rt.samples.length > 1) {
-      const first = routeRow(rt, 0), firstCap = routeRow(rt, 0, -CUT_CAP);
-      addPoly([firstCap[0], firstCap[1], first[1], first[0]]);
-      const lastIndex = rt.samples.length - 1, last = routeRow(rt, lastIndex), lastCap = routeRow(rt, lastIndex, CUT_CAP);
-      addPoly([last[0], last[1], lastCap[1], lastCap[0]]);
+      const S = rt.samples, last = S.length - 1;
+      for (const [i, c0, c1] of [[0, S[0].s - CUT_CAP, S[0].s], [last, S[last].s, S[last].s + CUT_CAP]]) for (const [p0, p1] of outside(c0, c1, info.get(rt).ranges)) {
+        const A = routeRow(rt, i, p0 - S[i].s), Bq = routeRow(rt, i, p1 - S[i].s);
+        addPoly([A[0], A[1], Bq[1], Bq[0]], { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3) });
+      }
     }
     for (const br of data.bridges || []) {
+      kept.push({ type: 'bridge', bridge: br.def ? br.def.id : br.ids.join('+'), edges: br.ids, length: +br.length.toFixed(3) });
       const st = br.strips && br.strips[0], m = br.topCols && br.topCols.length; if (!st || !m) continue;
-      for (let i = 0; i + 1 < br.samples.length; i++) { const a = (i * m) * 3, b = (i * m + m - 1) * 3, c = ((i + 1) * m + m - 1) * 3, d = ((i + 1) * m) * 3, x = br.flatOf[i].x,
-        flat = j => { let xx = st.pos[j]; xx += PERIOD * Math.round((x - xx) / PERIOD); return [xx, st.pos[j + 2]]; };
-        addPoly([flat(a), flat(b), flat(c), flat(d)]); }
+      for (let i = 0; i + 1 < br.samples.length; i++) { const x = br.flatOf[i].x, at = j => { let xx = st.pos[j * 3]; xx += PERIOD * Math.round((x - xx) / PERIOD); return [xx, st.pos[j * 3 + 2]]; };
+        structurePolys.push([at(i * m), at(i * m + m - 1), at((i + 1) * m + m - 1), at((i + 1) * m)]); }      // the deck's plan: the ground under it stays
     }
+    // junction paving cuts the ground it covers, but not over a tunnel or under a deck (the paving's triangles less the structures' footprints)
+    const structureBoxes = structurePolys.map(p => ({ p, x0: Math.min(...p.map(q => q[0])), x1: Math.max(...p.map(q => q[0])), z0: Math.min(...p.map(q => q[1])), z1: Math.max(...p.map(q => q[1])) }));
+    let junctionClipped = 0;
     for (const j of data.junctions || []) if (j.strip && j.strip.index) for (let t = 0; t + 2 < j.strip.index.length; t += 3) {
-      const s = j.strip, at = k => { const n = s.index[t + k] * 3; return [s.pos[n], s.pos[n + 2]]; }; addPoly([at(0), at(1), at(2)]);
+      const s = j.strip, at = k => { const n = s.index[t + k] * 3; return [s.pos[n], s.pos[n + 2]]; }, tri = [at(0), at(1), at(2)], src = { kind: 'junction', id: j.node || j.id };
+      const x0 = Math.min(...tri.map(q => q[0])), x1 = Math.max(...tri.map(q => q[0])), z0 = Math.min(...tri.map(q => q[1])), z1 = Math.max(...tri.map(q => q[1]));
+      let parts = [tri], hit = false;
+      for (const b of structureBoxes) { const k = PERIOD * Math.round(((x0 + x1) / 2 - (b.x0 + b.x1) / 2) / PERIOD); if (b.x1 + k < x0 || b.x0 + k > x1 || b.z1 < z0 || b.z0 > z1) continue;
+        const clipP = k ? b.p.map(q => [q[0] + k, q[1]]) : b.p, next = parts.flatMap(p => subtractConvexXZ(p, clipP));
+        if (Math.abs(next.reduce((a, p) => a + Math.abs(polygonAreaXZ(p)), 0) - parts.reduce((a, p) => a + Math.abs(polygonAreaXZ(p)), 0)) > 1e-9) { parts = next; hit = true; } }
+      if (hit) junctionClipped++;
+      for (const p of parts) addPoly(p, hit ? { ...src, structure: 'clipped' } : src);
     }
 
     state.roadPolygons = polys;
+    const bySource = {}; for (const q of polys) bySource[q.src.kind] = (bySource[q.src.kind] || 0) + 1;
+    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped };
     let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0;
     const meshes = [...state.ring, ...state.rest];
     for (const mesh of meshes) {
