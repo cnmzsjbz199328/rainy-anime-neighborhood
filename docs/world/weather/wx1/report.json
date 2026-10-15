@@ -1,0 +1,2570 @@
+{
+ "stage": "WX1",
+ "date": "2026-10-15",
+ "plan": "docs/world/WEATHER_COMPLETION_PLAN.md §4",
+ "tool": "tools/weather_field_check.mjs",
+ "sources": {
+  "weather.js": {
+   "now": "3198733643481986199e95f1718ca824be12cbac98ced8067fc8899319fd1472",
+   "before": "bcbb78c8b1b424feb6374732233b35adea9ea383b979084361713b7a7caf1f47",
+   "beforeRef": "1381d56"
+  }
+ },
+ "params": {
+  "CIRCLES": 60,
+  "SLOT": 300,
+  "FADE": 48,
+  "SEED": 6221195,
+  "PHASES": 5,
+  "BAND": 15,
+  "MIX_MIN": 0.1,
+  "FOG_BAND": 10,
+  "TOWN_BAND": 15,
+  "STEP": 0.5,
+  "TIMES": [
+   450,
+   924,
+   2000,
+   3624,
+   9010,
+   15000
+  ]
+ },
+ "now": {
+  "determinism": {
+   "counterexample": {
+    "point": [
+     152.28,
+     -73.7
+    ],
+    "warmedFirst": [
+     [
+      152.28,
+      -73.7
+     ],
+     [
+      152.32,
+      -73.7
+     ]
+    ],
+    "t": 600,
+    "afterWarmA": {
+     "state": "clear",
+     "weights": {
+      "rain": 0,
+      "after": 0,
+      "overcast": 0,
+      "clear": 1,
+      "snow": 0,
+      "fog": 0
+     }
+    },
+    "afterWarmB": {
+     "state": "clear",
+     "weights": {
+      "rain": 0,
+      "after": 0,
+      "overcast": 0,
+      "clear": 1,
+      "snow": 0,
+      "fog": 0
+     }
+    },
+    "diff": 0
+   },
+   "sameCell": {
+    "pairs": 400,
+    "n": 3200,
+    "maxDiff": 0,
+    "mismatches": 0
+   },
+   "edges": {
+    "pairs": 150,
+    "n": 1200,
+    "maxDiff": 0,
+    "mismatches": 0
+   },
+   "orders": {
+    "queries": 2500,
+    "runs": "forward, reverse, shuffled, repeated twice, cache cleared halfway",
+    "n": 15000,
+    "maxDiff": 0,
+    "mismatches": 0
+   },
+   "lon360": {
+    "n": 1000,
+    "maxDiff": 0,
+    "mismatches": 0,
+    "categoryMismatches": 0
+   },
+   "cache": {
+    "distinctPlaces": 20000,
+    "peak": 4096
+   }
+  },
+  "shares": {
+   "cats": {
+    "town": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.61165,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "default": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "foggy": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 100,
+     "fogMin": 0.00128366
+    },
+    "mountain": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0.61165,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "lava": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "desert": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.72,
+      "rainMax": 0.04,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.709258,
+      "rainMax": 0.0416089,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "ice": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0,
+      "largestOk": 100
+     },
+     "snowMax": 0.61165,
+     "fogPlaces": 0,
+     "fogMin": 1
+    }
+   },
+   "violations": {},
+   "lock": {
+    "samples": 4200,
+    "violations": 0,
+    "mountainSnowAboveFraction": 0
+   }
+  },
+  "time": {
+   "rows": [
+    {
+     "cat": "town",
+     "lon": 14.7138,
+     "lat": 22.3638,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "town",
+     "lon": -2.96239,
+     "lat": -27.0012,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "default",
+     "lon": -175.914,
+     "lat": -52.104,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "default",
+     "lon": -37.2317,
+     "lat": 19.9916,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "foggy",
+     "lon": -86.2323,
+     "lat": 37.5639,
+     "maxRate": 0.0184881,
+     "at": 1823
+    },
+    {
+     "cat": "foggy",
+     "lon": -179.59,
+     "lat": 39.4264,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "mountain",
+     "lon": 87.7645,
+     "lat": 13.1218,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "mountain",
+     "lon": 88.3951,
+     "lat": 8.12781,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "lava",
+     "lon": -19.0114,
+     "lat": 48.9143,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "lava",
+     "lon": -30.428,
+     "lat": 50.8901,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "desert",
+     "lon": -130.442,
+     "lat": -58.0639,
+     "maxRate": 0.0128007,
+     "at": 306
+    },
+    {
+     "cat": "desert",
+     "lon": -133.011,
+     "lat": -27.9798,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "ice",
+     "lon": 100.357,
+     "lat": -67.9446,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "ice",
+     "lon": 78.4847,
+     "lat": -78.1569,
+     "maxRate": 0.0208333,
+     "at": 314
+    }
+   ],
+   "maxRate": 0.0208333,
+   "fade": {
+    "checks": 5441,
+    "worst": 0
+   },
+   "town": {
+    "points": 441,
+    "times": 584,
+    "maxDiff": 0,
+    "timesSplit": 0,
+    "maxStates": 1,
+    "plan10m": {
+     "600": [
+      "rain"
+     ],
+     "900": [
+      "overcast"
+     ],
+     "1200": [
+      "rain"
+     ]
+    }
+   }
+  },
+  "space": {
+   "stats": {
+    "greatCircles": {
+     "walks": 60,
+     "steps": 67800,
+     "maxStep": 0.0846468,
+     "over": 0,
+     "worst": [
+      114.362,
+      -16.9894
+     ],
+     "hardSteps": 496,
+     "height": {
+      "steps": 612,
+      "over": 0,
+      "maxExcess": -0.0993434,
+      "maxStep": 1,
+      "maxDh": 1.71639
+     }
+    },
+    "townEdge": {
+     "walks": 72,
+     "steps": 7200,
+     "maxStep": 0.041465,
+     "over": 0,
+     "worst": [
+      0,
+      -34.0795
+     ],
+     "hardSteps": 28,
+     "height": {
+      "steps": 0,
+      "over": 0,
+      "maxExcess": -1,
+      "maxStep": 0,
+      "maxDh": 0
+     }
+    },
+    "coast": {
+     "walks": 200,
+     "steps": 12800,
+     "maxStep": 0.0850188,
+     "over": 0,
+     "worst": [
+      113.777,
+      -19.9709
+     ],
+     "hardSteps": 115,
+     "height": {
+      "steps": 163,
+      "over": 0,
+      "maxExcess": -0.101897,
+      "maxStep": 1,
+      "maxDh": 2.2074
+     }
+    },
+    "river": {
+     "walks": 120,
+     "steps": 5760,
+     "maxStep": 0.0648777,
+     "over": 0,
+     "worst": [
+      105.391,
+      17.8092
+     ],
+     "hardSteps": 42,
+     "height": {
+      "steps": 95,
+      "over": 0,
+      "maxExcess": -0.0766701,
+      "maxStep": 0.830099,
+      "maxDh": 1.74176
+     }
+    },
+    "snowLine": {
+     "walks": 150,
+     "steps": 18000,
+     "maxStep": 0.0809301,
+     "over": 0,
+     "worst": [
+      113.942,
+      -13.9594
+     ],
+     "hardSteps": 230,
+     "height": {
+      "steps": 1382,
+      "over": 0,
+      "maxExcess": -0.0891732,
+      "maxStep": 1,
+      "maxDh": 1.92699
+     }
+    },
+    "mountainEdge": {
+     "walks": 100,
+     "steps": 8000,
+     "maxStep": 0.077262,
+     "over": 0,
+     "worst": [
+      114.059,
+      -33.1384
+     ],
+     "hardSteps": 154,
+     "height": {
+      "steps": 786,
+      "over": 0,
+      "maxExcess": -0.0661431,
+      "maxStep": 1,
+      "maxDh": 1.83944
+     }
+    },
+    "phaseContours": {
+     "walks": 200,
+     "steps": 12000,
+     "maxStep": 0.0844335,
+     "over": 0,
+     "worst": [
+      113.924,
+      -21.6199
+     ],
+     "hardSteps": 113,
+     "height": {
+      "steps": 138,
+      "over": 0,
+      "maxExcess": -0.104805,
+      "maxStep": 0.80759,
+      "maxDh": 1.31148
+     }
+    },
+    "seams": {
+     "walks": 66,
+     "steps": 3960,
+     "maxStep": 0.036029,
+     "over": 0,
+     "worst": [
+      -161.404,
+      58.6522
+     ],
+     "hardSteps": 5,
+     "height": {
+      "steps": 27,
+      "over": 0,
+      "maxExcess": -0.117272,
+      "maxStep": 0.127143,
+      "maxDh": 0.759962
+     }
+    }
+   },
+   "hard": {
+    "farmland:foggy | forest:foggy": {
+     "steps": 11,
+     "maxJump": 0.868658,
+     "example": [
+      [
+       -145.142,
+       34.3833
+      ],
+      [
+       -145.164,
+       34.0656
+      ]
+     ]
+    },
+    "desert:desert | grassland:foggy": {
+     "steps": 48,
+     "maxJump": 1,
+     "example": [
+      [
+       -102.067,
+       -35.1151
+      ],
+      [
+       -102.439,
+       -35.0231
+      ]
+     ]
+    },
+    "desert:desert | ruin:default": {
+     "steps": 33,
+     "maxJump": 1,
+     "example": [
+      [
+       -103.181,
+       -34.8356
+      ],
+      [
+       -103.551,
+       -34.7403
+      ]
+     ]
+    },
+    "desert:desert | farmland:default": {
+     "steps": 8,
+     "maxJump": 1,
+     "example": [
+      [
+       -134.638,
+       -21.5659
+      ],
+      [
+       -134.926,
+       -21.3941
+      ]
+     ]
+    },
+    "farmland:default | grassland:foggy": {
+     "steps": 86,
+     "maxJump": 1,
+     "example": [
+      [
+       71.0325,
+       -36.2489
+      ],
+      [
+       71.3781,
+       -36.0956
+      ]
+     ]
+    },
+    "forest:foggy | grassland:default": {
+     "steps": 134,
+     "maxJump": 1,
+     "example": [
+      [
+       105.097,
+       -12.7954
+      ],
+      [
+       105.333,
+       -12.5762
+      ]
+     ]
+    },
+    "forest:foggy | ruin:default": {
+     "steps": 70,
+     "maxJump": 1,
+     "example": [
+      [
+       94.1692,
+       -22.1691
+      ],
+      [
+       94.4314,
+       -21.9635
+      ]
+     ]
+    },
+    "grassland:foggy | village:default": {
+     "steps": 177,
+     "maxJump": 1,
+     "example": [
+      [
+       139.752,
+       50.5095
+      ],
+      [
+       140.203,
+       50.373
+      ]
+     ]
+    },
+    "farmland:default | forest:foggy": {
+     "steps": 128,
+     "maxJump": 1,
+     "example": [
+      [
+       3.544,
+       -42.2366
+      ],
+      [
+       3.9554,
+       -42.3299
+      ]
+     ]
+    },
+    "forest:foggy | grassland:foggy": {
+     "steps": 65,
+     "maxJump": 0.998733,
+     "example": [
+      [
+       84.8192,
+       -52.8001
+      ],
+      [
+       84.382,
+       -52.9782
+      ]
+     ]
+    },
+    "back-ocean:foggy | village:default": {
+     "steps": 8,
+     "maxJump": 0.864755,
+     "example": [
+      [
+       113.653,
+       2.8643
+      ],
+      [
+       113.496,
+       2.5876
+      ]
+     ]
+    },
+    "grassland:default | ice-south:ice": {
+     "steps": 23,
+     "maxJump": 1,
+     "example": [
+      [
+       171.905,
+       -67.7917
+      ],
+      [
+       171.142,
+       -67.9284
+      ]
+     ]
+    },
+    "ice-north:ice | lava:lava": {
+     "steps": 19,
+     "maxJump": 1,
+     "example": [
+      [
+       -7.7272,
+       67.724
+      ],
+      [
+       -8.4856,
+       67.8623
+      ]
+     ]
+    },
+    "grassland:foggy | ice-north:ice": {
+     "steps": 46,
+     "maxJump": 1,
+     "example": [
+      [
+       74.1805,
+       65.414
+      ],
+      [
+       74.5285,
+       65.6979
+      ]
+     ]
+    },
+    "desert:desert | grassland:default": {
+     "steps": 18,
+     "maxJump": 1,
+     "example": [
+      [
+       -132.381,
+       -17.9607
+      ],
+      [
+       -132.5,
+       -18.2579
+      ]
+     ]
+    },
+    "forest:foggy | village:default": {
+     "steps": 58,
+     "maxJump": 1,
+     "example": [
+      [
+       96.4554,
+       -3.6324
+      ],
+      [
+       96.4809,
+       -3.3151
+      ]
+     ]
+    },
+    "grassland:default | ice-north:ice": {
+     "steps": 97,
+     "maxJump": 1,
+     "example": [
+      [
+       106.776,
+       65.3464
+      ],
+      [
+       106.923,
+       65.6587
+      ]
+     ]
+    },
+    "ice-south:ice | west-sea:foggy": {
+     "steps": 22,
+     "maxJump": 1,
+     "example": [
+      [
+       -73.295,
+       -65.1943
+      ],
+      [
+       -73.1491,
+       -65.5067
+      ]
+     ]
+    },
+    "grassland:foggy | ice-south:ice": {
+     "steps": 31,
+     "maxJump": 1,
+     "example": [
+      [
+       76.6804,
+       -65.1425
+      ],
+      [
+       76.244,
+       -65.4033
+      ]
+     ]
+    },
+    "farmland:foggy | grassland:foggy": {
+     "steps": 13,
+     "maxJump": 0.983562,
+     "example": [
+      [
+       -150.327,
+       33.2929
+      ],
+      [
+       -149.948,
+       33.3218
+      ]
+     ]
+    },
+    "east-strait:foggy | farmland:default": {
+     "steps": 32,
+     "maxJump": 1,
+     "example": [
+      [
+       69.4499,
+       2.0684
+      ],
+      [
+       69.7556,
+       2.1578
+      ]
+     ]
+    },
+    "back-ocean:foggy | farmland:default": {
+     "steps": 28,
+     "maxJump": 1,
+     "example": [
+      [
+       -151.625,
+       9.3834
+      ],
+      [
+       -151.312,
+       9.3086
+      ]
+     ]
+    },
+    "grassland:foggy | ruin:default": {
+     "steps": 6,
+     "maxJump": 0.247996,
+     "example": [
+      [
+       -7.3962,
+       -49.807
+      ],
+      [
+       -7.2901,
+       -50.1179
+      ]
+     ]
+    },
+    "grassland:foggy | lava:lava": {
+     "steps": 7,
+     "maxJump": 1,
+     "example": [
+      [
+       -57.8257,
+       63.3402
+      ],
+      [
+       -58.3249,
+       63.115
+      ]
+     ]
+    },
+    "desert:desert | ice-south:ice": {
+     "steps": 2,
+     "maxJump": 1,
+     "example": [
+      [
+       -110.147,
+       -64.4538
+      ],
+      [
+       -110.126,
+       -64.772
+      ]
+     ]
+    },
+    "forest:foggy | ruin:foggy": {
+     "steps": 8,
+     "maxJump": 0.240035,
+     "example": [
+      [
+       -135.946,
+       37.0056
+      ],
+      [
+       -135.635,
+       36.8075
+      ]
+     ]
+    },
+    "grassland:foggy | village:foggy": {
+     "steps": 5,
+     "maxJump": 0.979901,
+     "example": [
+      [
+       -151.834,
+       46.3737
+      ],
+      [
+       -152.059,
+       46.6517
+      ]
+     ]
+    }
+   },
+   "violations": {},
+   "phaseGradient": {
+    "max": 0.045961,
+    "at": [
+     89.8406,
+     27.4638
+    ]
+   }
+  },
+  "api": {
+   "ok": true,
+   "lines": [
+    "接口：sample / at / effectsAt / place / lock / locked / clearCache / cacheSize；at 即 sample：true",
+    "lock('rain') 城镇 (-7, 20)：rain 1.00 snow 0.00 wetness 1.00 drip 1.00 mist 0.00",
+    "lock('clear') 城镇 (-7, 20)：rain 0.00 snow 0.00 wetness 0.00 drip 0.00 mist 0.00",
+    "lock('after') 城镇 (-7, 20)：rain 0.00 snow 0.00 wetness 1.00 drip 1.00 mist 0.20",
+    "lock('snow') 城镇 (-7, 20)：rain 1.00 snow 0.00 wetness 1.00 drip 1.00 mist 0.00",
+    "lock('snow') 冰原：rain 0.00 snow 1.00 wetness 0.00 drip 0.00 mist 0.13",
+    "lock('rain') 冰原：rain 0.00 snow 1.00 wetness 0.00 drip 0.00 mist 0.13",
+    "lock('fog') 雾区（雾份额 1）：rain 0.00 snow 0.00 wetness 0.60 drip 0.50 mist 1.00",
+    "lock('fog') 城镇 (-7, 20)：rain 0.00 snow 0.00 wetness 1.00 drip 1.00 mist 0.20",
+    "3000 个随机样本的效果权重都在 [0, 1]：true",
+    "lock('bogus') 与 lock(null) 解除锁定：true",
+    "weather.js（去掉注释）不读相机、THREE、DOM、SECTION、随机数或时钟：无"
+   ]
+  }
+ },
+ "before": {
+  "determinism": {
+   "counterexample": {
+    "point": [
+     152.28,
+     -73.7
+    ],
+    "warmedFirst": [
+     [
+      152.28,
+      -73.7
+     ],
+     [
+      152.32,
+      -73.7
+     ]
+    ],
+    "t": 600,
+    "afterWarmA": {
+     "state": "snow",
+     "weights": {
+      "rain": 0,
+      "after": 0,
+      "overcast": 0,
+      "clear": 0,
+      "snow": 1,
+      "fog": 0
+     }
+    },
+    "afterWarmB": {
+     "state": "clear",
+     "weights": {
+      "rain": 0,
+      "after": 0,
+      "overcast": 0,
+      "clear": 1,
+      "snow": 0,
+      "fog": 0
+     }
+    },
+    "diff": 1
+   },
+   "sameCell": {
+    "pairs": 400,
+    "n": 3200,
+    "maxDiff": 0.0294881,
+    "mismatches": 28
+   },
+   "edges": {
+    "pairs": 150,
+    "n": 1200,
+    "maxDiff": 1,
+    "mismatches": 242
+   },
+   "orders": {
+    "queries": 2500,
+    "runs": "forward, reverse, shuffled, repeated twice, cache cleared halfway",
+    "n": 15000,
+    "maxDiff": 1,
+    "mismatches": 366
+   },
+   "lon360": {
+    "n": 1000,
+    "maxDiff": 1,
+    "mismatches": 2,
+    "categoryMismatches": 3
+   }
+  },
+  "shares": {
+   "cats": {
+    "town": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "default": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "foggy": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 100,
+     "fogMin": 0.15
+    },
+    "mountain": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0.61165,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "lava": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0.6,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.598301,
+      "rainMax": 0.61165,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "desert": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.72,
+      "rainMax": 0.04,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.722607,
+      "rainMax": 0.0416089,
+      "largestOk": 100
+     },
+     "snowMax": 0,
+     "fogPlaces": 0,
+     "fogMin": 1
+    },
+    "ice": {
+     "n": 100,
+     "cycle": {
+      "leadMin": 0.6,
+      "rainMax": 0,
+      "largestOk": 100
+     },
+     "sixHours": {
+      "leadMin": 0.597781,
+      "rainMax": 0,
+      "largestOk": 100
+     },
+     "snowMax": 0.612171,
+     "fogPlaces": 0,
+     "fogMin": 1
+    }
+   },
+   "violations": {},
+   "lock": {
+    "samples": 4200,
+    "violations": 0,
+    "mountainSnowAboveFraction": 60
+   }
+  },
+  "time": {
+   "rows": [
+    {
+     "cat": "town",
+     "lon": 14.7138,
+     "lat": 22.3638,
+     "maxRate": 0.0208333,
+     "at": 914
+    },
+    {
+     "cat": "town",
+     "lon": -2.96239,
+     "lat": -27.0012,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "default",
+     "lon": -175.914,
+     "lat": -52.104,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "default",
+     "lon": -37.2317,
+     "lat": 19.9916,
+     "maxRate": 0.0208333,
+     "at": 914
+    },
+    {
+     "cat": "foggy",
+     "lon": -86.2323,
+     "lat": 37.5639,
+     "maxRate": 0.0208333,
+     "at": 314
+    },
+    {
+     "cat": "foggy",
+     "lon": -179.59,
+     "lat": 39.4264,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "mountain",
+     "lon": 87.7645,
+     "lat": 13.1218,
+     "maxRate": 0.0208333,
+     "at": 1214
+    },
+    {
+     "cat": "mountain",
+     "lon": 88.3951,
+     "lat": 8.12781,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "lava",
+     "lon": -19.0114,
+     "lat": 48.9143,
+     "maxRate": 0.0208333,
+     "at": 914
+    },
+    {
+     "cat": "lava",
+     "lon": -30.428,
+     "lat": 50.8901,
+     "maxRate": 0.0208333,
+     "at": 914
+    },
+    {
+     "cat": "desert",
+     "lon": -130.442,
+     "lat": -58.0639,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "desert",
+     "lon": -133.011,
+     "lat": -27.9798,
+     "maxRate": 0.0208333,
+     "at": 914
+    },
+    {
+     "cat": "ice",
+     "lon": 100.357,
+     "lat": -67.9446,
+     "maxRate": 0.0208333,
+     "at": 614
+    },
+    {
+     "cat": "ice",
+     "lon": 78.4847,
+     "lat": -78.1569,
+     "maxRate": 0.0208333,
+     "at": 614
+    }
+   ],
+   "maxRate": 0.0208333,
+   "fade": {
+    "checks": 0,
+    "worst": 0
+   },
+   "town": {
+    "points": 441,
+    "times": 584,
+    "maxDiff": 1,
+    "timesSplit": 575,
+    "maxStates": 3,
+    "plan10m": {
+     "600": [
+      "rain",
+      "after"
+     ],
+     "900": [
+      "overcast",
+      "rain",
+      "after"
+     ],
+     "1200": [
+      "rain",
+      "overcast"
+     ]
+    }
+   }
+  },
+  "space": {
+   "stats": {
+    "greatCircles": {
+     "walks": 60,
+     "steps": 67800,
+     "maxStep": 1,
+     "over": 1773,
+     "worst": [
+      -27.3982,
+      -28.3471
+     ],
+     "hardSteps": 466,
+     "height": {
+      "steps": 610,
+      "over": 15,
+      "maxExcess": 0.530071,
+      "maxStep": 1,
+      "maxDh": 1.71639
+     }
+    },
+    "townEdge": {
+     "walks": 72,
+     "steps": 7200,
+     "maxStep": 1,
+     "over": 132,
+     "worst": [
+      24.1916,
+      0
+     ],
+     "hardSteps": 28,
+     "height": {
+      "steps": 0,
+      "over": 0,
+      "maxExcess": -1,
+      "maxStep": 0,
+      "maxDh": 0
+     }
+    },
+    "coast": {
+     "walks": 200,
+     "steps": 12800,
+     "maxStep": 1,
+     "over": 406,
+     "worst": [
+      82.4821,
+      29.0368
+     ],
+     "hardSteps": 103,
+     "height": {
+      "steps": 163,
+      "over": 2,
+      "maxExcess": 0.581751,
+      "maxStep": 1,
+      "maxDh": 2.2074
+     }
+    },
+    "river": {
+     "walks": 120,
+     "steps": 5760,
+     "maxStep": 1,
+     "over": 248,
+     "worst": [
+      -42.212,
+      -46.5332
+     ],
+     "hardSteps": 29,
+     "height": {
+      "steps": 95,
+      "over": 4,
+      "maxExcess": 0.871853,
+      "maxStep": 1,
+      "maxDh": 1.74176
+     }
+    },
+    "snowLine": {
+     "walks": 150,
+     "steps": 18000,
+     "maxStep": 1,
+     "over": 450,
+     "worst": [
+      173.72,
+      44.2192
+     ],
+     "hardSteps": 223,
+     "height": {
+      "steps": 1374,
+      "over": 19,
+      "maxExcess": 0.641395,
+      "maxStep": 1,
+      "maxDh": 1.92699
+     }
+    },
+    "mountainEdge": {
+     "walks": 100,
+     "steps": 8000,
+     "maxStep": 1,
+     "over": 193,
+     "worst": [
+      153.988,
+      64.9947
+     ],
+     "hardSteps": 143,
+     "height": {
+      "steps": 784,
+      "over": 8,
+      "maxExcess": 0.542409,
+      "maxStep": 1,
+      "maxDh": 1.83944
+     }
+    },
+    "phaseContours": {
+     "walks": 200,
+     "steps": 12000,
+     "maxStep": 1,
+     "over": 506,
+     "worst": [
+      162.626,
+      55.6813
+     ],
+     "hardSteps": 106,
+     "height": {
+      "steps": 137,
+      "over": 5,
+      "maxExcess": 0.860605,
+      "maxStep": 1,
+      "maxDh": 1.31148
+     }
+    },
+    "seams": {
+     "walks": 66,
+     "steps": 3960,
+     "maxStep": 1,
+     "over": 48,
+     "worst": [
+      142.317,
+      -77.4395
+     ],
+     "hardSteps": 5,
+     "height": {
+      "steps": 27,
+      "over": 0,
+      "maxExcess": -0.118533,
+      "maxStep": 0.128079,
+      "maxDh": 0.759962
+     }
+    }
+   },
+   "hard": {
+    "desert:desert | grassland:foggy": {
+     "steps": 48,
+     "maxJump": 1,
+     "example": [
+      [
+       -102.067,
+       -35.1151
+      ],
+      [
+       -102.439,
+       -35.0231
+      ]
+     ]
+    },
+    "desert:desert | ruin:default": {
+     "steps": 33,
+     "maxJump": 1,
+     "example": [
+      [
+       -103.181,
+       -34.8356
+      ],
+      [
+       -103.551,
+       -34.7403
+      ]
+     ]
+    },
+    "desert:desert | farmland:default": {
+     "steps": 8,
+     "maxJump": 1,
+     "example": [
+      [
+       -134.638,
+       -21.5659
+      ],
+      [
+       -134.926,
+       -21.3941
+      ]
+     ]
+    },
+    "farmland:default | grassland:foggy": {
+     "steps": 90,
+     "maxJump": 1,
+     "example": [
+      [
+       -151.181,
+       -10.3767
+      ],
+      [
+       -151.438,
+       -10.1841
+      ]
+     ]
+    },
+    "forest:foggy | grassland:default": {
+     "steps": 120,
+     "maxJump": 1,
+     "example": [
+      [
+       105.097,
+       -12.7954
+      ],
+      [
+       105.333,
+       -12.5762
+      ]
+     ]
+    },
+    "forest:foggy | ruin:default": {
+     "steps": 70,
+     "maxJump": 1,
+     "example": [
+      [
+       -27.6481,
+       -45.6452
+      ],
+      [
+       -27.2746,
+       -45.4638
+      ]
+     ]
+    },
+    "grassland:foggy | village:default": {
+     "steps": 101,
+     "maxJump": 1,
+     "example": [
+      [
+       117.251,
+       -0.9819
+      ],
+      [
+       117.476,
+       -0.7569
+      ]
+     ]
+    },
+    "farmland:default | forest:foggy": {
+     "steps": 128,
+     "maxJump": 1,
+     "example": [
+      [
+       90.2337,
+       -36.5618
+      ],
+      [
+       90.0017,
+       -36.8201
+      ]
+     ]
+    },
+    "back-ocean:foggy | village:default": {
+     "steps": 8,
+     "maxJump": 1,
+     "example": [
+      [
+       117.024,
+       11.3033
+      ],
+      [
+       117.278,
+       11.1054
+      ]
+     ]
+    },
+    "grassland:default | ice-south:ice": {
+     "steps": 23,
+     "maxJump": 1,
+     "example": [
+      [
+       171.905,
+       -67.7917
+      ],
+      [
+       171.142,
+       -67.9284
+      ]
+     ]
+    },
+    "grassland:foggy | lava:lava": {
+     "steps": 10,
+     "maxJump": 1,
+     "example": [
+      [
+       -57.8257,
+       63.3402
+      ],
+      [
+       -58.3249,
+       63.115
+      ]
+     ]
+    },
+    "ice-north:ice | lava:lava": {
+     "steps": 19,
+     "maxJump": 1,
+     "example": [
+      [
+       -7.7272,
+       67.724
+      ],
+      [
+       -8.4856,
+       67.8623
+      ]
+     ]
+    },
+    "grassland:foggy | ice-north:ice": {
+     "steps": 46,
+     "maxJump": 1,
+     "example": [
+      [
+       -66.3368,
+       67.1711
+      ],
+      [
+       -67.052,
+       67.0167
+      ]
+     ]
+    },
+    "desert:desert | grassland:default": {
+     "steps": 18,
+     "maxJump": 1,
+     "example": [
+      [
+       -132.381,
+       -17.9607
+      ],
+      [
+       -132.5,
+       -18.2579
+      ]
+     ]
+    },
+    "grassland:foggy | village:mountain": {
+     "steps": 10,
+     "maxJump": 1,
+     "example": [
+      [
+       -167.994,
+       61.5819
+      ],
+      [
+       -168.652,
+       61.5248
+      ]
+     ]
+    },
+    "forest:foggy | village:default": {
+     "steps": 58,
+     "maxJump": 1,
+     "example": [
+      [
+       97.9537,
+       14.7698
+      ],
+      [
+       97.9808,
+       15.087
+      ]
+     ]
+    },
+    "grassland:default | ice-north:ice": {
+     "steps": 97,
+     "maxJump": 1,
+     "example": [
+      [
+       106.776,
+       65.3464
+      ],
+      [
+       106.923,
+       65.6587
+      ]
+     ]
+    },
+    "ice-south:ice | west-sea:foggy": {
+     "steps": 22,
+     "maxJump": 1,
+     "example": [
+      [
+       -73.295,
+       -65.1943
+      ],
+      [
+       -73.1491,
+       -65.5067
+      ]
+     ]
+    },
+    "grassland:foggy | ice-south:ice": {
+     "steps": 31,
+     "maxJump": 1,
+     "example": [
+      [
+       76.6804,
+       -65.1425
+      ],
+      [
+       76.244,
+       -65.4033
+      ]
+     ]
+    },
+    "east-strait:foggy | farmland:default": {
+     "steps": 32,
+     "maxJump": 1,
+     "example": [
+      [
+       69.4499,
+       2.0684
+      ],
+      [
+       69.7556,
+       2.1578
+      ]
+     ]
+    },
+    "back-ocean:foggy | farmland:default": {
+     "steps": 28,
+     "maxJump": 1,
+     "example": [
+      [
+       -150.223,
+       -26.022
+      ],
+      [
+       -150.011,
+       -25.7674
+      ]
+     ]
+    },
+    "grassland:foggy | ruin:default": {
+     "steps": 6,
+     "maxJump": 1,
+     "example": [
+      [
+       -7.3962,
+       -49.807
+      ],
+      [
+       -7.2901,
+       -50.1179
+      ]
+     ]
+    },
+    "desert:desert | ice-south:ice": {
+     "steps": 2,
+     "maxJump": 1,
+     "example": [
+      [
+       -110.147,
+       -64.4538
+      ],
+      [
+       -110.126,
+       -64.772
+      ]
+     ]
+    }
+   },
+   "violations": {},
+   "phaseGradient": {
+    "max": 0,
+    "at": null
+   }
+  }
+ },
+ "samples": [
+  {
+   "name": "town (-7, 20)",
+   "lon": -4.4563,
+   "lat": -12.6289,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "after",
+      "weights": {
+       "after": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 0.5,
+       "overcast": 0.5
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "overcast",
+      "weights": {
+       "overcast": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "after",
+      "weights": {
+       "after": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "rain",
+      "weights": {
+       "rain": 0.791667,
+       "overcast": 0.208333
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "after",
+      "weights": {
+       "rain": 0.208333,
+       "after": 0.791667
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "plan counterexample",
+   "lon": 152.28,
+   "lat": -73.7,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "clear",
+      "weights": {
+       "clear": 0.5,
+       "snow": 0.5
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "clear",
+      "weights": {
+       "clear": 0.791667,
+       "snow": 0.208333
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "clear",
+      "weights": {
+       "clear": 0.791667,
+       "snow": 0.208333
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "default",
+   "lon": -175.914,
+   "lat": -52.104,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "overcast",
+      "weights": {
+       "overcast": 1
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "after",
+      "weights": {
+       "after": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "overcast",
+      "weights": {
+       "overcast": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "after",
+      "weights": {
+       "after": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "overcast",
+      "weights": {
+       "rain": 0.208333,
+       "overcast": 0.791667
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "after",
+      "weights": {
+       "rain": 0.208333,
+       "after": 0.791667
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "foggy",
+   "lon": -86.2323,
+   "lat": 37.5639,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "rain",
+      "weights": {
+       "rain": 0.887428,
+       "overcast": 0.112572
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "after",
+      "weights": {
+       "after": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 0.556286,
+       "overcast": 0.443714
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 0.5,
+       "clear": 0.5
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "rain",
+      "weights": {
+       "rain": 0.887428,
+       "clear": 0.112572
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "rain",
+      "weights": {
+       "rain": 0.887428,
+       "after": 0.112572
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "rain",
+      "weights": {
+       "rain": 0.726,
+       "after": 0.274
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "mountain",
+   "lon": 87.7645,
+   "lat": 13.1218,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 0.810611,
+       "snow": 0.189389
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 0.810611,
+       "snow": 0.189389
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "overcast",
+      "weights": {
+       "overcast": 1
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "rain",
+      "weights": {
+       "rain": 0.810611,
+       "snow": 0.189389
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 0.810611,
+       "snow": 0.189389
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "after",
+      "weights": {
+       "rain": 0.405305,
+       "after": 0.5,
+       "snow": 0.0946947
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "rain",
+      "weights": {
+       "rain": 0.810611,
+       "snow": 0.189389
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "overcast",
+      "weights": {
+       "overcast": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "rain",
+      "weights": {
+       "rain": 0.810611,
+       "snow": 0.189389
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "overcast",
+      "weights": {
+       "rain": 0.168877,
+       "overcast": 0.791667,
+       "snow": 0.0394561
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "rain",
+      "weights": {
+       "rain": 0.641733,
+       "overcast": 0.208333,
+       "snow": 0.149933
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "lava",
+   "lon": -19.0114,
+   "lat": 48.9143,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 0.5,
+       "overcast": 0.5
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "rain",
+      "weights": {
+       "rain": 0.5,
+       "overcast": 0.5
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "rain",
+      "weights": {
+       "rain": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "rain",
+      "weights": {
+       "rain": 0.791667,
+       "overcast": 0.208333
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "rain",
+      "weights": {
+       "rain": 0.791667,
+       "clear": 0.208333
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "desert",
+   "lon": -130.441,
+   "lat": -58.0639,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "overcast",
+      "weights": {
+       "overcast": 0.614433,
+       "clear": 0.385567
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "clear",
+      "weights": {
+       "after": 0.192784,
+       "clear": 0.807216
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "overcast",
+      "weights": {
+       "overcast": 0.5,
+       "clear": 0.5
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "after",
+      "weights": {
+       "after": 0.614433,
+       "clear": 0.385567
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "overcast",
+      "weights": {
+       "overcast": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "clear",
+      "weights": {
+       "after": 0.486426,
+       "clear": 0.513574
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "clear",
+      "weights": {
+       "after": 0.208333,
+       "clear": 0.791667
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "ice",
+   "lon": 100.357,
+   "lat": -67.9446,
+   "at": [
+    {
+     "now": {
+      "t": 0,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     },
+     "before": {
+      "t": 0,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 600,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 600,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 924,
+      "state": "snow",
+      "weights": {
+       "snow": 1
+      }
+     },
+     "before": {
+      "t": 924,
+      "state": "clear",
+      "weights": {
+       "clear": 0.5,
+       "snow": 0.5
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 1500,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 3000,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     },
+     "before": {
+      "t": 3000,
+      "state": "clear",
+      "weights": {
+       "clear": 1
+      }
+     }
+    },
+    {
+     "now": {
+      "t": 9010,
+      "state": "clear",
+      "weights": {
+       "clear": 0.791667,
+       "snow": 0.208333
+      }
+     },
+     "before": {
+      "t": 9010,
+      "state": "clear",
+      "weights": {
+       "clear": 0.791667,
+       "snow": 0.208333
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "pass": true,
+ "fails": []
+}
