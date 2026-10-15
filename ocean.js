@@ -161,7 +161,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
     const water = new THREE.Mesh(g, makeMat()); water.name = 'ocean:water'; water.matrixAutoUpdate = false; water.renderOrder = 3; root.add(water); objs.water = water;
     const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(DATA.coast, 3)); cg.computeBoundingSphere();
-    const coast = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); coast.name = 'ocean:coast'; coast.matrixAutoUpdate = false; root.add(coast); objs.coast = coast;
+    const coast = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); coast.name = 'ocean:coast'; coast.matrixAutoUpdate = false; root.add(coast); objs.coast = coast;
     // instances grouped by type
     const by = {}; for (const it of DATA.instances) (by[it.type] = by[it.type] || []).push({ ...it, m: matrixOf(it) });
     S.counts = {};

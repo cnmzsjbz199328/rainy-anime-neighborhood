@@ -692,7 +692,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   function buildLines() {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
-    if (segs.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.name = 'cover:ink:forest-edge'; l.matrixAutoUpdate = false; S.root.add(l); objs.lines.push(l); S.edgeSegments = segs.length / 6; }
+    if (segs.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); l.name = 'cover:ink:forest-edge'; l.matrixAutoUpdate = false; S.root.add(l); objs.lines.push(l); S.edgeSegments = segs.length / 6; }
   }
   // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {

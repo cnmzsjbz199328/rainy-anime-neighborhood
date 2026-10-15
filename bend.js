@@ -25,11 +25,12 @@ const EDGE = { lonBand: 12, lat0: 80, lat1: 84.5 };      // edge fog: opaque at 
 const wrapU = { value: new THREE.Vector3(1, SEAM, PERIOD) };              // x: 1 = the flat map wraps at the seam, y: seam x, z: period
 const edgeU = { value: new THREE.Vector4(1, 0, 0, 0) };                   // x: 1 = edge fog on (times 1 - uBend in the shader), yzw: the background colour (output colour space)
 const shiftOf = x => (wrapU.value.x > 0 ? -PERIOD * Math.floor((x - SEAM) / PERIOD) : 0);
+const weatherFogU = { value: 0 };                                          // the density the weather adds on top of scene.fog (weather_fx.js writes it)
 
 const GLSL = `
 uniform float uBend;
 uniform vec3 uWrap;
-uniform vec2 uBendMat;
+uniform vec3 uBendMat;
 varying float vBendEdge;
 const float BEND_R = 90.0;
 float bendShift( float refX ) { return uWrap.x * uBendMat.y > 0.0 ? - uWrap.z * floor( ( refX - uWrap.y ) / uWrap.z ) : 0.0; }
@@ -74,20 +75,33 @@ if (PROJECT_CHUNK === THREE.ShaderChunk.project_vertex) throw new Error('bend.js
 const FRAG_PARS = `
 uniform float uBend;
 uniform vec4 uEdgeFog;
-uniform vec2 uBendMat;
+uniform vec3 uBendMat;
+uniform float uFogWeather;
 varying float vBendEdge;`;
+// the scene fog by material (uBendMat.z; docs/world/GRAY_VIEW_FIX_PLAN.md): 0 three's own mix to the fog colour; 1 additive light is only dimmed by the
+// transmittance 1 - F (mixing it to a non-black fog colour would add that colour over the whole face: the bright discs of the lamp pools in fog);
+// 2 ink lines (userData.inkFog) keep their colour under the base fog and are covered only by the weather's part of it, exp(-(d^2 - b^2) z^2) with b = d - weather
 // W8e-c: the sphere is a clear day (uDay = uBend): additive light (lamp pools, the light band, far lights, glows) fades out with it
-const FRAG_FOG = `#include <fog_fragment>
+const FRAG_FOG = `vec3 bendLit = gl_FragColor.rgb;
+	#include <fog_fragment>
+	#ifdef USE_FOG
+	if ( uBendMat.z > 1.5 ) {
+		gl_FragColor.rgb = bendLit;
+		#ifdef FOG_EXP2
+		if ( uFogWeather > 0.0 ) { float bendB = max( fogDensity - uFogWeather, 0.0 ); gl_FragColor.rgb = mix( bendLit, fogColor, 1.0 - exp( - ( fogDensity * fogDensity - bendB * bendB ) * vFogDepth * vFogDepth ) ); }
+		#endif
+	} else if ( uBendMat.z > 0.5 ) gl_FragColor.rgb = bendLit * ( 1.0 - fogFactor );
+	#endif
 	if ( uBend > 0.0 && uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - uBend;
 	{ float bendE = vBendEdge * uEdgeFog.x * ( 1.0 - uBend );
 	  if ( bendE > 0.0 && uBendMat.x > -0.5 ) { if ( uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - bendE; else gl_FragColor.rgb = mix( gl_FragColor.rgb, uEdgeFog.yzw, bendE ); } }`;
 const stats = { programs: 0, projectPatched: 0, normalPatched: 0, spritePatched: 0, fogPatched: 0 };
 function patch(shader, material) {
-  shader.uniforms.uBend = uniform; shader.uniforms.uWrap = wrapU; shader.uniforms.uEdgeFog = edgeU;
+  shader.uniforms.uBend = uniform; shader.uniforms.uWrap = wrapU; shader.uniforms.uEdgeFog = edgeU; shader.uniforms.uFogWeather = weatherFogU;
   // per material: x = edge fog mode (-1 none, 1 fade for additive blending, 0 mix to the background colour); y = 1 when the material follows the seam shift
-  // (0 for effects already laid out in the display frame around the view target: rain lines, snow; userData.noWrap)
-  const ud = (material && material.userData) || {};
-  shader.uniforms.uBendMat = { value: new THREE.Vector2(ud.edgeFog === false ? -1 : material && material.blending === THREE.AdditiveBlending ? 1 : 0, ud.noWrap ? 0 : 1) };
+  // (0 for effects already laid out in the display frame around the view target: rain lines, snow; userData.noWrap); z = scene fog mode (FRAG_FOG)
+  const ud = (material && material.userData) || {}, additive = !!material && material.blending === THREE.AdditiveBlending;
+  shader.uniforms.uBendMat = { value: new THREE.Vector3(ud.edgeFog === false ? -1 : additive ? 1 : 0, ud.noWrap ? 0 : 1, ud.inkFog ? 2 : additive ? 1 : 0) };
   let v = shader.vertexShader;
   v = v.replace('#include <common>', '#include <common>\n' + GLSL);
   const before = v;
@@ -396,7 +410,7 @@ const BEND = {
   point: pointAt, basis: basisAt,
   lightCount: () => lights.length,
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
-  SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU,
+  SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU, weatherFogUniform: weatherFogU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
   seamSplit, seamStats, tessellate,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },

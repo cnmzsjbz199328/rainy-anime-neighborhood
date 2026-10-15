@@ -35,11 +35,12 @@ const EDGE = { lonBand: 12, lat0: 80, lat1: 84.5 };      // edge fog: opaque at 
 const wrapU = { value: new THREE.Vector3(1, SEAM, PERIOD) };              // x: 1 = the flat map wraps at the seam, y: seam x, z: period
 const edgeU = { value: new THREE.Vector4(1, 0, 0, 0) };                   // x: 1 = edge fog on (times 1 - uBend in the shader), yzw: the background colour (output colour space)
 const shiftOf = x => (wrapU.value.x > 0 ? -PERIOD * Math.floor((x - SEAM) / PERIOD) : 0);
+const weatherFogU = { value: 0 };                                          // the density the weather adds on top of scene.fog (weather_fx.js writes it)
 
 const GLSL = `
 uniform float uBend;
 uniform vec3 uWrap;
-uniform vec2 uBendMat;
+uniform vec3 uBendMat;
 varying float vBendEdge;
 const float BEND_R = 90.0;
 float bendShift( float refX ) { return uWrap.x * uBendMat.y > 0.0 ? - uWrap.z * floor( ( refX - uWrap.y ) / uWrap.z ) : 0.0; }
@@ -84,20 +85,33 @@ if (PROJECT_CHUNK === THREE.ShaderChunk.project_vertex) throw new Error('bend.js
 const FRAG_PARS = `
 uniform float uBend;
 uniform vec4 uEdgeFog;
-uniform vec2 uBendMat;
+uniform vec3 uBendMat;
+uniform float uFogWeather;
 varying float vBendEdge;`;
+// the scene fog by material (uBendMat.z; docs/world/GRAY_VIEW_FIX_PLAN.md): 0 three's own mix to the fog colour; 1 additive light is only dimmed by the
+// transmittance 1 - F (mixing it to a non-black fog colour would add that colour over the whole face: the bright discs of the lamp pools in fog);
+// 2 ink lines (userData.inkFog) keep their colour under the base fog and are covered only by the weather's part of it, exp(-(d^2 - b^2) z^2) with b = d - weather
 // W8e-c: the sphere is a clear day (uDay = uBend): additive light (lamp pools, the light band, far lights, glows) fades out with it
-const FRAG_FOG = `#include <fog_fragment>
+const FRAG_FOG = `vec3 bendLit = gl_FragColor.rgb;
+	#include <fog_fragment>
+	#ifdef USE_FOG
+	if ( uBendMat.z > 1.5 ) {
+		gl_FragColor.rgb = bendLit;
+		#ifdef FOG_EXP2
+		if ( uFogWeather > 0.0 ) { float bendB = max( fogDensity - uFogWeather, 0.0 ); gl_FragColor.rgb = mix( bendLit, fogColor, 1.0 - exp( - ( fogDensity * fogDensity - bendB * bendB ) * vFogDepth * vFogDepth ) ); }
+		#endif
+	} else if ( uBendMat.z > 0.5 ) gl_FragColor.rgb = bendLit * ( 1.0 - fogFactor );
+	#endif
 	if ( uBend > 0.0 && uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - uBend;
 	{ float bendE = vBendEdge * uEdgeFog.x * ( 1.0 - uBend );
 	  if ( bendE > 0.0 && uBendMat.x > -0.5 ) { if ( uBendMat.x > 0.5 ) gl_FragColor.rgb *= 1.0 - bendE; else gl_FragColor.rgb = mix( gl_FragColor.rgb, uEdgeFog.yzw, bendE ); } }`;
 const stats = { programs: 0, projectPatched: 0, normalPatched: 0, spritePatched: 0, fogPatched: 0 };
 function patch(shader, material) {
-  shader.uniforms.uBend = uniform; shader.uniforms.uWrap = wrapU; shader.uniforms.uEdgeFog = edgeU;
+  shader.uniforms.uBend = uniform; shader.uniforms.uWrap = wrapU; shader.uniforms.uEdgeFog = edgeU; shader.uniforms.uFogWeather = weatherFogU;
   // per material: x = edge fog mode (-1 none, 1 fade for additive blending, 0 mix to the background colour); y = 1 when the material follows the seam shift
-  // (0 for effects already laid out in the display frame around the view target: rain lines, snow; userData.noWrap)
-  const ud = (material && material.userData) || {};
-  shader.uniforms.uBendMat = { value: new THREE.Vector2(ud.edgeFog === false ? -1 : material && material.blending === THREE.AdditiveBlending ? 1 : 0, ud.noWrap ? 0 : 1) };
+  // (0 for effects already laid out in the display frame around the view target: rain lines, snow; userData.noWrap); z = scene fog mode (FRAG_FOG)
+  const ud = (material && material.userData) || {}, additive = !!material && material.blending === THREE.AdditiveBlending;
+  shader.uniforms.uBendMat = { value: new THREE.Vector3(ud.edgeFog === false ? -1 : additive ? 1 : 0, ud.noWrap ? 0 : 1, ud.inkFog ? 2 : additive ? 1 : 0) };
   let v = shader.vertexShader;
   v = v.replace('#include <common>', '#include <common>\n' + GLSL);
   const before = v;
@@ -406,7 +420,7 @@ const BEND = {
   point: pointAt, basis: basisAt,
   lightCount: () => lights.length,
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
-  SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU,
+  SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU, weatherFogUniform: weatherFogU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
   seamSplit, seamStats, tessellate,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },
@@ -4211,7 +4225,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       m.customProgramCacheKey = () => 'bend|hull|' + sway; return m;
     };
     const hullMat = mkHull(false), treeHullMat = mkHull(true);
-    const lineMat = k => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, fog: false });
+    const lineMat = k => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, userData: { inkFog: true } });
     S.materials = { floraMat, treeMat, glowMat, groundMat, hullMat, treeHullMat, inkW };
 
     // ---- instanced objects: one InstancedMesh (plus outline hull) per type
@@ -4366,7 +4380,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       }
       return out;
     };
-    const addG = segs => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.matrixAutoUpdate = false; l.name = 'sec:ink:global'; root.add(l); objs.lines.panorama.push(l); S.stats.ink_panorama = (S.stats.ink_panorama || 0) + segs.length / 6; };
+    const addG = segs => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); l.matrixAutoUpdate = false; l.name = 'sec:ink:global'; root.add(l); objs.lines.panorama.push(l); S.stats.ink_panorama = (S.stats.ink_panorama || 0) + segs.length / 6; };
     addG(contour(sample((lo, la) => W.coastDistance(lo, la)), 0, 0.2));            // coasts
     addG(contour(sample((lo, la) => W.height(lo, la)), 10, 10.2));                 // ridge and peak outlines at 10 m (drawn at height: flat y = (h - 1.6)/cos)
     const ice = []; for (const r of W.regions.filter(q => q.zone === 'ice')) { for (let lon = -180; lon < 180; lon += 1) { const a = r.shape.edge(lon), b = r.shape.edge(lon + 1), fa = flatOf(lon, a), fb = flatOf(lon + 1, b); ice.push(fa.x, (2.6 - BASE) * fa.k, fa.z, fb.x, (2.6 - BASE) * fb.k, fb.z); } }
@@ -5220,7 +5234,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const inkColor = 0x273647;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-    const lineMat = () => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, fog: false });
+    const lineMat = () => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, userData: { inkFog: true } });
     S.materials = { bridgeMat, navMat };
 
     // ---- strips: route surfaces (up normals, ground material) and bridge girder faces (computed normals)
@@ -5276,7 +5290,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     // ---- ink lines: route paved edges (aerial), bridge girder edges, joints and stays (ground and aerial)
     // a line keeps its longitudes continuous (no 360 degree jump where it crosses the date line, W8e-b): bend.js then moves each segment as a whole at the seam
     const poly = (pts, out) => { let prev = null, lon0 = null; for (const q of pts) { const lon = lon0 === null ? q.lon : lon0 + (((q.lon - lon0) % 360 + 540) % 360 - 180); lon0 = lon; const f = flatOf(lon, q.lat), p = [f.x, (q.alt - BASE) * f.k, f.z]; if (prev) out.push(...prev, ...p); prev = p; } };
-    const addLines = (layer, segs, color) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, color ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, fog: false }) : lineMat()); l.name = 'road:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; return l; };
+    const addLines = (layer, segs, color) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, color ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, userData: { inkFog: true } }) : lineMat()); l.name = 'road:ink:' + layer; l.matrixAutoUpdate = false; root.add(l); objs.lines[layer].push(l); S.stats['ink_' + layer] = (S.stats['ink_' + layer] || 0) + segs.length / 6; return l; };
     { const segs = []; for (const rt of DATA.routes) { const clip = line => { let run = []; line.forEach((q, i) => { if (rt.samples[i].span === 'tunnel') { if (run.length > 1) poly(run, segs); run = []; } else run.push(q); }); if (run.length > 1) poly(run, segs); }; clip(rt.lines.edgeL); clip(rt.lines.edgeR); }
       for (const j of DATA.junctions) for (const line of (j.ink || [])) poly(line, segs); // shallow merges have no added curb outline
       addLines('aerial', segs); }
@@ -5288,7 +5302,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (const st of DATA.stairs) for (const line of st.ropeSegments) poly(line, rope);
       for (const b of DATA.bridges) for (const line of (b.stairRails || [])) poly(line, rail);
       for (const rt of DATA.routes) { const ps = rt.poles || []; for (let a = 0; a + 1 < ps.length; a++) { const A = ps[a].rec, B = ps[a + 1].rec, MA = matrixOfAlt(A), MB = matrixOfAlt(B), kA = flatOf(A.lon, A.lat).k, sag = 0.5 + 0.5 * hash(a + 1, rt.length); for (let c = 0; c < 3; c++) { const pa = new THREE.Vector3(...local[c]).applyMatrix4(MA), pb = new THREE.Vector3(...local[c]).applyMatrix4(MB); let prev = null; for (let nn = 0; nn <= 10; nn++) { const t = nn / 10, p = [pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t - sag * 4 * t * (1 - t) * kA, pa.z + (pb.z - pa.z) * t]; if (prev) wire.push(...prev, ...p); prev = p; } } } }
-      const addNear = (segs, color, op) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, fog: false })); l.name = 'road:near-line'; l.matrixAutoUpdate = false; root.add(l); objs.lines.near.push(l); };
+      const addNear = (segs, color, op) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, userData: { inkFog: true } })); l.name = 'road:near-line'; l.matrixAutoUpdate = false; root.add(l); objs.lines.near.push(l); };
       addNear(rope, 0xb59a74, 0.95); addNear(rail, 0xaeb7c4, 0.95); addNear(wire, 0x1f2a38, 0.9); S.stats.wireSegments = wire.length / 6; }
     { const segs = []; for (const st of DATA.stairs) { poly(st.lines.edgeL, segs); poly(st.lines.edgeR, segs); } addLines('aerial', segs); }
 
@@ -5549,7 +5563,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
     const water = new THREE.Mesh(g, makeMat()); water.name = 'ocean:water'; water.matrixAutoUpdate = false; water.renderOrder = 3; root.add(water); objs.water = water;
     const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(DATA.coast, 3)); cg.computeBoundingSphere();
-    const coast = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); coast.name = 'ocean:coast'; coast.matrixAutoUpdate = false; root.add(coast); objs.coast = coast;
+    const coast = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); coast.name = 'ocean:coast'; coast.matrixAutoUpdate = false; root.add(coast); objs.coast = coast;
     // instances grouped by type
     const by = {}; for (const it of DATA.instances) (by[it.type] = by[it.type] || []).push({ ...it, m: matrixOf(it) });
     S.counts = {};
@@ -6282,7 +6296,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   function buildLines() {
     const segs = []; for (const line of DATA.forest.edgeLines) { let prev = null; for (const q of line) { const F = flatOf(q.lon, q.lat), p = [F.x, (q.alt - BASE) * F.k, F.z]; if (prev) segs.push(...prev, ...p); prev = p; } }
-    if (segs.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.name = 'cover:ink:forest-edge'; l.matrixAutoUpdate = false; S.root.add(l); objs.lines.push(l); S.edgeSegments = segs.length / 6; }
+    if (segs.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); l.name = 'cover:ink:forest-edge'; l.matrixAutoUpdate = false; S.root.add(l); objs.lines.push(l); S.edgeSegments = segs.length / 6; }
   }
   // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
@@ -7001,13 +7015,17 @@ else global.WEATHER = WEATHER;
 //   clear     no rain, ripples stop; moon 1.25, sky light 1.1
 //   snow      fine snow falling (slower, larger, sparser than rain), sky light 1.1 bluish
 //   fog       grey-violet fog (density + 0.03), no rain
+// The weather's fog never hides the view target (docs/world/GRAY_VIEW_FIX_PLAN.md): at the camera-target distance d the whole fog keeps a transmittance of at least
+// FOG_SEE, exp(-(density * d)^2) >= FOG_SEE, so the added density is at most sqrt(-ln FOG_SEE) / d - base (never below 0: the base fog of the rain night stays).
+// Close up the fog is as thick as before; from further away it thins with the distance instead of turning the whole picture into fog colour.
 (function (global) {
 'use strict';
 const MULT = { rain: [1, 1], after: [1.05, 1], overcast: [0.75, 0.55], clear: [1.1, 1.25], snow: [1.1, 1], fog: [0.9, 0.8] };          // [sky light, moon]
 const RAIN = { rain: 1, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 }, PUDDLE = { rain: 1, after: 1, overcast: 0.6, clear: 0, snow: 0, fog: 0.6 };
 const FOG_ADD = { rain: 0, after: 0.006, overcast: 0, clear: 0, snow: 0.004, fog: 0.03 };
+const FOG_SEE = 0.2, FOG_DEPTH = Math.sqrt(-Math.log(FOG_SEE));   // optical depth (density * d) at which the view target is FOG_SEE visible
 function attach(THREE, scene, ctx) {
-  const W = global.WEATHER.make(global.WORLD), st = { t0: null, offset: 0, fixed: null, last: null, snow: null };
+  const W = global.WEATHER.make(global.WORLD), st = { t0: null, offset: 0, fixed: null, last: null, snow: null }, fogW = ctx.bend.weatherFogUniform;
   const own = { hemi: null, moon: null, fog: null, fogColor: null }, base = { hemi: 0, moon: 0, fog: 0, fogColor: new THREE.Color() }, fogTint = new THREE.Color('#5a5870');
   // the lights and the fog are also written by the light presets (section.js) and the transition: whatever changed them since our last write is the new base
   const sync = () => { const h = ctx.hemi.intensity, m = ctx.moon.intensity, f = scene.fog.density; if (h !== own.hemi) base.hemi = h; if (m !== own.moon) base.moon = m; if (f !== own.fog) base.fog = f;  };
@@ -7022,17 +7040,20 @@ function attach(THREE, scene, ctx) {
   function tick(t, dt, view) {
     const time = st.fixed !== null ? st.fixed : t + st.offset;
     if (st.view) view = st.view;
+    if (!(view.d >= 0)) throw new Error('weather_fx: the view needs d, the camera-target distance');
     // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend)
     const dry = view.u > 0 ? 1 - view.u : 1;
     const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h) * dry, w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, dry, lon: ll.lon, lat: ll.lat };
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
     // blend towards the rain look with height: 1 + (m - 1) * wl
     mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = (1 + (pud - 1) * wl) * dry; rain *= dry; fogAdd *= wl; const fogK = w.fog * wl;
-    st.last = { ...st.last, puddleWeight: pud };
     sync();
+    fogAdd = Math.min(fogAdd, Math.max(0, FOG_DEPTH / view.d - base.fog));
+    st.last = { ...st.last, d: view.d, puddleWeight: pud, fogAdd };
     if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
     if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }
     if (fogAdd !== 0 || own.fog !== null) { scene.fog.density = own.fog = base.fog + fogAdd; }
+    fogW.value = fogAdd;                                                   // ink lines are covered by this part of the fog only (bend.js)
     if (fogK > 0) { if (own.fogColor === null) base.fogColor.copy(scene.fog.color); scene.fog.color.copy(base.fogColor).lerp(fogTint, Math.min(1, fogK)); if (scene.background && scene.background.isColor) scene.background.copy(scene.fog.color); own.fogColor = scene.fog.color.clone(); }
     else if (own.fogColor !== null) { scene.fog.color.copy(base.fogColor); if (scene.background && scene.background.isColor) scene.background.copy(base.fogColor); own.fogColor = null; }
     if (rain !== 1) ctx.rainMat.opacity *= rain;
@@ -7047,12 +7068,12 @@ function attach(THREE, scene, ctx) {
     at: (lon, lat, t) => W.at(lon, lat, t), lock: s => W.lock(s), locked: () => W.locked(),
     setTime(t) { st.fixed = t === null || t === undefined ? null : +t; return st.fixed; },
     get: () => st.last,
-    setView(v) { st.view = v || null; },                                    // tools: weather of a given place and height instead of the camera's
+    setView(v) { st.view = v || null; },                                    // tools: weather of a given place { lonLat, h, d, target } instead of the camera's
     place: (lon, lat) => W.place(lon, lat), tick,
   };
   return api;
 }
-global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD };
+global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD, FOG_SEE };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -21327,7 +21348,7 @@ globalThis.LMLIB = function (K) {
   const lv = group('lm06Live'); L.use(lv);
   const col = new THREE.Color(CLUE.color);
   const gw = L.sub(0, M0 - 1.5, MZ, 0); gw.rotation.z = TILT;
-  const outMat = new THREE.LineBasicMaterial({ color: '#000000', transparent: true, opacity: 1, depthWrite: false, fog: false });
+  const outMat = new THREE.LineBasicMaterial({ color: '#000000', transparent: true, opacity: 1, depthWrite: false, userData: { inkFog: true } });
   const ol = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(MW + 0.06, LEN - 1.2 + 0.06, MT + 0.06)), outMat); ol.position.y = 1.2 + (LEN - 1.2) / 2; ol.renderOrder = 8; gw.add(ol);
   const rims = [0.16].map(o => { const m = new THREE.LineBasicMaterial({ color: '#000000', transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }), l = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(MW + o, LEN - 1.2 + o, MT + o)), m); l.position.y = 1.2 + (LEN - 1.2) / 2; l.renderOrder = 7; gw.add(l); return m; });   // nested outlines: a faint rim around the black slab
   const sand = []; for (let i = 0; i < 6; i++) { const g = L.sub(CX - 4 + i * 1.6, 2.6, TZ + 1.3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.35), new THREE.MeshBasicMaterial({ color: '#b3a58e', transparent: true, opacity: 0.55, depthWrite: false })); g.add(m); sand.push({ g, m, ph: i * 0.19 }); }
@@ -21869,7 +21890,7 @@ function rainBounds(){const h=rainBox/2,center=roam?roam.position:target;rb=[cen
 function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
 const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
-const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat});
+const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat,bend:BEND});
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // W8e-b: the flat map runs from the seam at -85 deg to one circumference east of it (bend.js shifts what lies west of the seam); flat pans clamp to it, sphere pans wrap into it; latitude +-80 deg.
@@ -21947,9 +21968,11 @@ function transitionStep(dt){
 }
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
 function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoothstep(0,24,away));if(!(lift>0))return[target.x,target.y,target.z];const ll=lonLatAt(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);const flatH=Math.max(0,((h??TERRAIN.BASE)-TERRAIN.BASE)/Math.cos(ll.lat*Math.PI/180));return[target.x,target.y+(1-u)*TRANSITION.smoothstep(0,24,away)*flatH+u*Math.max(0,h??0),target.z];}
-// W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height)
-function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,target:[roam.position.x,0,roam.position.z],u:0};}
-  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-target.y;return{lonLat:ll,h,target:[target.x,target.y,target.z],u};}
+// W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height), and the camera-target
+// distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
+// (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
+function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,d:camera.position.distanceTo(roam.position),target:[roam.position.x,0,roam.position.z],u:0};}
+  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)

@@ -57,7 +57,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       m.customProgramCacheKey = () => 'bend|hull|' + sway; return m;
     };
     const hullMat = mkHull(false), treeHullMat = mkHull(true);
-    const lineMat = k => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, fog: false });
+    const lineMat = k => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, userData: { inkFog: true } });
     S.materials = { floraMat, treeMat, glowMat, groundMat, hullMat, treeHullMat, inkW };
 
     // ---- instanced objects: one InstancedMesh (plus outline hull) per type
@@ -212,7 +212,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       }
       return out;
     };
-    const addG = segs => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, fog: false })); l.matrixAutoUpdate = false; l.name = 'sec:ink:global'; root.add(l); objs.lines.panorama.push(l); S.stats.ink_panorama = (S.stats.ink_panorama || 0) + segs.length / 6; };
+    const addG = segs => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); l.matrixAutoUpdate = false; l.name = 'sec:ink:global'; root.add(l); objs.lines.panorama.push(l); S.stats.ink_panorama = (S.stats.ink_panorama || 0) + segs.length / 6; };
     addG(contour(sample((lo, la) => W.coastDistance(lo, la)), 0, 0.2));            // coasts
     addG(contour(sample((lo, la) => W.height(lo, la)), 10, 10.2));                 // ridge and peak outlines at 10 m (drawn at height: flat y = (h - 1.6)/cos)
     const ice = []; for (const r of W.regions.filter(q => q.zone === 'ice')) { for (let lon = -180; lon < 180; lon += 1) { const a = r.shape.edge(lon), b = r.shape.edge(lon + 1), fa = flatOf(lon, a), fb = flatOf(lon + 1, b); ice.push(fa.x, (2.6 - BASE) * fa.k, fa.z, fb.x, (2.6 - BASE) * fb.k, fb.z); } }

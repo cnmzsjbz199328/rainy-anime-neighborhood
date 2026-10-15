@@ -2,7 +2,8 @@
 //   WC13 / C1  the same (lon, lat, t) gives the same weather on two page loads and in any order (1000 deterministic samples); the locked-rain pictures are tools/regress.mjs --weather lock:rain
 //   C2  place rules (W8_SPEC 4.2): 100 places per category; ice never rain, town never snow, desert rain <= 5 %, forest / coast / river valleys get fog after rain, the snow line is continuous in height
 //   C3  slow and rain-first: 1 s steps over 6 hours, weight change <= 1/40 per second, rain (snow on the ice) the largest share and >= 50 % where rain is allowed
-//   C4  distance blend: rain opacity, fog density and light multipliers follow w_local(h) at h = 40 / 80 / 120 (+-0.02); at h >= 120 every weather renders the same picture
+//   C4  distance blend: rain opacity, fog density and light multipliers follow w_local(h) at h = 40 / 80 / 120 (+-0.02), the camera straight above the target (d = h),
+//       the added fog at most what keeps the target FOG_SEE visible (GRAY_VIEW_FIX_PLAN); at h >= 120 every weather renders the same picture
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -69,19 +70,19 @@ const p1 = await open();
     const base = { h: S.scene.children.find(o => o.isHemisphereLight).intensity, m: S.scene.children.find(o => o.isDirectionalLight).intensity, fog: S.scene.fog.density };
     const town = W.townToLonLat(0, 0); let foggy = null; for (let lon = -180; lon < 180 && !foggy; lon += 0.7) for (let lat = -60; lat < 60 && !foggy; lat += 0.7) if (Wx.place(lon, lat).cat === 'foggy') foggy = { lon, lat };
     for (const st of ['overcast', 'fog', 'clear']) for (const h of [40, 80, 120]) {
-      const ll = st === 'fog' ? foggy : town; Wx.lock(st); Wx.setView({ lonLat: ll, h, target: [0, 1.2, 0] }); window.__step(2);
+      const ll = st === 'fog' ? foggy : town; Wx.lock(st); Wx.setView({ lonLat: ll, h, d: h, target: [0, 1.2, 0] }); window.__step(2);
       const hemi = S.scene.children.find(o => o.isHemisphereLight).intensity, moon = S.scene.children.find(o => o.isDirectionalLight).intensity, g = Wx.get();
       out.push({ st, h, wl: g.wLocal, hemiK: hemi / base.h, moonK: moon / base.m, fogAdd: S.scene.fog.density - base.fog });
     }
-    Wx.lock(null); Wx.setView(null); window.__step(2); return { out, base };
+    Wx.lock(null); Wx.setView(null); window.__step(2); return { out, base, see: window.WEATHER_FX.FOG_SEE };
   });
   const MULT = { overcast: [0.75, 0.55, 0], fog: [0.9, 0.8, 0.03], clear: [1.1, 1.25, 0] }; let ok = true; const L = [];
-  for (const q of r.out) { const wl = 1 - (x => { const t = Math.max(0, Math.min(1, (x - 40) / 80)); return t * t * (3 - 2 * t); })(q.h), m = MULT[q.st], eh = 1 + (m[0] - 1) * wl, em = 1 + (m[1] - 1) * wl, ef = m[2] * wl;
+  for (const q of r.out) { const wl = 1 - (x => { const t = Math.max(0, Math.min(1, (x - 40) / 80)); return t * t * (3 - 2 * t); })(q.h), m = MULT[q.st], eh = 1 + (m[0] - 1) * wl, em = 1 + (m[1] - 1) * wl, ef = Math.min(m[2] * wl, Math.max(0, Math.sqrt(-Math.log(r.see)) / q.h - r.base.fog));
     const good = Math.abs(q.wl - wl) <= 0.02 && Math.abs(q.hemiK - eh) <= 0.02 && Math.abs(q.moonK - em) <= 0.02 && Math.abs(q.fogAdd - ef) <= 0.002; if (!good) ok = false;
     L.push(`${q.st}${q.st === 'fog' ? '（森林/岸线地点）' : '（城镇）'} h = ${q.h}：w_local ${f(q.wl)}（应为 ${f(wl)}），天光 ×${f(q.hemiK, 3)}（${f(eh, 3)}），月光 ×${f(q.moonK, 3)}（${f(em, 3)}），雾 +${f(q.fogAdd, 4)}（${f(ef, 4)}）`); }
   // h >= 120: every state renders the same picture (flat map since W8e-a, camera 274 m above the town; the sphere is always clear since W8e-c: tools/day_check.mjs)
   const pp = await open(640, 400); await pp.evaluate(() => { const S = window.__scene; S.view.set({ dist: 350, pitch: 0.9 }); S.transition.pending = true; window.__step(30); });
-  const urls = {}; for (const st of ['rain', 'after', 'overcast', 'clear', 'snow', 'fog']) { await pp.evaluate(s => { const Wx = window.__scene.weather, g = Wx.get(); Wx.lock(s); Wx.tick(g.time, 0, { lonLat: { lon: g.lon, lat: g.lat }, h: g.h, target: [0, 1.2, 0] }); }, st); urls[st] = await shot(pp); }
+  const urls = {}; for (const st of ['rain', 'after', 'overcast', 'clear', 'snow', 'fog']) { await pp.evaluate(s => { const Wx = window.__scene.weather, g = Wx.get(); Wx.lock(s); Wx.tick(g.time, 0, { lonLat: { lon: g.lon, lat: g.lat }, h: g.h, d: g.d, target: [0, 1.2, 0] }); }, st); urls[st] = await shot(pp); }
   const hView = await pp.evaluate(() => window.__scene.weather.get().h);
   const L2 = ['同一帧、只换天气后重新应用（时钟不前进）']; for (const st of ['after', 'overcast', 'clear', 'snow', 'fog']) { const d = await diff(pp, urls.rain, urls[st]); if (d.n) ok = false; L2.push(`${st} 对雨：差异像素 ${d.n}`); }
   await pp.close();

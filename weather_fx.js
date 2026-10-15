@@ -8,13 +8,17 @@
 //   clear     no rain, ripples stop; moon 1.25, sky light 1.1
 //   snow      fine snow falling (slower, larger, sparser than rain), sky light 1.1 bluish
 //   fog       grey-violet fog (density + 0.03), no rain
+// The weather's fog never hides the view target (docs/world/GRAY_VIEW_FIX_PLAN.md): at the camera-target distance d the whole fog keeps a transmittance of at least
+// FOG_SEE, exp(-(density * d)^2) >= FOG_SEE, so the added density is at most sqrt(-ln FOG_SEE) / d - base (never below 0: the base fog of the rain night stays).
+// Close up the fog is as thick as before; from further away it thins with the distance instead of turning the whole picture into fog colour.
 (function (global) {
 'use strict';
 const MULT = { rain: [1, 1], after: [1.05, 1], overcast: [0.75, 0.55], clear: [1.1, 1.25], snow: [1.1, 1], fog: [0.9, 0.8] };          // [sky light, moon]
 const RAIN = { rain: 1, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 }, PUDDLE = { rain: 1, after: 1, overcast: 0.6, clear: 0, snow: 0, fog: 0.6 };
 const FOG_ADD = { rain: 0, after: 0.006, overcast: 0, clear: 0, snow: 0.004, fog: 0.03 };
+const FOG_SEE = 0.2, FOG_DEPTH = Math.sqrt(-Math.log(FOG_SEE));   // optical depth (density * d) at which the view target is FOG_SEE visible
 function attach(THREE, scene, ctx) {
-  const W = global.WEATHER.make(global.WORLD), st = { t0: null, offset: 0, fixed: null, last: null, snow: null };
+  const W = global.WEATHER.make(global.WORLD), st = { t0: null, offset: 0, fixed: null, last: null, snow: null }, fogW = ctx.bend.weatherFogUniform;
   const own = { hemi: null, moon: null, fog: null, fogColor: null }, base = { hemi: 0, moon: 0, fog: 0, fogColor: new THREE.Color() }, fogTint = new THREE.Color('#5a5870');
   // the lights and the fog are also written by the light presets (section.js) and the transition: whatever changed them since our last write is the new base
   const sync = () => { const h = ctx.hemi.intensity, m = ctx.moon.intensity, f = scene.fog.density; if (h !== own.hemi) base.hemi = h; if (m !== own.moon) base.moon = m; if (f !== own.fog) base.fog = f;  };
@@ -29,17 +33,20 @@ function attach(THREE, scene, ctx) {
   function tick(t, dt, view) {
     const time = st.fixed !== null ? st.fixed : t + st.offset;
     if (st.view) view = st.view;
+    if (!(view.d >= 0)) throw new Error('weather_fx: the view needs d, the camera-target distance');
     // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend)
     const dry = view.u > 0 ? 1 - view.u : 1;
     const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h) * dry, w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, dry, lon: ll.lon, lat: ll.lat };
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
     // blend towards the rain look with height: 1 + (m - 1) * wl
     mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = (1 + (pud - 1) * wl) * dry; rain *= dry; fogAdd *= wl; const fogK = w.fog * wl;
-    st.last = { ...st.last, puddleWeight: pud };
     sync();
+    fogAdd = Math.min(fogAdd, Math.max(0, FOG_DEPTH / view.d - base.fog));
+    st.last = { ...st.last, d: view.d, puddleWeight: pud, fogAdd };
     if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
     if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }
     if (fogAdd !== 0 || own.fog !== null) { scene.fog.density = own.fog = base.fog + fogAdd; }
+    fogW.value = fogAdd;                                                   // ink lines are covered by this part of the fog only (bend.js)
     if (fogK > 0) { if (own.fogColor === null) base.fogColor.copy(scene.fog.color); scene.fog.color.copy(base.fogColor).lerp(fogTint, Math.min(1, fogK)); if (scene.background && scene.background.isColor) scene.background.copy(scene.fog.color); own.fogColor = scene.fog.color.clone(); }
     else if (own.fogColor !== null) { scene.fog.color.copy(base.fogColor); if (scene.background && scene.background.isColor) scene.background.copy(base.fogColor); own.fogColor = null; }
     if (rain !== 1) ctx.rainMat.opacity *= rain;
@@ -54,10 +61,10 @@ function attach(THREE, scene, ctx) {
     at: (lon, lat, t) => W.at(lon, lat, t), lock: s => W.lock(s), locked: () => W.locked(),
     setTime(t) { st.fixed = t === null || t === undefined ? null : +t; return st.fixed; },
     get: () => st.last,
-    setView(v) { st.view = v || null; },                                    // tools: weather of a given place and height instead of the camera's
+    setView(v) { st.view = v || null; },                                    // tools: weather of a given place { lonLat, h, d, target } instead of the camera's
     place: (lon, lat) => W.place(lon, lat), tick,
   };
   return api;
 }
-global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD };
+global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD, FOG_SEE };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -49,7 +49,7 @@
   const lv = group('lm06Live'); L.use(lv);
   const col = new THREE.Color(CLUE.color);
   const gw = L.sub(0, M0 - 1.5, MZ, 0); gw.rotation.z = TILT;
-  const outMat = new THREE.LineBasicMaterial({ color: '#000000', transparent: true, opacity: 1, depthWrite: false, fog: false });
+  const outMat = new THREE.LineBasicMaterial({ color: '#000000', transparent: true, opacity: 1, depthWrite: false, userData: { inkFog: true } });
   const ol = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(MW + 0.06, LEN - 1.2 + 0.06, MT + 0.06)), outMat); ol.position.y = 1.2 + (LEN - 1.2) / 2; ol.renderOrder = 8; gw.add(ol);
   const rims = [0.16].map(o => { const m = new THREE.LineBasicMaterial({ color: '#000000', transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }), l = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(MW + o, LEN - 1.2 + o, MT + o)), m); l.position.y = 1.2 + (LEN - 1.2) / 2; l.renderOrder = 7; gw.add(l); return m; });   // nested outlines: a faint rim around the black slab
   const sand = []; for (let i = 0; i < 6; i++) { const g = L.sub(CX - 4 + i * 1.6, 2.6, TZ + 1.3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.35), new THREE.MeshBasicMaterial({ color: '#b3a58e', transparent: true, opacity: 0.55, depthWrite: false })); g.add(m); sand.push({ g, m, ph: i * 0.19 }); }
