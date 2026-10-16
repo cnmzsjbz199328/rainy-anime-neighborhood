@@ -3251,3 +3251,8 @@
 
 - `landmarks/LM09.js` 在既有站位补电话亭听筒连线、书写台、门铰和背面检修盖，售货机背面补电源检修盖及通向基座的导管；未改锚点、道路、站台、车辆或设施包络。重建 `index.html`，重生 `docs/world/wd1/model-preview/` 的七张图；仅检查 PNG 格式和 1280×800 尺寸，未审看画面。
 - `measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots`、`road_check.mjs` 11 项通过；站外实体仍距 CR01 路缘 1.275 m，页面截图生成错误 0。`wd1-near.json` 已复测本版模型；WD1 的用户视觉、W10d 场地和 WX2 天气验收仍待完成。
+
+## WD1 近景验收机位补全（2026-10-17，视觉待用户判断）
+
+- `tools/wd1_shots.mjs` 新增候车棚左右侧/屋顶/内部、车厢两端、售货机正背面、电话亭正背面十个机位；与原七个机位共 17 张图，均在忽略的 `docs/world/wd1/model-preview/`。该目录 `README.md` 列逐张看点，`report.json` 保存地图模式、天气/时间、target/dist/yaw/pitch、calls/triangles/textures。
+- 机器检查 17 个唯一 PNG 均为 1280×800，页面错误 0。没有审看图像或宣称视觉通过；机位构图与四面、屋顶、室内及操作面可读性均留给用户判断。未改模型和七机位性能对照。
