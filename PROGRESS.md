@@ -1,5 +1,16 @@
 # 进度记录
 
+## W10c 连接段地形空洞专项 阶段细化（2026-10-16）
+
+- 前置：独立工作树 `../rainy-anime-neighborhood-connector-fix`，分支 `world/W10c-connector-fix` 自 `world/W10c` 的 `2e78e1c` 拉出（开工时 `world/W10c` HEAD 即 `2e78e1c`）；开工 `index.html` md5 `957be193…`，3,031,385 bytes，源码重建逐字节一致。主工作树、`world/W10c-merge`、WX1/WX2 工作树不动。
+- 规格：`docs/world/CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md`（本专项，随本分支入库）、`W10_SPEC.md` §5 W10c 与 §6、`AGENT_PROTOCOLS.md` §1/§4。
+- 根因（按源码与 Node 数据复核）：`removeTownPavementDuplicates` 用九个出口两侧矩形把连接段车行道半宽 +0.1 m 之外的道路网格删掉，但 `terrain.js` `cutRoads()` 仍按完整 `footprint` + 0.12 m 裁地。开工数据：N01/N03/N09/N10/N04/N08 六个出口两侧都有“被裁地、无道路”的区域（0.25 × 0.1 m 采样 242–396 点/出口），来源只有该出口自己的路线裁切；N11–N13 小巷出口只有约 0.02 m 的边缘差。
+- 范围：`roads.js` 只在 `connectorCuts` 中保存裁剪多边形副本（道路几何不变）；`terrain.js` `cutRoads()` 生成路线/端帽裁切时扣除本路线的连接段裁剪多边形，扣除后的碎片登记出口修正标记与统计，仍写入唯一 `state.roadPolygons`（地形与 `cutGroundMeshes` 同用）；新增 `tools/connector_ground_check.mjs`（CG1–CG6，`--ref`/`--baseline`/`--report`）。不做：恢复人行道、加宽车行道、补面、改材质透明度、改 `CUT_PAD`/`CUT_CAP`、改 `layout.js`/`world.js`/`bend.js`/路线线形、W10d 及以后。
+- 实施裁决：方案 4.1 第 5 条要求以最终道路三角形校验。开工 Node 量测：连接段车行道边缘内 0.12 m 处 N09/N10 路面低于原地形最多 7 mm，所以地形不能伸进路面下方（不留“负余量”）；地形裁切边与道路裁剪边重合（局部取消余量，即“限制在实际被替代的道路覆盖范围”）。CR01 内侧草肩在部分侧带只由连接路线裁切覆盖，修复后恢复其下地形，与全环其他路段相同（草肩贴地、材质 polygonOffset），量测高差 ≤ 0.05 mm，由 CG3 复核。
+- 退出标准：机器——CG1–CG6 先在开工版本失败、修复后通过；`python3 build.py` → `measure_samples` → `layout_check --png`；回归 `cr01_merge_check`、`unify_check`（U0–U4）、`road_check`、`town_pavement_check`、`c01_s_clearance`、`terrain_structure_check`、`terrain_check`、`seam_check`、`cover_check`、`ocean_check`、`streetlight_check`、`fog_view_check`、`weather_check`、`day_check`，`night_check` 只确认 C2 读数不变；`regress.mjs --baseline-ref 2e78e1c --weather lock:rain` 的差异按位置归因。画面——用户按交付看点验收，状态待确认。
+- 预算与停止：绘制调用增长 > 10% 阻塞（预期不变）；首帧开工即约 4.1 s（超 4.0 s 预算、低于 5.0 s 停止线），本专项不得使其变差；HTML 增量应很小。若需改街道中线/宽度、道路几何或加回退开关则停止报告。
+- 已知矛盾：无规格冲突。道路边缘与恢复地形之间有 0.1–4.7 cm 的高差（路面高），俯视无缝，低角度可能看到细缝，交用户判断，不用补面处理。
+
 ## W10c 西北 CR01/RN05 浅角接入返工 实施（2026-10-15，分支 world/W10c，提交 `09d0b67`）
 
 - 按 `docs/world/CR01_NW_REPAIR_PLAN.md` 实施（第 7 节为实施记录与偏差说明）。布局、节点、R8 中线与宽度不变；未合并、未推送、未启动 W10d；W10c 仍为用户视觉待确认。
