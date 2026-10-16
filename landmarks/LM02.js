@@ -1,8 +1,8 @@
 // LM02 湯けむり温泉村 (Yu-kemuri hot-spring village) (W7). Local frame: origin = the site anchor (36.00 N 50.00 W, altitude 1.9 m, a levelled platform of radius 15 m with a 10 m
 // transition), +Z towards the east entrance (heading 100, 17 m out, the end of RN05-01), +X to the left of +Z; the north-east entrance (heading 41, RN05-02's start) is at local (14.57, 8.76).
 // 1 unit = 1 m. Six timber buildings (two 2-storey inns, three houses, a shop) lie round a small plaza along a brook; the open-air spring (5 x 4 m) with a bamboo fence, the source hut and
-// its wooden flume, a foot bath, stone-slab paths, a plank bridge, paper lanterns, noren, the village torii, a bus stop and a vending machine. Detail is one level below the town's;
-// interiors are only the lit window panes. Groups: lm02Ground, lm02Houses, lm02Onsen (pool, hut, flume, fence), lm02Brook, lm02Street (torii, bus stop, vending, lanterns, bridge),
+// its wooden flume, a foot bath, stone-slab paths, a plank bridge, paper lanterns, noren, the village torii, a bus stop and a vending machine. Existing interiors are only lit window panes;
+// the WD upgrade target is town-grade construction and visible depth without changing placements. Groups: lm02Ground, lm02Houses, lm02Onsen (pool, hut, flume, fence), lm02Brook, lm02Street (torii, bus stop, vending, lanterns, bridge),
 // lm02Live (steam, noren, brook texture).
 (globalThis.LANDMARKS = globalThis.LANDMARKS || {}).LM02 = (K, rec) => {
   const { THREE, group, mesh, box, cyl, mat, warm, canvasTex } = K, L = LMLIB(K), PI = Math.PI, rnd = K.rand(202);
