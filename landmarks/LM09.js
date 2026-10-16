@@ -212,13 +212,15 @@
     return [a, b];
   });
   // eave drips (live)
-  const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); g.add(m); dr.push({ g, m, ph: i * 0.17 }); }
+  const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }
   out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [-5.5, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
     trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: -5.2, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
   out.update = (t) => {
     const p = (t % 6) / 6, a = 0.5 - 0.5 * Math.cos(p * PI * 2), b = 1 - a;                                       // 6 s period, raised cosine: no flashing
     posts.forEach(([l, r]) => { l.material.color.setRGB(0.35 + 0.65 * a, 0.12 + 0.12 * a, 0.12 + 0.12 * a); r.material.color.setRGB(0.35 + 0.65 * b, 0.12 + 0.12 * b, 0.12 + 0.12 * b); });
-    dr.forEach(d => { const q = (t * 0.9 + d.ph) % 1; d.g.position.y = 3.2 - q * 2.2; d.m.material.opacity = 0.7 * (q < 0.9 ? 1 : (1 - q) * 10); });
+    const viewWeather = K.weather?.get(), localWeather = viewWeather && K.weather.at(rec.lon, rec.lat, viewWeather.time);
+    const dripWeight = viewWeather && localWeather ? (localWeather.weights.rain + localWeather.weights.after) * viewWeather.wLocal : 0;
+    dr.forEach(d => { const q = (t * 0.9 + d.ph) % 1; d.g.position.y = 3.2 - q * 2.2; d.m.material.opacity = 0.7 * (q < 0.9 ? 1 : (1 - q) * 10) * dripWeight; });
   };
   return out;
 };

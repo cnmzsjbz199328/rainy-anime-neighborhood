@@ -248,6 +248,7 @@ function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-r
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
 const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
 const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat,bend:BEND});
+landmarkKit.weather=weatherFx;
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // W8e-b: the flat map runs from the seam at -85 deg to one circumference east of it (bend.js shifts what lies west of the seam); flat pans clamp to it, sphere pans wrap into it; latitude +-80 deg.

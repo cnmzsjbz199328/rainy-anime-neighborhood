@@ -3271,3 +3271,8 @@
 
 - 当前提交 `22f4e99`、Metal/high、三次冷启动 [`docs/world/perf/wd1-model-current.json`](docs/world/perf/wd1-model-current.json)：首个完整画面 4,509 / 4,340 / 4,315 ms，中位 4,340 ms；默认 16.7/18.9 ms、2,406 calls、1,595,576 triangles；球形 d140 51.3/75.7 ms、d400 55.5/58.6 ms；页面错误 0。首帧高于 W10 4 s 预算，球形帧时间未达预算；本轮起测空闲内存仅 106 MB、load average 9.14/11.04/9.79，不能用这一轮与较低负载旧轮的帧时间差归因于 WD1 构件。
 - 同一时段对补充前提交 `2e0c899` 的一轮量测 [`docs/world/perf/wd1-pre-service-same-window.json`](docs/world/perf/wd1-pre-service-same-window.json) 也显著变慢：首帧 10,441 ms，默认 24.1/41.0 ms，球形 d140 91.9/119.1 ms、d400 93.5/114.8 ms。该 A/B 不足以证明当前模型提速，但支持机器负载是此次球形时间异常的重要因素；两版调用数和三角形近似，保留未达预算结论。WD1 仍等用户视觉与 W10d/WX2 集成。
+
+## WD1 檐滴接入当地天气（2026-10-17）
+
+- 原 `LM09` 檐滴无视天气，球形晴天和平面晴天仍按时间显示。现 `scene.js` 向地标套件提供现有天气接口，`LM09` 檐滴按本站雨/雨后权重与视图局部天气系数显示；不改锚点、路网、结构或其他地标。`tools/wd1_weather_check.mjs` 实测六个檐滴在平面雨、雨后可见，平面晴天及球形锁雨下全部透明，切回平面雨夜恢复；页面错误 0。
+- `python3 build.py`、`measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots`、`road_check.mjs --no-browser` 通过；19 张忽略目录预览已重生，均为 1280×800 PNG，截图页面错误 0。未审看画面，不作视觉通过判断；WX2 全域天气联动与 W10d 场地仍待前置。
