@@ -3276,3 +3276,7 @@
 
 - 原 `LM09` 檐滴无视天气，球形晴天和平面晴天仍按时间显示。现 `scene.js` 向地标套件提供现有天气接口，`LM09` 檐滴按本站雨/雨后权重与视图局部天气系数显示；不改锚点、路网、结构或其他地标。`tools/wd1_weather_check.mjs` 实测六个檐滴在平面雨、雨后可见，平面晴天及球形锁雨下全部透明，切回平面雨夜恢复；页面错误 0。
 - `python3 build.py`、`measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots`、`road_check.mjs --no-browser` 通过；19 张忽略目录预览已重生，均为 1280×800 PNG，截图页面错误 0。未审看画面，不作视觉通过判断；WX2 全域天气联动与 W10d 场地仍待前置。
+
+## WD1 檐滴球形缩放复核（2026-10-17）
+
+- 扩展 `tools/wd1_weather_check.mjs`：球形锁雨在 9/60/220/400 m 四档距离、球形雨后/雪/雾/晴在 60 m，以及平面雨/雨后/晴和返回平面雨，共 12 个运行状态。`node tools/wd1_weather_check.mjs` 通过：球形八个状态中六个 LM09 檐滴透明度全部为 0，`wLocal=0`；平面晴天为 0，雨与雨后可见，返回平面雨后恢复；页面错误 0。此项没有改场景或重新判断视觉，WD1 仍待用户查看预览。

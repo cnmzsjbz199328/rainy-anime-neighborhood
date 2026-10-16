@@ -14,22 +14,31 @@ try {
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForFunction(() => window.__scene?.landmarks?.info?.LM09, null, { timeout: 90000 });
   const rows = [];
-  for (const [mode, weather] of [['flat', 'rain'], ['flat', 'after'], ['flat', 'clear'], ['sphere', 'rain'], ['flat', 'rain']]) {
-    rows.push(await page.evaluate(({ mode, weather }) => {
+  const cases = [
+    { mode: 'flat', weather: 'rain', dist: 15 },
+    { mode: 'flat', weather: 'after', dist: 15 },
+    { mode: 'flat', weather: 'clear', dist: 15 },
+    ...[9, 60, 220, 400].map(dist => ({ mode: 'sphere', weather: 'rain', dist })),
+    ...['after', 'snow', 'fog', 'clear'].map(weather => ({ mode: 'sphere', weather, dist: 60 })),
+    { mode: 'flat', weather: 'rain', dist: 15 },
+  ];
+  for (const { mode, weather, dist } of cases) {
+    rows.push(await page.evaluate(({ mode, weather, dist }) => {
       const S = window.__scene, W = window.WORLD, lm = W.landmarks.find(q => q.id === 'LM09');
       const t = W.lonLatToTown(lm.lon, lm.lat);
       S.weather.lock(weather); S.weather.setTime(600);
       S.transition.setMode(mode); S.transition.step(3);
-      S.view.set({ mapMode: mode, mode: 'free', target: [t.x, 1.8, t.z], dist: 15, yaw: 0, pitch: 0.3 });
-      window.__step(8);
+      S.view.set({ mapMode: mode, mode: 'free', target: [t.x, 1.8, t.z], dist, yaw: 0, pitch: 0.3 });
+      window.__step(2);
       const drips = [];
       S.scene.traverse(o => { if (o.name === 'lm09EaveDrip') drips.push(o.material.opacity); });
       const g = S.weather.get();
-      return { mode: S.view.get().mapMode, weather, count: drips.length, min: Math.min(...drips), max: Math.max(...drips), wLocal: g.wLocal };
-    }, { mode, weather }));
+      return { mode: S.view.get().mapMode, weather, dist: S.view.get().dist, count: drips.length, min: Math.min(...drips), max: Math.max(...drips), wLocal: g.wLocal };
+    }, { mode, weather, dist }));
   }
-  const ok = rows.every(r => r.count === 6) && rows[0].max > 0.05 && rows[1].max > 0.05 && rows[2].max === 0 && rows[3].max === 0 && rows[3].mode === 'sphere' && rows[4].max > 0.05 && errors.length === 0;
-  for (const r of rows) console.log(`${r.mode} ${r.weather}: ${r.count} drips, opacity ${r.min.toFixed(3)}…${r.max.toFixed(3)}, wLocal ${r.wLocal.toFixed(3)}`);
+  const sphere = rows.filter(r => r.mode === 'sphere');
+  const ok = rows.every(r => r.count === 6) && rows[0].max > 0.05 && rows[1].max > 0.05 && rows[2].max === 0 && sphere.length === 8 && sphere.every(r => r.max === 0 && r.wLocal === 0) && rows.at(-1).max > 0.05 && errors.length === 0;
+  for (const r of rows) console.log(`${r.mode} ${r.weather} d${r.dist.toFixed(1)}: ${r.count} drips, opacity ${r.min.toFixed(3)}…${r.max.toFixed(3)}, wLocal ${r.wLocal.toFixed(3)}`);
   console.log(`${ok ? 'PASS' : 'FAIL'} WD1 LM09 eave drip weather; page errors ${errors.length}`);
   if (!ok) process.exitCode = 1;
 } finally { await browser.close(); }
