@@ -120,7 +120,19 @@
   // inn entrance canopy and a pair of lanterns at each inn (genkan)
   // ---- the open-air spring: a 5 x 4 m pool, stone rim, steaming; bamboo fence on three sides; the source hut and the flume
   const on = group('lm02Onsen'); L.use(on); const OX = -1.0, OZ = -2.0;
-  box(OX, 0.15, OZ, 5.6, 0.3, 4.6, '#7d8084', true, on); const water = mesh(new THREE.BoxGeometry(5.0, 0.04, 4.0), warm('#7fb3b8', 0.16), OX, 0.33, OZ, false, on);
+  box(OX, 0.04, OZ, 5.6, 0.08, 4.6, '#6f7378', true, on);
+  for (const s of [-1, 1]) {
+    box(OX + s * 2.65, 0.33, OZ, 0.3, 0.5, 4.6, '#7d8084', true, on);
+    box(OX, 0.33, OZ + s * 2.15, 5.0, 0.5, 0.3, '#7d8084', true, on);
+    box(OX + s * 2.65, 0.61, OZ, 0.4, 0.09, 4.7, '#9a9894', true, on);
+  }
+  box(OX, 0.61, OZ - 2.15, 5.0, 0.09, 0.4, '#9a9894', true, on);
+  box(OX - 1.45, 0.61, OZ + 2.15, 2.1, 0.09, 0.4, '#9a9894', true, on);
+  box(OX + 1.45, 0.61, OZ + 2.15, 2.1, 0.09, 0.4, '#9a9894', true, on);
+  const water = mesh(new THREE.BoxGeometry(5.0, 0.04, 4.0), warm('#7fb3b8', 0.16), OX, 0.43, OZ, false, on);
+  for (let step = 0; step < 3; step++) box(OX + 1.95, 0.15 + step * 0.13, OZ + 1.55 - step * 0.27, 0.85, 0.1, 0.29, '#8d8982', true, on);
+  box(OX + 1.5, 0.13, OZ + 2.45, 1.7, 0.12, 0.26, '#777a7b', true, on);
+  box(OX + 1.5, 0.2, OZ + 2.6, 1.45, 0.05, 0.09, '#5d676a', true, on); // overflow channel
   for (let i = 0; i < 9; i++) L.rock(OX + (i % 3 - 1) * 2.7 * (i < 3 ? 1 : 0.0) + (i >= 3 ? (i < 6 ? -2.8 : 2.8) : 0), 0.3, OZ + (i < 3 ? 2.3 : (i % 3 - 1) * 1.8), 0.7 + rnd() * 0.5, '#6f7378', rnd() * 6);
   for (let i = 0; i < 12; i++) { const t = i / 11; box(OX - 3.1, 0.9, OZ - 2.4 + t * 4.8, 0.08, 1.8, 0.12, '#9aa56e', true, on); }                 // bamboo fence, west side
   for (let i = 0; i < 12; i++) { const t = i / 11; box(OX - 3.1 + t * 6.2, 0.9, OZ - 2.6, 0.12, 1.8, 0.08, '#9aa56e', true, on); }                 // north side
@@ -129,6 +141,13 @@
   const hut = L.house(OX - 6.2, OZ - 3.4, 0.4, { w: 2.6, d: 2.4, wall: '#6f5c4a', rise: 1.1, lit: false });
   // wooden flume: from the hut to the pool: a trough of planks on posts
   for (let i = 0; i < 6; i++) { const t = i / 5, x = OX - 5.0 + t * 2.0, z = OZ - 2.9 + t * 1.2; box(x, 1.1 - 0.12 * t * 2, z, 0.5, 0.14, 0.5, '#5a4a3c', true, on); if (i % 2 === 0) cyl(x, 0.55 - 0.12 * t, z, 0.06, 1.1, '#4a382b', on); }
+  box(OX - 5.0, 1.08, OZ - 2.9, 0.48, 0.1, 0.14, '#a59b86', true, on);
+  box(OX - 3.0, 0.91, OZ - 1.7, 0.38, 0.12, 0.3, '#a59b86', true, on);
+  for (let i = 0; i < 4; i++) box(OX - 4.9 + i * 0.57, 0.99 - i * 0.05, OZ - 2.83 + i * 0.34, 0.06, 0.04, 0.52, '#a58b67', true, on); // trough bindings
+  for (const [x, z] of [[OX - 3.1, OZ - 2.6], [OX + 3.1, OZ - 2.6], [OX - 3.1, OZ + 2.4]]) {
+    box(x, 0.08, z, 0.32, 0.16, 0.32, '#777a73', true, on);
+    box(x, 0.9, z, 0.04, 0.1, 0.28, '#a68c62', true, on);
+  }
   // foot bath near the plaza: a wooden basin and a bench
   box(4.8, 0.2, -1.2, 2.2, 0.4, 1.0, '#6a5240', true, on); mesh(new THREE.BoxGeometry(1.9, 0.04, 0.7), warm('#8fc0c0', 0.14), 4.8, 0.4, -1.2, false, on); box(4.8, 0.45, -0.3, 2.0, 0.1, 0.4, '#5a4a3c', true, on);
   // ---- brook with a plank bridge: a strip of water from (13, -2.5) to (-13, -8.5) with a scrolling texture (live)
@@ -139,12 +158,22 @@
   for (let i = 0; i + 1 < BR.length; i++) { const [x0, z0] = BR[i], [x1, z1] = BR[i + 1], l = Math.hypot(x1 - x0, z1 - z0), m = mesh(new THREE.BoxGeometry(l + 0.4, 0.04, 1.6), bm, (x0 + x1) / 2, 0.02, (z0 + z1) / 2, false, bk); m.rotation.y = -Math.atan2(z1 - z0, x1 - x0); for (const sd of [-1, 1]) { const rr = mesh(new THREE.BoxGeometry(l + 0.4, 0.3, 0.3), mat('#6a6e72'), (x0 + x1) / 2 - sd * Math.sin(Math.atan2(z1 - z0, x1 - x0)) * 0.95, 0.15, (z0 + z1) / 2 - sd * Math.cos(Math.atan2(z1 - z0, x1 - x0)) * 0.95 * -1, true, bk); rr.rotation.y = -Math.atan2(z1 - z0, x1 - x0); } }
   // plank bridge over the brook at x = 1.5: 8 planks and two rails
   const bz = -5.2; for (let i = 0; i < 9; i++) box(1.5, 0.35, bz - 1.2 + i * 0.3, 1.5, 0.08, 0.28, '#6a5240', true, bk); box(0.8, 0.8, bz, 0.08, 0.1, 2.9, '#5a4a3c', true, bk); box(2.2, 0.8, bz, 0.08, 0.1, 2.9, '#5a4a3c', true, bk); for (const px of [0.8, 2.2]) for (const pz of [-1.3, 1.3]) cyl(px, 0.42, bz + pz, 0.05, 0.85, '#4a382b', bk);
+  for (const px of [0.92, 2.08]) { box(px, 0.22, bz, 0.12, 0.15, 2.9, '#4b3e33', true, bk); for (const pz of [-1.2, 1.2]) box(px, 0.07, bz + pz, 0.3, 0.14, 0.4, '#77716a', true, bk); }
+  for (const pz of [-0.9, 0, 0.9]) box(1.5, 0.26, bz + pz, 1.45, 0.1, 0.08, '#4e4033', true, bk);
   // ---- the street furniture: village torii, bus stop, vending machine, paper lanterns, noren
   const st = group('lm02Street'); L.use(st);
   L.torii(0, 0, 13.5, { w: 3.2, h: 3.4, rot: 0, color: '#8f4a40' });
   box(3.4, 0.9, 14.2, 0.06, 1.8, 0.06, '#7d8794', false, st); box(3.4, 1.75, 14.2, 0.7, 0.5, 0.04, '#e4e8ee', false, st); box(3.4, 1.85, 14.22, 0.7, 0.1, 0.05, '#d58a3a', false, st);   // bus stop sign
   box(3.4, 0.25, 15.3, 1.6, 0.12, 0.5, '#8a6a4c', true, st); box(3.4, 0.6, 15.6, 1.6, 0.6, 0.06, '#8a6a4c', true, st);                                    // its bench
   box(-3.4, 0.9, 14.0, 0.9, 1.8, 0.8, '#5e6a74', true, st); mesh(new THREE.BoxGeometry(0.72, 1.3, 0.03), warm('#dfe9f2', 0.20), -3.4, 1.0, 14.42, false, st);         // vending machine (cool light)
+  box(3.4, 0.06, 14.2, 0.32, 0.12, 0.32, '#767a77', true, st);
+  for (const bx of [2.75, 4.05]) box(bx, 0.26, 15.3, 0.09, 0.4, 0.45, '#66513e', true, st);
+  box(-3.4, 0.08, 14.0, 1.02, 0.16, 0.94, '#777a78', true, st);
+  for (let k = 0; k < 3; k++) box(-3.63 + k * 0.23, 1.44, 14.45, 0.18, 0.25, 0.035, k % 2 ? '#b4a17c' : '#9ab4b3', true, st);
+  for (let k = 0; k < 4; k++) box(-3.64 + k * 0.16, 0.95, 14.46, 0.07, 0.05, 0.04, '#8c9298', true, st);
+  box(-3.1, 0.9, 14.47, 0.12, 0.24, 0.06, '#9ba1a2', true, st); // payment panel
+  box(-3.4, 0.43, 14.47, 0.42, 0.18, 0.07, '#303b43', true, st); // pickup door
+  box(-3.4, 1.1, 13.56, 0.7, 0.65, 0.04, '#444f55', true, st); // rear service hatch
   const lanterns = []; for (const [x, z, y] of [[-2.2, 9.0, 2.6], [2.2, 9.0, 2.6], [-2.2, 4.0, 2.6], [2.2, 4.0, 2.6], [-6.0, -0.8, 2.4], [-5.2, -7.6, 2.4], [4.2, -7.4, 2.4], [9.6, 1.0, 2.2]]) lanterns.push(mesh(new THREE.SphereGeometry(0.28, 10, 8), warm(rnd() < 0.5 ? '#e0603c' : '#e8a050', 0.5), x, y, z, false, st));
   for (const [x, z] of [[-2.2, 9.0], [2.2, 9.0], [-2.2, 4.0], [2.2, 4.0]]) cyl(x, 1.3, z, 0.07, 2.6, '#5a4a3c', st);
   L.pool(0, 6.5, 6.0, '#ffcf8a', 0.06, 0.08); L.pool(-8.5, -4.5, 4.5, '#ffcf8a', 0.05, 0.08); L.pool(1, -10, 4.0, '#ffcf8a', 0.05, 0.08);
