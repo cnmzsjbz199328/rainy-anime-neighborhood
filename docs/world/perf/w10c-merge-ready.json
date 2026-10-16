@@ -1,0 +1,117 @@
+{
+ "tool": "tools/perf_baseline.mjs --views-only --loads 3",
+ "date": "2026-10-16",
+ "branch": "world/W10c-merge",
+ "start": "2e78e1c",
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "machine": "Apple M4 16 GB; swap about 9.2 GB used; 1-min load 4.5-5.9 while high and pre-w10a ran, the low run was disturbed (load rose again)",
+ "budget": {
+  "firstCompleteFrameMs": 4000,
+  "stopMs": 5000,
+  "defaultMedianMs": 17,
+  "defaultP95Ms": 25,
+  "defaultCalls": 2611,
+  "sphereVsPreW10a": "<= +10%",
+  "htmlIncreaseBytes": 600000,
+  "lowCallsNotAboveHigh": true
+ },
+ "high": {
+  "firstCompleteFrameMs": {
+   "median": 3895,
+   "loads": [
+    3931,
+    3846,
+    3895
+   ]
+  },
+  "views": {
+   "townDefault": {
+    "medianMs": 16.7,
+    "p95Ms": 18.1,
+    "calls": 2404
+   },
+   "sphere70": {
+    "medianMs": 23.2,
+    "p95Ms": 24.9,
+    "calls": 5650
+   },
+   "sphere140": {
+    "medianMs": 35.2,
+    "p95Ms": 38.7,
+    "calls": 10553
+   },
+   "sphere400": {
+    "medianMs": 35.6,
+    "p95Ms": 38.3,
+    "calls": 10616
+   }
+  }
+ },
+ "preW10a": {
+  "views": {
+   "townDefault": {
+    "medianMs": 16.6,
+    "p95Ms": 18.7,
+    "calls": 2374
+   },
+   "sphere140": {
+    "medianMs": 38.4,
+    "p95Ms": 40,
+    "calls": 11360
+   },
+   "sphere400": {
+    "medianMs": 39.5,
+    "p95Ms": 60.8,
+    "calls": 11486
+   }
+  }
+ },
+ "low": {
+  "firstCompleteFrameMs": {
+   "median": 5522,
+   "note": "disturbed run; the previous low run in a calmer window gave 3,989 ms (4,056 / 3,912 / 3,989)"
+  },
+  "views": {
+   "townDefault": {
+    "medianMs": 16.9,
+    "p95Ms": 19.8,
+    "calls": 2396
+   },
+   "sphere140": {
+    "medianMs": 65.4,
+    "p95Ms": 71,
+    "calls": 10550
+   },
+   "sphere400": {
+    "medianMs": 66,
+    "p95Ms": 78.9,
+    "calls": 10611
+   }
+  }
+ },
+ "htmlBytes": {
+  "current": 3034188,
+  "preW10a": 2919694
+ },
+ "startupAB": {
+  "method": "in-page, ABBA x4, navigation to the first frame with the scene, Metal",
+  "before2e78e1cMedianMs": 4069,
+  "afterMedianMs": 3604
+ },
+ "beforeSpeedups": {
+  "firstCompleteFrameMsMedian": 4041,
+  "loads": [
+   4091,
+   4041,
+   3900
+  ],
+  "note": "final W10c code before the speedups, same tool"
+ },
+ "verdict": {
+  "firstCompleteFrame": "pass (3,895 <= 4,000)",
+  "defaultView": "pass",
+  "sphere": "pass (better than pre-w10a)",
+  "html": "pass",
+  "lowCalls": "pass"
+ }
+}

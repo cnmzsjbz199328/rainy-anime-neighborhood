@@ -1,5 +1,43 @@
 # 进度记录
 
+## W10c 合并前收尾 阶段细化（2026-10-16）
+
+1. 规格与任务：[W10C_MERGE_HANDOFF](docs/world/W10C_MERGE_HANDOFF.md)（本任务）、[W10_SPEC](docs/world/W10_SPEC.md) §5 W10c 与 §6 性能预算、§7 交付；W10c 各专项计划 [CR01 西北](docs/world/CR01_NW_REPAIR_PLAN.md)、[路灯](docs/world/STREETLIGHT_NORMALIZATION_PLAN.md)、[桥隧](docs/world/BRIDGE_TUNNEL_TERRAIN_FIX_PLAN.md)、[灰屏](docs/world/GRAY_VIEW_FIX_PLAN.md)。
+2. 起点：`world/W10c` = `2e78e1c`（与交接文档核对时相同，领先本地 main 22 个提交，主工作树干净，只有未跟踪的交接文档）。独立工作树 `../rainy-anime-neighborhood-w10c-merge`，分支 `world/W10c-merge`；不在主工作树切分支或清理文件。天气分支 `world/weather-WX2` 不并入本轮。
+3. 范围：补齐最终版本的性能测量；定位并修复本阶段的预算未达与回归（只限 W10c 已有代码的启动与帧性能，先算法提速，再考虑构建时预计算，不恢复旧路径、不提前做 W10g）；最终构建复核机器检查；更新 ROADMAP 的 W10c 摘要与 PROGRESS；看点清单。不做：W10d 及以后、WX2/WX3、街道中线与宽度、地块、建筑、摆放与世界拓扑的任何改动，不下调检查阈值。
+4. 退出标准（机器）：`python3 build.py` → `node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png`；`cr01_merge_check`、`unify_check`（U0–U4）、`road_check`、`town_pavement_check`、`c01_s_clearance`、`terrain_structure_check`、`streetlight_check`、`fog_view_check`、`weather_check`（不带 `--shots`）、`day_check`；按实际修改复跑 terrain / ocean / cover / seam；前几轮已修问题对应的检查全部重跑，不靠旧结论。既有失败（`night_check` C2）附基线证据。
+5. 退出标准（性能，W10_SPEC §6，Metal）：`node tools/perf_baseline.mjs --views-only --quality high --loads 3` 与同窗口 `--ref pre-w10a`，另测低档；默认机位中位 ≤ 17 ms、p95 ≤ 25 ms、调用 ≤ 2,611；首个完整画面 ≤ 4.0 s（> 5 s 停下报告，4–5 s 不能写通过）；球形 d140 / d400 不比 `pre-w10a` 差 10 % 以上；HTML 增量 ≤ 0.6 MB；低档调用不多于高档。摘要写 `docs/world/perf/w10c-merge-ready.json`。
+6. 风险与裁决：本机常处于内存压力下（交换区约 8 GB，用户的其他程序同时占 CPU/GPU），单次测量噪声可达 ±1.5 s；性能只与同窗口基线交替比较并记录机器状态，绝对值不达标时如实写未达项，不把噪声写成通过。启动性能已知热点：CR01 合并（`09d0b67` 起路网模块 735 → 954 ms，合并 318 ms），优化必须保持 `cr01_merge_check` 等全部结果不变。画面由用户判断，状态 `待确认`；用户确认前不合并 main、不推送。
+
+## W10c 合并前收尾 实施与交付（2026-10-16，分支 `world/W10c-merge`，提交 `77ef1f9`，只本地提交，未合并、未推送；W10c 整体待用户确认）
+
+- 起点 `2e78e1c`（`world/W10c`），独立工作树 `../rainy-anime-neighborhood-w10c-merge`。本轮只改启动性能（三处提速，输出逐位不变）与文档；街道、地块、建筑、摆放、路网拓扑都没动，没有恢复旧路径，没有下调阈值。另按交接文档同步了天气计划的归档状态（`73055e6`，与天气分支的计划文件逐字节相同）。
+- **先测后改**：用最终 W10c 代码（`--views-only --quality high --loads 3`，Metal Apple M4，负载均值约 4–5）测得首个完整画面中位 4,041 ms（4,091 / 4,041 / 3,900），超过 4.0 s 预算；默认机位 16.6 / 18.3 ms、2,402 次调用，球形 d140 / d400 33.8 / 32.0 ms（同窗口 `pre-w10a` 41.4 / 41.2 ms），低档调用不多于高档。浏览器 CPU 剖析（CDP，一次冷启动）：脚本启动阶段 `bake`（建筑合批）自身 323 ms、含子调用 613 ms；`mesh()` 生成描边（`EdgesGeometry`）在 three.js 内约 308 ms；生成管线里路网 973 ms（CR01 合并 264 ms）、地表覆盖 668 ms、地形高度 474 ms。
+- **提速（只改算法，输出逐位不变）**：
+  1. `scene.js` `bake`：各对象的顶点先收集为类型化数组，最后一次写入最终大小的 Float32Array，代替 `push(...typedArray)` 展开到普通数组（数值相同；几何对象的创建数量与顺序不变，城镇雨依赖的 `Math.random` 序列不受影响）。
+  2. `scene.js` `mesh()` 的描边：按几何的类型、顶点与索引缓存 `EdgesGeometry` 的结果（散列只分桶，复用前逐元素比较原始数据）；每次调用仍恰好创建一个几何对象。第一版用的散列对只差符号位的镜像盒子会碰撞，被场景指纹比对抓到，已改为分桶 + 精确比较。
+  3. `roads.js` `mergeCr01`：`rebuild` 的 T 形接点处理在附近没有被抬高的顶点时直接保留原三角形；`branchFinal` 先用原始浮点坐标算包围盒，只给通过的三角形分配数组。
+- **输出不变的证据**：Node 里全部路线的最终几何指纹（`pos` / `col` / `index`）提速前后同为 `2d19dfee33e5abf8`；页面里整个场景 10,612 个网格与线、3,345,673 个顶点的几何指纹（含雨滴缓冲）与 `2e78e1c` 同为 `7b0490dc`，启动后取出的随机数也相同；`regress --baseline-ref 2e78e1c --weather lock:rain` 8 个视图逐位相同。
+- **启动收益**（页面内交替对照，4 次 ABBA，导航到首个带场景的帧）：`2e78e1c` 中位 4,069 ms → 3,604 ms（−465 ms）；路网步骤约 −30 ms，地标约 −20 ms，其余来自脚本启动。
+
+- **最终性能**（W10_SPEC §6，Metal Apple M4；`node tools/perf_baseline.mjs --views-only --quality high --loads 3` 与同窗口 `--ref pre-w10a`，另测低档；测量前放锁等机器空闲，开始时 1 分钟负载约 5.9，交换区已用约 9.2 GB；摘要 `docs/world/perf/w10c-merge-ready.json`，原始记录 `w10c-merge-ready-high.json`、`-pre-w10a.json`、`-low.json`）：
+  - 首个完整画面中位 **3,895 ms**（3,931 / 3,846 / 3,895），预算 4,000 ms：**通过**（提速前同一工具 4,041 ms）。
+  - 默认机位 16.7 / 18.1 ms、2,404 次调用（预算 17 / 25 ms、2,611 次）：通过。
+  - 球形 d140 35.2 / 38.7 ms、d400 35.6 / 38.3 ms；同窗口 `pre-w10a` 38.4 / 40.0、39.5 / 60.8 ms：不比基线差（好 8–10 %），通过。17 / 25 ms 的球形目标属于 W10g。
+  - 低档：默认 2,396 次、球形 10,550 / 10,611 次，不多于高档（2,404 / 10,553 / 10,616），通过。低档这一轮测到一半机器又忙起来（球形 70 中位 40.8 ms，高档 23.2 ms），首帧 5,522 ms 不具代表性；上一轮较安静时低档首帧 3,989 ms（4,056 / 3,912 / 3,989）。
+  - HTML 3,034,188 字节，较 `pre-w10a`（2,919,694）+114 KB，预算 0.6 MB：通过。
+  - 本机测量噪声大：同一代码在重负载窗口测过 4,010 ms。结论以放锁、空闲窗口的这一轮为准，并附交替对照（4,069 → 3,604 ms）作为相对收益的证据。
+- **机器检查**（最终源码，按交接文档顺序，日志在本机 scratchpad，不入库）：`python3 build.py` → `measure_samples`（无页面错误）→ `layout_check --png`（C1–C12，已跟踪的布局图未变）；`cr01_merge_check` M1–M7、B-ink、B-ground（B-ground 的 31 个 CUT_CAP 探针为既有项）；`unify_check` U0、U0-W10b、U1（topology / CR01 / town / exits / changes / geometry）、U2（平面、球形各 30,769 点：遮挡 0、无命中 0、其他道路抬高 0）、U3、U4（data / junctions / CR01-junctions，接缝 2,227 顶点最大高差 0.0002 m）；`road_check` 11 项；`town_pavement_check`（leaks / missing / ramp / corner / connector 全为空）；`c01_s_clearance`（448 件、5 段电线、冲突 0）；`terrain_structure_check` TS1–TS5、TS-page；`streetlight_check` SL1–SL6；`fog_view_check` G1–G4；`weather_check` C1–C4（不带 --shots）；`day_check` D1–D4（第一次因机器过载页面加载超时，复跑通过）；`terrain_check` W3-C0–C6；`seam_check`；`ocean_check` 4 项；`cover_check` 9 项；`transition_check` 4 项：全部通过。`night_check` C1、C3、C4 通过，C2 失败且读数与基线相同（光带核心 0、便利店 166、温泉村 170），是路灯专项已记录的既有失败。`regress --baseline-ref 2e78e1c --weather lock:rain` 8 个视图逐位相同。
+- **前几轮已修问题**：CR01 全环合并、人行道重复面与九接口侧带、C01-S 设施净空、统一路灯、桥下海床与隧道覆土、灰屏透射率，各自的检查都在最终构建上重跑通过，没有用旧结论代替。
+- **用户看点**（画面由用户判断；本轮没有改变任何几何或像素，看点沿用各专项，在最终构建上确认）：
+  1. 西北 CR01/RN05：平面 target [−48, 1.2, −54]、dist 15、yaw π/4、pitch 0.8；球形 target [−46, 1.2, −53]、dist 34、pitch 1.1。铺装连续，没有重复碎片与穿路旧描边；再抽看其余九个路口。已知 RN05 端头 cap 空缝、C01-S 折叠在待办池。
+  2. 人行道与九个接口、南口设施：`docs/world/w10c/pavement-review/`、`docs/world/w10c/c01-s-furniture-review/` 的原机位（本地已有图，未入库）。没有抬高侧带、铺砖重复面，设施不侵路。
+  3. 路灯：按 PROGRESS「道路路灯规范化」的城镇、CR01、桥面与球形机位，灯体尺度、落地与光池。
+  4. 桥隧：按 PROGRESS「桥下海床与隧道覆土」的 RN01-03 / 07–09 / 13 桥下与 RN01-05 洞口机位。海床连续，山体盖住隧道，入口不堵。隧道上方无植被带是已记录遗留。
+  5. 灰屏：LM08 锁雾，dist 65，推拉 35–160，目标可读；城镇锁雨默认与远景的光池变化，球形往返能恢复。
+  6. 连接段蓝色空洞（用户新报告，[方案](docs/world/CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md)）：**本分支没有修**，在另一分支 `world/W10c-connector-fix` 修复，合并前需要集成并复检。
+- **遗留**：W10c 累计画面待用户确认；连接段空洞修复待集成；球形 17 / 25 ms 目标属于 W10g；`night_check` C2 既有失败；待办池原有项不变。未合并 main、未推送、未开始 W10d。
+
 ## W10c 西北 CR01/RN05 浅角接入返工 实施（2026-10-15，分支 world/W10c，提交 `09d0b67`）
 
 - 按 `docs/world/CR01_NW_REPAIR_PLAN.md` 实施（第 7 节为实施记录与偏差说明）。布局、节点、R8 中线与宽度不变；未合并、未推送、未启动 W10d；W10c 仍为用户视觉待确认。

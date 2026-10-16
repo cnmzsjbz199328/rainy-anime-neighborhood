@@ -682,9 +682,13 @@ function* mergeCr01(W, routes, prep, RK) {
     // moved corner in the middle of a neighbour's edge would open a crack): such a triangle is refanned round its centre with that corner in its outline
     const at = id => (id < nv0 ? vertexOf(st, id) : extra[id - nv0]), xz = id => { const v = at(id); return [v[0], v[2]]; }, final = [];
     const moved = boxGrid([...snapped].map(id => { const p = xz(id); return { id, p, box: [p[0], p[0], p[1], p[1]] }; }));
+    const px = id => (id < nv0 ? P[id * 3] : extra[id - nv0][0]), pz = id => (id < nv0 ? P[id * 3 + 2] : extra[id - nv0][2]);   // (merge-ready speedup: no vertex arrays for the box test)
     for (let t = 0; t < out.length; t += 3) {
-      const ids = [out[t], out[t + 1], out[t + 2]], P = ids.map(xz), box = [Math.min(P[0][0], P[1][0], P[2][0]), Math.max(P[0][0], P[1][0], P[2][0]), Math.min(P[0][1], P[1][1], P[2][1]), Math.max(P[0][1], P[1][1], P[2][1])];
-      const near = snapped.size ? moved.query(box).filter(q => !ids.includes(q.id)) : [];
+      const i0 = out[t], i1 = out[t + 1], i2 = out[t + 2], x0 = px(i0), x1 = px(i1), x2 = px(i2), z0 = pz(i0), z1 = pz(i1), z2 = pz(i2);
+      const box = [Math.min(x0, x1, x2), Math.max(x0, x1, x2), Math.min(z0, z1, z2), Math.max(z0, z1, z2)];
+      if (!snapped.size || !moved.any(box)) { final.push(i0, i1, i2); continue; }                   // no moved corner near it: the triangle stays as it is
+      const ids = [i0, i1, i2], P = ids.map(xz);
+      const near = moved.query(box).filter(q => !ids.includes(q.id));
       const outline = []; let inserted = 0;
       for (let e = 0; e < 3; e++) {
         const a = P[e], b = P[(e + 1) % 3], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1e-24, on = []; outline.push(ids[e]);
@@ -733,9 +737,10 @@ function* mergeCr01(W, routes, prep, RK) {
   // the ring's side bands: the regions a branch owns (its paving, or its verge where its paving is nearer than the ring's). A new corner of the ring on
   // such a region takes the branch's final surface: along the equal-distance line that is the ring's own height again (the branch took it above), and
   // where a narrow branch ends inside the ring's verge (its strip's outer edge) the ring's ditch or verge comes up to that edge instead of a step.
-  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip; for (let t = 0; t < st.index.length; t += 3) {
-    const tri = [0, 1, 2].map(k => { const v = st.index[t + k]; return [st.pos[v * 3], st.pos[v * 3 + 1], st.pos[v * 3 + 2]]; }), box = boxXZ(tri);
-    if (box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box)) branchFinal.push({ tri, box }); } }
+  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip, SP = st.pos, SI = st.index; for (let t = 0; t < SI.length; t += 3) {
+    const a = SI[t] * 3, b = SI[t + 1] * 3, c = SI[t + 2] * 3, box = [Math.min(SP[a], SP[b], SP[c]), Math.max(SP[a], SP[b], SP[c]), Math.min(SP[a + 2], SP[b + 2], SP[c + 2]), Math.max(SP[a + 2], SP[b + 2], SP[c + 2])];
+    if (!(box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box))) continue;   // (merge-ready speedup: the box from the floats first)
+    branchFinal.push({ tri: [a, b, c].map(k => [SP[k], SP[k + 1], SP[k + 2]]), box }); } }
   const branchFinalIndex = boxGrid(branchFinal), branchY = (x, z) => surfaceY(branchFinalIndex, x, z);
   const pieceIndex = boxGrid(pieces); let ringRemoved = 0;
   const O = rs.clipOffset;

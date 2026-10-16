@@ -17,7 +17,17 @@ function mat(c){return mats[c]||(mats[c]=new THREE.MeshToonMaterial({color:c,gra
 const groups={};let root=scene;
 function group(name,parent=scene){let g=groups[name];if(!g){g=groups[name]=new THREE.Group();g.name=name;parent.add(g);}root=g;return g;}
 const ink=new THREE.LineBasicMaterial({color:0x273647,transparent:true,opacity:.68});
-function mesh(g,m,x,y,z,outline=true,parent=root){const a=new THREE.Mesh(g,typeof m==='string'?mat(m):m);a.position.set(x,y,z);parent.add(a);if(outline){const e=new THREE.LineSegments(new THREE.EdgesGeometry(g,35),ink);a.add(e);if(g.type==='BoxGeometry'){const eg=e.geometry.clone(),at=eg.attributes.position;for(let k=0;k<at.count;k++){at.setXYZ(k,at.getX(k)+(rnd()-.5)*.013,at.getY(k)+(rnd()-.5)*.013,at.getZ(k)+(rnd()-.5)*.013);}a.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x334458,transparent:true,opacity:.15})));}}return a;}
+// W10c merge-ready: the edges of a geometry are computed once per distinct shape (type, vertices and index, a 64-bit fingerprint) and copied; the
+// EdgesGeometry object itself is still made for every outline (three.js draws its id from Math.random: the town's rain keeps its stream)
+const edgeCache=new Map();
+function edgesOf(g){const p=g.attributes.position.array,ix=g.index?g.index.array:null;let h=2166136261|0;
+  const mix=v=>{let k=Math.imul(v,0xcc9e2d51);k=(k<<15)|(k>>>17);k=Math.imul(k,0x1b873593);h^=k;h=(h<<13)|(h>>>19);h=(Math.imul(h,5)+0xe6546b64)|0;};
+  const u=new Uint32Array(p.buffer,p.byteOffset,p.byteLength>>2);for(let i=0;i<u.length;i++)mix(u[i]);if(ix)for(let i=0;i<ix.length;i++)mix(ix[i]);
+  const k=g.type+'|'+p.length+'|'+(ix?ix.length:0)+'|'+(h>>>0),same=(a,b)=>{if(!a||!b)return a===b;if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true;};
+  const list=edgeCache.get(k)||[],c=list.find(q=>same(q.p,p)&&same(q.ix,ix));          // the hash only buckets: a reuse needs the very same vertices and index
+  if(!c){const e=new THREE.EdgesGeometry(g,35);list.push({p:p.slice(),ix:ix?ix.slice():null,out:e.attributes.position.array.slice()});edgeCache.set(k,list);return e;}     // exactly one geometry object per call either way
+  const e=new THREE.EdgesGeometry(null,35);e.setAttribute('position',new THREE.Float32BufferAttribute(c.out.slice(),3));return e;}
+function mesh(g,m,x,y,z,outline=true,parent=root){const a=new THREE.Mesh(g,typeof m==='string'?mat(m):m);a.position.set(x,y,z);parent.add(a);if(outline){const e=new THREE.LineSegments(edgesOf(g),ink);a.add(e);if(g.type==='BoxGeometry'){const eg=e.geometry.clone(),at=eg.attributes.position;for(let k=0;k<at.count;k++){at.setXYZ(k,at.getX(k)+(rnd()-.5)*.013,at.getY(k)+(rnd()-.5)*.013,at.getZ(k)+(rnd()-.5)*.013);}a.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x334458,transparent:true,opacity:.15})));}}return a;}
 function box(x,y,z,w,h,d,c,outline=true,parent=root){return mesh(new THREE.BoxGeometry(w,h,d),c,x,y,z,outline,parent);}
 function cyl(x,y,z,r,h,c,parent=root){return mesh(new THREE.CylinderGeometry(r,r,h,12),c,x,y,z,true,parent);}
 function line(points,c='#34465c',r=.025,parent=root){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));return mesh(new THREE.TubeGeometry(curve,32,r,6,false),mat(c),0,0,0,false,parent);}
@@ -73,10 +83,15 @@ function bake(g,tint=false){g.updateMatrixWorld(true);const inv=g.matrixWorld.cl
     let layer='';for(let p=o;p&&p!==g;p=p.parent)if(p.userData.layer){layer=p.userData.layer;break;}
     const tm=tint&&o.isMesh&&plainToon(o.material)?tintMat(o.material):null,m=tm||o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;let band=false;if(!tint){bb.setFromObject(o,true);band=bb.max.y>.3&&bb.min.y<1.8;}
     const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,tinted:!!tm,list:[]});buckets.get(k).list.push(o);done.push(o);});
-  for(const {line,m,layer,tinted,list} of buckets.values()){const P=[],N=[],U=[],C=[];
+  /* W10c merge-ready: the parts are copied once into typed arrays of the final size (the same float32 values the plain arrays held; the same geometry
+     objects are made in the same order, so the town's Math.random stream for the rain is untouched) */
+  for(const {line,m,layer,tinted,list} of buckets.values()){const parts=[];let pl=0,nl=0,ul=0,cl=0;
     for(const o of list){let q=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();q.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld));
-      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}
-      if(tinted){const c=o.material.color;for(let i=0;i<n;i++)C.push(c.r,c.g,c.b);}q.dispose();}
+      const a=q.attributes,n=a.position.count,pt={p:a.position.array,n:line?null:(a.normal?a.normal.array:n*3),u:line?null:(a.uv?a.uv.array:n*2),c:tinted?o.material.color:null,cnt:n};
+      parts.push(pt);pl+=pt.p.length;if(!line){nl+=typeof pt.n==='number'?pt.n:pt.n.length;ul+=typeof pt.u==='number'?pt.u:pt.u.length;}if(tinted)cl+=n*3;q.dispose();}
+    const P=new Float32Array(pl),N=new Float32Array(nl),U=new Float32Array(ul),C=new Float32Array(cl);let po=0,no=0,uo=0,co=0;
+    for(const pt of parts){P.set(pt.p,po);po+=pt.p.length;if(!line){if(typeof pt.n==='number')no+=pt.n;else{N.set(pt.n,no);no+=pt.n.length;}if(typeof pt.u==='number')uo+=pt.u;else{U.set(pt.u,uo);uo+=pt.u.length;}}
+      if(pt.c){const r=pt.c.r,g=pt.c.g,b=pt.c.b;for(let i=0;i<pt.cnt;i++){C[co++]=r;C[co++]=g;C[co++]=b;}}}
     const q=new THREE.BufferGeometry();q.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
     if(!line){q.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));q.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));}
     if(tinted)q.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
