@@ -1,0 +1,324 @@
+{
+ "tool": "tools/perf_baseline.mjs",
+ "label": "wd1-pre-service-same-window",
+ "ref": "2e0c899",
+ "commit": "2e0c89903dfac549cce5f42a189a9300b81cc673",
+ "dirty": false,
+ "date": "2026-10-16T14:08:32.693Z",
+ "renderer": "metal",
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist",
+  "--enable-precise-memory-info"
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "windowMs": 5000,
+ "dragFrames": 60,
+ "noGenWaitMs": 6000,
+ "quality": "high",
+ "loads": [
+  {
+   "sceneMs": 9856,
+   "firstFrameMs": 10442,
+   "firstCompleteFrameMs": 10441,
+   "worldgenStartMs": 3774,
+   "startupScriptTaskMs": 3585,
+   "pipelineLongestTaskMs": 587
+  }
+ ],
+ "pregen": {
+  "present": true,
+  "waitedMs": 25,
+  "worldgen": {
+   "started": true,
+   "done": true,
+   "startAt": 1792159717032,
+   "doneAt": 1792159723113,
+   "firstFrameAt": 1792159723699,
+   "firstCompleteFrameMs": 10441.400000095367,
+   "steps": [
+    {
+     "name": "rest",
+     "done": true,
+     "steps": 13,
+     "ms": 699,
+     "longestMs": 86
+    },
+    {
+     "name": "sampler",
+     "done": true,
+     "steps": 1,
+     "ms": 40,
+     "longestMs": 40
+    },
+    {
+     "name": "section",
+     "done": true,
+     "steps": 5,
+     "ms": 215,
+     "longestMs": 118
+    },
+    {
+     "name": "ink",
+     "done": true,
+     "steps": 1,
+     "ms": 159,
+     "longestMs": 159
+    },
+    {
+     "name": "roads",
+     "done": true,
+     "steps": 34,
+     "ms": 2530,
+     "longestMs": 531
+    },
+    {
+     "name": "ocean",
+     "done": true,
+     "steps": 2,
+     "ms": 387,
+     "longestMs": 371
+    },
+    {
+     "name": "landcover",
+     "done": true,
+     "steps": 24,
+     "ms": 1455,
+     "longestMs": 131
+    },
+    {
+     "name": "streetlights",
+     "done": true,
+     "steps": 3,
+     "ms": 78,
+     "longestMs": 67
+    },
+    {
+     "name": "landmarks",
+     "done": true,
+     "steps": 11,
+     "ms": 279,
+     "longestMs": 54
+    }
+   ]
+  },
+  "longTasks": [],
+  "longestTaskMs": 0,
+  "moduleMs": {
+   "rest": 688,
+   "section": 215,
+   "roads": 2530,
+   "ocean": 387,
+   "cover": 1455,
+   "landmarks": 279
+  }
+ },
+ "exits": {},
+ "sphere": {},
+ "machine": {
+  "start": {
+   "freeMemMB": 676,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    6.43,
+    9.67,
+    9.38
+   ],
+   "swap": "total = 9216.00M  used = 8512.25M  free = 703.75M  (encrypted)"
+  },
+  "end": {
+   "freeMemMB": 1672,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    13.03,
+    10.87,
+    9.84
+   ],
+   "swap": "total = 9216.00M  used = 8408.25M  free = 807.75M  (encrypted)"
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "parallelShaderCompile": true,
+ "chromium": "153.0.8010.12",
+ "jsHeapMB": 414.8,
+ "views": {
+  "town-default": {
+   "frames": 121,
+   "medianMs": 24.1,
+   "p95Ms": 41,
+   "maxMs": 55.3,
+   "longTasks": 3,
+   "calls": 2405,
+   "triangles": 1595286,
+   "instances": 7925,
+   "cover": {
+    "calls": 61,
+    "triangles": 910353
+   },
+   "tier": "high",
+   "lod": {
+    "near": 786,
+    "far": 275,
+    "fading": 357,
+    "groups": 0
+   }
+  },
+  "forest-near-flat": {
+   "frames": 181,
+   "medianMs": 16.7,
+   "p95Ms": 19,
+   "maxMs": 24.6,
+   "longTasks": 0,
+   "calls": 730,
+   "triangles": 1278987,
+   "instances": 7839,
+   "cover": {
+    "calls": 60,
+    "triangles": 844935
+   },
+   "tier": "high",
+   "lod": {
+    "near": 682,
+    "far": 409,
+    "fading": 367,
+    "groups": 0
+   }
+  },
+  "farm-flat": {
+   "frames": 183,
+   "medianMs": 16.8,
+   "p95Ms": 19.6,
+   "maxMs": 23.8,
+   "longTasks": 0,
+   "calls": 402,
+   "triangles": 1202051,
+   "instances": 7808,
+   "cover": {
+    "calls": 59,
+    "triangles": 777881
+   },
+   "tier": "high",
+   "lod": {
+    "near": 600,
+    "far": 516,
+    "fading": 480,
+    "groups": 0
+   }
+  },
+  "coast-flat": {
+   "frames": 182,
+   "medianMs": 16.5,
+   "p95Ms": 21.6,
+   "maxMs": 29.4,
+   "longTasks": 0,
+   "calls": 312,
+   "triangles": 1183915,
+   "instances": 7847,
+   "cover": {
+    "calls": 61,
+    "triangles": 806392
+   },
+   "tier": "high",
+   "lod": {
+    "near": 621,
+    "far": 483,
+    "fading": 431,
+    "groups": 0
+   }
+  },
+  "sphere-70": {
+   "frames": 51,
+   "medianMs": 60.9,
+   "p95Ms": 75.6,
+   "maxMs": 81.5,
+   "longTasks": 52,
+   "calls": 6391,
+   "triangles": 1477729,
+   "instances": 8456,
+   "cover": {
+    "calls": 42,
+    "triangles": 420948
+   },
+   "tier": "high",
+   "lod": {
+    "near": 464,
+    "far": 631,
+    "fading": 719,
+    "groups": 0
+   }
+  },
+  "sphere-140": {
+   "frames": 34,
+   "medianMs": 91.9,
+   "p95Ms": 119.1,
+   "maxMs": 121.1,
+   "longTasks": 35,
+   "calls": 10549,
+   "triangles": 1675787,
+   "instances": 8368,
+   "cover": {
+    "calls": 42,
+    "triangles": 363813
+   },
+   "tier": "high",
+   "lod": {
+    "near": 258,
+    "far": 869,
+    "fading": 1624,
+    "groups": 0
+   }
+  },
+  "sphere-400": {
+   "frames": 34,
+   "medianMs": 93.5,
+   "p95Ms": 114.8,
+   "maxMs": 116.6,
+   "longTasks": 34,
+   "calls": 10617,
+   "triangles": 1613270,
+   "instances": 5822,
+   "cover": {
+    "calls": 39,
+    "triangles": 290907
+   },
+   "tier": "high",
+   "lod": {
+    "near": 1,
+    "far": 995,
+    "fading": 2329,
+    "groups": 34
+   }
+  }
+ },
+ "summary": {
+  "sceneMsMedian": 9856,
+  "firstFrameMsMedian": 10442,
+  "firstCompleteFrameMsMedian": 10441,
+  "pipelineLongestTaskMsMax": 587,
+  "pregenCpuMs": 5842,
+  "pregenLongestTaskMs": 0,
+  "pregenCpuMsMedian": null,
+  "pregenCpuMsRange": [
+   null,
+   null
+  ],
+  "pregenLongestTaskMsMedian": null,
+  "pregenLongestTaskMsMax": 0,
+  "immediateExitLongestTaskMs": null,
+  "afterPregenExitLongestTaskMs": null,
+  "hotExitLongestTaskMs": null,
+  "immediateExitMaxFrameGapMs": null,
+  "afterPregenExitMaxFrameGapMs": null,
+  "hotExitMaxFrameGapMs": null,
+  "sphereImmediateLongestTaskMs": null,
+  "sphereAfterPregenLongestTaskMs": null,
+  "viewsMedianMsMax": 93.5,
+  "viewsP95MsMax": 119.1,
+  "jsHeapMB": 414.8,
+  "pageErrors": 0
+ },
+ "errors": []
+}
