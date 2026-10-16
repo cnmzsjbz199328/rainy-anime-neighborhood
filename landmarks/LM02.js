@@ -24,7 +24,99 @@
     { x: 8.6, z: 5.8, ry: -PI / 2 + 0.1, w: 5.2, d: 4.5, floors: 1, wall: '#7c6955', name: 'house 3' },
     { x: -4.2, z: 11.2, ry: PI * 0.92, w: 5, d: 4.2, floors: 1, wall: '#6a5848', name: 'shop' },
   ];
-  houses.forEach((h, i) => L.house(h.x, h.z, h.ry, { w: h.w, d: h.d, floors: h.floors, wall: h.wall, rise: h.floors > 1 ? 1.9 : 1.4, roof: i % 2 ? '#353a44' : '#3a3f4a', lit: i !== 4 }));
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#d9e3df', transparent: true, opacity: 0.27, roughness: 0.18, metalness: 0.05, side: THREE.DoubleSide, depthWrite: false });
+  const identities = ['玄关旅馆', '溪畔旅馆', '厨居', '工具之家', '静居', '村口商店'];
+  const villageHouse = (h, i) => {
+    const g = L.sub(h.x, 0, h.z, h.ry), w = h.w, d = h.d, fl = h.floors, height = fl * 2.7, dark = '#473a30', trim = i === 1 ? '#695743' : '#584636';
+    g.name = `lm02Building${i + 1}`; g.userData.identity = identities[i];
+    const b = (x, y, z, a, c, e, color) => box(x, y, z, a, c, e, color, true, g);
+    b(0, 0.1, 0, w + 0.3, 0.2, d + 0.3, '#6a6a68');
+    for (let f = 0; f < fl; f++) {
+      const y0 = 0.2 + f * 2.7, y1 = y0 + 2.7;
+      b(0, y0 + 0.06, 0, w - 0.18, 0.12, d - 0.18, '#836d55');
+      for (const side of [-1, 1]) {
+        const z = side * d / 2, centers = side > 0 ? [-w * 0.31, 0, w * 0.31] : [-w * 0.26, w * 0.26];
+        const openings = centers.map(cx => ({ cx, half: side > 0 && f === 0 && cx === 0 ? 0.56 : 0.53, bottom: side > 0 && f === 0 && cx === 0 ? y0 : y0 + 0.82, top: side > 0 && f === 0 && cx === 0 ? y0 + 2.1 : y0 + 1.92 }));
+        let left = -w / 2;
+        for (const o of openings) {
+          const x0 = o.cx - o.half, x1 = o.cx + o.half;
+          if (x0 > left) b((left + x0) / 2, (y0 + y1) / 2, z, x0 - left, 2.7, 0.16, h.wall);
+          if (o.bottom > y0) b(o.cx, (y0 + o.bottom) / 2, z, o.half * 2, o.bottom - y0, 0.16, h.wall);
+          if (o.top < y1) b(o.cx, (o.top + y1) / 2, z, o.half * 2, y1 - o.top, 0.16, h.wall);
+          b(o.cx, o.top + 0.04, z, o.half * 2 + 0.14, 0.08, 0.23, trim);
+          if (o.bottom > y0) {
+            b(o.cx, o.bottom - 0.04, z, o.half * 2 + 0.16, 0.08, 0.26, trim);
+            mesh(new THREE.BoxGeometry(o.half * 2 - 0.06, o.top - o.bottom - 0.1, 0.018), glass, o.cx, (o.bottom + o.top) / 2, z + side * 0.015, false, g);
+            b(o.cx, (o.bottom + o.top) / 2, z + side * 0.04, 0.045, o.top - o.bottom, 0.06, dark);
+          } else {
+            b(o.cx - 0.48, y0 + 1.02, z + side * 0.04, 0.06, 1.93, 0.07, dark);
+            b(o.cx + 0.48, y0 + 1.02, z + side * 0.04, 0.06, 1.93, 0.07, dark);
+            b(o.cx, y0 + 1.08, z - side * 0.05, 0.94, 1.98, 0.07, i === 5 ? '#735943' : '#5a4333');
+            b(o.cx + 0.38, y0 + 1.03, z + side * 0.01, 0.05, 0.12, 0.09, '#c4aa75');
+          }
+          left = x1;
+        }
+        if (left < w / 2) b((left + w / 2) / 2, (y0 + y1) / 2, z, w / 2 - left, 2.7, 0.16, h.wall);
+      }
+      for (const side of [-1, 1]) {
+        const x = side * w / 2, zc = i === 1 ? -0.35 : 0;
+        b(x, y0 + 1.35, (-d / 2 + zc - 0.53) / 2, 0.16, 2.7, d / 2 + zc - 0.53, h.wall);
+        b(x, y0 + 1.35, (d / 2 + zc + 0.53) / 2, 0.16, 2.7, d / 2 - zc - 0.53, h.wall);
+        b(x, y0 + 0.41, zc, 0.16, 0.82, 1.06, h.wall);
+        b(x, y0 + 2.31, zc, 0.16, 0.78, 1.06, h.wall);
+        mesh(new THREE.BoxGeometry(0.02, 1.0, 0.96), glass, x + side * 0.015, y0 + 1.36, zc, false, g);
+        b(x + side * 0.03, y0 + 1.36, zc, 0.07, 1.08, 0.045, dark);
+      }
+      for (const x of [-w / 2, w / 2]) for (const z of [-d / 2, d / 2]) b(x, y0 + 1.35, z, 0.16, 2.7, 0.16, dark);
+      b(0, y0 + 2.62, 0, w - 0.12, 0.14, d - 0.12, '#806b52');
+      // A visible near-window furnishing, clear central passage, and a rear partition on each floor.
+      b(-w * 0.26, y0 + 0.77, d / 2 - 0.72, 1.0, 0.12, 0.58, i === 5 ? '#a18053' : '#715945');
+      b(w * 0.22, y0 + 0.47, d / 2 - 1.0, 0.9, 0.14, 0.55, '#79604b');
+      b(0, y0 + 1.2, -d / 2 + 0.85, w * 0.48, 2.0, 0.12, '#9b8970');
+      b(w * 0.28, y0 + 0.88, -d / 2 + 0.5, 1.0, 1.55, 0.4, i === 5 ? '#89725a' : '#6f5843');
+      if (fl > 1) {
+        for (let s = 0; s < 7; s++) b(-w / 2 + 0.72, y0 + 0.28 + s * 0.32, -d / 2 + 0.85 + s * 0.28, 0.75, 0.1, 0.32, '#6d5742');
+        b(-w / 2 + 0.25, y0 + 1.4, -d / 2 + 1.72, 0.08, 2.1, 2.0, dark);
+      }
+    }
+    for (const z of [-d / 2, d / 2]) b(0, height + 0.17, z, w + 0.8, 0.14, 0.15, trim);
+    L.gable(w, d, height + 0.2, fl > 1 ? 1.9 : 1.4, 0.5, i % 2 ? '#353a44' : '#3a3f4a', g);
+    for (let k = 0; k < Math.floor(d / 0.48); k++) {
+      const z = -d / 2 + (k + 0.5) * d / Math.floor(d / 0.48);
+      for (const side of [-1, 1]) b(side * (w / 2 + 0.35), height + 0.17, z, 0.06, 0.05, 0.36, '#50535a');
+    }
+    b(0, 2.1, d / 2 + 0.22, 1.5, 0.12, 0.44, trim);
+    b(0, 0.12, d / 2 + 0.6, 1.5, 0.12, 0.9, '#85817a');
+    for (const x of [-w / 2 + 0.3, w / 2 - 0.3]) {
+      b(x, height / 2, -d / 2 - 0.12, 0.08, height, 0.09, trim);
+      b(x, height + 0.08, -d / 2 - 0.13, 0.16, 0.16, 0.16, '#55555a');
+    }
+    if (i === 0) { // traditional inn: shoe bays and reception behind the genkan
+      for (let k = 0; k < 4; k++) b(-w / 2 + 0.65 + k * 0.34, 0.58, d / 2 - 0.48, 0.29, 0.12, 0.34, '#9d805c');
+      b(w / 2 - 1.15, 0.93, -0.35, 1.45, 0.16, 0.58, '#8c6d4d');
+      b(0, 0.2, d / 2 + 0.67, 1.8, 0.06, 0.7, '#71543f');
+    } else if (i === 1) { // creekside inn: long gallery and low tea seating
+      b(0, 0.33, d / 2 + 0.37, w - 0.6, 0.12, 0.55, '#806b50');
+      for (const x of [-w / 3, 0, w / 3]) b(x, 0.65, d / 2 + 0.55, 0.1, 0.72, 0.1, trim);
+      b(0, 0.47, d / 2 - 1.2, 1.15, 0.12, 0.8, '#92785b');
+    } else if (i === 2) { // family home: kitchen and vent on the service side
+      b(w / 2 - 0.75, 0.9, -d / 2 + 1.1, 0.72, 0.12, 0.68, '#8c8b82');
+      b(w / 2 - 0.75, 1.3, -d / 2 + 1.1, 0.36, 0.65, 0.36, '#575c5d');
+    } else if (i === 3) { // tool-keeping home: enclosed side rack
+      for (let k = 0; k < 3; k++) b(-w / 2 + 0.6, 0.48 + k * 0.42, -d / 2 + 0.8, 0.75, 0.08, 0.42, '#887056');
+      b(-w / 2 + 0.6, 1.25, -d / 2 + 0.55, 0.05, 1.25, 0.08, '#4b5050');
+    } else if (i === 4) { // quiet home: mostly unlit, a small reading table
+      b(-0.9, 0.48, d / 2 - 1.05, 0.8, 0.1, 0.64, '#8f775b');
+      b(-0.9, 0.8, d / 2 - 1.25, 0.11, 0.55, 0.11, '#bbb199');
+    } else { // shop: display, rear stock and a framed sign
+      for (let k = 0; k < 4; k++) b(-w / 2 + 0.65 + k * 0.37, 0.84, d / 2 - 0.57, 0.26, 0.38, 0.23, k % 2 ? '#a48b65' : '#8e7659');
+      b(0, 2.42, d / 2 + 0.1, 1.9, 0.34, 0.1, '#ad9671');
+      b(w / 2 - 0.8, 0.9, -d / 2 + 0.7, 0.7, 1.4, 0.5, '#715b45');
+    }
+    if (i !== 4) mesh(new THREE.BoxGeometry(0.7, 0.24, 0.08), warm('#f5c68a', 0.19), 0, 1.95, -d / 2 + 0.95, false, g);
+    return g;
+  };
+  houses.forEach(villageHouse);
   // inn entrance canopy and a pair of lanterns at each inn (genkan)
   // ---- the open-air spring: a 5 x 4 m pool, stone rim, steaming; bamboo fence on three sides; the source hut and the flume
   const on = group('lm02Onsen'); L.use(on); const OX = -1.0, OZ = -2.0;
