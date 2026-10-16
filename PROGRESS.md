@@ -1,5 +1,13 @@
 # 进度记录
 
+## W10c、WD1、WX 合并到 main（2026-10-17，用户要求搁置长时间验证、做基本验证后合并；未推送）
+
+- 合并顺序（全部在独立工作树 `../rainy-anime-neighborhood-main`）：`world/W10c`（`d8f394a`，含 WD1 LM09 细节轨道，快进）→ `world/W10c-merge`（启动提速与合并前收尾记录）→ `world/W10c-connector-fix`（`ac3aade`，连接段地形空洞）→ `world/weather-WX2`（WX1–WX3 与计划归档）。每次合并后重新生成 `index.html`，与源码构建逐字节一致。
+- 冲突处理：PROGRESS 两段新章节并存；LM09 檐滴同时保留 WD1 的名字 `lm09EaveDrip` 与 WX2 的天气标记，去掉 WD1 在 `update` 里自己乘的天气系数和 scene.js 的 `landmarkKit.weather`（否则与 weather_fx 的统一登记表重复相乘）；scene.js 采用 WX2 的雨与天气接线，`bake` / 描边缓存提速保留。
+- 基本验证（合并后的最终构建）：`weather_field_check` 5/5；`cr01_merge_check --no-browser` M1–M7；`unify_check --no-browser` U0、U1、U4；`wd1_weather_check`（平面雨、雨后檐滴可见，晴与球形为 0）通过；`connector_ground_check` CG1–CG6 通过；`weather_integration_check --only R,I8`（登记 124 个；晴天降水对象 0 绘制，同帧差分 0 像素）通过；`measure_samples` → `layout_check --png` C1–C12 通过。
+- 未做（按用户指示搁置）：完整检查链、`regress` 像素对照、性能复测、截图审查。各分支自己的完整验证结果见上面各章节（W10c 合并前收尾、连接段专项、WX_PROGRESS）。
+- 状态：W10c、WD1、WX2/WX3、连接段修复的画面仍待用户确认；未推送。
+
 ## W10c 连接段地形空洞专项 实施与交付（2026-10-16 实施，2026-10-17 提交，分支 `world/W10c-connector-fix`；画面待用户确认）
 
 - **先建失败用例**：新增 `tools/connector_ground_check.mjs`（CG1–CG6，`--ref`/`--baseline`/`--report`）。九个出口由 `world.js` 推导（城镇边界节点与 C01-* 节点之间的边），“道路/地面”分类按页面实际显示的道路面平面投影，参考是地形 chunk 原始网格，射线按 `bend.js` 顶点着色器顺序在 uBend 0 / 0.5 / 1 下沿当地法线投射（同 `terrain_structure_check` 的构造），不读被测裁切代码。每个出口：城镇边外 0.125–6.875 m × 两侧 0.125–7.875 m 的 0.25 m 网格（16,128 点）、城镇边外 0.01/0.03/0.06 m（1,728 点）、连接段网格侧边（工具自己二分求得）两侧 0.01/0.03/0.06/0.12/0.20 m（2,200 点），加方案第 3 节 18 点，共 20,074 个探针。
