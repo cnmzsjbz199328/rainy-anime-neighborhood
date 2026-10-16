@@ -1,0 +1,403 @@
+{
+ "tool": "tools/perf_baseline.mjs",
+ "label": "weather-wx3",
+ "ref": null,
+ "commit": "e845da531ed9ff7a6f2ddeefaf9721e940f559e3",
+ "dirty": true,
+ "date": "2026-10-16T06:30:58.318Z",
+ "renderer": "metal",
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist",
+  "--enable-precise-memory-info"
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "windowMs": 5000,
+ "dragFrames": 60,
+ "noGenWaitMs": 6000,
+ "quality": "high",
+ "loads": [
+  {
+   "sceneMs": 8359,
+   "firstFrameMs": 9691,
+   "firstCompleteFrameMs": 9691,
+   "worldgenStartMs": 3481,
+   "startupScriptTaskMs": 3393,
+   "pipelineLongestTaskMs": 1333
+  },
+  {
+   "sceneMs": 6778,
+   "firstFrameMs": 7337,
+   "firstCompleteFrameMs": 7337,
+   "worldgenStartMs": 2678,
+   "startupScriptTaskMs": 2554,
+   "pipelineLongestTaskMs": 560
+  },
+  {
+   "sceneMs": 6768,
+   "firstFrameMs": 7276,
+   "firstCompleteFrameMs": 7276,
+   "worldgenStartMs": 2457,
+   "startupScriptTaskMs": 2353,
+   "pipelineLongestTaskMs": 510
+  }
+ ],
+ "pregen": {
+  "present": true,
+  "waitedMs": 24,
+  "worldgen": {
+   "started": true,
+   "done": true,
+   "startAt": 1792132261979,
+   "doneAt": 1792132266851,
+   "firstFrameAt": 1792132268188,
+   "firstCompleteFrameMs": 9691,
+   "steps": [
+    {
+     "name": "rest",
+     "done": true,
+     "steps": 13,
+     "ms": 461,
+     "longestMs": 60
+    },
+    {
+     "name": "sampler",
+     "done": true,
+     "steps": 1,
+     "ms": 28,
+     "longestMs": 28
+    },
+    {
+     "name": "section",
+     "done": true,
+     "steps": 5,
+     "ms": 140,
+     "longestMs": 79
+    },
+    {
+     "name": "ink",
+     "done": true,
+     "steps": 1,
+     "ms": 105,
+     "longestMs": 105
+    },
+    {
+     "name": "roads",
+     "done": true,
+     "steps": 34,
+     "ms": 1858,
+     "longestMs": 424
+    },
+    {
+     "name": "ocean",
+     "done": true,
+     "steps": 2,
+     "ms": 335,
+     "longestMs": 321
+    },
+    {
+     "name": "landcover",
+     "done": true,
+     "steps": 24,
+     "ms": 1433,
+     "longestMs": 130
+    },
+    {
+     "name": "streetlights",
+     "done": true,
+     "steps": 3,
+     "ms": 85,
+     "longestMs": 74
+    },
+    {
+     "name": "landmarks",
+     "done": true,
+     "steps": 11,
+     "ms": 246,
+     "longestMs": 52
+    }
+   ]
+  },
+  "longTasks": [],
+  "longestTaskMs": 0,
+  "moduleMs": {
+   "rest": 455,
+   "section": 140,
+   "roads": 1858,
+   "ocean": 335,
+   "cover": 1433,
+   "landmarks": 246
+  }
+ },
+ "exits": {},
+ "sphere": {},
+ "machine": {
+  "start": {
+   "freeMemMB": 1861,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    3.46,
+    6.39,
+    8.47
+   ],
+   "swap": "total = 9216.00M  used = 8032.69M  free = 1183.31M  (encrypted)"
+  },
+  "end": {
+   "freeMemMB": 1681,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    4.32,
+    5.89,
+    8.04
+   ],
+   "swap": "total = 9216.00M  used = 8032.69M  free = 1183.31M  (encrypted)"
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "parallelShaderCompile": true,
+ "chromium": "153.0.8010.12",
+ "jsHeapMB": 411.9,
+ "views": {
+  "town-default": {
+   "frames": 150,
+   "medianMs": 20.2,
+   "p95Ms": 24.5,
+   "maxMs": 25.8,
+   "longTasks": 0,
+   "calls": 2402,
+   "triangles": 1590116,
+   "instances": 7925,
+   "cover": {
+    "calls": 61,
+    "triangles": 910353
+   },
+   "tier": "high",
+   "lod": {
+    "near": 786,
+    "far": 275,
+    "fading": 357,
+    "groups": 0
+   }
+  },
+  "forest-near-flat": {
+   "frames": 184,
+   "medianMs": 16.6,
+   "p95Ms": 18.5,
+   "maxMs": 20.5,
+   "longTasks": 0,
+   "calls": 631,
+   "triangles": 1278917,
+   "instances": 7839,
+   "cover": {
+    "calls": 60,
+    "triangles": 844935
+   },
+   "tier": "high",
+   "lod": {
+    "near": 682,
+    "far": 409,
+    "fading": 367,
+    "groups": 0
+   }
+  },
+  "farm-flat": {
+   "frames": 184,
+   "medianMs": 16.7,
+   "p95Ms": 18.7,
+   "maxMs": 20,
+   "longTasks": 0,
+   "calls": 313,
+   "triangles": 1198165,
+   "instances": 7808,
+   "cover": {
+    "calls": 59,
+    "triangles": 777881
+   },
+   "tier": "high",
+   "lod": {
+    "near": 600,
+    "far": 516,
+    "fading": 480,
+    "groups": 0
+   }
+  },
+  "coast-flat": {
+   "frames": 184,
+   "medianMs": 16.7,
+   "p95Ms": 18.8,
+   "maxMs": 19.3,
+   "longTasks": 0,
+   "calls": 214,
+   "triangles": 1188473,
+   "instances": 7850,
+   "cover": {
+    "calls": 61,
+    "triangles": 807599
+   },
+   "tier": "high",
+   "lod": {
+    "near": 623,
+    "far": 483,
+    "fading": 431,
+    "groups": 0
+   }
+  },
+  "sphere-70": {
+   "frames": 75,
+   "medianMs": 40.4,
+   "p95Ms": 54,
+   "maxMs": 62.7,
+   "longTasks": 10,
+   "calls": 6202,
+   "triangles": 1467252,
+   "instances": 8452,
+   "cover": {
+    "calls": 42,
+    "triangles": 420804
+   },
+   "tier": "high",
+   "lod": {
+    "near": 464,
+    "far": 627,
+    "fading": 723,
+    "groups": 0
+   }
+  },
+  "sphere-140": {
+   "frames": 55,
+   "medianMs": 57.6,
+   "p95Ms": 63.4,
+   "maxMs": 67.3,
+   "longTasks": 56,
+   "calls": 10409,
+   "triangles": 1671668,
+   "instances": 8362,
+   "cover": {
+    "calls": 42,
+    "triangles": 364490
+   },
+   "tier": "high",
+   "lod": {
+    "near": 261,
+    "far": 867,
+    "fading": 1618,
+    "groups": 0
+   }
+  },
+  "sphere-400": {
+   "frames": 56,
+   "medianMs": 55.9,
+   "p95Ms": 59.3,
+   "maxMs": 59.5,
+   "longTasks": 57,
+   "calls": 10475,
+   "triangles": 1607311,
+   "instances": 5822,
+   "cover": {
+    "calls": 39,
+    "triangles": 290862
+   },
+   "tier": "high",
+   "lod": {
+    "near": 1,
+    "far": 995,
+    "fading": 2326,
+    "groups": 34
+   }
+  },
+  "town-after": {
+   "frames": 155,
+   "medianMs": 19.5,
+   "p95Ms": 23.7,
+   "maxMs": 27.1,
+   "longTasks": 0,
+   "calls": 2402,
+   "triangles": 1581672,
+   "instances": 7925,
+   "cover": {
+    "calls": 61,
+    "triangles": 910353
+   },
+   "tier": "high",
+   "lod": {
+    "near": 786,
+    "far": 275,
+    "fading": 357,
+    "groups": 0
+   }
+  },
+  "forest-fog": {
+   "frames": 183,
+   "medianMs": 16.7,
+   "p95Ms": 18.3,
+   "maxMs": 19.9,
+   "longTasks": 0,
+   "calls": 730,
+   "triangles": 1279061,
+   "instances": 7839,
+   "cover": {
+    "calls": 60,
+    "triangles": 844935
+   },
+   "tier": "high",
+   "lod": {
+    "near": 682,
+    "far": 409,
+    "fading": 367,
+    "groups": 0
+   }
+  },
+  "ice-snow": {
+   "frames": 183,
+   "medianMs": 16.7,
+   "p95Ms": 19,
+   "maxMs": 20.6,
+   "longTasks": 0,
+   "calls": 264,
+   "triangles": 1068347,
+   "instances": 8326,
+   "cover": {
+    "calls": 62,
+    "triangles": 766736
+   },
+   "tier": "high",
+   "lod": {
+    "near": 540,
+    "far": 592,
+    "fading": 1098,
+    "groups": 0
+   }
+  }
+ },
+ "summary": {
+  "sceneMsMedian": 6778,
+  "firstFrameMsMedian": 7337,
+  "firstCompleteFrameMsMedian": 7337,
+  "pipelineLongestTaskMsMax": 1333,
+  "pregenCpuMs": 4691,
+  "pregenLongestTaskMs": 0,
+  "pregenCpuMsMedian": null,
+  "pregenCpuMsRange": [
+   null,
+   null
+  ],
+  "pregenLongestTaskMsMedian": null,
+  "pregenLongestTaskMsMax": 0,
+  "immediateExitLongestTaskMs": null,
+  "afterPregenExitLongestTaskMs": null,
+  "hotExitLongestTaskMs": null,
+  "immediateExitMaxFrameGapMs": null,
+  "afterPregenExitMaxFrameGapMs": null,
+  "hotExitMaxFrameGapMs": null,
+  "sphereImmediateLongestTaskMs": null,
+  "sphereAfterPregenLongestTaskMs": null,
+  "viewsMedianMsMax": 57.6,
+  "viewsP95MsMax": 63.4,
+  "jsHeapMB": 411.9,
+  "pageErrors": 0
+ },
+ "errors": []
+}

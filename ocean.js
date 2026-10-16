@@ -113,11 +113,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
     m.onBeforeCompile = shader => {
       shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon; shader.uniforms.uGlint = uniforms.uGlint;
+      const WXS = global.WEATHER_FX.surface; shader.uniforms.uWxMap = WXS.uniforms.uWxMap; shader.uniforms.uWxBox = WXS.uniforms.uWxBox;     // WX2: the rain of the place (surface map)
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;\nvBP = bendPosition(bendWrap(vWP));\nvUp = bendNormal(vWP, vec3(0.0, 1.0, 0.0));\nvEast = bendNormal(vWP, vec3(1.0, 0.0, 0.0));\nvSouth = bendNormal(vWP, vec3(0.0, 0.0, 1.0));');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nuniform vec3 uGlint;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
+        .replace('#include <common>', `#include <common>\n${global.WEATHER_FX.GLSL}\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nuniform vec3 uGlint;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
         .replace('#include <opaque_fragment>', `
           float cph = 1.0 / cosh(vWP.z / 90.0);
           vec2 q = vec2(vWP.x, vWP.z) * cph;
@@ -125,7 +126,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
           float sh = vShore + (vn(q * 0.9) * 0.7 + vn(q * 2.6) * 0.3 - 0.5) * 0.05;
           diffuseColor.a *= smoothstep(-0.006, 0.01, sh);
           float cd = length(cameraPosition - vBP);
-          float rg = rippleRings(q, uTime, 0.9, 0.55) * uRain * step(0.0, sh) * (1.0 - smoothstep(18.0, 70.0, cd));   // the rings fade with distance (no bubbles from the air)
+          float rg = rippleRings(q, uTime, 0.9, 0.55) * uRain * wxAt(vWP).r * step(0.0, sh) * (1.0 - smoothstep(18.0, 70.0, cd));   // the rings fade with distance (no bubbles from the air); WX2: only where it rains
           outgoingLight += vec3(0.50, 0.62, 0.78) * rg * 0.55;
           diffuseColor.a = max(diffuseColor.a, rg * 0.55);
           // low swell: slow soft stripes (brightness), and the normal tilted by a slow wave for the glint
@@ -182,7 +183,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
 
   function tick(t, camera) {
-    uniforms.uTime.value = t; uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get());     // W8e-c: no ripples in the clear daytime of the sphere
+    uniforms.uTime.value = t; uniforms.uRain.value = global.WEATHER_FX.live.gains().impact;     // WX2: the switch x (1 - uBend) x w_local (none in the clear daytime of the sphere); the place's rain is in the shader (wxAt)
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial, near = ink.distance < 120;
     objs.coast.material.opacity = a; objs.coast.visible = a > 0.01;
