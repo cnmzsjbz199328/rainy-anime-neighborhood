@@ -56,3 +56,7 @@ W7-C2 原实现将不同物件、不同高度两点的球形弦长与局部直�
 ## 结构预览交付（2026-10-16）
 
 `node tools/wd1_shots.mjs` 在 `docs/world/wd1/model-preview/` 生成 7 张 1280×800 PNG（`overview`、`shed-front`、`shed-rear`、`car-platform`、`car-rear`、`services`、`site`），准确机位与机器绘制数字见同目录 `report.json`，看点和遗留见 `README.md`。七图均已通过文件格式/尺寸检查，页面错误 0；未打开图像，不作视觉通过判断。该目录为可再生预览图，已加入 `.gitignore`，不提交截图。
+
+## 同机位绘制成本对照（2026-10-17）
+
+用 `tools/wd1_compare.mjs` 在同一 Chromium 会话中分别打开 WD0 提交 `f6c9a31` 和 WD1 源提交 `2e0c899` 的离线页面，各用独立页面、相同 1280×800/平面夜雨/t=600 固定机位。两遍遍历，第二遍记录完整画面的绘制统计，结果见 [`perf/wd1-near.json`](perf/wd1-near.json)。七个机位的增量为 +5,004 至 +5,082 triangles、−1 至 +1 calls、+1 texture；预热后纹理数在 WD0 为 41、WD1 为 42，两个页面错误数均为 0。数据是整幅画面，不是 LM09 独立网格的 GPU 用时；首帧与帧时间仍以 `wd1-model-pass2.json` 和后续成对实测为准。画面视觉仍待用户确认，统一地面/天气衔接未验收。

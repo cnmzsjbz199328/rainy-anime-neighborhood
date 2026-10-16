@@ -1,0 +1,143 @@
+{
+  "method": "Same Chromium session; fresh page per build; 1280x800 high; flat/rain/t=600; fixed WD1 views; warm-up pass then one render after __step(8). Counts are whole-frame, not isolated LM09 geometry.",
+  "before": {
+    "revision": "f6c9a3136374718520c438ddddeafa0224d8f564",
+    "pageErrors": [],
+    "views": [
+      {
+        "name": "overview",
+        "calls": 289,
+        "triangles": 1224139,
+        "textures": 41
+      },
+      {
+        "name": "shed-front",
+        "calls": 1051,
+        "triangles": 1305434,
+        "textures": 41
+      },
+      {
+        "name": "shed-rear",
+        "calls": 284,
+        "triangles": 1144620,
+        "textures": 41
+      },
+      {
+        "name": "car-platform",
+        "calls": 838,
+        "triangles": 1282811,
+        "textures": 41
+      },
+      {
+        "name": "car-rear",
+        "calls": 261,
+        "triangles": 1123796,
+        "textures": 41
+      },
+      {
+        "name": "services",
+        "calls": 271,
+        "triangles": 1185227,
+        "textures": 41
+      },
+      {
+        "name": "site",
+        "calls": 244,
+        "triangles": 745412,
+        "textures": 41
+      }
+    ]
+  },
+  "after": {
+    "revision": "2e0c89903dfac549cce5f42a189a9300b81cc673",
+    "pageErrors": [],
+    "views": [
+      {
+        "name": "overview",
+        "calls": 290,
+        "triangles": 1229221,
+        "textures": 42
+      },
+      {
+        "name": "shed-front",
+        "calls": 1052,
+        "triangles": 1310444,
+        "textures": 42
+      },
+      {
+        "name": "shed-rear",
+        "calls": 284,
+        "triangles": 1149626,
+        "textures": 42
+      },
+      {
+        "name": "car-platform",
+        "calls": 839,
+        "triangles": 1287821,
+        "textures": 42
+      },
+      {
+        "name": "car-rear",
+        "calls": 260,
+        "triangles": 1128800,
+        "textures": 42
+      },
+      {
+        "name": "services",
+        "calls": 272,
+        "triangles": 1190247,
+        "textures": 42
+      },
+      {
+        "name": "site",
+        "calls": 245,
+        "triangles": 750494,
+        "textures": 42
+      }
+    ]
+  },
+  "delta": [
+    {
+      "name": "overview",
+      "calls": 1,
+      "triangles": 5082,
+      "textures": 1
+    },
+    {
+      "name": "shed-front",
+      "calls": 1,
+      "triangles": 5010,
+      "textures": 1
+    },
+    {
+      "name": "shed-rear",
+      "calls": 0,
+      "triangles": 5006,
+      "textures": 1
+    },
+    {
+      "name": "car-platform",
+      "calls": 1,
+      "triangles": 5010,
+      "textures": 1
+    },
+    {
+      "name": "car-rear",
+      "calls": -1,
+      "triangles": 5004,
+      "textures": 1
+    },
+    {
+      "name": "services",
+      "calls": 1,
+      "triangles": 5020,
+      "textures": 1
+    },
+    {
+      "name": "site",
+      "calls": 1,
+      "triangles": 5082,
+      "textures": 1
+    }
+  ]
+}

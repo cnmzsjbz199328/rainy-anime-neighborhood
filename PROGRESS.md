@@ -3241,3 +3241,8 @@
 
 - `tools/landmark_specific.mjs` 的 LM09 专项检查新增站外设施实体包围范围：读取合批前保存的局部顶点，排除地面光晕等最高点低于 0.15 m 的贴片，检查站牌、长椅、自行车、售货机、电话亭与灯杆相对 CR01 路缘的退让。道路及站点位置未改。
 - `node tools/landmark_check.mjs LM09 --no-shots` 的 W7-C1/C2/C3/C4 全通过；站外设施实体最西缘 x = −4.875 m，距 CR01 道路西缘 x = −6.15 m 为 1.275 m。此项是几何净空结果，不代表 W10d 统一地面或用户视觉已通过。
+
+## WD1 固定机位绘制成本对照（2026-10-17）
+
+- 新增 `tools/wd1_compare.mjs`，同一 Chromium 会话依次加载 WD0 `f6c9a31` 与当前 WD1 `2e0c899` 的离线页面，预热七个相同机位后记录第二遍整幅画面的 calls、triangles、textures；临时 WD0 工作树已移除。原始结果在 `docs/world/perf/wd1-near.json`。
+- 七个固定机位相对 WD0 增加 5,004–5,082 triangles、−1～+1 calls、1 texture（WD0 41 → WD1 42）；两个页面错误数均为 0。这是近景/中景绘制量证据，不含 GPU 帧时间，也不证明视觉质量。WD1 仍等待用户看图与 W10d/WX2 集成。
