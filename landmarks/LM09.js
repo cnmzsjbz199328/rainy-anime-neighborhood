@@ -80,8 +80,25 @@
   box(VX + 0.34, 1.31, VZ + 0.46, 0.13, 0.11, 0.02, '#7d8794', true, st); // change return
   box(VX - 0.46, 1.8, VZ + 0.05, 0.025, 1.62, 0.06, '#344b57', false, st); // service door hinge
   for (let i = 0; i < 5; i++) box(VX, 1.27 + i * 0.09, VZ - 0.406, 0.52, 0.018, 0.015, '#344b57', false, st); // rear vent
-  for (let i = 0; i < 6; i++) { box(5.0 + i * 0.4, 0.3, -1.0, 0.04, 0.6, 0.04, '#7d8794', false, st); box(5.0 + i * 0.4, 0.04, -1.0, 0.04, 0.04, 0.9, '#7d8794', false, st); }
-  for (let i = 0; i < 4; i++) { const b = mesh(new THREE.TorusGeometry(0.28, 0.025, 5, 12), mat('#2a2e34'), 5.2 + i * 0.8, 0.32, -1.0, false, st); b.rotation.y = PI / 2; const b2 = mesh(new THREE.TorusGeometry(0.28, 0.025, 5, 12), mat('#2a2e34'), 5.2 + i * 0.8, 0.32, -0.55, false, st); b2.rotation.y = PI / 2; box(5.2 + i * 0.8, 0.55, -0.78, 0.04, 0.04, 0.6, '#c0552e', false, st); }
+  const tube = (a, b, r, color, parent = st) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = new THREE.Vector3().subVectors(B, A); const m = mesh(new THREE.CylinderGeometry(r, r, d.length(), 6), mat(color), (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2, false, parent); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); return m; };
+  // Parked bicycles and anchored U-racks; the racks still occupy the same small paved bay.
+  for (let i = 0; i < 6; i++) {
+    const x = 5.0 + i * 0.4;
+    for (const z of [-1.29, -0.31]) box(x, 0.07, z, 0.14, 0.14, 0.16, '#777f81', true, st);
+    box(x, 0.37, -0.8, 0.04, 0.58, 0.04, '#7d8794', false, st);
+    box(x, 0.65, -0.8, 0.04, 0.04, 0.96, '#7d8794', false, st);
+  }
+  for (let i = 0; i < 4; i++) {
+    const x = 5.2 + i * 0.8, front = -1.27, rear = -0.33, c = i % 2 ? '#63787a' : '#a45744';
+    for (const z of [front, rear]) { const wheel = mesh(new THREE.TorusGeometry(0.27, 0.025, 5, 12), mat('#2a2e34'), x, 0.32, z, false, st); wheel.rotation.y = PI / 2; cyl(x, 0.32, z, 0.045, 0.08, '#6b7076', st).rotation.z = PI / 2; }
+    tube([x, 0.33, front], [x, 0.7, -0.72], 0.024, c);
+    tube([x, 0.7, -0.72], [x, 0.33, rear], 0.024, c);
+    tube([x, 0.33, rear], [x, 0.63, -0.51], 0.024, c);
+    tube([x, 0.63, -0.51], [x, 0.7, -0.72], 0.024, c);
+    tube([x, 0.7, -0.72], [x, 0.86, -0.87], 0.02, '#50575b'); // handle stem
+    box(x, 0.86, -0.88, 0.32, 0.035, 0.04, '#50575b', false, st);
+    box(x, 0.68, -0.48, 0.23, 0.04, 0.12, '#35383a', false, st); // saddle
+  }
   // Telephone booth: red frame with transparent panes and a real handset behind the glass.
   const PX = 7.2, PZ = 5.0;
   box(PX, 0.08, PZ, 1.0, 0.16, 1.0, '#7d8084', true, st);
@@ -99,7 +116,13 @@
   for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) box(PX - 0.1 + col * 0.1, 1.28 - row * 0.07, PZ - 0.205, 0.04, 0.04, 0.015, '#6c7377', false, st);
   box(PX - 0.13, 1.65, PZ - 0.2, 0.28, 0.09, 0.1, '#252c31', true, st); // handset
   cyl(PX - 0.27, 1.56, PZ - 0.21, 0.025, 0.18, '#252c31', st);
-  cyl(-3.0, 1.2, 9.0, 0.035, 2.4, '#7d8794', st); box(-3.0, 2.3, 9.0, 0.5, 0.34, 0.03, '#e8ecf2', false, st); box(-3.0, 2.48, 9.02, 0.5, 0.06, 0.03, '#d58a3a', false, st);   // bus stop sign
+  box(-3.0, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
+  cyl(-3.0, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
+  for (const z of [8.96, 9.04]) { box(-3.0, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(-3.0, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
+  box(-3.0, 1.54, 9.05, 0.37, 0.46, 0.035, '#e8e4d8', true, st); // route and timetable board
+  for (let i = 0; i < 4; i++) box(-3.0, 1.69 - i * 0.1, 9.072, 0.3, 0.013, 0.008, '#7d8794', false, st);
+  for (const x of [-4.77, -3.63]) { box(x, 0.27, 4.7, 0.09, 0.46, 0.1, '#5a4a3c', true, st); box(x, 0.16, 5.01, 0.1, 0.23, 0.08, '#5a4a3c', true, st); }
+  box(-4.2, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(-4.2, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
   cyl(3.0, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), 3.4, 5.1, 8.0, false, st); cyl(3.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
   L.pool(3.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
   // ---- the track: one line along X at z = -6.4; its eastern end now stops west of CR01 at x = -5.5, with the buffer stop; the paddy end still fades west
@@ -167,7 +190,14 @@
   mesh(new THREE.BoxGeometry(0.08, 0.32, 0.8), warm('#ffe8b0', 0.1), CX + CL / 2 + 0.01, 1.96, CZ, false, car); // dim headlamp
   // ---- crossing warning posts (live: the two lamps alternate with a period of 6 s, soft ramps)
   const lv = group('lm09Live'); L.use(lv);
-  const posts = [[9.3, -4.6], [9.3, -8.2]].map(([x, z]) => { box(x, 0.9, z, 0.08, 1.8, 0.08, '#e8e4d8', true, lv); const a = mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: '#d28d8e' }), x - 0.14, 1.65, z, false, lv), b = mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: '#d28d8e' }), x + 0.14, 1.65, z, false, lv); return [a, b]; });
+  const posts = [[9.3, -4.6], [9.3, -8.2]].map(([x, z]) => {
+    box(x, 0.13, z, 0.28, 0.26, 0.28, '#898884', true, lv); // fixed concrete foot
+    box(x, 0.9, z, 0.08, 1.8, 0.08, '#e8e4d8', true, lv);
+    box(x, 2.03, z, 0.42, 0.09, 0.09, '#e8e4d8', true, lv); // crossbuck
+    box(x, 0.63, z + 0.1, 0.24, 0.33, 0.12, '#6b7076', true, lv); // control enclosure
+    const a = mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: '#d28d8e' }), x - 0.14, 1.65, z, false, lv), b = mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: '#d28d8e' }), x + 0.14, 1.65, z, false, lv);
+    return [a, b];
+  });
   // eave drips (live)
   const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); g.add(m); dr.push({ g, m, ph: i * 0.17 }); }
   out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [-5.5, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,

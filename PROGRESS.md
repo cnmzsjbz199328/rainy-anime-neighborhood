@@ -3219,3 +3219,9 @@
 - `python3 build.py`、`node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png` 通过；`node tools/landmark_check.mjs LM09 --no-shots` 的 W7-C1/C2/C3/C4 通过（实际车厢 x −4.74…8.35 m、棚西缘 −4.98 m，均在既定净空内）；`node tools/road_check.mjs` 11 项通过；页面错误 0。未打开最终画面，视觉仍待用户判断。
 - Metal/high/三次冷启动 `docs/world/perf/wd1-model-pass1.json`：首个完整画面 4,360 ms；默认 16.7/18.3 ms、2,405 calls、1,593,992 triangles；球形 d140 38.2/41.1 ms、10,551 calls，d400 38.0/41.7 ms、10,617 calls。相对 WD0 首帧 +33 ms、默认 +2 calls/+3,874 triangles；帧时间与球形 p95 波动较大，不作改善/恶化结论。HTML 3,039,340 bytes。
 - 仍需细化公交站、自行车架、道口及最终场地连接；W10c/W10d 确认后复核统一地面，WX2 后接入天气效果。近景截图与用户视觉验收未进行；WD1 保持进行中。
+
+## WD1 乡间无人站道旁设施补齐（2026-10-16，进行中）
+
+- `landmarks/LM09.js`：在现有站位补公交站双面牌/时刻表/基础和回车场长椅、自行车架锚固及四辆车的轮毂/车架/车把/车座、道口柱脚/横牌/控制盒；不改车站锚点、路网、站台与车辆位置。重建 `index.html`。
+- `measure_samples` → `layout_check --png` 通过，`road_check` 11 项通过。`landmark_check LM09 --no-shots` 的 W7-C1 与 C3/C4 通过，**W7-C2 失败**：14 组抽样最大弯曲尺寸差 1.01%（上限 1%），对应旧道口警报灯与站台边缘局部坐标 (9.23,1.71,−8.27) ↔ (2.81,0.94,−5.15)，平面 7.175 m / 球形 7.103 m。只给检查器加失败样本输出，未放宽阈值或宣称通过；待复核真实弯曲比例与抽样稳定性。未审看最终画面。
+- Metal/high/三次冷启动 `docs/world/perf/wd1-model-pass2.json`：首个完整画面 4,482 ms，默认 16.6/18.8 ms、2,406 calls、1,595,288 triangles；球形 d140 39.6/43.8 ms、d400 38.9/42.1 ms；页面错误 0。HTML 3,041,176 bytes。相对 WD0 首帧 +155 ms、默认 +3 calls/+5,170 triangles；性能仍有 W10 既有预算问题，尚不判视觉或 WD1 完成。

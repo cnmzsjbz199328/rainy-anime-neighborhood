@@ -38,3 +38,11 @@
 机器结果：`python3 build.py`、`measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots`（W7-C1/C2/C3/C4）和 `road_check.mjs` 通过，页面错误 0。Metal 三次冷启动记录 [`perf/wd1-model-pass1.json`](perf/wd1-model-pass1.json)：首个完整画面 4,360 ms；默认 16.7/18.3 ms、2,405 calls、1,593,992 triangles；球形 d140 38.2/41.1 ms、10,551 calls，d400 38.0/41.7 ms、10,617 calls。与 WD0 相比首帧 +33 ms、默认 +2 calls/+3,874 triangles；帧时间仍须在同一窗口成对复测，不能用这组差值证明优化或恶化。HTML 3,039,340 bytes。
 
 未完成：公交站/自行车架/道口进一步细化、地面与道路衔接、统一天气下的遮雨和檐滴、专门的近景性能对照、固定机位截图及用户视觉确认。WD1 仍为 `进行中`。
+
+## 道旁设施阶段记录（2026-10-16，仍进行中）
+
+公交站牌已补双面牌、时刻表和基础，候车长椅落在回车场边；自行车架增加锚固，四辆自行车补轮毂、车架、车把和车座；道口警报柱补柱脚、横牌及控制盒。所有对象保留原设施组附近，不改路网和地标锚点。新图尚未交用户判断，不能写作视觉完成。
+
+`python3 build.py`、`measure_samples.mjs` → `layout_check.mjs --png` 与 `road_check.mjs` 11 项通过。`landmark_check.mjs LM09 --no-shots` 中 W7-C1 和 W7-C3/C4 通过，W7-C2 **未通过**：本次抽样有 14 对，最大球形尺寸差 1.01%，超过 1% 上限。诊断点为局部 (9.23, 1.71, −8.27) 的既有道口警报灯与 (2.81, 0.94, −5.15) 的站台边缘；平面 7.175 m、球形 7.103 m。它不证明新构件越界，但也不能视作机器通过；保留阈值与失败记录，后续需复核弯曲比例和稳定抽样。工具只增加失败样本坐标输出，未改判定。
+
+Metal/high/三次冷启动 [`perf/wd1-model-pass2.json`](perf/wd1-model-pass2.json)：首个完整画面中位 4,482 ms；默认 16.6/18.8 ms、2,406 calls、1,595,288 triangles；球形 d140 39.6/43.8 ms、10,553 calls，d400 38.9/42.1 ms、10,617 calls；页面错误 0。HTML 3,041,176 bytes。与 WD0 相比首帧 +155 ms、默认 +3 calls/+5,170 triangles；首帧仍低于 5 s 停止线，但超过 4 s 预算。WD1 仍需场地/天气集成、近景成本对照、固定机位图和用户视觉验收。
