@@ -45,6 +45,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
     const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const groundMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    groundMat.onBeforeCompile = global.WEATHER_FX.snowCover;            // WX3: the ground strips (ice, lava, plots ...) whiten a little where it snows
     const inkW = { value: 0.03 }, T = WATERK.uniforms;
     // canopy sway (one of the three slow motions of the section): the upper part of a tree leans a few centimetres with a slow phase per instance
     const SWAY = `float sw = smoothstep(1.2, 7.0, position.y); transformed.x += sin(uTime * 0.9 + instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.21) * 0.1 * sw; transformed.z += cos(uTime * 0.7 + instanceMatrix[3].z * 0.3) * 0.07 * sw;`;

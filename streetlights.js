@@ -429,7 +429,7 @@ STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
     lens.onBeforeCompile = shader => LC.lodDither(shader); lens.customProgramCacheKey = () => 'bend|lod|sl-lens';
     const N = DATA.lamps.length + 1, winU = { value: Array.from({ length: N }, () => new THREE.Vector2(0, 1)) };
     const poolMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); };
+    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); global.WEATHER_FX.poolWet(shader); };   // WX3: brighter on wet ground
     poolMat.customProgramCacheKey = () => 'bend|lod|sl-pool|' + N;
     objs.materials = { body, hull, lens, pool: poolMat, win: winU };
     // per model: the instances in table order (their windows are written by lamp in tick)

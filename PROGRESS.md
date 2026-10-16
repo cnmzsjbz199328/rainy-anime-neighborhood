@@ -3079,7 +3079,9 @@
 - WX1（2026-10-15，`764a2b3`，起点 `1381d56`）：`weather.js` 天气场与查询顺序无关、空间连续，城镇一个天气区；`tools/weather_field_check.mjs` 5/5。
 - WX2（2026-10-16，集成起点 `ff72599` = `world/W10c` `96342bc` + WX1）：`weather_fx.js` 格点场与天气图，雨雪落到接收面并按所在地稀疏，海/田/路雨击按所在地，建筑与地标天气效果登记（124 个），灯光与雾显式基值；`tools/weather_integration_check.mjs` R、I1–I9 共 10 项 PASS（WX-0：降水对象 0 绘制，同帧差分 0 像素）；weather_field、weather、day、fog_view、unify、ocean、cover、road、streetlight、transition 与 W10c 的 cr01_merge、terrain_structure、town_pavement、c01_s_clearance 全部通过；`night_check` C2 失败与集成起点读数相同（既有，见本文件「道路路灯规范化」基线复核）。
 - 画面差异：`regress --baseline-ref ff72599 --weather lock:rain` 默认等 6 个近景逐位相同；far（d 140）0.149 %、top（d 150）0.190 %，檐滴改为与雨丝同样按距离淡出。
-- 遗留：雨见岳山顶在 `lava-north` 区域内只下雨（设计决定，待用户）；WX3 的湿润反光与地貌天气件另行交付。
+- WX2 提交 `e845da5`（只本地，未合并、未推送）。
+- WX3（2026-10-16，起点 `e845da5`）：湿润记忆（900 s 窗口、按时间函数解析求得）、`snowCover` / `duneWet` / `poolWet` 着色器响应与水田雨后镜面、目标周围的叶尖滴水 / 贴地雾 / 雪雾 / 熔岩雨汽、BI08 喷气孔 6 处；`tools/weather_wx3_check.mjs` X1–X4 PASS，WX2 的全部检查与 W10c 回归检查重跑通过；`regress --baseline-ref e845da5` 只有 storeCorner 0.382 %（锁雨时雪线以上山坡下雪，薄层增白，已用天气图雪通道清零的对照证实）。
+- 遗留：雨见岳山顶在 `lava-north` 区域内只下雨（设计决定，待用户）；WX2、WX3 画面待用户确认；云、体积雾、涌浪等见 WX_PROGRESS 的待办清单。
 
 ## W10c 道路路灯规范化计划（2026-10-14，仅文档）
 

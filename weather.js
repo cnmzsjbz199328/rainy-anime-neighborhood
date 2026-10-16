@@ -4,6 +4,9 @@
 //     (0 otherwise); target = the weights once that fade is over.   at = sample (the W8b name).
 //   effectsAt(lon, lat, t) -> { rain, snow, wetness, drip, mist }: physical effect weights in [0, 1] (EFFECT below). Rain impacts follow rain only; wetness
 //     and drips go on after the rain. Map mode, distance fade and debug switches belong to the presentation (weather_fx.js), applied there once.
+//   wetnessAt(lon, lat, t) (WX3): the wetness the last WET_WINDOW seconds leave behind: max over that window of wetness(tau) x (1 - (t - tau) / WET_WINDOW)^2,
+//     from the time function alone (never from what a page happened to see), so the ground dries slowly after the rain and the same moment is always as wet.
+//     effectsAt reports it as its wetness. Under a lock it is the locked state's own wetness (no memory). samplePlace / wetnessOf take a place object.
 //   t is the weather time (seconds since load, or fixed by setTime in weather_fx.js); particle, ripple and drip animation keep their own clock.
 // Time is cut into slots of SLOT seconds. Each place follows a fixed cyclic pattern of states for its category (the share of rain is the share of R in the
 // pattern, spread evenly so that rain is always the longest state). A smooth value noise on the sphere (scale 100 m) gives every place a continuous phase
@@ -48,6 +51,7 @@ const EFFECT = {
   fog:      { rain: 0, snow: 0, wetness: 0.6, drip: 0.5, mist: 1 },
 };
 const EFFECTS = ['rain', 'snow', 'wetness', 'drip', 'mist'];
+const WET_WINDOW = 900;                                  // seconds a wet spell keeps the ground wet; drying (1 - age / WET_WINDOW)^2: half after 264 s, dry at 900 s
 const hash = (i, j, k, s) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 2147483647) ^ Math.imul(s, 1274126177); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
 function vnoise3(x, y, z, s) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), fx = x - xi, fy = y - yi, fz = z - zi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
@@ -139,16 +143,27 @@ function make(W) {
     return { weights: w, state, category: p.cat, kind: p.kind, slot, fadeLeft: q.fading ? FADE - into : 0, target };
   }
   const sample = (lon, lat, t) => samplePlace(place(lon, lat), t);
+  // WX3: the wetness memory of a place. Within a slot the weights are constant after the fade and linear during it, and the drying factor grows with tau, so the
+  // maximum over the window is taken at t, at every slot start (the end of the previous slot's constant part) and at every fade end inside the window
+  const wetOf = w => { let v = 0; for (const s of STATES) if (w[s]) v += w[s] * EFFECT[s].wetness; return v; };
+  function wetnessOf(p, t) {
+    const time = Math.max(0, +t || 0); let best = wetOf(samplePlace(p, time).weights); if (locked) return best;
+    const t0 = Math.max(0, time - WET_WINDOW);
+    for (let k = Math.floor(time / SLOT); k >= 0 && (k + 1) * SLOT > t0; k--) for (const tau of [k * SLOT, k * SLOT + FADE]) {
+      if (tau >= time || tau < t0) continue; const a = 1 - (time - tau) / WET_WINDOW, v = wetOf(samplePlace(p, tau).weights) * a * a; if (v > best) best = v; }
+    return Math.min(1, best);
+  }
   return {
-    at: sample, sample, samplePlace, place,
-    effectsAt: (lon, lat, t) => effectsOf(sample(lon, lat, t).weights),
+    at: sample, sample, samplePlace, place, wetnessOf,
+    wetnessAt: (lon, lat, t) => wetnessOf(place(lon, lat), t),
+    effectsAt: (lon, lat, t) => { const p = place(lon, lat), e = effectsOf(samplePlace(p, t).weights); e.wetness = Math.max(e.wetness, wetnessOf(p, t)); return e; },
     lock(s) { locked = s && STATES.includes(s) ? s : null; lockVersion++; return locked; }, locked: () => locked, lockVersion: () => lockVersion,
     clearCache() { cache.clear(); }, cacheSize: () => cache.size,
   };
 }
 // distance blend: 1 near (camera height h <= 40 m), 0 at the panorama (h >= 120 m)
 const wLocal = h => 1 - smooth(40, 120, h);
-const WEATHER = { SLOT, FADE, SEED, PHASES, BAND, MIX_MIN, FOG_BAND, TOWN_BAND, STATES, PATTERN, EFFECT, EFFECTS, make, effectsOf, wLocal, smooth };
+const WEATHER = { SLOT, FADE, SEED, PHASES, BAND, MIX_MIN, FOG_BAND, TOWN_BAND, WET_WINDOW, STATES, PATTERN, EFFECT, EFFECTS, make, effectsOf, wLocal, smooth };
 if (typeof module !== 'undefined' && module.exports) module.exports = WEATHER;
 else global.WEATHER = WEATHER;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

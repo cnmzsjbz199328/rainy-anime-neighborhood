@@ -4138,17 +4138,19 @@ function make(THREE) {
     }`;
   const compile = (foam, cell) => shader => {
     shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain;
-    const WXS = global.WEATHER_FX.surface; shader.uniforms.uWxMap = WXS.uniforms.uWxMap; shader.uniforms.uWxBox = WXS.uniforms.uWxBox;     // WX2: the rain of the place (surface map)
+    const WXS = global.WEATHER_FX.surface; shader.uniforms.uWxMap = WXS.uniforms.uWxMap; shader.uniforms.uWxBox = WXS.uniforms.uWxBox; shader.uniforms.uWxK = WXS.uniforms.uWxK;     // WX2: the rain of the place (surface map); WX3: uWxK
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${global.WEATHER_FX.GLSL}\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
+      .replace('#include <common>', `#include <common>\n${global.WEATHER_FX.GLSL}\nuniform float uWxK;\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
       .replace('#include <opaque_fragment>', `
         float cph = 1.0 / cosh(vWP.z / 90.0);
         vec2 q = vec2(vWP.x, vWP.z) * cph;
-        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain * wxAt(vWP).r;   // WX2: only where it rains
+        vec4 wx = wxAt(vWP);
+        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain * wx.r;   // WX2: only where it rains
         outgoingLight += vec3(0.50, 0.62, 0.78) * rg * 0.55;
+        outgoingLight += vec3(0.30, 0.37, 0.48) * 0.16 * max(0.0, wx.g - wx.r) * uWxK;   // WX3 (BI05): after the rain the calm wet water is a mirror (wet minus raining)
         diffuseColor.a = max(diffuseColor.a, rg * 0.55);
         ${foam ? `float fz = 0.05 + 0.025 * sin(uTime * 0.9 + vWP.x * cph * 0.6);
         float fo = (1.0 - smoothstep(0.01, fz, vShore)) * (0.75 + 0.25 * sin(uTime * 1.3 + vWP.x * cph));
@@ -4214,6 +4216,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
     const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const groundMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    groundMat.onBeforeCompile = global.WEATHER_FX.snowCover;            // WX3: the ground strips (ice, lava, plots ...) whiten a little where it snows
     const inkW = { value: 0.03 }, T = WATERK.uniforms;
     // canopy sway (one of the three slow motions of the section): the upper part of a tree leans a few centimetres with a slow phase per instance
     const SWAY = `float sw = smoothstep(1.2, 7.0, position.y); transformed.x += sin(uTime * 0.9 + instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.21) * 0.1 * sw; transformed.z += cos(uTime * 0.7 + instanceMatrix[3].z * 0.3) * 0.07 * sw;`;
@@ -6411,7 +6414,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (let li = 0; li + 1 < levels.length; li++) for (let a = 0; a < ring; a++) { const i0 = li * (ring + 1) + a, i1 = i0 + 1, i2 = i0 + ring + 1, i3 = i2 + 1; idx.push(i0, i2, i1, i1, i2, i3); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeBoundingSphere();
       const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }); const mesh = new THREE.Mesh(g, mat); mesh.name = 'cover:mist'; mesh.matrixAutoUpdate = false; mesh.renderOrder = 4; root.add(mesh); objs.mist = mesh; }
-    if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, M.groundMat, 'cover:dunes', true); void m; }
+    if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, (() => { const m = M.groundMat.clone(); m.onBeforeCompile = global.WEATHER_FX.duneWet; return m; })(), 'cover:dunes', true); void m; }
     if (DATA.edge && DATA.edge.idx.length) { const e = DATA.edge; for (let i = 0; i < e.idx.length; i += 3) { const a = e.idx[i] * 3, b = e.idx[i + 1] * 3, c = e.idx[i + 2] * 3, ny = (e.pos[b + 2] - e.pos[a + 2]) * (e.pos[c] - e.pos[a]) - (e.pos[b] - e.pos[a]) * (e.pos[c + 2] - e.pos[a + 2]); if (ny < 0) { const tmp = e.idx[i + 1]; e.idx[i + 1] = e.idx[i + 2]; e.idx[i + 2] = tmp; } } stripMesh(e, M.groundMat, 'cover:town-edge'); }
     if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
   }
@@ -7061,7 +7064,7 @@ STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
     lens.onBeforeCompile = shader => LC.lodDither(shader); lens.customProgramCacheKey = () => 'bend|lod|sl-lens';
     const N = DATA.lamps.length + 1, winU = { value: Array.from({ length: N }, () => new THREE.Vector2(0, 1)) };
     const poolMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); };
+    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); global.WEATHER_FX.poolWet(shader); };   // WX3: brighter on wet ground
     poolMat.customProgramCacheKey = () => 'bend|lod|sl-pool|' + N;
     objs.materials = { body, hull, lens, pool: poolMat, win: winU };
     // per model: the instances in table order (their windows are written by lamp in tick)
@@ -7205,6 +7208,9 @@ global.SPHERE_CAMERA=function(THREE,B,camera){
 //     (0 otherwise); target = the weights once that fade is over.   at = sample (the W8b name).
 //   effectsAt(lon, lat, t) -> { rain, snow, wetness, drip, mist }: physical effect weights in [0, 1] (EFFECT below). Rain impacts follow rain only; wetness
 //     and drips go on after the rain. Map mode, distance fade and debug switches belong to the presentation (weather_fx.js), applied there once.
+//   wetnessAt(lon, lat, t) (WX3): the wetness the last WET_WINDOW seconds leave behind: max over that window of wetness(tau) x (1 - (t - tau) / WET_WINDOW)^2,
+//     from the time function alone (never from what a page happened to see), so the ground dries slowly after the rain and the same moment is always as wet.
+//     effectsAt reports it as its wetness. Under a lock it is the locked state's own wetness (no memory). samplePlace / wetnessOf take a place object.
 //   t is the weather time (seconds since load, or fixed by setTime in weather_fx.js); particle, ripple and drip animation keep their own clock.
 // Time is cut into slots of SLOT seconds. Each place follows a fixed cyclic pattern of states for its category (the share of rain is the share of R in the
 // pattern, spread evenly so that rain is always the longest state). A smooth value noise on the sphere (scale 100 m) gives every place a continuous phase
@@ -7249,6 +7255,7 @@ const EFFECT = {
   fog:      { rain: 0, snow: 0, wetness: 0.6, drip: 0.5, mist: 1 },
 };
 const EFFECTS = ['rain', 'snow', 'wetness', 'drip', 'mist'];
+const WET_WINDOW = 900;                                  // seconds a wet spell keeps the ground wet; drying (1 - age / WET_WINDOW)^2: half after 264 s, dry at 900 s
 const hash = (i, j, k, s) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 2147483647) ^ Math.imul(s, 1274126177); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
 function vnoise3(x, y, z, s) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), fx = x - xi, fy = y - yi, fz = z - zi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
@@ -7340,16 +7347,27 @@ function make(W) {
     return { weights: w, state, category: p.cat, kind: p.kind, slot, fadeLeft: q.fading ? FADE - into : 0, target };
   }
   const sample = (lon, lat, t) => samplePlace(place(lon, lat), t);
+  // WX3: the wetness memory of a place. Within a slot the weights are constant after the fade and linear during it, and the drying factor grows with tau, so the
+  // maximum over the window is taken at t, at every slot start (the end of the previous slot's constant part) and at every fade end inside the window
+  const wetOf = w => { let v = 0; for (const s of STATES) if (w[s]) v += w[s] * EFFECT[s].wetness; return v; };
+  function wetnessOf(p, t) {
+    const time = Math.max(0, +t || 0); let best = wetOf(samplePlace(p, time).weights); if (locked) return best;
+    const t0 = Math.max(0, time - WET_WINDOW);
+    for (let k = Math.floor(time / SLOT); k >= 0 && (k + 1) * SLOT > t0; k--) for (const tau of [k * SLOT, k * SLOT + FADE]) {
+      if (tau >= time || tau < t0) continue; const a = 1 - (time - tau) / WET_WINDOW, v = wetOf(samplePlace(p, tau).weights) * a * a; if (v > best) best = v; }
+    return Math.min(1, best);
+  }
   return {
-    at: sample, sample, samplePlace, place,
-    effectsAt: (lon, lat, t) => effectsOf(sample(lon, lat, t).weights),
+    at: sample, sample, samplePlace, place, wetnessOf,
+    wetnessAt: (lon, lat, t) => wetnessOf(place(lon, lat), t),
+    effectsAt: (lon, lat, t) => { const p = place(lon, lat), e = effectsOf(samplePlace(p, t).weights); e.wetness = Math.max(e.wetness, wetnessOf(p, t)); return e; },
     lock(s) { locked = s && STATES.includes(s) ? s : null; lockVersion++; return locked; }, locked: () => locked, lockVersion: () => lockVersion,
     clearCache() { cache.clear(); }, cacheSize: () => cache.size,
   };
 }
 // distance blend: 1 near (camera height h <= 40 m), 0 at the panorama (h >= 120 m)
 const wLocal = h => 1 - smooth(40, 120, h);
-const WEATHER = { SLOT, FADE, SEED, PHASES, BAND, MIX_MIN, FOG_BAND, TOWN_BAND, STATES, PATTERN, EFFECT, EFFECTS, make, effectsOf, wLocal, smooth };
+const WEATHER = { SLOT, FADE, SEED, PHASES, BAND, MIX_MIN, FOG_BAND, TOWN_BAND, WET_WINDOW, STATES, PATTERN, EFFECT, EFFECTS, make, effectsOf, wLocal, smooth };
 if (typeof module !== 'undefined' && module.exports) module.exports = WEATHER;
 else global.WEATHER = WEATHER;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -7368,6 +7386,11 @@ else global.WEATHER = WEATHER;
 //                 landmarks' roofs and grounds)
 //   effects       registered weather effects of buildings and landmarks (drips, window runs, rain rings, snow mist) and the mist belt of ameni-dake: their
 //                 coefficient comes from the field at their place (register / apply)
+//   WX3          the wetness memory of weather.js (the ground dries slowly after the rain) in the field and the map; surface responses in the shaders (snowCover:
+//                 a thin whitening of the ground where it snows, duneWet: dark wet patches on the dunes that shrink as they dry, poolWet: lamp pools and puddle
+//                 reflections brighter on wet ground, the paddies' mirror after the rain in water.js); local pieces round the target (leaf drips under the
+//                 forest's trees, low ground mist in foggy places, snow mist where it snows, thin steam where rain falls on the lava field, the fumaroles of
+//                 BI08 on ameni-dake's north slope: not weather, always on the flat map, clearer on clear nights)
 // The map mode is applied once, at the end: dry = 1 - uBend multiplies every weather effect (the sphere is a clear day at every distance, D8 / D9 revised). With the
 // camera's height above the ground, w_local(h) = 1 - smoothstep(40, 120, h): looks (lights, fog, mist) blend towards the rain-night look, particles, rain impacts and
 // drips fade out (the rain lines and drips with the camera distance, (110 - d) / 60, as the rain always did); at the panorama (h >= 120 m) every weather looks the same.
@@ -7405,10 +7428,30 @@ vec4 wxAt(vec3 wp) {
   return texture2D(uWxMap, (vec2(dl, lat - uWxBox.y) * uWxBox.z + 0.5) / uWxBox.w);
 }`;
 const EMPTY = Object.freeze({ rain: 0, snow: 0, wetness: 0, drip: 0, mist: 0 });
+const WET_REFRESH = 5;                                              // weather seconds between two evaluations of a node's wetness memory (drying <= 2.2 % per 10 s)
+const GLSL_NOISE = `
+float wxHash(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
+float wxNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f); return mix(mix(wxHash(i), wxHash(i + vec2(1.0, 0.0)), u.x), mix(wxHash(i + vec2(0.0, 1.0)), wxHash(i + vec2(1.0, 1.0)), u.x), u.y); }`;
+// WX3 surface responses: shader patches (onBeforeCompile; named functions, so bend.js's program key stays one per patch). The flat position before bend.js moves it is
+// captured in vWxP; uWxK = w_local x (1 - uBend): every response is 0 at the panorama and on the sphere, and exactly nothing where the map says 0
+function wxPrelude(shader) {
+  const U = global.WEATHER_FX.surface.uniforms; shader.uniforms.uWxMap = U.uWxMap; shader.uniforms.uWxBox = U.uWxBox; shader.uniforms.uWxK = U.uWxK;
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWxP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWxP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWxP;\nuniform float uWxK;\n' + GLSL + GLSL_NOISE);
+}
+// snowCover: where it snows (the map's snow is 0 everywhere snow is not allowed) the ground whitens by up to SNOW_COVER (the permanent snow line of terrain.js stays)
+// (each response is inside `if (uWxK > 0.0)`: one branch for the whole draw, so the sphere and the panorama, where the planet's ground fills the screen, skip the lookup)
+function snowCover(shader) { wxPrelude(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tif (uWxK > 0.0) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.94, 0.98), 0.28 * wxAt(vWxP).b * uWxK);'); }
+// duneWet (BI04): after the rare rain the sand shows dark wet patches; the patches are the noise above a threshold that rises as the wetness memory falls
+function duneWet(shader) { wxPrelude(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+	if (uWxK > 0.0) { float w = wxAt(vWxP).g * uWxK; float n = wxNoise(vWxP.xz * 0.55) * 0.7 + wxNoise(vWxP.xz * 1.9) * 0.3; float th = 1.0 - 0.75 * w; diffuseColor.rgb *= 1.0 - 0.3 * smoothstep(th, th + 0.12, n) * step(0.001, w); }`); }
+// poolWet: the light pools and the lamps' reflections in puddles follow the wetness: full on wet ground (rain, after it), POOL_DRY on dry ground; the look rule (1 at
+// the panorama and on the sphere)
+function poolWet(shader) { wxPrelude(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', '\tif (uWxK > 0.0) outgoingLight *= mix(1.0, mix(0.6, 1.0, wxAt(vWxP).g), uWxK);\n#include <opaque_fragment>'); }
 
 function attach(THREE, scene, ctx) {
   const WX = global.WEATHER, W = WX.make(global.WORLD), fogW = ctx.bend.weatherFogUniform, look = ctx.look;
-  const st = { offset: 0, fixed: null, last: null, view: null, snow: null, stamp: 0, bucket: -1, lv: -1, time: 0, gains: { impact: 1, wet: 1, dry: 1, wl: 1, line: 1 } };
+  const st = { offset: 0, fixed: null, last: null, view: null, snow: null, stamp: 0, bucket: -1, lv: -1, wetStamp: 0, wetBucket: -1, time: 0, gains: { impact: 1, wet: 1, dry: 1, wl: 1, line: 1 } };
   const fogTint = new THREE.Color('#5a5870'), fogMixed = new THREE.Color();
   const priv = fn => (global.TERRAIN && global.TERRAIN.withPrivateRandom ? global.TERRAIN.withPrivateRandom(fn) : fn());   // three.js ids draw from Math.random: the town's rain keeps its stream
 
@@ -7420,6 +7463,7 @@ function attach(THREE, scene, ctx) {
     if (!n) { if (nodes.size >= NODES_MAX) nodes.clear(); const p = W.place(i * NODE / f, j * NODE / f); n = { p, s: -1, e: { rain: 0, snow: 0, wetness: 0, drip: 0, mist: 0 }, cat: p.cat }; nodes.set(key, n); }
     if (n.s !== st.stamp) { const w = W.samplePlace(n.p, st.time).weights, e = n.e; e.rain = e.snow = e.wetness = e.drip = e.mist = 0;
       for (const s of WX.STATES) { const k = w[s]; if (!k) continue; const E = WX.EFFECT[s]; e.rain += k * E.rain; e.snow += k * E.snow; e.wetness += k * E.wetness; e.drip += k * E.drip; e.mist += k * E.mist; }
+      if (n.ws !== st.wetStamp) { n.wm = W.wetnessOf(n.p, st.time); n.ws = st.wetStamp; } if (n.wm > e.wetness) e.wetness = n.wm;      // WX3: the ground dries slowly
       n.s = st.stamp; }
     return n;
   }
@@ -7467,7 +7511,7 @@ function attach(THREE, scene, ctx) {
   }
 
   // ---- the surface map (water shaders)
-  const N = MAP.N, uniforms = { uWxMap: { value: null }, uWxBox: { value: new THREE.Vector4(0, 0, 1 / MAP.STEP, N) } };
+  const N = MAP.N, uniforms = { uWxMap: { value: null }, uWxBox: { value: new THREE.Vector4(0, 0, 1 / MAP.STEP, N) }, uWxK: { value: 1 } };
   const mapSt = { data: new Uint8Array(N * N * 4), next: new Uint8Array(N * N * 4), box: null, nextBox: null, pending: 0, stamp: -1, fills: 0, full: false };
   priv(() => { const tex = new THREE.DataTexture(mapSt.data, N, N, THREE.RGBAFormat); tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.needsUpdate = true; uniforms.uWxMap.value = tex; });
   function mapBox(lon, lat) { const s = MAP.STEP; return { lon0: Math.round(lon / s) * s - (N / 2) * s, lat0: Math.max(-90, Math.min(90 - (N - 1) * s, Math.round(lat / s) * s - (N / 2) * s)) }; }
@@ -7546,7 +7590,7 @@ function attach(THREE, scene, ctx) {
     if (!(view.d >= 0)) throw new Error('weather_fx: the view needs d, the camera-target distance');
     // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend), once
     const dry = view.u > 0 ? 1 - view.u : 1, lv = W.lockVersion(), bucket = Math.floor(time / REFRESH);
-    if (bucket !== st.bucket || lv !== st.lv) { st.stamp++; st.bucket = bucket; st.lv = lv; } st.time = time;
+    if (bucket !== st.bucket || lv !== st.lv) { st.stamp++; st.bucket = bucket; st.lv = lv; const wb = Math.floor(time / WET_REFRESH); if (wb !== st.wetBucket || lv !== st.wetLv) { st.wetStamp++; st.wetBucket = wb; st.wetLv = lv; } } st.time = time;
     const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl0 = WX.wLocal(view.h), wl = wl0 * dry, w = r.weights;
     const rainOn = !global.SECTION_API || global.SECTION_API.state.settings.rain;
     st.gains = { dry, wl: wl0, impact: (rainOn ? 1 : 0) * dry * wl0, wet: dry, line: LINE_FADE(view.d), rainOn };
@@ -7565,6 +7609,89 @@ function attach(THREE, scene, ctx) {
     if (anySnow) { const S = snowLayer(); S.m.opacity = sk; const n = snowStep(t, tgt, sk, effTmp); S.o.visible = n > 0; }
     else if (st.snow) { st.snow.o.visible = false; st.snow.shown = 0; }
     mapStep(ll.lon, ll.lat, lv !== st.mapLv || !mapSt.box); st.mapLv = lv;
+    uniforms.uWxK.value = wl;                                              // the surface responses (snowCover, duneWet, poolWet, the paddies' mirror): w_local x (1 - uBend)
+    localStep(t, tgt, view);
+  }
+  // ---- WX3: local pieces round the target. Each pool is one draw call, hidden (and not updated) when none of its pieces shows; pieces sit on world-anchored spots
+  // wrapped into the box (like the snow) and on the receiving surface; each shows where the field gives its effect (its hash below the local weight). The cards are
+  // additive (fog and the daylight of the sphere dim additive light: bend.js), one soft round texture.
+  const LOCAL = { BOX: 40, DRIPS: 360, TREES: 120, MIST: 28, SNOWMIST: 24, STEAM: 24, VENTS: 6, PUFFS: 5 };
+  const loc = { built: false };
+  function buildLocal() {
+    if (loc.built) return loc; loc.built = true;
+    priv(() => {
+      const c = document.createElement('canvas'); c.width = c.height = 64; const q = c.getContext('2d'), g = q.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.5, 'rgba(255,255,255,0.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); q.fillStyle = g; q.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(c), card = new THREE.PlaneGeometry(1, 1);
+      const pool = (name, n, color) => { const m = new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }); m.userData.noWrap = true;
+        const o = new THREE.InstancedMesh(card, m, n); o.name = 'weather:' + name; o.frustumCulled = false; o.visible = false; o.instanceMatrix.setUsage(THREE.DynamicDrawUsage); for (let i = 0; i < n; i++) o.setColorAt(i, new THREE.Color(0, 0, 0)); scene.add(o); return o; };
+      loc.mist = pool('ground-mist', LOCAL.MIST, '#ffffff'); loc.snowMist = pool('snow-mist', LOCAL.SNOWMIST, '#ffffff'); loc.steam = pool('rain-steam', LOCAL.STEAM, '#ffffff'); loc.vents = pool('fumarole', LOCAL.VENTS * LOCAL.PUFFS, '#ffffff');
+      const dg = new THREE.BufferGeometry(); loc.dripPos = new Float32Array(LOCAL.DRIPS * 6); dg.setAttribute('position', new THREE.BufferAttribute(loc.dripPos, 3));
+      const dm = new THREE.LineBasicMaterial({ color: '#cee7e5', transparent: true, opacity: 0.6, depthWrite: false }); dm.userData.noWrap = true;
+      loc.drips = new THREE.LineSegments(dg, dm); loc.drips.name = 'weather:leaf-drips'; loc.drips.frustumCulled = false; loc.drips.visible = false; scene.add(loc.drips);
+    });
+    loc.m4 = new THREE.Matrix4(); loc.q = new THREE.Quaternion(); loc.e = new THREE.Euler(); loc.v = new THREE.Vector3(); loc.sc = new THREE.Vector3(); loc.col = new THREE.Color();
+    loc.trees = null; loc.treeKey = ''; loc.sel = []; loc.shown = { drips: 0, mist: 0, snowMist: 0, steam: 0, vents: 0 };
+    return loc;
+  }
+  // the trees of the forest (landcover.js) by 8 m flat cells, once
+  function treeIndex() {
+    if (loc.trees) return loc.trees; const C = global.LANDCOVER_API, D0 = C && C.data && C.data(); if (!D0 || !D0.forest) return null;
+    const cells = new Map(), list = [], T = new Set(['treeRound', 'cedar', 'pine', 'bamboo']);
+    for (const it of D0.forest.items) { if (!T.has(it.type)) continue; const f = global.WORLD.lonLatToTown(it.lon, it.lat), k = 1 / Math.cos(it.lat * D), i = list.length;
+      list.push({ x: f.x, z: f.z, y: (it.alt - BASE) * k, h: (it.type === 'bamboo' ? 2.2 : it.type === 'treeRound' ? 2.0 : 2.6) * (it.s[1] || 1) * k, r: 0.9 * (it.s[0] || 1) * k, i });
+      const key = Math.floor(f.x / 8) * 65536 + Math.floor(f.z / 8); let l = cells.get(key); if (!l) cells.set(key, l = []); l.push(i); }
+    return (loc.trees = { cells, list });
+  }
+  // BI08: the fumaroles, VENTS points of the lava field on ameni-dake's north and north-west slope (12-34 m from the summit), at least 6 m apart, off the roads and
+  // outside LM01's summit model; picked once from a fixed scatter
+  function fumaroles() {
+    const W0 = global.WORLD, lm = W0.landmarks.find(q => q.id === 'LM01'), out = []; if (!lm) return out;
+    for (let i = 0; i < 400 && out.length < LOCAL.VENTS; i++) {
+      const brg = 270 + hash(i, 31) * 135, r = 12 + hash(i, 37) * 22, p = W0.destination(lm, brg % 360, r); if (W.place(p.lon, p.lat).cat !== 'lava') continue;
+      const f = W0.lonLatToTown(p.lon, p.lat); if (surf.roads && surf.roads(f.x, f.z) != null) continue;
+      if (out.some(o => Math.hypot(o.x - f.x, o.z - f.z) * Math.cos(p.lat * D) < 6)) continue;
+      out.push({ lon: p.lon, lat: p.lat, x: f.x, z: f.z, ph: hash(i, 41) });
+    }
+    return out;
+  }
+  const vents = () => loc.ventList || (loc.ventList = fumaroles());
+  const hide = (o, i) => { loc.m4.makeScale(0, 0, 0); o.setMatrixAt(i, loc.m4); o.setColorAt(i, loc.col.setRGB(0, 0, 0)); };
+  const putCard = (o, i, x, y, z, sx, sy, yaw, a) => { loc.e.set(0, yaw, 0); loc.q.setFromEuler(loc.e); loc.m4.compose(loc.v.set(x, y, z), loc.q, loc.sc.set(sx, sy, 1)); o.setMatrixAt(i, loc.m4); o.setColorAt(i, loc.col.setRGB(a, a, a)); };
+  function localStep(t, centre, view) {
+    const g = st.gains, kLook = g.wl * g.dry, B = LOCAL.BOX, o = {};
+    // anything to do? the box's field (corners and edges) and the vents' distance; otherwise every pool stays hidden and untouched
+    const any = { drip: boxHas(centre, 'drip'), mist: boxHas(centre, 'mist'), snow: boxHas(centre, 'snow'), rain: boxHas(centre, 'rain') };
+    const ventNear = vents().some(v => Math.abs(v.x - centre[0]) < 60 && Math.abs(v.z - centre[2]) < 60);
+    if (!(kLook > 0.001) && !(g.dry > 0.001 && ventNear) || !(any.drip || any.mist || any.snow || any.rain || ventNear)) { if (loc.built) { loc.drips.visible = loc.mist.visible = loc.snowMist.visible = loc.steam.visible = loc.vents.visible = false; for (const k in loc.shown) loc.shown[k] = 0; } return; }
+    const L = buildLocal(), cam = view.cam || [centre[0] + 1, centre[2] + 1], camYaw = Math.atan2(cam[0] - centre[0], cam[1] - centre[2]);   // the cards face the camera
+    // leaf drips: three per selected tree in the box (trees picked by their own hash, at most TREES), falling from the canopy's underside to the ground
+    let nd = 0; const TI = any.drip && kLook > 0.001 ? treeIndex() : null;
+    if (TI) {
+      const key = Math.round(centre[0] / 2) + ',' + Math.round(centre[2] / 2) + ',' + st.stamp;
+      if (key !== L.treeKey) { L.treeKey = key; L.sel = []; for (let a = Math.floor((centre[0] - B / 2) / 8); a <= Math.floor((centre[0] + B / 2) / 8); a++) for (let b = Math.floor((centre[2] - B / 2) / 8); b <= Math.floor((centre[2] + B / 2) / 8); b++) for (const i of TI.cells.get(a * 65536 + b) || []) { const tr = TI.list[i]; if (Math.abs(tr.x - centre[0]) < B / 2 && Math.abs(tr.z - centre[2]) < B / 2 && hash(i, 3) < 0.6) L.sel.push(tr); }
+        L.sel.sort((p, q) => hash(p.i, 5) - hash(q.i, 5)); L.sel.length = Math.min(L.sel.length, LOCAL.TREES); for (const tr of L.sel) tr.w = fieldXZ(tr.x, tr.z, o).drip; }
+      for (let s = 0; s < L.sel.length; s++) { const tr = L.sel[s]; for (let k = 0; k < 3; k++) { const j = tr.i * 3 + k; if (!(hash(j, 7) < tr.w)) continue;
+        const a = hash(j, 9) * 6.283, rr = tr.r * (0.35 + 0.6 * hash(j, 11)), x = tr.x + Math.cos(a) * rr, z = tr.z + Math.sin(a) * rr, top = tr.y + tr.h, f = (t * (0.55 + 0.25 * hash(j, 13)) + hash(j, 15)) % 1, y = top - f * (top - tr.y), n = nd * 6;
+        L.dripPos[n] = L.dripPos[n + 3] = x; L.dripPos[n + 2] = L.dripPos[n + 5] = z; L.dripPos[n + 1] = y; L.dripPos[n + 4] = y + 0.1; nd++; if (nd >= LOCAL.DRIPS) break; } if (nd >= LOCAL.DRIPS) break; }
+      for (let n = nd * 6; n < LOCAL.DRIPS * 6; n++) L.dripPos[n] = n % 3 === 1 ? -1e4 : 0;
+      L.drips.geometry.attributes.position.needsUpdate = true; L.drips.geometry.setDrawRange(0, Math.max(2, nd * 2));
+    }
+    L.drips.material.opacity = 0.6 * g.dry * g.line; L.drips.visible = nd > 0 && L.drips.material.opacity > 0.001; L.shown.drips = L.drips.visible ? nd : 0;
+    // ground mist, snow mist, rain steam: cards on spots of a BOX tile, slow drift; a card shows where its effect is (mist only in foggy places, steam only on lava)
+    const cards = (o3, n, salt, want, fn) => { let shown = 0; if (!want || !(kLook > 0.001)) { o3.visible = false; return 0; }
+      for (let i = 0; i < n; i++) { const X = hash(i, salt) * B, Z = hash(i, salt + 1) * B, x = wrapIn(X + t * 0.05 * (hash(i, salt + 2) - 0.5), centre[0], B), z = wrapIn(Z, centre[2], B), r = fn(i, x, z, salt);
+        if (r) { putCard(o3, i, x, r.y, z, r.sx, r.sy, camYaw + r.yaw, r.a); shown++; } else hide(o3, i); }
+      o3.instanceMatrix.needsUpdate = true; o3.instanceColor.needsUpdate = true; o3.visible = shown > 0; return shown; };
+    const catAt = (x, z) => { const ll = llOf(x, z); return W.place(Math.round(ll.lon * 8) / 8, Math.round(ll.lat * 8) / 8).cat; };
+    L.shown.mist = cards(L.mist, LOCAL.MIST, 101, any.mist, (i, x, z) => { const e = fieldXZ(x, z, o); if (!(hash(i, 99) < e.mist) || catAt(x, z) !== 'foggy') return null; const a = 0.10 * kLook * (0.75 + 0.25 * Math.sin(t * 0.21 + i)); return { y: surfaceY(x, z) + 0.5 + 0.4 * hash(i, 98), sx: 4 + 2 * hash(i, 97), sy: 1.1, yaw: 0, a }; });
+    L.shown.snowMist = cards(L.snowMist, LOCAL.SNOWMIST, 201, any.snow, (i, x, z) => { const e = fieldXZ(x, z, o); if (!(hash(i, 199) < e.snow)) return null; const a = 0.13 * kLook * (0.7 + 0.3 * Math.sin(t * 0.4 + i * 1.7)); return { y: surfaceY(x, z) + 0.35 + 0.3 * hash(i, 198), sx: 3 + 2 * hash(i, 197), sy: 0.8, yaw: 0, a }; });
+    L.shown.steam = cards(L.steam, LOCAL.STEAM, 301, any.rain, (i, x, z) => { const e = fieldXZ(x, z, o); if (!(hash(i, 299) < e.rain) || catAt(x, z) !== 'lava') return null; const f = (t * 0.12 + hash(i, 298)) % 1, a = 0.09 * kLook * Math.sin(Math.PI * f); return { y: surfaceY(x, z) + 0.2 + 1.4 * f, sx: 0.5 + 0.6 * f, sy: 1.2 + 0.8 * f, yaw: 0, a }; });
+    // the fumaroles: PUFFS puffs per vent rise 3 m, widen and fade (the steam of LM00_lib, one draw call); not weather: on whenever the map is flat, x (0.8 + 0.4 clear)
+    let nv = 0; if (ventNear && g.dry > 0.001) { const ll0 = llOf(centre[0], centre[2]), clear = W.at(ll0.lon, ll0.lat, st.time).weights.clear;
+      vents().forEach((v, vi) => { const k0 = 0.11 * g.dry * (0.8 + 0.4 * clear * g.wl); for (let p = 0; p < LOCAL.PUFFS; p++) { const i = vi * LOCAL.PUFFS + p, f = (t * 0.06 + p / LOCAL.PUFFS + v.ph) % 1;
+        putCard(L.vents, i, v.x + Math.sin(t * 0.3 + p) * 0.25 * f, surfaceY(v.x, v.z) + 0.3 + 3.2 * f, v.z, 0.7 * (1 + 2.2 * f), 0.7 * (1 + 2.2 * f), camYaw, k0 * Math.sin(Math.PI * f)); nv++; } });
+      for (let i = vents().length * LOCAL.PUFFS; i < LOCAL.VENTS * LOCAL.PUFFS; i++) hide(L.vents, i); L.vents.instanceMatrix.needsUpdate = true; L.vents.instanceColor.needsUpdate = true; }
+    L.vents.visible = nv > 0; L.shown.vents = nv;
   }
   // any of the given effect in the box round the target (the corners and the middle of the edges: the field is smooth over 15 m, the box is 40 m)
   function boxHas(c, kind) { const h = SNOW.BOX / 2; for (const [dx, dz] of [[-h, -h], [h, -h], [-h, h], [h, h], [0, -h], [0, h], [-h, 0], [h, 0]]) if (fieldXZ(c[0] + dx, c[2] + dz, effTmp)[kind] > 0) return true; return false; }
@@ -7580,14 +7707,14 @@ function attach(THREE, scene, ctx) {
     surfaces: () => ({ terrain: !!surf.terrain, roads: !!surf.roads, landmarks: surf.landmarks.map(l => ({ id: l.id, cells: l.cells() })) }),
     effects: () => effects.map(e => ({ kind: e.kind, src: e.src, owner: e.owner, k: e.k, opacity: e.mat.opacity, visible: e.obj.visible, lon: e.lon, lat: e.lat, type: e.obj.type })),
     effectObjects: () => effects.map(e => e.obj),
-    snow: () => st.snow, map: () => ({ box: mapSt.box, fills: mapSt.fills, stamp: mapSt.stamp, data: mapSt.data, N, STEP: MAP.STEP }),
+    snow: () => st.snow, local: () => loc, fumaroles: () => vents(), map: () => ({ box: mapSt.box, fills: mapSt.fills, stamp: mapSt.stamp, data: mapSt.data, N, STEP: MAP.STEP }),
     nodes: () => nodes.size, uniforms, weather: W,
   };
   global.WEATHER_FX.surface = { uniforms, GLSL, EMPTY };
   global.WEATHER_FX.live = api;
   return api;
 }
-global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD, FOG_SEE, NODE, FINE, REFRESH, MAP, SNOW, GLSL, LINE_FADE, surface: null, live: null };
+global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD, FOG_SEE, NODE, FINE, REFRESH, MAP, SNOW, GLSL, LINE_FADE, snowCover, duneWet, poolWet, surface: null, live: null };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -22495,7 +22622,7 @@ function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoo
 // distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
 // (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
 function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,d:camera.position.distanceTo(roam.position),target:[roam.position.x,0,roam.position.z],u:0};}
-  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u};}
+  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u,cam:[camera.position.x,camera.position.z]};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
@@ -22515,7 +22642,7 @@ rg.attributes.position.needsUpdate=true;rainMat.opacity=(roam?.29:.29*Math.max(0
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
+const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),

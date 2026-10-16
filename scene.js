@@ -338,7 +338,7 @@ function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoo
 // distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
 // (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
 function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,d:camera.position.distanceTo(roam.position),target:[roam.position.x,0,roam.position.z],u:0};}
-  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u};}
+  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u,cam:[camera.position.x,camera.position.z]};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
@@ -358,7 +358,7 @@ rg.attributes.position.needsUpdate=true;rainMat.opacity=(roam?.29:.29*Math.max(0
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
+const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
