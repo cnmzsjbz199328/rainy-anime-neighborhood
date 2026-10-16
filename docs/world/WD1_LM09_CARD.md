@@ -59,8 +59,8 @@ W7-C2 原实现将不同物件、不同高度两点的球形弦长与局部直�
 
 ## 同机位绘制成本对照（2026-10-17）
 
-用 `tools/wd1_compare.mjs` 在同一 Chromium 会话中分别打开 WD0 提交 `f6c9a31` 和 WD1 源提交 `2e0c899` 的离线页面，各用独立页面、相同 1280×800/平面夜雨/t=600 固定机位。两遍遍历，第二遍记录完整画面的绘制统计，结果见 [`perf/wd1-near.json`](perf/wd1-near.json)。七个机位的增量为 +5,004 至 +5,082 triangles、−1 至 +1 calls、+1 texture；预热后纹理数在 WD0 为 41、WD1 为 42，两个页面错误数均为 0。数据是整幅画面，不是 LM09 独立网格的 GPU 用时；首帧与帧时间仍以 `wd1-model-pass2.json` 和后续成对实测为准。画面视觉仍待用户确认，统一地面/天气衔接未验收。
+用 `tools/wd1_compare.mjs` 在同一 Chromium 会话中分别打开 WD0 提交 `f6c9a31` 和 WD1 源提交 `2c057e2` 的离线页面，各用独立页面、相同 1280×800/平面夜雨/t=600 固定机位。两遍遍历，第二遍记录完整画面的绘制统计，结果见 [`perf/wd1-near.json`](perf/wd1-near.json)。七个机位的增量为 +5,292 至 +5,370 triangles、−1 至 +1 calls、+1 texture；预热后纹理数在 WD0 为 41、WD1 为 42，两个页面错误数均为 0。数据是整幅画面，不是 LM09 独立网格的 GPU 用时；首帧与帧时间仍以 `wd1-model-pass2.json` 和后续成对实测为准。画面视觉仍待用户确认，统一地面/天气衔接未验收。
 
 ## 电话亭与售货机操作构造补充（2026-10-17）
 
-`landmarks/LM09.js` 在原设施站位和包络内增加电话亭的听筒卷线、书写台、门铰及背面检修盖，以及售货机背面的电源检修盖和向基座的导管。`python3 build.py`、`measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots` 和 `road_check.mjs` 均通过；站外设施最西缘仍为 −4.875 m，距 CR01 路缘 1.275 m。七张固定机位预览已重生于同一忽略目录，PNG 格式/1280×800 与页面错误 0 经机器检查；未打开图像，外观由用户确认。上节绘制成本对照对应补充前的模型，补充后的对照另记。
+`landmarks/LM09.js` 在原设施站位和包络内增加电话亭的听筒卷线、书写台、门铰及背面检修盖，以及售货机背面的电源检修盖和向基座的导管。`python3 build.py`、`measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots` 和 `road_check.mjs` 均通过；站外设施最西缘仍为 −4.875 m，距 CR01 路缘 1.275 m。七张固定机位预览已重生于同一忽略目录，PNG 格式/1280×800 与页面错误 0 经机器检查；未打开图像，外观由用户确认。上节绘制成本对照已复测到补充后的模型。

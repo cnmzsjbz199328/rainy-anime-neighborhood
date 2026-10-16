@@ -3244,10 +3244,10 @@
 
 ## WD1 固定机位绘制成本对照（2026-10-17）
 
-- 新增 `tools/wd1_compare.mjs`，同一 Chromium 会话依次加载 WD0 `f6c9a31` 与当前 WD1 `2e0c899` 的离线页面，预热七个相同机位后记录第二遍整幅画面的 calls、triangles、textures；临时 WD0 工作树已移除。原始结果在 `docs/world/perf/wd1-near.json`。
-- 七个固定机位相对 WD0 增加 5,004–5,082 triangles、−1～+1 calls、1 texture（WD0 41 → WD1 42）；两个页面错误数均为 0。这是近景/中景绘制量证据，不含 GPU 帧时间，也不证明视觉质量。WD1 仍等待用户看图与 W10d/WX2 集成。
+- 新增 `tools/wd1_compare.mjs`，同一 Chromium 会话依次加载 WD0 `f6c9a31` 与当前 WD1 `2c057e2` 的离线页面，预热七个相同机位后记录第二遍整幅画面的 calls、triangles、textures；临时 WD0 工作树已移除。原始结果在 `docs/world/perf/wd1-near.json`。
+- 七个固定机位相对 WD0 增加 5,292–5,370 triangles、−1～+1 calls、1 texture（WD0 41 → WD1 42）；两个页面错误数均为 0。这是近景/中景绘制量证据，不含 GPU 帧时间，也不证明视觉质量。WD1 仍等待用户看图与 W10d/WX2 集成。
 
 ## WD1 操作构造补充（2026-10-17，视觉待用户判断）
 
 - `landmarks/LM09.js` 在既有站位补电话亭听筒连线、书写台、门铰和背面检修盖，售货机背面补电源检修盖及通向基座的导管；未改锚点、道路、站台、车辆或设施包络。重建 `index.html`，重生 `docs/world/wd1/model-preview/` 的七张图；仅检查 PNG 格式和 1280×800 尺寸，未审看画面。
-- `measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots`、`road_check.mjs` 11 项通过；站外实体仍距 CR01 路缘 1.275 m，页面截图生成错误 0。前一版 `wd1-near.json` 对应补充前模型，本轮另行复测成本；WD1 的用户视觉、W10d 场地和 WX2 天气验收仍待完成。
+- `measure_samples.mjs` → `layout_check.mjs --png`、`landmark_check.mjs LM09 --no-shots`、`road_check.mjs` 11 项通过；站外实体仍距 CR01 路缘 1.275 m，页面截图生成错误 0。`wd1-near.json` 已复测本版模型；WD1 的用户视觉、W10d 场地和 WX2 天气验收仍待完成。

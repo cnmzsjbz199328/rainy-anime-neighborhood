@@ -49,49 +49,49 @@
     ]
   },
   "after": {
-    "revision": "2e0c89903dfac549cce5f42a189a9300b81cc673",
+    "revision": "2c057e273fbc4e11ced762f25ef48b4e980d56c4",
     "pageErrors": [],
     "views": [
       {
         "name": "overview",
         "calls": 290,
-        "triangles": 1229221,
+        "triangles": 1229509,
         "textures": 42
       },
       {
         "name": "shed-front",
         "calls": 1052,
-        "triangles": 1310444,
+        "triangles": 1310732,
         "textures": 42
       },
       {
         "name": "shed-rear",
         "calls": 284,
-        "triangles": 1149626,
+        "triangles": 1149914,
         "textures": 42
       },
       {
         "name": "car-platform",
         "calls": 839,
-        "triangles": 1287821,
+        "triangles": 1288109,
         "textures": 42
       },
       {
         "name": "car-rear",
         "calls": 260,
-        "triangles": 1128800,
+        "triangles": 1129088,
         "textures": 42
       },
       {
         "name": "services",
         "calls": 272,
-        "triangles": 1190247,
+        "triangles": 1190535,
         "textures": 42
       },
       {
         "name": "site",
         "calls": 245,
-        "triangles": 750494,
+        "triangles": 750782,
         "textures": 42
       }
     ]
@@ -100,43 +100,43 @@
     {
       "name": "overview",
       "calls": 1,
-      "triangles": 5082,
+      "triangles": 5370,
       "textures": 1
     },
     {
       "name": "shed-front",
       "calls": 1,
-      "triangles": 5010,
+      "triangles": 5298,
       "textures": 1
     },
     {
       "name": "shed-rear",
       "calls": 0,
-      "triangles": 5006,
+      "triangles": 5294,
       "textures": 1
     },
     {
       "name": "car-platform",
       "calls": 1,
-      "triangles": 5010,
+      "triangles": 5298,
       "textures": 1
     },
     {
       "name": "car-rear",
       "calls": -1,
-      "triangles": 5004,
+      "triangles": 5292,
       "textures": 1
     },
     {
       "name": "services",
       "calls": 1,
-      "triangles": 5020,
+      "triangles": 5308,
       "textures": 1
     },
     {
       "name": "site",
       "calls": 1,
-      "triangles": 5082,
+      "triangles": 5370,
       "textures": 1
     }
   ]
