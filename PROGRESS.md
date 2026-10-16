@@ -3298,3 +3298,9 @@
 - 源泉小屋改为可见泵体、检修台、窗洞及导水连接的木构。`python3 build.py`、`node tools/landmark_check.mjs LM02 --no-shots`、`node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png`、`node tools/road_check.mjs --no-browser` 通过；真实弯曲尺寸最大差 0.56%，页面错误 0。
 - Metal/high 单轮 [`wd2-model-current.json`](docs/world/perf/wd2-model-current.json)：首个完整画面 4,469 ms、默认 16.8/18.7 ms 与 2,406 calls、球形 d140 38.3/40.9 ms、d400 38.0/39.5 ms，页面错误 0；首帧及球形帧时间未达 W10 预算。开工前 `e100202` 与当前同会话五个 LM02 机位比较 [`wd2-near.json`](docs/world/perf/wd2-near.json)：+8,448～9,072 triangles、+1～3 calls、纹理变化 0；两版页面错误 0。临时基线工作树已移除。
 - `node tools/wd2_shots.mjs` 生成 37 张固定机位 PNG 至忽略目录 `docs/world/wd2/model-preview/`，六栋各有四面与屋顶，另有全景、池/小屋/桥/村口和球形 60/220 m；`README.md` 为看点，`report.json` 含精确相机和渲染状态。机器检查 37 张均 1280×800，截图页面错误 0。未打开图片或声称视觉通过。WD2 状态为 `待确认`，W10d/WX2 最终场地和天气集成未完成，依用户指示后续独立模型继续实施。
+
+## WD3 港口与灯塔阶段细化、渔船首轮（2026-10-17）
+
+- 依据既有 `LM10.js`/`LM08.js` 与两张 W7 卡建立 [`WD3_COAST_CARD.md`](docs/world/WD3_COAST_CARD.md)：LM10 四栋建筑各有入口、四面、室内用途；五船共享船体但作业结构不同；LM08 灯塔入口、检修和可见楼梯，守塔人生活/维修空间及北岸码头。保留锚点、海岸线、地形采样和原船位。
+- LM10 五艘船补内甲板、舷缘、驾驶舱侧窗、护舷、舱盖、绞盘和艏导缆件；奇偶船分别布置鱼箱或作业座板。鱼箱加箱口与叠放边；两片晾网改为网眼几何、下缘坠子；防波堤补爬梯和潮位线。`python3 build.py` 完成，W7-C1、C3/C4 通过。
+- W7-C2 在 WD3 开工前已有海面 6 m 发光反射片导致的 2.15% 偏差。为按“真实构件尺寸”验收，LM10 将该反射片标为 `light-effect`，检查器仅排除它和既有冰面贴片，不排除实体构件。复测发现防波堤端头灯桩实体在球形上的最大偏差 1.88%，仍高于 1%：`landmark_check LM10 --no-shots` **失败**，必须继续修复，不宣称 WD3 机器完成。

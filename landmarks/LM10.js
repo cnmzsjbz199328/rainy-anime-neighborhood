@@ -33,6 +33,11 @@
   box(6.0, gy(6, 0) + 2.2, -1.4, 3.0, 0.08, 0.08, '#5a4a3c', true, pt); box(6.0, gy(6, 0) + 2.2, 1.4, 3.0, 0.08, 0.08, '#5a4a3c', true, pt);
   for (let i = 0; i < 9; i++) { const x = 5.0 + (i % 3) * 0.9, z = -4.8 + Math.floor(i / 3) * 0.8, y = gy(x, z); mesh(new THREE.SphereGeometry(0.3, 8, 6), mat(i % 4 === 0 ? '#e0792a' : '#e8b630'), x, y + 0.3 + (i > 5 ? 0.45 : 0), z + 8.5, true, pt); }
   for (let i = 0; i < 6; i++) { const x = 9.4, z = -6.5 + (i % 3) * 0.7, y = gy(x, z); box(x, y + 0.2 + Math.floor(i / 3) * 0.4, z, 0.6, 0.38, 0.5, i % 2 ? '#bcc4c8' : '#a9b3b8', true, pt); }
+  for (let i = 0; i < 6; i++) { const x = 9.4, z = -6.5 + (i % 3) * 0.7, y = gy(x, z) + Math.floor(i / 3) * 0.4;
+    box(x, y + 0.39, z - 0.21, 0.62, 0.05, 0.06, '#7d898d', true, pt);
+    box(x, y + 0.39, z + 0.21, 0.62, 0.05, 0.06, '#7d898d', true, pt);
+    for (const sx of [-1, 1]) box(x + sx * 0.27, y + 0.39, z, 0.06, 0.05, 0.44, '#7d898d', true, pt);
+  }
   place2(); function place2() {}
   const shr = group('lm10Port'); L.use(pt);
   { const sx = 8.0, sz = 15.5, y = gy(sx, sz); box(sx, y + 0.2, sz, 2.2, 0.4, 2.0, '#8d9094', true, pt); box(sx, y + 0.4 + 0.65, sz, 1.4, 1.3, 1.2, '#7a5f48', true, pt); L.gable(1.4, 1.2, y + 1.7, 0.7, 0.35, '#4a4f58', pt).position.set(sx, 0, sz);
@@ -46,20 +51,47 @@
   cyl(31.2, SEA + 1.3 + 1.1, 3.2, 0.22, 2.2, '#e8e8e8', bw); cyl(31.2, SEA + 1.3 + 2.35, 3.2, 0.24, 0.5, '#c4412e', bw); cyl(31.2, SEA + 1.3 + 2.7, 3.2, 0.16, 0.2, '#e8e8e8', bw);
   const lampMat = new THREE.MeshBasicMaterial({ color: '#ffb870' }); const lamp = mesh(new THREE.SphereGeometry(0.26, 8, 6), lampMat, 31.2, SEA + 1.3 + 3.0, 3.2, false, bw);
   for (let i = 0; i < 7; i++) cyl(12 + i * 3, SEA + 1.3 + 0.2, 3.2 + 0.85, 0.08, 0.4, '#5a4a3c', bw);   // mooring bollards on the sheltered side
+  for (const x of [14, 20, 26]) {
+    for (let k = 0; k < 4; k++) box(x, SEA - 0.75 + k * 0.55, 3.2 - 0.95, 0.58, 0.06, 0.08, '#788385', true, bw);
+    for (const sx of [-0.26, 0.26]) box(x + sx, SEA + 0.12, 3.2 - 0.98, 0.06, 2.2, 0.09, '#626d70', true, bw);
+  }
+  for (let i = 0; i < 10; i++) box(12.0 + i * 1.9, SEA + 0.14, 4.11, 1.1, 0.04, 0.06, '#686f6f', false, bw); // tide line on sheltered face
   // ---- boats: one hull geometry shared by five (5.2 x 1.8 m); each in its own live group, bobbing
   const bt = group('lm10Boats'); L.use(bt);
   const hullShape = new THREE.Shape(); hullShape.moveTo(-2.6, -0.8); hullShape.lineTo(1.7, -0.9); hullShape.quadraticCurveTo(2.9, -0.2, 2.9, 0); hullShape.quadraticCurveTo(2.9, 0.2, 1.7, 0.9); hullShape.lineTo(-2.6, 0.8); hullShape.lineTo(-2.6, -0.8);
   const hullGeo = new THREE.ExtrudeGeometry(hullShape, { depth: 0.8, bevelEnabled: false }); hullGeo.rotateX(-PI / 2); hullGeo.translate(0, -0.25, 0);
   const hullM = mat('#e8ecee'), stripeM = mat('#2e5c8a'), cabinM = mat('#dfe4e6');
   const boats = [[20.5, -2.2, 0.15, '#e8ecee'], [23.0, -5.6, -0.1, '#d9e4ea'], [25.6, -2.4, 0.05, '#e8ecee'], [22.8, -9.2, 0.2, '#dde5e8'], [27.4, -6.6, -0.15, '#e8ecee']].map(([x, z, ry, c], i) => {
-    const g = L.sub(x, SEA, z, ry + PI / 2); g.userData.live = true; mesh(hullGeo, mat(c), 0, 0, 0, true, g); box(0, 0.1, 0, 5.4, 0.18, 1.9, '#2e5c8a', false, g).scale.set(1, 1, 0.98);
-    box(-1.0, 0.95, 0, 1.5, 0.9, 1.3, '#dfe4e6', true, g); mesh(new THREE.BoxGeometry(0.05, 0.4, 1.0), warm('#ffcf8a', i === 1 ? 0.22 : 0.0), 0.0, 1.0, 0, false, g).position.x = -0.2;
-    cyl(-1.4, 1.9, 0, 0.04, 1.8, '#7d8794', g); return { g, ph: i * 1.3 };
+    const g = L.sub(x, SEA, z, ry + PI / 2); g.userData.live = true; g.name = `lm10Boat${i + 1}`;
+    mesh(hullGeo, mat(c), 0, 0, 0, true, g);
+    box(0, -0.02, 0, 5.0, 0.12, 1.52, '#6c7880', true, g); // working deck inside the gunwale
+    for (const side of [-1, 1]) {
+      box(0, 0.23, side * 0.86, 5.2, 0.12, 0.12, '#2e5c8a', true, g);
+      for (const fx of [-1.9, 1.65]) { const f = mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.48, 8), mat('#454f55'), fx, 0.1, side * 0.93, true, g); f.rotation.x = PI / 2; }
+    }
+    box(-1.0, 0.95, 0, 1.5, 0.9, 1.3, '#dfe4e6', true, g);
+    for (const side of [-1, 1]) mesh(new THREE.BoxGeometry(0.7, 0.42, 0.025), warm('#a8c5cd', i === 1 ? 0.15 : 0.04), -0.95, 1.05, side * 0.67, false, g);
+    mesh(new THREE.BoxGeometry(0.05, 0.4, 1.0), warm('#ffcf8a', i === 1 ? 0.22 : 0.0), -0.2, 1.0, 0, false, g);
+    box(-0.45, 1.45, 0, 1.8, 0.1, 1.5, '#7d8794', true, g);
+    box(0.65, 0.35, 0, 0.85, 0.12, 1.2, '#8a7960', true, g); // removable deck hatch
+    box(1.65, 0.43, 0, 0.6, 0.12, 0.5, '#53616a', true, g);
+    const winch = mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.5, 10), mat('#4b5e65'), 1.65, 0.64, 0, true, g); winch.rotation.z = PI / 2;
+    for (const side of [-1, 1]) box(1.65, 0.46, side * 0.32, 0.09, 0.32, 0.08, '#53616a', true, g);
+    box(2.15, 0.28, 0, 0.14, 0.45, 0.15, '#6d7471', true, g); // bow fairlead
+    cyl(-1.4, 1.9, 0, 0.04, 1.8, '#7d8794', g);
+    if (i % 2 === 0) {
+      for (let k = 0; k < 2; k++) box(0.9 + k * 0.47, 0.5, -0.47, 0.4, 0.3, 0.36, k ? '#aebdc0' : '#bfc7c7', true, g);
+    } else box(0.18, 0.24, 0.53, 1.1, 0.06, 0.16, '#715e4b', true, g);
+    return { g, ph: i * 1.3 };
   });
   // ---- live: nets (two hanging planes, swaying), the reflections of the lights on the water (additive streaks)
   const lv = group('lm10Live'); L.use(lv);
-  const nets = [-1.0, 1.0].map((dz, i) => { const g = L.sub(6.0, gy(6, 0) + 2.15, dz * 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.5), new THREE.MeshBasicMaterial({ color: '#2f5a48', side: THREE.DoubleSide, transparent: true, opacity: 0.85 })); m.position.y = -0.75; g.add(m); return { g, ph: i * 2.1 }; });
-  const refl = (x, z, len, o) => { const m = mesh(new THREE.PlaneGeometry(0.7, len), L.glowMat('#ffbf78', o), x, SEA + 0.03, z, false, lv); m.rotation.x = -PI / 2; return m; };
+  const nets = [-1.0, 1.0].map((dz, i) => { const g = L.sub(6.0, gy(6, 0) + 2.15, dz * 1.4); g.userData.live = true;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.5, 16, 9), new THREE.MeshBasicMaterial({ color: '#315945', side: THREE.DoubleSide, transparent: true, opacity: 0.68, wireframe: true })); m.position.y = -0.75; g.add(m);
+    for (let k = 0; k < 9; k++) mesh(new THREE.SphereGeometry(0.045, 6, 4), mat('#555f59'), -1.3 + k * 0.325, -1.51, 0, false, g);
+    box(0, -0.03, 0, 2.85, 0.05, 0.05, '#4b6a54', true, g);
+    return { g, ph: i * 2.1 }; });
+  const refl = (x, z, len, o) => { const m = mesh(new THREE.PlaneGeometry(0.7, len), L.glowMat('#ffbf78', o), x, SEA + 0.03, z, false, lv); m.rotation.x = -PI / 2; m.userData.layer = 'light-effect'; return m; };
   const rl = refl(31.2, 3.2 + 3.2, 6, 0.0); refl(15.0, -2.0, 4, 0.1); const rd = refl(14.0, -3.5, 3, 0.08);
   out.stats = { boats: boats.length, boatSize: [5.2, 1.8], breakwater: 20, buildings: 4, houses2: 1, nets: nets.length, lights: 6 + 2, lampPeriod: 6, ebisu: 1, vending: 1, shared: 'hullGeo' };
   out.update = (t) => {
