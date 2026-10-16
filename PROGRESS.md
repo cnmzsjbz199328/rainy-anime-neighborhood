@@ -3236,3 +3236,8 @@
 
 - 新增 `tools/wd1_shots.mjs`；`node tools/wd1_shots.mjs` 生成 7 张固定机位 PNG 至 `docs/world/wd1/model-preview/`，每张 1280×800，平面模式锁雨 t=600 s。目录 `README.md` 列具体看点，`report.json` 列 `target/dist/yaw/pitch` 与 calls/triangles/textures；页面错误 0，文件格式与尺寸机器检查通过。可再生截图已在 `.gitignore`，不入库。未打开最终图，不宣称视觉合格。
 - 看点：`overview` 农田与小站整体；`shed-front/rear` 开敞空间和四面/屋顶；`car-platform/rear` 车窗三层、车门和底盘；`services` 售货机/电话亭/公交/自行车；`site` 场地和道路。已知 W10c/W10d 地面接口及 WX2 天气联动未最终验收，WD1 保持进行中。
+
+## WD1 站外设施道路净空复核（2026-10-16）
+
+- `tools/landmark_specific.mjs` 的 LM09 专项检查新增站外设施实体包围范围：读取合批前保存的局部顶点，排除地面光晕等最高点低于 0.15 m 的贴片，检查站牌、长椅、自行车、售货机、电话亭与灯杆相对 CR01 路缘的退让。道路及站点位置未改。
+- `node tools/landmark_check.mjs LM09 --no-shots` 的 W7-C1/C2/C3/C4 全通过；站外设施实体最西缘 x = −4.875 m，距 CR01 道路西缘 x = −6.15 m 为 1.275 m。此项是几何净空结果，不代表 W10d 统一地面或用户视觉已通过。
