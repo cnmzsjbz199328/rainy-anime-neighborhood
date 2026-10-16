@@ -7,5 +7,6 @@ node_modules/
 docs/world/w[0-9]*/
 docs/world/wd1/
 docs/world/wd2/
+docs/world/wd3/
 docs/buildings/screenshots/
 docs/world/survey/equirect-road-review-base.png

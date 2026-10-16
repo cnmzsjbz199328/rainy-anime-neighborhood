@@ -301,8 +301,17 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
       const map=(x,y,z)=>{const d0=Math.hypot(x,z),yt=Math.max(-1.6,h+y-1.6),kk=RR/(RR+yt),d=d0*kk;let lon=lm.lon,lat=lm.lat;
         if(d0>1e-9){const q=WO.destination({lon:lm.lon,lat:lm.lat},headDeg+Math.atan2(-x,z)/DD,d);lat=q.lat;lon=lm.lon+(((q.lon-lm.lon+540)%360)-180);}
         const cc=1/Math.cos(lat*DD);return[RR*lon*DD,(h+y-1.6)*cc,-RR*Math.asinh(Math.tan(lat*DD)),cc,kk];};
-      const warp=o=>{const g=o.geometry,p=g.attributes.position,nrm=g.attributes.normal;g.userData.local=Float32Array.from(p.array);
-        for(let i=0;i<p.count;i++){const m=map(p.getX(i),p.getY(i),p.getZ(i));p.setXYZ(i,m[0],m[1],m[2]);
+      // The harbour tip is 31 m from LM10's anchor. A small rigid lamp needs its own tangent chart;
+      // mapping its width from the distant site origin contracts it by about 1.9% on the globe.
+      const mapRigid=(x,y,z,cx,cz)=>{const yt=Math.max(-1.6,h+y-1.6),kk=RR/(RR+yt);
+        const base=WO.destination({lon:lm.lon,lat:lm.lat},headDeg+Math.atan2(-cx,cz)/DD,Math.hypot(cx,cz)*kk);
+        const dx=x-cx,dz=z-cz,dd=Math.hypot(dx,dz),q=dd>1e-9?WO.destination(base,headDeg+Math.atan2(-dx,dz)/DD,dd*kk):base;
+        const lon=lm.lon+(((q.lon-lm.lon+540)%360)-180),cc=1/Math.cos(q.lat*DD);
+        return[RR*lon*DD,(h+y-1.6)*cc,-RR*Math.asinh(Math.tan(q.lat*DD)),cc,kk];};
+      const warp=o=>{const g=o.geometry,p=g.attributes.position,nrm=g.attributes.normal,layer=o.userData.layer;
+        const mapper=lm.id==='LM10'&&layer==='lm10-rigid-tip'?(x,y,z)=>mapRigid(x,y,z,31.2,3.2):lm.id==='LM10'&&layer==='lm10-rigid-lane'?(x,y,z)=>mapRigid(x,y,z,0,20):map;
+        g.userData.local=Float32Array.from(p.array);
+        for(let i=0;i<p.count;i++){const m=mapper(p.getX(i),p.getY(i),p.getZ(i));p.setXYZ(i,m[0],m[1],m[2]);
           if(nrm){const nx=nrm.getX(i),nz=nrm.getZ(i);nrm.setXYZ(i,nx*cth+nz*sth,nrm.getY(i),-nx*sth+nz*cth);}}
         p.needsUpdate=true;if(nrm)nrm.needsUpdate=true;g.computeBoundingSphere();g.computeBoundingBox();o.matrixAutoUpdate=false;o.updateMatrix();};
       for(const name of Object.keys(groups))if(!before.has(name)){const g=groups[name];g.updateMatrixWorld(true);

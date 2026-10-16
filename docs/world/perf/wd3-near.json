@@ -1,0 +1,100 @@
+{
+  "method": "Same Chromium session, fresh page per build, four 1280x800 flat/rain/t=600 views; one render after __step(1). Whole-frame counts.",
+  "beforeFile": "/tmp/rainy-wd3-pre/index.html",
+  "before": {
+    "pageErrors": [],
+    "views": [
+      {
+        "id": "LM10",
+        "name": "harbour",
+        "calls": 213,
+        "triangles": 762357,
+        "textures": 5
+      },
+      {
+        "id": "LM10",
+        "name": "boats",
+        "calls": 242,
+        "triangles": 1287920,
+        "textures": 5
+      },
+      {
+        "id": "LM08",
+        "name": "island",
+        "calls": 206,
+        "triangles": 662392,
+        "textures": 5
+      },
+      {
+        "id": "LM08",
+        "name": "tower",
+        "calls": 258,
+        "triangles": 1141325,
+        "textures": 5
+      }
+    ]
+  },
+  "after": {
+    "pageErrors": [],
+    "views": [
+      {
+        "id": "LM10",
+        "name": "harbour",
+        "calls": 249,
+        "triangles": 767437,
+        "textures": 5
+      },
+      {
+        "id": "LM10",
+        "name": "boats",
+        "calls": 242,
+        "triangles": 1287704,
+        "textures": 5
+      },
+      {
+        "id": "LM08",
+        "name": "island",
+        "calls": 228,
+        "triangles": 665344,
+        "textures": 5
+      },
+      {
+        "id": "LM08",
+        "name": "tower",
+        "calls": 261,
+        "triangles": 1143721,
+        "textures": 5
+      }
+    ]
+  },
+  "delta": [
+    {
+      "id": "LM10",
+      "name": "harbour",
+      "calls": 36,
+      "triangles": 5080,
+      "textures": 0
+    },
+    {
+      "id": "LM10",
+      "name": "boats",
+      "calls": 0,
+      "triangles": -216,
+      "textures": 0
+    },
+    {
+      "id": "LM08",
+      "name": "island",
+      "calls": 22,
+      "triangles": 2952,
+      "textures": 0
+    },
+    {
+      "id": "LM08",
+      "name": "tower",
+      "calls": 3,
+      "triangles": 2396,
+      "textures": 0
+    }
+  ]
+}

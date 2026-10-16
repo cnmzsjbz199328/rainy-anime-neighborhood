@@ -1,0 +1,324 @@
+{
+ "tool": "tools/perf_baseline.mjs",
+ "label": "wd3-model-current",
+ "ref": null,
+ "commit": "ec5e9bea469cacb0c8241143cefb50ad44c58a15",
+ "dirty": true,
+ "date": "2026-10-16T23:18:25.293Z",
+ "renderer": "metal",
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist",
+  "--enable-precise-memory-info"
+ ],
+ "viewport": [
+  1280,
+  800
+ ],
+ "windowMs": 5000,
+ "dragFrames": 60,
+ "noGenWaitMs": 6000,
+ "quality": "high",
+ "loads": [
+  {
+   "sceneMs": 4323,
+   "firstFrameMs": 4589,
+   "firstCompleteFrameMs": 4589,
+   "worldgenStartMs": 1687,
+   "startupScriptTaskMs": 1585,
+   "pipelineLongestTaskMs": 268
+  }
+ ],
+ "pregen": {
+  "present": true,
+  "waitedMs": 14,
+  "worldgen": {
+   "started": true,
+   "done": true,
+   "startAt": 1792192707429,
+   "doneAt": 1792192710064,
+   "firstFrameAt": 1792192710331,
+   "firstCompleteFrameMs": 4589.400000095367,
+   "steps": [
+    {
+     "name": "rest",
+     "done": true,
+     "steps": 13,
+     "ms": 265,
+     "longestMs": 34
+    },
+    {
+     "name": "sampler",
+     "done": true,
+     "steps": 1,
+     "ms": 15,
+     "longestMs": 15
+    },
+    {
+     "name": "section",
+     "done": true,
+     "steps": 5,
+     "ms": 85,
+     "longestMs": 48
+    },
+    {
+     "name": "ink",
+     "done": true,
+     "steps": 1,
+     "ms": 66,
+     "longestMs": 66
+    },
+    {
+     "name": "roads",
+     "done": true,
+     "steps": 34,
+     "ms": 1016,
+     "longestMs": 214
+    },
+    {
+     "name": "ocean",
+     "done": true,
+     "steps": 2,
+     "ms": 159,
+     "longestMs": 153
+    },
+    {
+     "name": "landcover",
+     "done": true,
+     "steps": 24,
+     "ms": 671,
+     "longestMs": 61
+    },
+    {
+     "name": "streetlights",
+     "done": true,
+     "steps": 3,
+     "ms": 39,
+     "longestMs": 33
+    },
+    {
+     "name": "landmarks",
+     "done": true,
+     "steps": 11,
+     "ms": 215,
+     "longestMs": 56
+    }
+   ]
+  },
+  "longTasks": [],
+  "longestTaskMs": 0,
+  "moduleMs": {
+   "rest": 260,
+   "section": 85,
+   "roads": 1016,
+   "ocean": 159,
+   "cover": 671,
+   "landmarks": 215
+  }
+ },
+ "exits": {},
+ "sphere": {},
+ "machine": {
+  "start": {
+   "freeMemMB": 82,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    5.48,
+    8.67,
+    7.26
+   ],
+   "swap": "total = 9216.00M  used = 8391.38M  free = 824.62M  (encrypted)"
+  },
+  "end": {
+   "freeMemMB": 1784,
+   "totalMemMB": 16384,
+   "loadAvg": [
+    7.81,
+    8.61,
+    7.31
+   ],
+   "swap": "total = 9216.00M  used = 8383.38M  free = 832.62M  (encrypted)"
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "parallelShaderCompile": true,
+ "chromium": "153.0.8010.12",
+ "jsHeapMB": 405.4,
+ "views": {
+  "town-default": {
+   "frames": 183,
+   "medianMs": 16.6,
+   "p95Ms": 18.7,
+   "maxMs": 19.8,
+   "longTasks": 0,
+   "calls": 2406,
+   "triangles": 1595576,
+   "instances": 7925,
+   "cover": {
+    "calls": 61,
+    "triangles": 910353
+   },
+   "tier": "high",
+   "lod": {
+    "near": 786,
+    "far": 275,
+    "fading": 357,
+    "groups": 0
+   }
+  },
+  "forest-near-flat": {
+   "frames": 183,
+   "medianMs": 16.7,
+   "p95Ms": 17.5,
+   "maxMs": 19.1,
+   "longTasks": 0,
+   "calls": 729,
+   "triangles": 1279057,
+   "instances": 7839,
+   "cover": {
+    "calls": 60,
+    "triangles": 844935
+   },
+   "tier": "high",
+   "lod": {
+    "near": 682,
+    "far": 409,
+    "fading": 367,
+    "groups": 0
+   }
+  },
+  "farm-flat": {
+   "frames": 183,
+   "medianMs": 16.6,
+   "p95Ms": 17.5,
+   "maxMs": 18.6,
+   "longTasks": 0,
+   "calls": 402,
+   "triangles": 1202339,
+   "instances": 7808,
+   "cover": {
+    "calls": 59,
+    "triangles": 777881
+   },
+   "tier": "high",
+   "lod": {
+    "near": 600,
+    "far": 516,
+    "fading": 480,
+    "groups": 0
+   }
+  },
+  "coast-flat": {
+   "frames": 183,
+   "medianMs": 16.7,
+   "p95Ms": 17.3,
+   "maxMs": 17.8,
+   "longTasks": 0,
+   "calls": 311,
+   "triangles": 1187851,
+   "instances": 7848,
+   "cover": {
+    "calls": 61,
+    "triangles": 806399
+   },
+   "tier": "high",
+   "lod": {
+    "near": 621,
+    "far": 483,
+    "fading": 431,
+    "groups": 0
+   }
+  },
+  "sphere-70": {
+   "frames": 104,
+   "medianMs": 29.1,
+   "p95Ms": 37.7,
+   "maxMs": 42.7,
+   "longTasks": 0,
+   "calls": 5987,
+   "triangles": 1482487,
+   "instances": 8455,
+   "cover": {
+    "calls": 42,
+    "triangles": 422274
+   },
+   "tier": "high",
+   "lod": {
+    "near": 469,
+    "far": 625,
+    "fading": 726,
+    "groups": 0
+   }
+  },
+  "sphere-140": {
+   "frames": 80,
+   "medianMs": 38.4,
+   "p95Ms": 42.3,
+   "maxMs": 54.6,
+   "longTasks": 1,
+   "calls": 10782,
+   "triangles": 1694040,
+   "instances": 8362,
+   "cover": {
+    "calls": 42,
+    "triangles": 365221
+   },
+   "tier": "high",
+   "lod": {
+    "near": 264,
+    "far": 863,
+    "fading": 1622,
+    "groups": 0
+   }
+  },
+  "sphere-400": {
+   "frames": 81,
+   "medianMs": 38.1,
+   "p95Ms": 40,
+   "maxMs": 43,
+   "longTasks": 0,
+   "calls": 10889,
+   "triangles": 1632244,
+   "instances": 5823,
+   "cover": {
+    "calls": 39,
+    "triangles": 290833
+   },
+   "tier": "high",
+   "lod": {
+    "near": 1,
+    "far": 995,
+    "fading": 2319,
+    "groups": 34
+   }
+  }
+ },
+ "summary": {
+  "sceneMsMedian": 4323,
+  "firstFrameMsMedian": 4589,
+  "firstCompleteFrameMsMedian": 4589,
+  "pipelineLongestTaskMsMax": 268,
+  "pregenCpuMs": 2531,
+  "pregenLongestTaskMs": 0,
+  "pregenCpuMsMedian": null,
+  "pregenCpuMsRange": [
+   null,
+   null
+  ],
+  "pregenLongestTaskMsMedian": null,
+  "pregenLongestTaskMsMax": 0,
+  "immediateExitLongestTaskMs": null,
+  "afterPregenExitLongestTaskMs": null,
+  "hotExitLongestTaskMs": null,
+  "immediateExitMaxFrameGapMs": null,
+  "afterPregenExitMaxFrameGapMs": null,
+  "hotExitMaxFrameGapMs": null,
+  "sphereImmediateLongestTaskMs": null,
+  "sphereAfterPregenLongestTaskMs": null,
+  "viewsMedianMsMax": 38.4,
+  "viewsP95MsMax": 42.3,
+  "jsHeapMB": 405.4,
+  "pageErrors": 0
+ },
+ "errors": []
+}

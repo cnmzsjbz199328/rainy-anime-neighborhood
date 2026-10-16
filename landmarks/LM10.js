@@ -14,7 +14,8 @@
   const ld = group('lm10Land'); L.use(ld);
   L.ground(11.5, '#5d7658', 0.04).position.set(-3, 0.04 + 0.0, 2);
   { const g = ld.children[ld.children.length - 1]; g.position.y = 0.0; }
-  const laneM = mat('#46505b'); for (let i = 0; i < 6; i++) { const z = 17.2 + i, y = gy(0, z); box(0, y + 0.04, z, 4.5, 0.08, 1.05, '#46505b', false, ld); box(-2.2, y + 0.07, z, 0.1, 0.05, 1.05, '#c9cfc4', false, ld); box(2.2, y + 0.07, z, 0.1, 0.05, 1.05, '#c9cfc4', false, ld); } void laneM;
+  const laneM = mat('#46505b'); for (let i = 0; i < 6; i++) { const z = 17.2 + i, y = gy(0, z);
+    for (const part of [box(0, y + 0.04, z, 4.5, 0.08, 1.05, '#46505b', false, ld), box(-2.2, y + 0.07, z, 0.1, 0.05, 1.05, '#c9cfc4', false, ld), box(2.2, y + 0.07, z, 0.1, 0.05, 1.05, '#c9cfc4', false, ld)]) part.userData.layer = 'lm10-rigid-lane'; } void laneM;
   // apron along the quay: a concrete strip east of the buildings
   for (let z = -10; z <= 12; z += 1.5) { const y = gy(8.5, z); box(8.5, y + 0.05, z, 3.2, 0.1, 1.55, '#8d9094', false, ld); }
   // ---- buildings: the co-op warehouse (9 x 6, roller shutter facing the quay), ice hut, two houses
@@ -62,8 +63,11 @@
   const bw = group('lm10Port'); L.use(bw);
   for (let x = 11; x < 31; x += 1) { const base = Math.min(gy(x + 0.5, 3.2), SEA) - 0.3, top = SEA + 1.3; box(x + 0.5, (base + top) / 2, 3.2, 1.02, top - base, 1.8, ((x * 7) | 0) % 2 ? '#8d9094' : '#80848a', true, bw); }
   for (const dz of [-0.9, 0.9]) for (let x = 11.5; x < 31; x += 2) { const base = Math.min(gy(x, 3.2 + dz * 1.4), SEA) - 0.2; mesh(new THREE.DodecahedronGeometry(0.55, 0), mat('#80848a'), x, base + 0.5, 3.2 + dz * 1.6, true, bw); }
-  cyl(31.2, SEA + 1.3 + 1.1, 3.2, 0.22, 2.2, '#e8e8e8', bw); cyl(31.2, SEA + 1.3 + 2.35, 3.2, 0.24, 0.5, '#c4412e', bw); cyl(31.2, SEA + 1.3 + 2.7, 3.2, 0.16, 0.2, '#e8e8e8', bw);
-  const lampMat = new THREE.MeshBasicMaterial({ color: '#ffb870' }); const lamp = mesh(new THREE.SphereGeometry(0.26, 8, 6), lampMat, 31.2, SEA + 1.3 + 3.0, 3.2, false, bw);
+  const rigidTip = o => { o.userData.layer = 'lm10-rigid-tip'; return o; };
+  rigidTip(cyl(31.2, SEA + 1.3 + 1.1, 3.2, 0.22, 2.2, '#e8e8e8', bw));
+  rigidTip(cyl(31.2, SEA + 1.3 + 2.35, 3.2, 0.24, 0.5, '#c4412e', bw));
+  rigidTip(cyl(31.2, SEA + 1.3 + 2.7, 3.2, 0.16, 0.2, '#e8e8e8', bw));
+  const lampMat = new THREE.MeshBasicMaterial({ color: '#ffb870' }); const lamp = rigidTip(mesh(new THREE.SphereGeometry(0.26, 8, 6), lampMat, 31.2, SEA + 1.3 + 3.0, 3.2, false, bw));
   for (let i = 0; i < 7; i++) cyl(12 + i * 3, SEA + 1.3 + 0.2, 3.2 + 0.85, 0.08, 0.4, '#5a4a3c', bw);   // mooring bollards on the sheltered side
   for (const x of [14, 20, 26]) {
     for (let k = 0; k < 4; k++) box(x, SEA - 0.75 + k * 0.55, 3.2 - 0.95, 0.58, 0.06, 0.08, '#788385', true, bw);
