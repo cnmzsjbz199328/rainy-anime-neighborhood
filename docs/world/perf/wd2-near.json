@@ -1,0 +1,106 @@
+{
+  "method": "Same Chromium session, fresh page per build, five 1280x800 flat/rain/t=600 views; warm-up pass then render. Whole-frame counts.",
+  "beforeFile": "/tmp/rainy-wd2-pre/index.html",
+  "before": {
+    "pageErrors": [],
+    "views": [
+      {
+        "name": "village",
+        "calls": 256,
+        "triangles": 641307,
+        "textures": 4
+      },
+      {
+        "name": "inn-a",
+        "calls": 299,
+        "triangles": 1105356,
+        "textures": 4
+      },
+      {
+        "name": "inn-b",
+        "calls": 304,
+        "triangles": 1064598,
+        "textures": 4
+      },
+      {
+        "name": "spring",
+        "calls": 271,
+        "triangles": 1060096,
+        "textures": 4
+      },
+      {
+        "name": "village-entry",
+        "calls": 237,
+        "triangles": 975068,
+        "textures": 4
+      }
+    ]
+  },
+  "after": {
+    "pageErrors": [],
+    "views": [
+      {
+        "name": "village",
+        "calls": 258,
+        "triangles": 650355,
+        "textures": 4
+      },
+      {
+        "name": "inn-a",
+        "calls": 302,
+        "triangles": 1114428,
+        "textures": 4
+      },
+      {
+        "name": "inn-b",
+        "calls": 306,
+        "triangles": 1073646,
+        "textures": 4
+      },
+      {
+        "name": "spring",
+        "calls": 272,
+        "triangles": 1069144,
+        "textures": 4
+      },
+      {
+        "name": "village-entry",
+        "calls": 239,
+        "triangles": 983516,
+        "textures": 4
+      }
+    ]
+  },
+  "delta": [
+    {
+      "name": "village",
+      "calls": 2,
+      "triangles": 9048,
+      "textures": 0
+    },
+    {
+      "name": "inn-a",
+      "calls": 3,
+      "triangles": 9072,
+      "textures": 0
+    },
+    {
+      "name": "inn-b",
+      "calls": 2,
+      "triangles": 9048,
+      "textures": 0
+    },
+    {
+      "name": "spring",
+      "calls": 1,
+      "triangles": 9048,
+      "textures": 0
+    },
+    {
+      "name": "village-entry",
+      "calls": 2,
+      "triangles": 8448,
+      "textures": 0
+    }
+  ]
+}

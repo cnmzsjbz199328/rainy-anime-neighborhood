@@ -1,6 +1,6 @@
 # WD2 温泉村六栋独立设计卡
 
-状态：实施中；视觉待统一验收。依据 `landmarks/LM02.js` 的六栋位置、朝向和外包尺寸，以及 `WORLD_DETAIL_PLAN.md`、`BUILDING_SPEC.md`。所有局部坐标以既有 LM02 锚点为准，建筑正面为各自局部 +Z，不移动建筑、道路或入口。
+状态：独立模型已交付，视觉待统一验收；W10d/WX2 场地天气集成待前置。依据 `landmarks/LM02.js` 的六栋位置、朝向和外包尺寸，以及 `WORLD_DETAIL_PLAN.md`、`BUILDING_SPEC.md`。所有局部坐标以既有 LM02 锚点为准，建筑正面为各自局部 +Z，不移动建筑、道路或入口。
 
 | 建筑 | 中心 (x,z)、朝向、外包平面 | 入口与四立面 | 可见室内、楼层与痕迹 |
 | --- | --- | --- | --- |
@@ -12,3 +12,10 @@
 | 小店 | (−4.2,11.2)、0.92π、5×4.2 m | 村口店门与招牌、侧面送货门、背面储藏窗 | 近窗陈列—顾客通路—后柜台/货架；门口进货磨损。 |
 
 六栋共享柱梁、门窗、屋面收边的几何做法，保留独立入口、窗序、内部功能和生活痕迹。主要家具与楼板、楼梯采用几何；文字与细小商品可贴图。每栋保持原宽深、高度轮廓及灯光主次，场地与统一天气最后分别接 W10d、WX2。
+
+## 本轮机器交付（2026-10-17）
+
+- 六栋实墙发光窗模板已替换为四面洞口、透明窗、楼板/楼梯和按身份布置的室内功能件。源泉小屋另有可见泵体、导水接口与检修位；温泉池有池底/壁、踏步和溢流，桥有纵横梁与桥台，竹篱、公交与售货机补连接/操作部件。
+- `node tools/landmark_check.mjs LM02 --no-shots`、`node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png`、`node tools/road_check.mjs --no-browser` 通过。弯曲尺寸最大差 0.56%，页面错误 0。
+- `tools/wd2_compare.mjs` 在同一 Chromium 会话比较 WD2 开工前 `e100202` 与本版的五个 LM02 机位：+8,448～9,072 triangles、+1～3 calls、纹理变化 0，双方页面错误 0；原始数据在 [`perf/wd2-near.json`](perf/wd2-near.json)。单轮 Metal/high 当前性能见 [`perf/wd2-model-current.json`](perf/wd2-model-current.json)，首个完整画面 4,469 ms，默认 16.8/18.7 ms，球形 d140 38.3/40.9 ms、d400 38.0/39.5 ms；首帧和球形仍未达 W10 预算。
+- [`wd2/model-preview/`](wd2/model-preview/) 中 37 张可再生图均为 1280×800 PNG，包含六栋各五面、温泉/小屋/桥/村口、全景及球形 60/220 m；逐张机位与看点在同目录 `report.json` 和 `README.md`。图片未由 Agent 审看，构图、室内透视、材质和气氛待用户集中判断。

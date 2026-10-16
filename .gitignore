@@ -6,5 +6,6 @@ node_modules/
 # 确需入库的少量关键图用 `git add -f` 并先压缩（见 AGENTS.md「Evidence and repo size」）。
 docs/world/w[0-9]*/
 docs/world/wd1/
+docs/world/wd2/
 docs/buildings/screenshots/
 docs/world/survey/equirect-road-review-base.png
