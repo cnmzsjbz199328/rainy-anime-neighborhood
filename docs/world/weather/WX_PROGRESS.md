@@ -99,3 +99,140 @@
 2. 主工作树里有一份未跟踪的 `docs/world/WEATHER_COMPLETION_PLAN.md`，与本分支提交的版本只差一行进度。合并前先移走那份未跟踪副本，否则 git 会拒绝覆盖。
 3. 计划第 7 节的新路径 `docs/world/weather/wx2/` 不在现有忽略规则内（`docs/world/w[0-9]*/` 不匹配 `weather/`）。WX2 生成截图前要在 .gitignore 加精确忽略项；`wx1/report.json` 是检查摘要，可以提交。
 4. WX1 没有画面输出，不需要用户看点。WX2 的看点见计划第 7 节；同机位“雨→雨后→晴”现在可以用 `sample().fadeLeft / target` 报告剩余渐变。
+
+## WX2 接通全球效果、粒子高度与晴天清理（2026-10-16，分支 `world/weather-WX2`，只本地提交，未合并、未推送）
+
+### 基线与范围
+
+- 集成起点：`ff72599` = `world/W10c`（`96342bc`，含路灯 `4ae302c`、灰屏修复 `e883b6c`）合入 `world/weather-WX1`（`764a2b3`），无冲突。独立工作树 `../rainy-anime-neighborhood-wx2`（node_modules 软链到主工作树）。没有新建或覆盖任何基线标签；对照一律用提交号 `ff72599`。
+- 起点源码 sha256 前 12 位：`weather.js` 319873364348、`weather_fx.js` 34fa9cfbb05e、`scene.js` 24ba6b6e2bfe、`index.html` 3aaff2c9a677（`ff72599` 的 index.html 是 W10c 的构建，3,031,385 字节）。
+- 改动文件：`weather.js`（加 `samplePlace`、`lockVersion`，`sample` 结果逐位不变）、`weather_fx.js`（重写）、`scene.js`、`section.js`、`ocean.js`、`water.js`、`landcover.js`、`roads.js`、`streetlights.js`（加 `surface`）、`landmarks/LM04.js`、`LM07.js`、`LM09.js`（只加 `userData.weather` 标记）、新增 `tools/weather_integration_check.mjs`、`tools/perf_baseline.mjs` 加 `--weather-views`、`.gitignore`、README、本记录、计划状态、W8_SPEC 11.4 与 WORLD_PLAN 第 4 节的最小订正。建筑文件一个没改；路灯模型、像素 LOD、光带都没动。
+
+### 效果登记清单（计划 5 节开头要求）
+
+| 效果 | 类别 | 拥有者 / 对象 | 位置 | 基值 | 更新入口 | 现在的天气系数 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 雨丝 | 降水 | scene.js `rainObj`（2800 段） | 目标周围 40 m 箱 | 不透明度 0.29 | scene 帧循环（`weatherFx.tick` 之后） | 逐滴：哈希 < 所在地雨权重才显示；整体 × 距离淡出 (110 − d)/60 × (1 − uBend)；旧雨开关为测试抑制，优先级最高；全箱 0 滴时不提交 |
+| 雪 | 降水 | weather_fx 雪层（900 片） | 40 m 箱 | 0.85，大小 0.09 | `weatherFx.tick` | 逐片：哈希 < 所在地雪权重；× w_local × (1 − uBend)；可寻址轨迹 |
+| 海面雨击 | 雨击 | ocean.js 着色器 | 全球海面 | `uRain` | `ocean.tick` | 片元：天气图 R（所在地雨）× `uRain`（开关 × (1 − uBend) × w_local） |
+| 水田 / W4 水面雨击 | 雨击 | water.js（section、landcover） | 水田 | `uRain` | `section.tick`、`landcover.tick` | 同上 |
+| 路面水洼环 | 雨击 | roads.js `road:ripple`（城镇水洼 + 路灯旁） | 每个环点 | 0.3 × (1 − p) | `roads.tick` | 每点：所在地雨 × 开关 × (1 − uBend) × w_local；原先按湿润（阴、雾、雨后也有） |
+| 公园雨水池环 | 雨击 | B04-P03 `parkPond`（4 环） | 公园 | 建筑每帧写 | 建筑 update → `apply()` | 雨 × 同上 |
+| 檐滴、窗上雨流、锁链与落水口流水 | 滴水 | 37 栋建筑的动画线批（93 条，颜色 `#cee7e5` / `#c1e4df` / `#d4ecea`） | 各建筑 | 0.6 / 0.45 / 0.55 | 建筑 update → `apply()` | 滴水 × 距离淡出 × (1 − uBend)；原先一直在落 |
+| 锁链水盆环 | 滴水 | B03-P08 `shrineRain`、B04-P04 `hokoraRain`（4 环） | 神社、小祠 | 建筑每帧写 | `apply()` | 同滴水 |
+| LM04、LM09 檐滴 | 滴水 | 地标（各 6，`userData.weather = 'drip'`） | 地标 | 0.7（地标每帧写） | 地标 update → `apply()` | 同滴水 |
+| LM07 低空雪雾 | 天气雾 | LM07（10 卡，`'snow-mist'`） | 冰原 | 0.4 sin（地标每帧写） | `apply()` | 外观规则 1 + (雪 − 1) × w_local，× (1 − uBend)；原先一直在飘 |
+| 雨见岳雾带 | 天气雾 | landcover `cover:mist` | 雨见岳 | 0.5 + 0.12 sin | `landcover.tick` → `apply()` | 外观规则 1 + (max(雾, 湿润) − 1) × w_local，× (1 − uBend)；landcover 自己不再乘 (1 − uBend) |
+| 天气雾密度与雾色 | 天气雾（视点） | weather_fx | 观察目标 | `look.fog`、`look.fogColor` | `tick` | 目标点权重 × w_local，透射率 ≥ 0.2 上限（灰屏修复） |
+| 天光、月光倍率 | 光照（视点） | weather_fx | 观察目标 | `look.hemi`、`look.moon` × 夜间增益 | `tick` | 1 + (m − 1) × w_local × (1 − uBend) |
+| 湿润 | 湿润 | 天气图 G 通道、`setPuddleWeight`（视点） | — | — | `tick` | WX2 只提供通道（湿润反光属于 WX3） |
+| 不登记（非天气）：拉面店、面馆 `dinerSteam`、面包店、咖啡馆的生活蒸汽，LM02 温泉蒸汽，LM01 火山口喷气 | 非天气蒸汽 | 各自 | — | — | 自身 update | 不受天气与地图模式控制，保持原样 |
+| 不登记：B03-P08、B04-P04 手水舍水盆环 | 非天气 | 竹筒流水 | — | — | — | 不是雨 |
+| 保留：城镇静态水洼贴片、海水、稻田水、永久冰雪 | 静态地面 | — | — | — | — | 计划 5.3：不随晴天删除 |
+
+### 阶段细化（实施时确定）
+
+1. **一个来源，按所在地取样**：`weather_fx.js` 的格点场 `field(lon, lat)`：1° 格点（1.57 m，与地形格点一致），格点保存 `place()` 对象，每 0.5 天气秒或锁定变化时重算权重（`weather.js` 新增 `samplePlace`，结果与 `sample` 相同）；格内双线性插值；四个格点类别不同（硬边界）时改取 0.25° 细格点的最近点，禁止状态最多越界 0.39 m。格点缓存上限 60,000（满即清空）。
+2. **天气图**：目标周围 64 × 64 纹理，2° 一格（赤道处约 100 m 见方），R 雨击、G 湿润、B 雪、A 天气雾；海面与水田着色器按片元的经纬度取样（`WEATHER_FX.surface`、`wxAt`）。重心移动超过 1/4 窗口时重新填充，时间每 2 s 刷新一次，每帧固定 256 格（不按时间预算，回放的帧序列结果相同），第一帧与锁定变化时一次填满。
+3. **雨丝**：`positions` 保持原有逐滴运动与 `Math.random` 序列（城镇锁雨画面逐位不变），另有一份 GPU 缓冲；每滴有自己的底面 = 接收面 + 0.2 m（城镇为底座 0，所以仍是 0.2），从底面以上 6.8 m 落下；八次重试都落在城镇屋顶矩形里的滴本次停放不画（原先会穿过屋顶落下）；逐滴哈希 < 所在地雨权重才画；全箱 0 滴时不提交绘制。
+4. **接收面** `surfaceY(x, z)`：城镇补丁内为底座 0；其余取渲染地形、海平面、路面与桥面（`streetlights.js` 灯表的线投影：桥面在轴线 4.6 m 内，路线在其网格内，隧道段除外）、地标自身网格的顶面（0.5 m 栅格，非动画网格的三角形抬高其包围盒内的格；第一次在该地标附近查询时建立）中最高的。
+5. **雪**：900 片按 种子 + 编号 + 页面时间 可寻址（每次下落在一块 40 m 世界锚定瓦片里换位置，再包进目标周围的箱），落在接收面上 + 0.1 m 的 8.9 m 柱里；逐片按所在地雪权重稀疏；无雪时隐藏且不更新。
+6. **登记表** `register` / `apply`：只改不透明度与可见性；系数按种类：滴水 = 滴水 × 距离淡出 × (1 − uBend)，雨击 = 雨 × 开关 × (1 − uBend) × w_local，雪雾/雾带用外观规则。每帧在所有拥有者更新之后、渲染之前应用一次；拥有者每帧重写的不透明度在其后相乘（若拥有者某帧没写，用上次记下的拥有者值，不会累乘）。
+7. **灯光与雾的显式基值**（WX-G）：`scene.js` 的 `look`（天光、月光、雾密度、雾色）由 section.js 的光照预设、地图过渡与漫游写入；weather_fx 每帧写 基值 × 夜间增益 × 天气倍率、基值雾 + 天气附加雾，不再用 `sync()` 猜测“谁改了数值”。
+8. **球形与距离**：(1 − uBend) 在最终表现只乘一次；雨丝与滴水按相机距离 (110 − d)/60 淡出，雨击与雪按 w_local，光照、雾与雾带按 w_local 回到雨夜外观。
+
+### 实施参数
+
+| 名称 | 值 | 说明 |
+| --- | --- | --- |
+| `NODE` / `FINE` | 1° / 4 | 格点场与硬边界细格点 |
+| `REFRESH` | 0.5 天气秒 | 权重变化最快 1/48 每秒，两次更新之间 ≤ 1.1 % |
+| `NODES_MAX` | 60,000 | I7：60 处全图平移后峰值 52,878 |
+| `MAP` | 64 × 64，2°，每帧 256 格，时间刷新每 2 s | 天气图（性能优化后的值，见性能节） |
+| 雨底面 | 接收面 + 0.2 m，柱高 6.8 m | 城镇与原来逐位相同 |
+| `SNOW` | 900 片、40 m 箱、8.9 m 柱、+0.1 m、大小 0.09、0.85 | 与原来相同的数量、尺寸与透明度 |
+| 地标接收面栅格 | 0.5 m | LM07（冰面覆盖网格大）最多 125,717 格，按需建立 |
+
+### WX-0（晴天仍有雨丝）审查结论
+
+用户当时的相机、天气时间和锁定状态未知，没有逐像素复现原画面。按计划 5.4 的表逐项排查，代码里确认的雨线来源有四个，现在都已按所在地天气处理：
+
+1. **建筑和地标的落水线一直在落（最可能就是用户看到的）**：36 栋建筑的檐滴、窗上雨流、锁链与落水口流水共 93 条动画线批，加 LM04、LM09 各 6 条檐滴。它们每帧下落，不读天气，晴夜、阴天、球形白天都照样有，外观就是短雨丝。现在登记为滴水效果：雨与雨后有（湿润时滴水），阴、晴、雪、球形为 0 且不提交绘制。
+2. **城镇原先同一时刻有几种天气**（WX-E），而雨丝整箱跟随目标点的状态：目标落在雨区时，画面里的晴区也有雨丝。WX1 起城镇是一个天气区，WX2 起雨丝逐滴按所在地稀疏。
+3. **路面水洼环原先按湿润显示**：阴天、雾、雨后也有雨点环（是环不是线）。现在只跟所在地的雨。
+4. **晴天雨丝对象仍提交绘制**（不透明度 0，看不见但占一次绘制）。现在全箱 0 滴时不提交。
+
+另查过、不是来源的：天气标签只是最大权重（判断“纯晴”看 `weights.clear === 1`，工具与检查都按权重）；`rainMat.opacity` 先设后乘的顺序已改为天气先算、雨丝后用；旧 `SECTION rain` 开关只作测试抑制，优先级最高；球形 `uBend = 1` 时任何降水对象都不提交（I5、I8）。手水舍水盆的环来自竹筒流水，不是雨，保持不变。
+
+### 与集成起点的画面差异（`node tools/regress.mjs --baseline-ref ff72599 --weather lock:rain`）
+
+- default、storeCorner、intersection、roamStreet、cafeFront、cafeInterior：逐位相同（0 像素）。
+- far（d = 140）0.149 %、最大 58；top（d = 150）0.190 %、最大 45；绘制调用各少 114：檐滴、窗上雨流与雨击环改为和雨丝同样按距离淡出（110 m 外为 0，原来雨丝在这两个机位就已经看不见）。这是有意的改变，由用户看图决定。
+
+### 检查结果（2026-10-16，最终 WX2 源码；日志在本机 scratchpad，不入库）
+
+按计划 5.5 的顺序，全部在同一构建上依次运行：
+
+- `python3 build.py` → `node tools/measure_samples.mjs`（无页面错误）→ `node tools/layout_check.mjs --png`（C1–C12 通过，没有改动已跟踪的布局图）。
+- `node tools/weather_field_check.mjs`：5/5 PASS（WX1 的纯数据检查不受 WX2 影响）。
+- `node tools/weather_check.mjs`：C1–C4 PASS（C4 的全景 h ≥ 120 m 时六种天气画面逐位相同，靠的正是粒子、雨击和滴水按距离淡出）。
+- `node tools/weather_integration_check.mjs --report`：10/10 PASS，报告 `docs/world/weather/wx2/report.json`。要点：
+  - R：登记 124 个（建筑滴水 97 = 93 条线批 + 4 个锁链水盆环，雨击环 4，LM04 / LM09 滴水各 6，LM07 雪雾 10，雾带 1）；未登记的滴水色动画线或雨击环 0。
+  - I2：锁晴时天气图雨击最大值 0、水洼环隐藏、显示中的滴水 0；锁雨后雨丝 0、雨击 0、建筑滴水全部显示，城镇格湿润 255/255。
+  - I3：沙漠边 t = 100 s，天气图同时有雨击 255 的格 2,917 个和 0 的格 1,179 个；跨边界的雨箱显示 1,225 滴，1,575 滴因所在地无雨而隐藏，与“哈希 < 该处雨权重”不符的 0 滴。
+  - I4：高地、坡地、桥面（接收面 2.68 = 桥面 2.68）、海面（−1.74）、LM04 正殿屋顶（4.46）、LM07 冰面上都没有落到底面以下的雨滴或雪片，自上而下的射线在雨滴和底面之间碰到实体 0 次；两个旧剔除点都提交了雨丝。（海面的找点条件原先写错，`coastDistance` 在海上为负值；修正后进入完整运行。）
+  - I5：6 种锁定 × 4 处 × 4 个距离共 96 个球形画面，违规 0；uBend 为 0 / 0.25 / 0.5 / 0.75 / 1 时，雨丝、滴水、雨击、雾带都恰为 1 − u。
+  - I6：锁定往返与平面 → 球形 → 平面，灯光、雾和颜色逐值恢复。
+  - I7：60 处平移后格点缓存峰值 52,878（上限 60,000），粒子数不变；低档页面的规则与雪粒大小不变；weather_fx 每帧开销中位 ≤ 0.1 ms、p95 ≤ 0.4 ms。
+  - I8（WX-0）：24 个情形下绘制的降水对象 0；冷启动在自然晴（t = 1570 s）0；同帧把 115 个降水对象全部隐藏后与原帧相差 0 像素。
+  - I9：自然雨 → 晴渐变 48 s，雨丝 2800 → 2144 → 1442 → 723 → 69 → 0，与雨权重一致。
+- `node tools/day_check.mjs` D1–D4、`node tools/fog_view_check.mjs` G1–G4、`node tools/unify_check.mjs` U0–U4、`ocean_check` 4 项、`cover_check` 9 项、`road_check` 11 项、`streetlight_check` SL1–SL6、`transition_check` 4 项：全部 PASS。
+- 防止回退前几轮已修好的问题，另跑了 W10c 修复各自的检查：`cr01_merge_check`（M1–M7、B-ink、B-ground）、`terrain_structure_check`（TS1–TS5）、`town_pavement_check`（漏铺 0）、`c01_s_clearance`（冲突 0）：全部通过。
+- `night_check`：C1、C3、C4 通过；C2 失败。在集成起点 `ff72599` 的临时工作树上读数完全相同（六处光带核心都是 0），PROGRESS「道路路灯规范化」已记录为连续光带关闭后的既有失败，不是 WX2 引入的。
+- `regress --baseline-ref ff72599 --weather lock:rain`：见上一节。
+
+### 性能（W10_SPEC §6 口径；本机 M4 / Metal；机器状态不理想，如实记录）
+
+- 测量时交换区已用约 8.1 GB，用户自己的程序同时在用 CPU 与 GPU（一个 WebKit 页面进程约 86 % CPU、VS Code 约 58 %、WebKit GPU 进程约 35 %），连续测量中两版的耗时都在单调变慢。这种条件下的绝对数字不能判预算是否通过，只用同窗口的相对比较。
+- `node tools/perf_baseline.mjs --views-only --quality high --loads 3 --weather-views`，先测集成起点 `--ref ff72599`（`docs/world/perf/weather-wx2-base.json`），紧接着测 WX2（`docs/world/perf/weather-wx2.json`，下面“逻辑侧优化”之前的源码）：
+
+| 项 | ff72599 | WX2 |
+| --- | --- | --- |
+| 首个完整画面中位数（3 次） | 6,475 ms（7,995 / 6,475 / 6,193） | 7,789 ms（9,034 / 7,538 / 7,789） |
+| town-default 中位 / p95 / 调用 | 17.6 / 21.6 ms / 2,402 | 20.8 / 27.0 ms / 2,403 |
+| forest / farm / coast 中位 | 16.7 / 16.7 / 16.7 ms | 16.7 / 16.7 / 16.7 ms |
+| sphere-70 / 140 / 400 中位 | 64.2 / 57.1 / 52.9 ms | 41.3 / 57.1 / 59.7 ms |
+| town-after / forest-fog / ice-snow 中位 | 17.1 / 16.7 / 16.8 ms | 18.7 / 16.7 / 16.8 ms |
+| HTML | 3,031,385 字节 | 3,061,993 字节（+30.6 KB，预算 0.6 MB） |
+
+- 两版的默认机位与首个完整画面都超出 17 ms、4 s 的预算，包括基线本身，所以本窗口不能判通过与否（与 W10c 收尾的性能测量是同一个机器问题）。
+- 为分清 WX2 的真实开销，另做了页面内交替对照（`tools/out/` 下的临时脚本，不入库；同一默认机位锁雨，固定帧驱动，真实时钟）：
+  - 按 ABBA 顺序交替加载 4 次：逻辑时间（每帧 JS 总时间减去渲染调用）中位 0.8 → 1.4 ms，p95 1.3 → 2.8 ms；weather_fx 的 tick + apply 中位 0.2 ms。
+  - 渲染调用加 `gl.finish()` 同步 GPU 后，两版几乎相同（33.6 / 34.0 ms，机器此时已很忙）；隐藏海面与水田后的差值（水面开销）0.8 / 0.6 ms。所以 WX2 没有可测的渲染（GPU）开销增加，增加在逻辑侧。
+- 逻辑侧优化（已进入本提交）：天气图的时间刷新从每 0.5 s 改为每 2 s、每帧 256 格（权重 2 s 内最多变 4.2 %）；雨滴权重在正常时间推进时分 8 帧轮流刷新，锁定变化或时间跳变时仍当帧全量刷新（锁晴的下一帧就为 0，I8 复验）；登记表的分组键在登记时算好。优化后的性能与 WX3 一起在同一窗口复测。
+
+### 接口（给 WX3 与后续）
+
+- `weather.js`：新增 `samplePlace(p, t)`（`sample` = `samplePlace(place(lon, lat), t)`）和 `lockVersion()`。
+- `weather_fx.js`（`window.__scene.weather`）：`field(lon, lat, out)` / `fieldXZ(x, z, out)` 返回 `{ rain, snow, wetness, drip, mist }`；`surfaceY(x, z)`；`register(obj, { kind, owner, lon, lat, src })` 和 `apply()`；`gains()` 返回 `{ dry, wl, impact, wet, line, rainOn }`；`stamp()`；`setSurface({ terrain, roads, landmark, groups })`；`effects()`、`snow()`、`map()`、`nodes()`、`surfaces()` 供检查用。着色器用 `WEATHER_FX.surface.uniforms` 和 `WEATHER_FX.GLSL`（`wxAt(vec3)`）。
+- `window.__scene.rain`、`window.__scene.look` 供检查用；`streetlights.data().surface(x, z)` 是路面与桥面的真实高度（不在路上时为 null）。
+
+### 用户看点（WX2；画面由用户判断）
+
+在页面控制台用 `__scene.weather.lock('rain' | 'after' | 'clear' | 'snow' | 'fog' | null)` 切换天气，用 `__scene.view.set({ target, dist, yaw, pitch, mapMode })` 设机位。
+
+1. 默认城镇雨：平面，target [−7, 1.2, 20]，dist 34，yaw 2.5，pitch 0.5，锁雨。应与 W10c 完全一样（已逐位验证）。
+2. 同一机位锁雨后：没有雨丝和水洼雨点环，檐滴、窗上雨流、锁链流水继续；再锁晴：檐滴、窗流也停，没有任何落水线。这里对应用户报告的“晴天仍有雨丝”。
+3. 远一点的同一街区：dist 140 与 150（regress 的 far、top 机位）。锁雨时檐滴不再画（已知的有意差异）。
+4. 南边水田与海面：target [0, 1.2, 34]，dist 24，yaw 3.1，pitch 0.6，锁晴时水面没有雨点环，锁雨时有。
+5. 桥 RN01-13 中段：锁雨，dist 22，pitch 0.55。雨落到桥面为止，桥下水面上方没有雨。
+6. LM04 神社正殿：锁雨，dist 20。殿内没有雨，雨落在屋顶上。
+7. LM07 冰原小屋：锁雪，dist 16，pitch 0.4。雪落在冰面和屋顶上，不穿到冰下；锁晴时低空雪雾消失。
+8. 沙漠边（−125.9°, −37.9°，草原在东边约 9 m）：解除锁定，`__scene.weather.setTime(100)`。草原一侧下雨，沙漠一侧没有雨丝。
+9. 切换球形：任意地点、距离和天气，都没有雨、雪、雾、雨点环和滴水。
+
+### 已知问题与留给 WX3 / 待办
+
+- **雨见岳山顶属于 `lava-north` 区域**（world.js 区域：中心 (−28°, 61°)、半径 22 m 的球冠，盖住山顶）。按 W8b/WX1 的类别优先级，熔岩先于雪线，所以山顶只下雨不下雪，与地形的雪顶颜色不一致。是否让雪线规则优先于熔岩区是设计决定，记入待办，本轮不改。
+- 远景机位 d ≥ 110 m 不再画檐滴（见差异节）。
+- 湿润反光、雨后缓慢变干、叶尖滴水、贴地雾、冰缘雪雾、熔岩雨汽、喷气孔蒸汽属于 WX3。

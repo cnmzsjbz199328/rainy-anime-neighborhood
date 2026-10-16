@@ -4,11 +4,7 @@
 
 进度（2026-10-15）：WX1 已在分支 `world/weather-WX1` 实施，纯数据检查通过，只本地提交；记录、实测参数与交接见 [weather/WX_PROGRESS.md](weather/WX_PROGRESS.md)。WX2、WX3 待实施。
 
-审查（2026-10-16）：专项**未完成**，只完成 WX1，不记为完成。
-- WX1：提交 `764a2b3`（起点 `1381d56`）。在其工作树复跑 `node tools/weather_field_check.mjs`，5/5 PASS。尚未合入 `world/W10c`，W10c 的 `weather.js` 仍是旧的 0.05° 缓存，所以 WX-A 仍在当前页面中。`git merge-tree` 试合并 W10c 与 WX1，无冲突。
-- WX2：未开始。前置已满足：路灯 `4ae302c`、灰屏修复 `e883b6c` 都在 `world/W10c`。源码核对 WX-0/WX-C 仍在：`rainObj.visible` 只看 SECTION rain 开关和弯曲量；海面、水田、section 的 `uRain` 只读 SECTION rain × (1 − bend)。
-- WX3：未开始，须在 WX2 用户确认后实施。
-- 本文自此纳入 git，`world/W10c` 与 `world/weather-WX1` 上的两份内容相同，合并时不冲突。ROADMAP、PROGRESS、BACKLOG 仍按第 7 节在 WX2 集成时更新。
+进度（2026-10-16）：WX2 已在分支 `world/weather-WX2` 实施（集成起点 `ff72599` = `world/W10c` `96342bc` + WX1），机器检查通过，画面待用户确认，只本地提交；检查数字、效果登记清单、差异与看点见 [weather/WX_PROGRESS.md](weather/WX_PROGRESS.md) 的 WX2 一节。WX3 实施中。同日早些时候的审查结论（当时只完成 WX1）已被本条取代。
 
 ## 1. 结论与决策依据
 

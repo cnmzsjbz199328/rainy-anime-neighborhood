@@ -250,14 +250,16 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       T.counts = { near: ni, far: fi };
     }
   }
+  // the light presets write the explicit bases (ctx.look, WX-G) as well as the lights: the weather multiplies those bases every frame (weather_fx.js)
   function applyLight() {
     const L = S.settings.light, h = ctx.lights.hemi, m = ctx.lights.moon;
     if (L === 'panorama') { h.intensity = light0.hemi * 1.5; m.intensity = light0.moon * 1.5; scene.fog.density = 0; }
     else if (L === 'neutral') { h.intensity = light0.hemi * 2.8; m.intensity = light0.moon * 1.6; scene.fog.density = 0; }   // material and form study (not a daytime state, D9)
     else { h.intensity = light0.hemi; m.intensity = light0.moon; scene.fog.density = light0.fog; }
+    if (ctx.look) { ctx.look.hemi = h.intensity; ctx.look.moon = m.intensity; ctx.look.fog = scene.fog.density; }
   }
   function tick(t, camera) {
-    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = (S.settings.rain ? 1 : 0) * (1 - BEND.get()));   // W8e-c: no ripples on the sphere
+    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = global.WEATHER_FX.live.gains().impact);   // WX2: the switch x (1 - uBend) x w_local; the place's rain is in the shader (wxAt)
     if (!S.root || !S.root.visible) return;
     const d = distance(camera); S.ink.distance = d;
     const mode = S.settings.ink;

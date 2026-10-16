@@ -1150,12 +1150,17 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const N = S.night; S.night = null;
     const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:lampSmall(:glow|:ink)?$/;
     const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
-    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || (SEC.state.settings.rain && S.puddleWeight > 0.001));
+    // WX2: the puddle rings are rain impacts: each spot follows the rain of its own place (weather_fx field, re-read when the weather's stamp changes) times the
+    // impact gain (the rain switch x (1 - uBend) x w_local, applied once); after the rain and in the clear night there are none
+    const WXL = global.WEATHER_FX.live, R0 = S.ripples;
+    if (R0 && R0.stamp !== WXL.stamp()) { const sp = R0.spots, w = R0.w || (R0.w = new Float32Array(sp.length)), o = {}; let any = 0; for (let i = 0; i < sp.length; i++) { w[i] = WXL.field(sp[i].lon, sp[i].lat, o).rain; if (w[i] > 0) any++; } R0.any = any; R0.stamp = WXL.stamp(); }
+    const ripK = R0 && R0.any > 0 ? WXL.gains().impact : 0;
+    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || ripK > 0.001);
     for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
     for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); if (l.userData.baseOpacity === undefined) l.userData.baseOpacity = l.material.opacity > 0.95 ? 1 : 0.9; l.material.opacity = Math.min(l.userData.baseOpacity, o); l.visible = o > 0.01; }
-    if (S.ripples && near && SEC.state.settings.rain && S.puddleWeight > 0.001) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * S.puddleWeight; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
+    if (S.ripples && near && ripK > 0.001) { const { mesh, mats, spots, w } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * ripK * w[i]; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
     if (!S.bandManual) S.band.set(N ? { opacity: S.band.max * N.band } : { distance: ink.distance });
     S.band.breathe(t);
@@ -1164,7 +1169,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const api = {
     tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
-    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },
+    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },   // the wetness at the view (weather_fx); the rings follow the rain of their own spots (tick)
     setLampRipples(spots) { buildRipples(spots); },          // W10c: the ripple spots of the road lamps (streetlights.js), once before the first frame
     setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },

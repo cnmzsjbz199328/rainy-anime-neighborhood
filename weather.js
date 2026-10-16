@@ -121,7 +121,7 @@ function make(W) {
   const zero = () => ({ rain: 0, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 });
   const slotWeights = (p, slot) => { const w = zero(); addSlot(p, p.lo, slot, 1 - p.b, w); addSlot(p, p.lo + 1, slot, p.b, w); return w; };
   const normalise = w => { let sum = 0; for (const s of STATES) sum += w[s]; for (const s of STATES) w[s] /= sum; return w; };
-  let locked = null;
+  let locked = null, lockVersion = 0;
   // the weights of one place at time t, and the weights once the current fade is over
   function own(p, slot, into) {
     if (locked) { const w = zero(); if (locked === 'fog') { addState(p, 'fog', p.fog, w); addState(p, 'after', 1 - p.fog, w); } else addState(p, locked, 1, w); return { w, target: w, fading: false }; }
@@ -129,18 +129,20 @@ function make(W) {
     const prev = slotWeights(p, slot - 1), k = into / FADE, w = zero(); for (const s of STATES) w[s] = prev[s] * (1 - k) + target[s] * k;
     return { w, target, fading: STATES.some(s => prev[s] !== target[s]) };
   }
-  function sample(lon, lat, t) {
-    const p = place(lon, lat), time = Math.max(0, +t || 0), slot = Math.floor(time / SLOT), into = time - slot * SLOT;
+  // the weights of a place object from place() (WX2: a presentation keeps the places of its lattice and asks for their weights each update; same result as sample)
+  function samplePlace(p, t) {
+    const time = Math.max(0, +t || 0), slot = Math.floor(time / SLOT), into = time - slot * SLOT;
     let q = own(p.townK < 1 ? TOWN : p, slot, into);
     if (p.townK > 0 && p.townK < 1) { const o = own(p, slot, into), k = p.townK, w = zero(), target = zero(); for (const s of STATES) { w[s] = q.w[s] * (1 - k) + o.w[s] * k; target[s] = q.target[s] * (1 - k) + o.target[s] * k; } q = { w, target, fading: q.fading || o.fading }; }
     const w = normalise({ ...q.w }), target = normalise({ ...q.target });
     let state = 'rain', best = -1; for (const s of STATES) if (w[s] > best) { best = w[s]; state = s; }
     return { weights: w, state, category: p.cat, kind: p.kind, slot, fadeLeft: q.fading ? FADE - into : 0, target };
   }
+  const sample = (lon, lat, t) => samplePlace(place(lon, lat), t);
   return {
-    at: sample, sample, place,
+    at: sample, sample, samplePlace, place,
     effectsAt: (lon, lat, t) => effectsOf(sample(lon, lat, t).weights),
-    lock(s) { locked = s && STATES.includes(s) ? s : null; return locked; }, locked: () => locked,
+    lock(s) { locked = s && STATES.includes(s) ? s : null; lockVersion++; return locked; }, locked: () => locked, lockVersion: () => lockVersion,
     clearCache() { cache.clear(); }, cacheSize: () => cache.size,
   };
 }

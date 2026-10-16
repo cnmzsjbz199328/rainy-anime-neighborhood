@@ -22,15 +22,16 @@ function make(THREE) {
     }`;
   const compile = (foam, cell) => shader => {
     shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain;
+    const WXS = global.WEATHER_FX.surface; shader.uniforms.uWxMap = WXS.uniforms.uWxMap; shader.uniforms.uWxBox = WXS.uniforms.uWxBox;     // WX2: the rain of the place (surface map)
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
+      .replace('#include <common>', `#include <common>\n${global.WEATHER_FX.GLSL}\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
       .replace('#include <opaque_fragment>', `
         float cph = 1.0 / cosh(vWP.z / 90.0);
         vec2 q = vec2(vWP.x, vWP.z) * cph;
-        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain;
+        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain * wxAt(vWP).r;   // WX2: only where it rains
         outgoingLight += vec3(0.50, 0.62, 0.78) * rg * 0.55;
         diffuseColor.a = max(diffuseColor.a, rg * 0.55);
         ${foam ? `float fz = 0.05 + 0.025 * sin(uTime * 0.9 + vWP.x * cph * 0.6);
