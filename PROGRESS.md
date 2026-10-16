@@ -3212,3 +3212,10 @@
 
 - 新增 `docs/world/WD1_LM09_CARD.md`：按当前 `landmarks/LM09.js` 逐项核对候车棚、站台/轨道、柴油车、售货机、电话亭、公交站与道口现状，写明四面、屋顶、可见内部、主体—连接—基础、道路净空、性能和固定机位交付。保留 W10b 裁决的 15.5 m 站台、棚中心 (−2.5, −3.7) 与 CR01 西侧车挡；不恢复旧 20 m 站台或 T05。LM09 旧卡只加现行规格提示，历史实施记录不改。
 - 本轮未改模型或场地、未生成截图；WD1 仍为待办，W10c/W10d 的视觉与地面前置未完成。新卡链接逐项检查通过，`git diff --check` 通过。`node docs/world/check_kit.mjs` 未通过：未跟踪的 `docs/world/WEATHER_COMPLETION_PLAN.md` 链到不存在的 `weather/WX_PROGRESS.md`；该天气文件属于其他工作，保持原样。
+
+## WD1 乡间无人站结构模型首轮（2026-10-16，进行中）
+
+- 在批准的 LM09 包络内改 `landmarks/LM09.js`：候车棚从整块盒体改为开敞立柱/梁架/板缝、雨樋、长椅、站名与时刻表、票箱；售货机补货道、支付和取货面及背面检修；电话亭补框架、玻璃和电话；柴油车改中空车身，透窗可见座椅、通路和驾驶室，补乘降门、转向架、轮轴、制动件、车底设备与车钩；站台补边缘/排水，轨道补道砟与扣件。保留 15.5 m 站台、候车棚中心、车挡、车厢与道口位置。未改 `world.js`、`layout.js`、路网或 W10c 地面。
+- `python3 build.py`、`node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png` 通过；`node tools/landmark_check.mjs LM09 --no-shots` 的 W7-C1/C2/C3/C4 通过（实际车厢 x −4.74…8.35 m、棚西缘 −4.98 m，均在既定净空内）；`node tools/road_check.mjs` 11 项通过；页面错误 0。未打开最终画面，视觉仍待用户判断。
+- Metal/high/三次冷启动 `docs/world/perf/wd1-model-pass1.json`：首个完整画面 4,360 ms；默认 16.7/18.3 ms、2,405 calls、1,593,992 triangles；球形 d140 38.2/41.1 ms、10,551 calls，d400 38.0/41.7 ms、10,617 calls。相对 WD0 首帧 +33 ms、默认 +2 calls/+3,874 triangles；帧时间与球形 p95 波动较大，不作改善/恶化结论。HTML 3,039,340 bytes。
+- 仍需细化公交站、自行车架、道口及最终场地连接；W10c/W10d 确认后复核统一地面，WX2 后接入天气效果。近景截图与用户视觉验收未进行；WD1 保持进行中。

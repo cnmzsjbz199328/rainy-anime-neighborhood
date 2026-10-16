@@ -24,22 +24,81 @@
   const PLATFORM_X = 2.25, PLATFORM_LENGTH = 15.5;
   box(PLATFORM_X, 0.45, -3.7, PLATFORM_LENGTH, 0.9, 3.0, '#8d9094', true, pf); box(PLATFORM_X, 0.92, -4.95, PLATFORM_LENGTH, 0.04, 0.45, '#d8b84a', false, pf);
   for (let i = 0; i < 31; i++) box(-5.25 + i * 0.5, 0.93, -4.95, 0.12, 0.02, 0.4, '#bf9f38', false, pf);
+  for (const z of [-5.12, -2.29]) box(PLATFORM_X, 0.88, z, PLATFORM_LENGTH - 0.04, 0.1, 0.12, '#a9a8a2', true, pf); // cast edge caps
+  for (let i = 1; i < 13; i++) box(-5.5 + i * (PLATFORM_LENGTH / 13), 0.86, -2.25, 0.025, 0.1, 0.055, '#666b6d', false, pf); // expansion joints
+  for (const x of [-3.8, 0.6, 5.0, 9.1]) {
+    box(x, 0.2, -2.205, 0.44, 0.16, 0.05, '#4f5555', false, pf); // drainage outlets below the rear cap
+    box(x, 0.13, -2.32, 0.54, 0.055, 0.22, '#74787a', false, pf);
+  }
   for (let i = 0; i < 5; i++) box(0, 0.09 + 0.18 * i, -1.9 + 0.0 - 0.0, 2.4, 0.18, 0.3, '#8d9094', true, pf).position.z = -1.5 - 0.3 * i + 0.0;       // five slope steps up from the lane (stepless ramp is on the other side)
   // ---- waiting shed 4 x 2.5 m on the platform, moved 3 m west to keep the shelter behind the road edge
   const sh = group('lm09Shed'); L.use(sh); const SX = -2.5, SZ = -3.7;
-  box(SX, 0.9 + 1.2, SZ, 4.0, 2.4, 2.5, '#7a5f48', true, sh); box(SX, 0.9 + 1.2, SZ + 1.26, 3.2, 1.7, 0.06, '#2c2420', false, sh);        // open front (dark inside)
-  mesh(new THREE.BoxGeometry(2.6, 0.5, 0.05), warm('#ffcf8a', 0.3), SX, 0.9 + 1.65, SZ + 1.22, false, sh);                                  // lit window strip
-  L.gable(4.0, 2.5, 0.9 + 2.4, 0.9, 0.5, '#4a4f58', sh).position.set(SX, 0, SZ); box(SX, 0.9 + 0.45, SZ + 0.7, 2.6, 0.08, 0.4, '#6a5240', true, sh); box(SX, 0.9 + 0.2, SZ + 0.7, 2.4, 0.4, 0.08, '#5a4a3c', false, sh);
-  box(SX + 1.5, 0.9 + 1.4, SZ + 1.28, 0.6, 0.8, 0.04, '#e8e4d8', false, sh);                                                                     // timetable board
-  const lampM = mesh(new THREE.SphereGeometry(0.16, 8, 6), warm('#ffe0a0', 0.6), SX, 0.9 + 2.1, SZ + 1.5, false, sh); cyl(SX, 0.9 + 1.05, SZ + 1.5, 0.04, 2.1, '#5a4a3c', sh);
-  box(SX, 0.9 + 2.52, SZ + 0.0, 4.2, 0.12, 0.2, '#3a2d24', true, sh);                                                                           // fascia with the (original) station name board
-  box(SX + 4.5, 0.9 + 1.0, SZ + 1.0, 0.04, 0.5, 1.4, '#f2f4f6', false, sh);
+  // Open timber frame. The platform, posts and roof stay inside the approved 4 x 2.5 m shed envelope.
+  box(SX, 0.96, SZ, 3.9, 0.12, 2.4, '#67645e', true, sh); // raised floor, visible at the entrance
+  for (const x of [SX - 1.85, SX + 1.85]) for (const z of [SZ - 1.1, SZ + 1.1]) {
+    box(x, 2.08, z, 0.16, 2.25, 0.16, '#674b37', true, sh);
+    box(x, 1.01, z, 0.27, 0.12, 0.27, '#898884', true, sh); // post shoe
+  }
+  box(SX, 2.08, SZ - 1.15, 3.75, 2.1, 0.1, '#846c54', true, sh); // back wall
+  for (let i = 1; i < 13; i++) box(SX - 1.85 + i * 0.285, 2.08, SZ - 1.087, 0.014, 2.05, 0.012, '#604b3c', false, sh);
+  for (const x of [SX - 1.85, SX + 1.85]) {
+    box(x, 2.75, SZ, 0.09, 0.1, 2.28, '#594432', true, sh); // side rails
+    box(x, 1.25, SZ - 0.73, 0.08, 0.45, 0.7, '#6e5741', true, sh); // short rear windscreen
+  }
+  for (const z of [SZ - 1.08, SZ + 1.08]) box(SX, 3.23, z, 3.92, 0.15, 0.16, '#594432', true, sh);
+  for (const x of [SX - 1.82, SX, SX + 1.82]) box(x, 3.27, SZ, 0.09, 0.12, 2.4, '#594432', true, sh); // exposed rafters
+  L.gable(4.0, 2.5, 3.3, 0.9, 0.48, '#4a4f58', sh).position.set(SX, 0, SZ);
+  box(SX, 3.23, SZ + 1.26, 3.96, 0.15, 0.1, '#3a2d24', true, sh); // fascia
+  box(SX, 3.13, SZ - 1.28, 3.8, 0.11, 0.12, '#6b7076', true, sh); // rear rain gutter
+  cyl(SX + 1.82, 1.98, SZ - 1.27, 0.05, 2.0, '#6b7076', sh); // downpipe
+  // Bench: legs, seat, back and clear walking space in front.
+  for (const x of [SX - 1.23, SX + 1.23]) for (const z of [SZ - 0.8, SZ - 0.27]) box(x, 1.17, z, 0.1, 0.34, 0.1, '#594432', true, sh);
+  for (let i = 0; i < 3; i++) box(SX, 1.35, SZ - 0.8 + i * 0.25, 2.65, 0.08, 0.19, '#76583e', true, sh);
+  for (let i = 0; i < 2; i++) box(SX, 1.68 + i * 0.22, SZ - 0.99, 2.65, 0.16, 0.08, '#76583e', true, sh);
+  const signTex = K.canvasTex(256, 64, (q, w, h) => { q.fillStyle = '#eee9dc'; q.fillRect(0, 0, w, h); q.fillStyle = '#354b56'; q.font = 'bold 38px sans-serif'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillText('雨田駅', w / 2, h / 2); });
+  mesh(new THREE.PlaneGeometry(1.45, 0.35), new THREE.MeshBasicMaterial({ map: signTex, side: THREE.DoubleSide }), SX, 3.02, SZ + 1.322, false, sh);
+  box(SX + 1.28, 2.14, SZ - 1.01, 0.62, 0.88, 0.08, '#e8e4d8', true, sh); // timetable on the back wall
+  for (let i = 0; i < 7; i++) box(SX + 1.27, 2.45 - i * 0.1, SZ - 0.961, 0.46, 0.014, 0.006, '#7d8794', false, sh);
+  box(SX - 1.38, 1.47, SZ - 1.0, 0.55, 0.78, 0.24, '#6d6253', true, sh); // ticket box
+  box(SX - 1.38, 1.88, SZ - 0.86, 0.4, 0.035, 0.06, '#2a2e34', false, sh);
+  const lampM = mesh(new THREE.SphereGeometry(0.16, 8, 6), warm('#ffe0a0', 0.6), SX, 3.06, SZ, false, sh);
   // ---- vending machine, bicycle rack, phone box, bus stop and shelter light
   const st = group('lm09Street'); L.use(st);
-  box(1.8, 0.9 + 0.9, -3.0, 0.9, 1.8, 0.8, '#5e6a74', true, st); mesh(new THREE.BoxGeometry(0.7, 1.3, 0.03), warm('#dfe9f2', 0.20), 1.8, 0.9 + 1.0, -2.58, false, st);
+  // Serviceable vending machine, facing +Z. All controls are geometry; small product labels can use texture later.
+  const VX = 1.8, VZ = -3.0;
+  box(VX, 1.8, VZ, 0.9, 1.8, 0.8, '#5e6a74', true, st);
+  box(VX, 0.92, VZ, 1.0, 0.04, 0.85, '#7d8084', true, st); // anchored plinth
+  box(VX - 0.07, 2.06, VZ + 0.41, 0.67, 1.1, 0.04, '#dfe9f2', true, st);
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 4; col++) {
+    box(VX - 0.31 + col * 0.16, 2.42 - row * 0.25, VZ + 0.435, 0.1, 0.17, 0.025, row === 1 ? '#bbd0d9' : '#d9a873', false, st);
+    box(VX - 0.31 + col * 0.16, 2.31 - row * 0.25, VZ + 0.452, 0.09, 0.025, 0.02, '#344b57', false, st);
+  }
+  box(VX + 0.34, 2.12, VZ + 0.45, 0.14, 0.42, 0.04, '#445760', true, st); // payment panel
+  box(VX + 0.34, 2.28, VZ + 0.48, 0.07, 0.035, 0.02, '#e8d9b5', false, st); // coin slot
+  box(VX + 0.34, 2.03, VZ + 0.48, 0.08, 0.08, 0.02, '#8fb6bb', false, st); // card reader
+  box(VX - 0.12, 1.22, VZ + 0.45, 0.56, 0.25, 0.04, '#273843', true, st); // delivery opening
+  box(VX + 0.34, 1.31, VZ + 0.46, 0.13, 0.11, 0.02, '#7d8794', true, st); // change return
+  box(VX - 0.46, 1.8, VZ + 0.05, 0.025, 1.62, 0.06, '#344b57', false, st); // service door hinge
+  for (let i = 0; i < 5; i++) box(VX, 1.27 + i * 0.09, VZ - 0.406, 0.52, 0.018, 0.015, '#344b57', false, st); // rear vent
   for (let i = 0; i < 6; i++) { box(5.0 + i * 0.4, 0.3, -1.0, 0.04, 0.6, 0.04, '#7d8794', false, st); box(5.0 + i * 0.4, 0.04, -1.0, 0.04, 0.04, 0.9, '#7d8794', false, st); }
   for (let i = 0; i < 4; i++) { const b = mesh(new THREE.TorusGeometry(0.28, 0.025, 5, 12), mat('#2a2e34'), 5.2 + i * 0.8, 0.32, -1.0, false, st); b.rotation.y = PI / 2; const b2 = mesh(new THREE.TorusGeometry(0.28, 0.025, 5, 12), mat('#2a2e34'), 5.2 + i * 0.8, 0.32, -0.55, false, st); b2.rotation.y = PI / 2; box(5.2 + i * 0.8, 0.55, -0.78, 0.04, 0.04, 0.6, '#c0552e', false, st); }
-  box(7.2, 1.15, 5.0, 1.0, 2.3, 1.0, '#c4412e', true, st); mesh(new THREE.BoxGeometry(0.8, 1.6, 0.04), warm('#e8eef0', 0.22), 7.2, 1.25, 5.52, false, st);         // phone box
+  // Telephone booth: red frame with transparent panes and a real handset behind the glass.
+  const PX = 7.2, PZ = 5.0;
+  box(PX, 0.08, PZ, 1.0, 0.16, 1.0, '#7d8084', true, st);
+  for (const x of [PX - 0.45, PX + 0.45]) for (const z of [PZ - 0.45, PZ + 0.45]) box(x, 1.16, z, 0.09, 2.17, 0.09, '#a53b33', true, st);
+  box(PX, 2.25, PZ, 1.0, 0.15, 1.0, '#a53b33', true, st);
+  box(PX, 2.02, PZ + 0.46, 0.9, 0.12, 0.07, '#a53b33', true, st);
+  box(PX, 0.2, PZ + 0.47, 0.9, 0.1, 0.06, '#a53b33', true, st);
+  const boothGlass = new THREE.MeshPhysicalMaterial({ color: '#d9e5e7', transparent: true, opacity: 0.15, roughness: 0.13, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
+  for (const x of [PX - 0.43, PX + 0.43]) mesh(new THREE.PlaneGeometry(0.85, 1.73), boothGlass, x, 1.13, PZ, false, st).rotation.y = PI / 2;
+  mesh(new THREE.PlaneGeometry(0.84, 1.73), boothGlass, PX, 1.13, PZ - 0.43, false, st);
+  mesh(new THREE.PlaneGeometry(0.84, 1.72), boothGlass, PX, 1.13, PZ + 0.46, false, st);
+  box(PX + 0.27, 1.08, PZ + 0.495, 0.04, 0.16, 0.07, '#e8e4d8', true, st); // door handle
+  box(PX, 1.38, PZ - 0.33, 0.64, 0.9, 0.15, '#45545b', true, st); // telephone body
+  box(PX, 1.25, PZ - 0.24, 0.38, 0.22, 0.05, '#e8e4d8', true, st); // dial/keypad face
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) box(PX - 0.1 + col * 0.1, 1.28 - row * 0.07, PZ - 0.205, 0.04, 0.04, 0.015, '#6c7377', false, st);
+  box(PX - 0.13, 1.65, PZ - 0.2, 0.28, 0.09, 0.1, '#252c31', true, st); // handset
+  cyl(PX - 0.27, 1.56, PZ - 0.21, 0.025, 0.18, '#252c31', st);
   cyl(-3.0, 1.2, 9.0, 0.035, 2.4, '#7d8794', st); box(-3.0, 2.3, 9.0, 0.5, 0.34, 0.03, '#e8ecf2', false, st); box(-3.0, 2.48, 9.02, 0.5, 0.06, 0.03, '#d58a3a', false, st);   // bus stop sign
   cyl(3.0, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), 3.4, 5.1, 8.0, false, st); cyl(3.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
   L.pool(3.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
@@ -47,16 +106,65 @@
   const tk = group('lm09Track'); L.use(tk);
   const TRACK_EAST = -5.5, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
   box(TRACK_MID, 0.06, -6.4, TRACK_LENGTH, 0.12, 1.9, '#7a7872', false, tk); for (let x = -5.3; x <= 10.4; x += 0.7) box(x, 0.15, -6.4, 0.2, 0.08, 1.5, '#4a382b', false, tk);
+  for (let i = 0; i < 18; i++) { const x = -5.05 + i * 0.88; for (const z of [-7.12, -5.68]) box(x, 0.11, z, 0.4, 0.06, 0.21, i % 3 ? '#827f79' : '#aaa59b', false, tk); } // visible ballast shoulders
   for (const dz of [-0.72, 0.72]) box(TRACK_MID, 0.22, -6.4 + dz, TRACK_LENGTH, 0.08, 0.07, '#7d8794', false, tk);
+  for (let x = -5.3; x <= 10.4; x += 1.4) for (const dz of [-0.72, 0.72]) box(x, 0.27, -6.4 + dz, 0.16, 0.03, 0.18, '#555a5c', false, tk); // rail clips
   box(-5.2, 0.4, -6.4, 0.3, 0.6, 1.6, '#c4412e', true, tk);                                                                                  // buffer stop on the west side of CR01
   for (let i = 0; i < 2; i++) { const x = 11.5 + i * 0.7; box(x, 0.1 - 0.03 * i, -6.4, 0.7, 0.1, 1.9 - 0.4 * i, '#59634c', false, tk); }                       // the ballast fades into the paddy: the line ends
   for (let x = 8.8; x <= 9.8; x += 0.5) box(x, 0.2, -6.4, 0.4, 0.06, 1.8, '#6a5240', true, tk);                                              // foot crossing planks, beyond the car
   const car = group('lm09Car'); L.use(car);
   const CZ = -6.4, CL = 13.0, CX = 1.8;
-  box(CX, 1.5, CZ, CL, 2.5, 2.6, '#e6dcc2', true, car); box(CX, 1.0, CZ, CL + 0.02, 0.45, 2.64, '#8a2f3a', false, car);
-  for (let i = 0; i < 7; i++) mesh(new THREE.BoxGeometry(1.0, 0.8, 2.66), warm('#ffe0a0', 0.05), CX - 5.2 + i * 1.7, 1.9, CZ, false, car);        // dark windows (the car is unlit)
-  box(CX, 2.85, CZ, CL - 0.6, 0.2, 2.3, '#9a968c', true, car); for (const bx of [CX - 4.6, CX + 4.6]) for (const dz of [-0.9, 0.9]) cyl(bx, 0.45, CZ + dz, 0.45, 0.4, '#2a2e34', car).rotation.x = PI / 2;
-  mesh(new THREE.BoxGeometry(0.1, 0.5, 1.4), warm('#ffe8b0', 0.1), CX + CL / 2 + 0.04, 1.9, CZ, false, car);                                          // headlamp (dark)
+  // A hollow carbody: the window line exposes seats, central aisle and two driver partitions.
+  box(CX, 0.68, CZ, CL, 0.16, 2.6, '#665f57', true, car); // floor
+  box(CX, 0.38, CZ, CL - 0.2, 0.27, 1.95, '#4f5356', true, car); // continuous underframe
+  const carGlass = new THREE.MeshPhysicalMaterial({ color: '#c4d4d3', transparent: true, opacity: 0.22, roughness: 0.16, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
+  for (const side of [-1, 1]) {
+    const z = CZ + side * 1.27;
+    box(CX, 1.18, z, CL, 0.97, 0.12, '#e6dcc2', true, car);
+    box(CX, 0.89, z + side * 0.068, CL + 0.01, 0.38, 0.018, '#8a2f3a', false, car); // red stripe
+    box(CX, 2.55, z, CL, 0.4, 0.12, '#e6dcc2', true, car);
+    for (let i = 0; i <= 8; i++) box(CX - 6.37 + i * 1.59, 1.99, z, 0.1, 0.79, 0.14, '#a8a39a', true, car);
+    for (let i = 0; i < 8; i++) {
+      const x = CX - 5.57 + i * 1.59;
+      mesh(new THREE.PlaneGeometry(1.46, 0.74), carGlass, x, 1.99, z + side * 0.08, false, car).rotation.y = side < 0 ? PI : 0;
+      box(x, 1.58, z + side * 0.08, 1.48, 0.07, 0.06, '#7d8794', false, car);
+    }
+    // Two passenger doors on each side, with a step and handrail.
+    for (const x of [CX - 4.75, CX + 4.75]) {
+      box(x, 1.49, z + side * 0.1, 0.88, 1.49, 0.055, '#d3c9ae', true, car);
+      box(x, 2.01, z + side * 0.139, 0.56, 0.42, 0.025, '#889fa4', false, car);
+      box(x, 0.66, z + side * 0.2, 0.85, 0.08, 0.23, '#54585a', true, car);
+      box(x + 0.31, 1.37, z + side * 0.154, 0.045, 0.24, 0.04, '#6b7076', true, car);
+    }
+  }
+  for (const x of [CX - 6.43, CX + 6.43]) {
+    box(x, 1.16, CZ, 0.13, 0.93, 2.6, '#e6dcc2', true, car);
+    box(x, 2.55, CZ, 0.13, 0.4, 2.6, '#e6dcc2', true, car);
+    for (const z of [CZ - 1.24, CZ + 1.24]) box(x, 2.0, z, 0.13, 0.75, 0.12, '#a8a39a', true, car);
+    mesh(new THREE.PlaneGeometry(2.35, 0.76), carGlass, x + (x > CX ? 0.07 : -0.07), 2.0, CZ, false, car).rotation.y = PI / 2;
+    box(x + (x > CX ? -0.32 : 0.32), 1.23, CZ - 0.45, 0.5, 0.1, 0.36, '#555a5c', true, car); // driver's console
+    box(x + (x > CX ? 0.02 : -0.02), 0.27, CZ, 0.16, 0.18, 0.66, '#4f5356', true, car); // coupler within the approved length
+  }
+  // Passenger seating leaves an unobstructed aisle down the centre.
+  for (let i = 0; i < 5; i++) for (const side of [-1, 1]) {
+    const x = CX - 3.7 + i * 1.8, z = CZ + side * 0.77;
+    box(x, 1.06, z, 0.78, 0.12, 0.72, '#6c5143', true, car);
+    box(x - 0.34, 1.43, z, 0.1, 0.68, 0.72, '#6c5143', true, car);
+    box(x, 0.86, z, 0.08, 0.3, 0.08, '#5a5e60', true, car);
+  }
+  for (const x of [CX - 5.2, CX + 5.2]) {
+    for (const side of [-1, 1]) box(x, 1.73, CZ + side * 0.82, 0.08, 1.75, 0.69, '#a8a39a', true, car);
+    box(x, 2.51, CZ, 0.08, 0.2, 0.95, '#a8a39a', true, car); // doorway between aisle and cab
+  }
+  box(CX, 2.84, CZ, CL - 0.2, 0.2, 2.55, '#9a968c', true, car);
+  for (const z of [CZ - 1.13, CZ + 1.13]) box(CX, 2.73, z, CL - 0.3, 0.055, 0.08, '#6b7076', false, car); // roof drainage
+  for (const bx of [CX - 4.6, CX + 4.6]) {
+    box(bx, 0.36, CZ, 1.52, 0.25, 2.0, '#3e4346', true, car); // bogie frame
+    for (const dx of [-0.48, 0.48]) for (const dz of [-0.94, 0.94]) cyl(bx + dx, 0.42, CZ + dz, 0.36, 0.22, '#2a2e34', car).rotation.x = PI / 2;
+    for (const dz of [-0.92, 0.92]) box(bx, 0.38, CZ + dz, 1.4, 0.1, 0.08, '#6b7076', false, car); // brake linkage
+  }
+  for (const x of [CX - 1.9, CX + 2.1]) box(x, 0.23, CZ, 1.65, 0.28, 1.1, '#555a5c', true, car); // fuel / equipment boxes
+  mesh(new THREE.BoxGeometry(0.08, 0.32, 0.8), warm('#ffe8b0', 0.1), CX + CL / 2 + 0.01, 1.96, CZ, false, car); // dim headlamp
   // ---- crossing warning posts (live: the two lamps alternate with a period of 6 s, soft ramps)
   const lv = group('lm09Live'); L.use(lv);
   const posts = [[9.3, -4.6], [9.3, -8.2]].map(([x, z]) => { box(x, 0.9, z, 0.08, 1.8, 0.08, '#e8e4d8', true, lv); const a = mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: '#d28d8e' }), x - 0.14, 1.65, z, false, lv), b = mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: '#d28d8e' }), x + 0.14, 1.65, z, false, lv); return [a, b]; });
