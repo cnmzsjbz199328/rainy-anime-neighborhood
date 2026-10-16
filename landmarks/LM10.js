@@ -19,14 +19,20 @@
   for (let z = -10; z <= 12; z += 1.5) { const y = gy(8.5, z); box(8.5, y + 0.05, z, 3.2, 0.1, 1.55, '#8d9094', false, ld); }
   // ---- buildings: the co-op warehouse (9 x 6, roller shutter facing the quay), ice hut, two houses
   const hs = group('lm10Houses'); L.use(hs);
-  const place = (x, z, ry, o) => { const g = L.house(x, z, ry, o); g.position.y = gy(x, z); return g; };
-  const wh = place(3.5, -3.5, PI / 2, { w: 9, d: 6, floors: 1, wall: '#7d8a82', roof: '#5a6a60', rise: 1.0 });
-  const sh = mesh(new THREE.BoxGeometry(3.4, 2.4, 0.06), mat('#9aa59a'), 3.5 + 3.05, gy(3.5, -3.5) + 1.4, -3.5, false, hs); sh.rotation.y = PI / 2;
-  for (let i = 0; i < 8; i++) { const s = mesh(new THREE.BoxGeometry(3.4, 0.04, 0.08), mat('#6a756a'), 3.5 + 3.1, gy(3.5, -3.5) + 0.35 + i * 0.3, -3.5, false, hs); s.rotation.y = PI / 2; }
+  const place = (x, z, ry, o) => { const g = L.roomHouse(x, z, ry, o); g.position.y = gy(x, z); return g; };
+  const wh = place(3.5, -3.5, PI / 2, { w: 9, d: 6, floors: 1, role: 'warehouse', wall: '#7d8a82', roof: '#5a6a60', rise: 1.0 });
+  for (let i = 0; i < 3; i++) { const s = mesh(new THREE.BoxGeometry(3.4, 0.08, 0.08), mat('#6a756a'), 3.5 + 3.1, gy(3.5, -3.5) + 2.5 + i * 0.11, -3.5, false, hs); s.rotation.y = PI / 2; }
+  for (const z of [-5.22, -1.78]) box(6.57, gy(3.5, -3.5) + 1.35, z, 0.1, 2.5, 0.1, '#59675f', true, hs);
+  box(6.57, gy(3.5, -3.5) + 2.73, -3.5, 0.32, 0.28, 3.6, '#768279', true, hs); // rolled shutter head
   const doorLamp = mesh(new THREE.SphereGeometry(0.15, 8, 6), warm('#ffe0a0', 0.9), 3.5 + 3.2, gy(3.5, -3.5) + 3.0, -1.2, false, hs);
-  place(5.2, 7.8, PI / 2, { w: 3.2, d: 3.0, floors: 1, wall: '#a8aeb0', roof: '#5a6a60', rise: 0.8, lit: false });                    // ice hut
-  place(-6.5, -7.0, PI / 2 - 0.1, { w: 6.5, d: 5, floors: 2, wall: '#7a6552', rise: 1.7 });
-  place(-6.8, 7.0, PI / 2 + 0.12, { w: 6, d: 4.8, floors: 1, wall: '#80705c', rise: 1.4 });
+  place(5.2, 7.8, PI / 2, { w: 3.2, d: 3.0, floors: 1, role: 'ice', wall: '#a8aeb0', roof: '#5a6a60', rise: 0.8, lit: false });
+  place(-6.5, -7.0, PI / 2 - 0.1, { w: 6.5, d: 5, floors: 2, role: 'home', wall: '#7a6552', rise: 1.7 });
+  place(-6.8, 7.0, PI / 2 + 0.12, { w: 6, d: 4.8, floors: 1, role: 'home', wall: '#80705c', rise: 1.4 });
+  { const x = 5.2, z = 7.8, y = gy(x, z); box(x + 1.65, y + 0.75, z - 0.7, 0.16, 0.42, 0.7, '#81979a', true, hs); // ice chute
+    box(x + 1.82, y + 0.2, z - 0.7, 0.58, 0.38, 0.62, '#aabdc0', true, hs);
+    cyl(x - 0.55, y + 1.5, z - 1.15, 0.07, 1.5, '#637b80', hs);
+    box(x - 0.55, y + 2.24, z - 1.15, 0.58, 0.08, 0.16, '#637b80', true, hs);
+  }
   // ---- drying rack with nets, floats and fish boxes, the shrine, vending machine, lamps
   const pt = group('lm10Port'); L.use(pt);
   for (const z of [-1.4, 1.4]) for (const x of [4.6, 7.4]) cyl(x, gy(x, z) + 1.1, z, 0.06, 2.2, '#5a4a3c', pt);
@@ -43,6 +49,14 @@
   { const sx = 8.0, sz = 15.5, y = gy(sx, sz); box(sx, y + 0.2, sz, 2.2, 0.4, 2.0, '#8d9094', true, pt); box(sx, y + 0.4 + 0.65, sz, 1.4, 1.3, 1.2, '#7a5f48', true, pt); L.gable(1.4, 1.2, y + 1.7, 0.7, 0.35, '#4a4f58', pt).position.set(sx, 0, sz);
     L.torii(sx + 3.0, y, sz, { w: 1.6, h: 2.3, rot: PI / 2, color: '#a24a3a' }); L.lantern(sx + 1.4, y, sz + 1.8, { k: 0.9, glowK: 0.22 }); }
   { const x = 7.0, z = 10.5, y = gy(x, z); box(x, y + 0.9, z, 0.9, 1.8, 0.8, '#5e6a74', true, pt); mesh(new THREE.BoxGeometry(0.7, 1.3, 0.03), warm('#dfe9f2', 0.20), x + 0.43, y + 1.0, z, false, pt).rotation.y = PI / 2; }
+  { const x = 7.0, z = 10.5, y = gy(x, z);
+    box(x, y + 0.08, z, 1.05, 0.16, 0.96, '#777d7d', true, pt);
+    for (let k = 0; k < 3; k++) box(x + 0.47, y + 1.48 - k * 0.28, z - 0.26, 0.05, 0.23, 0.18, k % 2 ? '#b7c8c8' : '#a3b7bf', true, pt);
+    for (let k = 0; k < 4; k++) box(x + 0.47, y + 0.85, z - 0.2 + k * 0.13, 0.05, 0.045, 0.07, '#abb5b3', true, pt);
+    box(x + 0.48, y + 0.85, z + 0.29, 0.07, 0.28, 0.12, '#8d979a', true, pt);
+    box(x + 0.48, y + 0.35, z, 0.07, 0.18, 0.42, '#313d44', true, pt);
+    box(x - 0.45, y + 1.15, z, 0.05, 0.76, 0.54, '#465158', true, pt);
+  }
   for (const [x, z] of [[8.6, -8.5], [8.6, 4.5], [6.2, 12.5]]) { const y = gy(x, z); cyl(x, y + 2.2, z, 0.06, 4.4, '#596f80', pt); mesh(new THREE.BoxGeometry(0.5, 0.1, 0.25), warm('#ffe4b0', 0.8), x + 0.35, y + 4.4, z, false, pt); L.pool(x + 0.3, z, 2.6, '#ffcf8a', 0.06, y + 0.08); }
   // ---- the breakwater: z = 3.2, from x = 11 to x = 31 (20 m), 1.8 m wide, crest 1.3 m above the sea, stepped down to the seabed; a red-and-white light post at the end
   const bw = group('lm10Port'); L.use(bw);

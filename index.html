@@ -21275,6 +21275,67 @@ globalThis.LMLIB = function (K) {
     const wins = []; for (let f = 0; f < fl; f++) { const nw = Math.max(2, Math.round(w / 2.2)); for (let i = 0; i < nw; i++) { const wx = -w / 2 + (i + 0.5) * w / nw; if (f === 0 && Math.abs(wx) < 1.0) continue; const warmK = o.lit === false ? 0.04 : 0.24 + 0.08 * ((i + f) % 2); wins.push(mesh(new THREE.BoxGeometry(1.0, 0.9, 0.05), warm('#ffcf8a', warmK), wx, 0.2 + f * 2.7 + 1.5, d / 2 + 0.02, false, g)); box(wx, 0.2 + f * 2.7 + 1.5, d / 2 + 0.05, 1.12, 0.06, 0.04, '#3a2d24', false, g); } }
     box(0, 1.2, d / 2 + 0.03, 1.0, 2.0, 0.06, '#4a382b', false, g); box(0, 2.1, d / 2 + 0.2, 1.5, 0.12, 0.4, '#5a4a3c', true, g);
     L.use(prevCur); return g; };
+  // Full close-up house for WD coast sites. The same timber/window geometry accepts separate room plans.
+  L.roomHouse = (x, z, ry, o = {}) => {
+    const w = o.w || 6, d = o.d || 5, fl = o.floors || 1, h = fl * 2.7, role = o.role || 'home';
+    const g = L.sub(x, 0, z, ry), wall = o.wall || '#7a6552', wood = role === 'warehouse' || role === 'ice' ? '#56615e' : '#594638';
+    g.name = `roomHouse-${role}`;
+    const b = (x, y, z, sx, sy, sz, c) => box(x, y, z, sx, sy, sz, c, true, g);
+    const glass = new THREE.MeshPhysicalMaterial({ color: '#c9d9dc', transparent: true, opacity: 0.28, roughness: 0.2, depthWrite: false, side: THREE.DoubleSide });
+    b(0, 0.1, 0, w + 0.3, 0.2, d + 0.3, '#747472');
+    for (let f = 0; f < fl; f++) {
+      const y = 0.2 + f * 2.7, doorW = f === 0 && role === 'warehouse' ? 3.4 : 1.05, doorH = role === 'warehouse' ? 2.4 : 2.0;
+      b(0, y + 0.06, 0, w - 0.18, 0.12, d - 0.18, '#88725a');
+      for (const side of [-1, 1]) {
+        const z = side * d / 2, cuts = side > 0 ? [-w * 0.32, 0, w * 0.32] : [-w * 0.25, w * 0.25]; let left = -w / 2;
+        for (const cx of cuts) {
+          const door = side > 0 && f === 0 && cx === 0, half = door ? doorW / 2 : 0.48;
+          const lo = cx - half, hi = cx + half, bottom = door ? y : y + 0.84, top = door ? y + doorH : y + 1.92;
+          if (lo > left) b((left + lo) / 2, y + 1.35, z, lo - left, 2.7, 0.16, wall);
+          if (bottom > y) b(cx, (y + bottom) / 2, z, half * 2, bottom - y, 0.16, wall);
+          if (top < y + 2.7) b(cx, (top + y + 2.7) / 2, z, half * 2, y + 2.7 - top, 0.16, wall);
+          b(cx, top + 0.035, z, half * 2 + 0.12, 0.07, 0.22, wood);
+          if (!door) {
+            b(cx, bottom - 0.035, z, half * 2 + 0.12, 0.07, 0.24, wood);
+            mesh(new THREE.BoxGeometry(half * 2 - 0.06, top - bottom - 0.08, 0.02), glass, cx, (bottom + top) / 2, z + side * 0.02, false, g);
+            b(cx, (bottom + top) / 2, z + side * 0.05, 0.04, top - bottom, 0.05, wood);
+          } else {
+            for (const sx of [-1, 1]) b(cx + sx * half, y + doorH / 2, z, 0.1, doorH, 0.2, wood);
+            if (role !== 'warehouse') b(cx + 0.35, y + 1.0, z - side * 0.09, 0.48, 1.88, 0.07, wood);
+          }
+          left = hi;
+        }
+        if (left < w / 2) b((left + w / 2) / 2, y + 1.35, z, w / 2 - left, 2.7, 0.16, wall);
+      }
+      for (const side of [-1, 1]) { const xx = side * w / 2;
+        b(xx, y + 1.35, -d * 0.27, 0.16, 2.7, d * 0.46, wall);
+        b(xx, y + 1.35, d * 0.27, 0.16, 2.7, d * 0.46, wall);
+        b(xx, y + 0.42, 0, 0.16, 0.84, d * 0.08, wall); b(xx, y + 2.31, 0, 0.16, 0.78, d * 0.08, wall);
+        mesh(new THREE.BoxGeometry(0.02, 1.0, d * 0.08), glass, xx + side * 0.02, y + 1.36, 0, false, g);
+      }
+      for (const xx of [-w / 2, w / 2]) for (const zz of [-d / 2, d / 2]) b(xx, y + 1.35, zz, 0.16, 2.7, 0.16, wood);
+      b(0, y + 2.62, 0, w - 0.15, 0.14, d - 0.15, '#8a765d');
+      if (role === 'warehouse') {
+        for (const xx of [-w * 0.32, w * 0.32]) for (let k = 0; k < 3; k++) b(xx, y + 0.55 + k * 0.55, -d / 2 + 0.85, 1.35, 0.09, 0.55, '#71807c');
+        b(0, y + 0.7, -d / 2 + 0.95, 1.2, 1.05, 0.4, '#69736b');
+      } else if (role === 'ice') {
+        b(0.2, y + 0.88, -0.55, 1.4, 1.55, 0.9, '#9aadb2');
+        b(-0.65, y + 0.48, d / 2 - 0.55, 0.68, 0.62, 0.6, '#aabdc0');
+      } else {
+        b(-w * 0.25, y + 0.73, d / 2 - 0.85, 0.9, 0.12, 0.6, '#886f53');
+        b(w * 0.24, y + 0.45, d / 2 - 1.05, 0.75, 0.12, 0.55, '#90785a');
+        b(0, y + 1.1, -d / 2 + 0.75, w * 0.4, 1.85, 0.12, '#9c8a70');
+        b(w * 0.25, y + 0.75, -d / 2 + 0.5, 0.85, 1.3, 0.38, '#79644c');
+        if (role === 'cottage' || (f === 0 && o.lit !== false)) mesh(new THREE.BoxGeometry(0.65, 0.22, 0.07), warm('#ffcf8a', role === 'cottage' ? 0.18 : 0.11), -w * 0.22, y + 1.85, -d / 2 + 0.86, false, g);
+      }
+      if (fl > 1) for (let k = 0; k < 7; k++) b(-w / 2 + 0.7, y + 0.25 + k * 0.33, -d / 2 + 0.65 + k * 0.29, 0.7, 0.1, 0.3, '#705b45');
+    }
+    L.gable(w, d, h + 0.2, o.rise || 1.4, 0.5, o.roof || '#3a3f4a', g);
+    for (const zz of [-d / 2, d / 2]) b(0, h + 0.2, zz, w + 0.85, 0.12, 0.12, wood);
+    for (const xx of [-w / 2 + 0.25, w / 2 - 0.25]) b(xx, h / 2, -d / 2 - 0.1, 0.07, h, 0.08, wood);
+    b(0, 0.14, d / 2 + 0.56, role === 'warehouse' ? 3.6 : 1.3, 0.1, 0.82, '#84817a');
+    return g;
+  };
   return L;
 };
 })();
@@ -21847,23 +21908,56 @@ globalThis.LMLIB = function (K) {
   // ---- the lighthouse: base ring, shaft (tapering 1.5 -> 1.05 m radius), a red band, the gallery at 9.4 m, the lantern room 9.6-11.1 m, the roof and finial to 12.0 m
   const tw = group('lm08Tower'); L.use(tw); const TX = 0, TZ = -1.0, T0 = gy(TX, TZ);
   mesh(new THREE.CylinderGeometry(1.75, 1.9, 0.6, 16), mat('#8d8a85'), TX, T0 + 0.3, TZ, true, tw);
-  mesh(new THREE.CylinderGeometry(1.05, 1.5, 8.8, 16), mat('#eceeee'), TX, T0 + 0.6 + 4.4, TZ, true, tw);
+  const towerRadius = y => 1.5 - 0.45 * (y - 0.6) / 8.8;
+  const towerBand = (lo, hi, opening = 0) => {
+    const gap = opening ? 0.64 : 0, start = opening ? PI / 2 + gap / 2 : 0;
+    mesh(new THREE.CylinderGeometry(towerRadius(hi), towerRadius(lo), hi - lo, 24, 1, true, start, 2 * PI - gap), mat('#eceeee'), TX, T0 + (lo + hi) / 2, TZ, true, tw);
+  };
+  towerBand(0.6, 2.5, 1); towerBand(2.5, 4.0); towerBand(4.0, 5.15, 1); towerBand(5.15, 6.65); towerBand(6.65, 7.8, 1); towerBand(7.8, 9.4);
+  for (const y of [2.6, 5.25, 8.0]) mesh(new THREE.CylinderGeometry(towerRadius(y) - 0.08, towerRadius(y) - 0.08, 0.1, 24), mat('#aaa8a0'), TX, T0 + y, TZ, true, tw);
+  cyl(TX, T0 + 4.95, TZ, 0.1, 8.9, '#7a817d', tw);
+  for (let k = 0; k < 23; k++) { const a = k * 0.67, y = 0.42 + k * 0.38, r = Math.max(0.63, towerRadius(y) - 0.42);
+    const tread = box(TX + Math.cos(a) * r, T0 + y, TZ + Math.sin(a) * r, 0.62, 0.09, 0.36, '#87857e', true, tw); tread.rotation.y = -a;
+  }
   mesh(new THREE.CylinderGeometry(1.2, 1.29, 1.1, 16), mat('#c4412e'), TX, T0 + 0.6 + 3.2, TZ, false, tw);
   mesh(new THREE.CylinderGeometry(1.75, 1.45, 0.3, 16), mat('#6a6e72'), TX, T0 + 9.55, TZ, true, tw);                    // gallery floor
   { const r = mesh(new THREE.TorusGeometry(1.7, 0.04, 5, 24), mat('#4a4f56'), TX, T0 + 10.45, TZ, false, tw); r.rotation.x = PI / 2; for (let i = 0; i < 12; i++) { const a = i / 12 * PI * 2; cyl(TX + Math.cos(a) * 1.7, T0 + 10.0, TZ + Math.sin(a) * 1.7, 0.025, 0.9, '#4a4f56', tw); } }
   const lanternMat = new THREE.MeshBasicMaterial({ color: '#ffe8b8' }), lantern = mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.3, 12), lanternMat, TX, T0 + 10.5, TZ, false, tw); lantern.scale.set(0.82, 1, 0.82);
+  for (const y of [9.95, 10.5, 11.05]) { const lens = mesh(new THREE.TorusGeometry(0.58, 0.045, 6, 16), mat('#bda66d'), TX, T0 + y, TZ, false, tw); lens.rotation.x = PI / 2; }
+  mesh(new THREE.CylinderGeometry(0.38, 0.48, 0.25, 12), mat('#746d5e'), TX, T0 + 9.78, TZ, true, tw);
   mesh(new THREE.CylinderGeometry(0.93, 0.93, 1.5, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#bfe6ea', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }), TX, T0 + 10.5, TZ, false, tw);
   for (let i = 0; i < 8; i++) { const a = i / 8 * PI * 2; cyl(TX + Math.cos(a) * 0.93, T0 + 10.5, TZ + Math.sin(a) * 0.93, 0.03, 1.5, '#3a3f46', tw); }
   mesh(new THREE.ConeGeometry(1.15, 0.7, 12), mat('#c4412e'), TX, T0 + 11.6, TZ, true, tw); cyl(TX, T0 + 11.85, TZ, 0.05, 0.3, '#3a3f46', tw);
-  box(TX + 1.05, T0 + 1.0, TZ + 0.3, 0.5, 1.5, 0.7, '#4a382b', true, tw);                                                 // the door (a dark slab on the shaft)
+  for (const z of [-0.43, 0.43]) box(TX + 1.42, T0 + 1.53, TZ + z, 0.13, 1.88, 0.12, '#5c6160', true, tw);
+  box(TX + 1.42, T0 + 2.43, TZ, 0.14, 0.12, 0.98, '#5c6160', true, tw);
+  box(TX + 1.13, T0 + 1.48, TZ + 0.34, 0.07, 1.73, 0.64, '#4a382b', true, tw); // inward-set partly open door
+  box(TX + 1.45, T0 + 0.63, TZ, 0.52, 0.12, 0.95, '#898780', true, tw);
+  for (const y of [4.57, 7.22]) { const x = towerRadius(y);
+    mesh(new THREE.BoxGeometry(0.025, 0.86, 0.75), new THREE.MeshPhysicalMaterial({ color: '#d0e2e4', transparent: true, opacity: 0.26, roughness: 0.18, depthWrite: false }), TX + x, T0 + y, TZ, false, tw);
+    for (const z of [-0.4, 0.4]) box(TX + x + 0.03, T0 + y, TZ + z, 0.08, 0.98, 0.06, '#59605e', true, tw);
+    box(TX + x + 0.03, T0 + y + 0.48, TZ, 0.08, 0.08, 0.86, '#59605e', true, tw);
+    box(TX + x + 0.03, T0 + y - 0.48, TZ, 0.08, 0.08, 0.86, '#59605e', true, tw);
+  }
   // ---- the keeper's cottage 5 x 4 m: white-washed walls, red tile roof, one lit window facing the south shore
   const ct = group('lm08Cottage'); L.use(ct); const CX = -3.7, CZ = 2.6, C0 = gy(CX, CZ);
-  const house = L.house(CX, CZ, 0.0, { w: 5, d: 4, floors: 1, wall: '#d8d6cc', roof: '#a8412e', rise: 1.5, lit: true }); house.position.y = C0;
+  const house = L.roomHouse(CX, CZ, 0.0, { w: 5, d: 4, floors: 1, role: 'cottage', wall: '#d8d6cc', roof: '#a8412e', rise: 1.5, lit: true }); house.position.y = C0;
+  box(CX - 1.45, C0 + 0.83, CZ - 1.2, 0.75, 0.12, 0.5, '#697477', true, ct); // repair bench
+  box(CX - 1.45, C0 + 1.26, CZ - 1.75, 0.72, 0.7, 0.16, '#667277', true, ct);
+  box(CX + 1.48, C0 + 0.85, CZ - 1.45, 0.7, 1.4, 0.42, '#9d957f', true, ct);
   // ---- jetty on the north shore: 6 m of planks on piles, a boat
   const jt = group('lm08Jetty'); L.use(jt); const JZ0 = -9.2;
   for (let i = 0; i < 12; i++) { const z = JZ0 - i * 0.5; box(0.0, SEA + 0.75, z, 1.6, 0.08, 0.46, '#7a5f48', true, jt); }
   for (let i = 0; i < 7; i++) for (const sx of [-0.7, 0.7]) { const z = JZ0 - i * 1.0, base = Math.min(gy(sx, z), SEA) - 0.3; cyl(sx, (base + SEA + 0.72) / 2, z, 0.07, SEA + 0.72 - base, '#4a382b', jt); }
   cyl(0.5, SEA + 1.1, JZ0 - 5.8, 0.05, 0.7, '#4a382b', jt);
+  for (const sx of [-0.62, 0.62]) box(sx, SEA + 0.54, JZ0 - 2.75, 0.13, 0.16, 5.8, '#514235', true, jt);
+  for (let i = 0; i < 6; i++) box(0, SEA + 0.49, JZ0 - 0.5 - i, 1.45, 0.1, 0.12, '#554638', true, jt);
+  const brace = (a, b) => { const v0 = new THREE.Vector3(...a), v1 = new THREE.Vector3(...b), mid = v0.clone().add(v1).multiplyScalar(0.5), axis = v1.clone().sub(v0);
+    const m = mesh(new THREE.CylinderGeometry(0.045, 0.045, axis.length(), 6), mat('#594638'), mid.x, mid.y, mid.z, true, jt);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.normalize()); };
+  for (const z of [JZ0 - 1, JZ0 - 3, JZ0 - 5]) for (const sx of [-0.7, 0.7]) {
+    brace([sx, SEA + 0.63, z - 0.45], [sx, SEA - 0.1, z + 0.45]);
+    box(sx, SEA + 0.68, z, 0.18, 0.06, 0.2, '#817567', true, jt);
+  }
   // ---- rocks and tide pools
   const rk = group('lm08Rocks'); L.use(rk);
   for (let i = 0; i < 30; i++) { const a = rnd() * PI * 2, r = 6.2 + rnd() * 3.4; const x = Math.sin(a) * r, z = -Math.cos(a) * r; if (Math.abs(x) < 1.6 && z < -7.5) continue; const s = 0.5 + 1.6 * rnd() * rnd(); L.rock(x, Math.max(gy(x, z), SEA - 0.4) - 0.1, z, s, ['#6f6b68', '#7d7875', '#625e5c'][i % 3], a, 0.7); }
@@ -21880,7 +21974,16 @@ globalThis.LMLIB = function (K) {
   const beam = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false })); beam.renderOrder = 7;
   const bw = L.sub(TX, T0 + 10.5, TZ); bw.userData.live = true; bw.add(beam); const beam2 = beam.clone(); beam2.rotation.y = PI; bw.add(beam2);
   const bb = L.sub(0.9, SEA, JZ0 - 3.0, 0.2); bb.userData.live = true;
-  { const hs = new THREE.Shape(); hs.moveTo(-1.6, -0.55); hs.lineTo(1.0, -0.6); hs.quadraticCurveTo(1.8, -0.1, 1.8, 0); hs.quadraticCurveTo(1.8, 0.1, 1.0, 0.6); hs.lineTo(-1.6, 0.55); hs.lineTo(-1.6, -0.55); const g = new THREE.ExtrudeGeometry(hs, { depth: 0.5, bevelEnabled: false }); g.rotateX(-PI / 2); g.translate(0, -0.2, 0); mesh(g, mat('#dfe5e8'), 0, 0, 0, true, bb); box(-0.4, 0.45, 0, 0.9, 0.5, 0.8, '#cfd6da', true, bb); }
+  { const hs = new THREE.Shape(); hs.moveTo(-1.6, -0.55); hs.lineTo(1.0, -0.6); hs.quadraticCurveTo(1.8, -0.1, 1.8, 0); hs.quadraticCurveTo(1.8, 0.1, 1.0, 0.6); hs.lineTo(-1.6, 0.55); hs.lineTo(-1.6, -0.55); const g = new THREE.ExtrudeGeometry(hs, { depth: 0.5, bevelEnabled: false }); g.rotateX(-PI / 2); g.translate(0, -0.2, 0); mesh(g, mat('#dfe5e8'), 0, 0, 0, true, bb);
+    box(0, 0.08, 0, 3.0, 0.1, 0.9, '#839096', true, bb);
+    for (const side of [-1, 1]) box(0, 0.35, side * 0.57, 3.1, 0.1, 0.09, '#647784', true, bb);
+    box(-0.4, 0.45, 0, 0.9, 0.5, 0.8, '#cfd6da', true, bb);
+    box(0.65, 0.32, 0, 0.55, 0.08, 0.8, '#8e7760', true, bb);
+    box(-1.1, 0.24, 0, 0.1, 0.4, 0.12, '#6b777a', true, bb);
+    for (const side of [-1, 1]) { const f = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.32, 8), mat('#3f5058'), -0.7, 0.1, side * 0.63, true, bb); f.rotation.x = PI / 2; }
+  }
+  const ropePath = new THREE.CatmullRomCurve3([new THREE.Vector3(0.5, SEA + 1.1, JZ0 - 5.8), new THREE.Vector3(0.8, SEA + 0.48, JZ0 - 5.0), new THREE.Vector3(1.15, SEA + 0.24, JZ0 - 4.0)]);
+  mesh(new THREE.TubeGeometry(ropePath, 12, 0.018, 5, false), mat('#8c7858'), 0, 0, 0, false, jt);
   const line = L.sub(CX - 0.1, C0 + 1.9, CZ + 3.0); line.userData.live = true; const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.8), new THREE.MeshBasicMaterial({ color: '#e8e4d8', side: THREE.DoubleSide })); cloth.position.set(-0.5, -0.45, 0); line.add(cloth);
   const L2 = { beamPeak: 0.10, period: 12 };
   out.stats = { lighthouseHeight: 11.85 + 0.15, period: L2.period, beamPeak: L2.beamPeak, beamLength: 40, cottage: [5, 4], jetty: 6, jettyZ: [JZ0, JZ0 - 6], island: 10, rocks: 30, towerBase: T0 };
@@ -22138,14 +22241,20 @@ globalThis.LMLIB = function (K) {
   for (let z = -10; z <= 12; z += 1.5) { const y = gy(8.5, z); box(8.5, y + 0.05, z, 3.2, 0.1, 1.55, '#8d9094', false, ld); }
   // ---- buildings: the co-op warehouse (9 x 6, roller shutter facing the quay), ice hut, two houses
   const hs = group('lm10Houses'); L.use(hs);
-  const place = (x, z, ry, o) => { const g = L.house(x, z, ry, o); g.position.y = gy(x, z); return g; };
-  const wh = place(3.5, -3.5, PI / 2, { w: 9, d: 6, floors: 1, wall: '#7d8a82', roof: '#5a6a60', rise: 1.0 });
-  const sh = mesh(new THREE.BoxGeometry(3.4, 2.4, 0.06), mat('#9aa59a'), 3.5 + 3.05, gy(3.5, -3.5) + 1.4, -3.5, false, hs); sh.rotation.y = PI / 2;
-  for (let i = 0; i < 8; i++) { const s = mesh(new THREE.BoxGeometry(3.4, 0.04, 0.08), mat('#6a756a'), 3.5 + 3.1, gy(3.5, -3.5) + 0.35 + i * 0.3, -3.5, false, hs); s.rotation.y = PI / 2; }
+  const place = (x, z, ry, o) => { const g = L.roomHouse(x, z, ry, o); g.position.y = gy(x, z); return g; };
+  const wh = place(3.5, -3.5, PI / 2, { w: 9, d: 6, floors: 1, role: 'warehouse', wall: '#7d8a82', roof: '#5a6a60', rise: 1.0 });
+  for (let i = 0; i < 3; i++) { const s = mesh(new THREE.BoxGeometry(3.4, 0.08, 0.08), mat('#6a756a'), 3.5 + 3.1, gy(3.5, -3.5) + 2.5 + i * 0.11, -3.5, false, hs); s.rotation.y = PI / 2; }
+  for (const z of [-5.22, -1.78]) box(6.57, gy(3.5, -3.5) + 1.35, z, 0.1, 2.5, 0.1, '#59675f', true, hs);
+  box(6.57, gy(3.5, -3.5) + 2.73, -3.5, 0.32, 0.28, 3.6, '#768279', true, hs); // rolled shutter head
   const doorLamp = mesh(new THREE.SphereGeometry(0.15, 8, 6), warm('#ffe0a0', 0.9), 3.5 + 3.2, gy(3.5, -3.5) + 3.0, -1.2, false, hs);
-  place(5.2, 7.8, PI / 2, { w: 3.2, d: 3.0, floors: 1, wall: '#a8aeb0', roof: '#5a6a60', rise: 0.8, lit: false });                    // ice hut
-  place(-6.5, -7.0, PI / 2 - 0.1, { w: 6.5, d: 5, floors: 2, wall: '#7a6552', rise: 1.7 });
-  place(-6.8, 7.0, PI / 2 + 0.12, { w: 6, d: 4.8, floors: 1, wall: '#80705c', rise: 1.4 });
+  place(5.2, 7.8, PI / 2, { w: 3.2, d: 3.0, floors: 1, role: 'ice', wall: '#a8aeb0', roof: '#5a6a60', rise: 0.8, lit: false });
+  place(-6.5, -7.0, PI / 2 - 0.1, { w: 6.5, d: 5, floors: 2, role: 'home', wall: '#7a6552', rise: 1.7 });
+  place(-6.8, 7.0, PI / 2 + 0.12, { w: 6, d: 4.8, floors: 1, role: 'home', wall: '#80705c', rise: 1.4 });
+  { const x = 5.2, z = 7.8, y = gy(x, z); box(x + 1.65, y + 0.75, z - 0.7, 0.16, 0.42, 0.7, '#81979a', true, hs); // ice chute
+    box(x + 1.82, y + 0.2, z - 0.7, 0.58, 0.38, 0.62, '#aabdc0', true, hs);
+    cyl(x - 0.55, y + 1.5, z - 1.15, 0.07, 1.5, '#637b80', hs);
+    box(x - 0.55, y + 2.24, z - 1.15, 0.58, 0.08, 0.16, '#637b80', true, hs);
+  }
   // ---- drying rack with nets, floats and fish boxes, the shrine, vending machine, lamps
   const pt = group('lm10Port'); L.use(pt);
   for (const z of [-1.4, 1.4]) for (const x of [4.6, 7.4]) cyl(x, gy(x, z) + 1.1, z, 0.06, 2.2, '#5a4a3c', pt);
@@ -22162,6 +22271,14 @@ globalThis.LMLIB = function (K) {
   { const sx = 8.0, sz = 15.5, y = gy(sx, sz); box(sx, y + 0.2, sz, 2.2, 0.4, 2.0, '#8d9094', true, pt); box(sx, y + 0.4 + 0.65, sz, 1.4, 1.3, 1.2, '#7a5f48', true, pt); L.gable(1.4, 1.2, y + 1.7, 0.7, 0.35, '#4a4f58', pt).position.set(sx, 0, sz);
     L.torii(sx + 3.0, y, sz, { w: 1.6, h: 2.3, rot: PI / 2, color: '#a24a3a' }); L.lantern(sx + 1.4, y, sz + 1.8, { k: 0.9, glowK: 0.22 }); }
   { const x = 7.0, z = 10.5, y = gy(x, z); box(x, y + 0.9, z, 0.9, 1.8, 0.8, '#5e6a74', true, pt); mesh(new THREE.BoxGeometry(0.7, 1.3, 0.03), warm('#dfe9f2', 0.20), x + 0.43, y + 1.0, z, false, pt).rotation.y = PI / 2; }
+  { const x = 7.0, z = 10.5, y = gy(x, z);
+    box(x, y + 0.08, z, 1.05, 0.16, 0.96, '#777d7d', true, pt);
+    for (let k = 0; k < 3; k++) box(x + 0.47, y + 1.48 - k * 0.28, z - 0.26, 0.05, 0.23, 0.18, k % 2 ? '#b7c8c8' : '#a3b7bf', true, pt);
+    for (let k = 0; k < 4; k++) box(x + 0.47, y + 0.85, z - 0.2 + k * 0.13, 0.05, 0.045, 0.07, '#abb5b3', true, pt);
+    box(x + 0.48, y + 0.85, z + 0.29, 0.07, 0.28, 0.12, '#8d979a', true, pt);
+    box(x + 0.48, y + 0.35, z, 0.07, 0.18, 0.42, '#313d44', true, pt);
+    box(x - 0.45, y + 1.15, z, 0.05, 0.76, 0.54, '#465158', true, pt);
+  }
   for (const [x, z] of [[8.6, -8.5], [8.6, 4.5], [6.2, 12.5]]) { const y = gy(x, z); cyl(x, y + 2.2, z, 0.06, 4.4, '#596f80', pt); mesh(new THREE.BoxGeometry(0.5, 0.1, 0.25), warm('#ffe4b0', 0.8), x + 0.35, y + 4.4, z, false, pt); L.pool(x + 0.3, z, 2.6, '#ffcf8a', 0.06, y + 0.08); }
   // ---- the breakwater: z = 3.2, from x = 11 to x = 31 (20 m), 1.8 m wide, crest 1.3 m above the sea, stepped down to the seabed; a red-and-white light post at the end
   const bw = group('lm10Port'); L.use(bw);

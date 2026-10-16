@@ -15,23 +15,56 @@
   // ---- the lighthouse: base ring, shaft (tapering 1.5 -> 1.05 m radius), a red band, the gallery at 9.4 m, the lantern room 9.6-11.1 m, the roof and finial to 12.0 m
   const tw = group('lm08Tower'); L.use(tw); const TX = 0, TZ = -1.0, T0 = gy(TX, TZ);
   mesh(new THREE.CylinderGeometry(1.75, 1.9, 0.6, 16), mat('#8d8a85'), TX, T0 + 0.3, TZ, true, tw);
-  mesh(new THREE.CylinderGeometry(1.05, 1.5, 8.8, 16), mat('#eceeee'), TX, T0 + 0.6 + 4.4, TZ, true, tw);
+  const towerRadius = y => 1.5 - 0.45 * (y - 0.6) / 8.8;
+  const towerBand = (lo, hi, opening = 0) => {
+    const gap = opening ? 0.64 : 0, start = opening ? PI / 2 + gap / 2 : 0;
+    mesh(new THREE.CylinderGeometry(towerRadius(hi), towerRadius(lo), hi - lo, 24, 1, true, start, 2 * PI - gap), mat('#eceeee'), TX, T0 + (lo + hi) / 2, TZ, true, tw);
+  };
+  towerBand(0.6, 2.5, 1); towerBand(2.5, 4.0); towerBand(4.0, 5.15, 1); towerBand(5.15, 6.65); towerBand(6.65, 7.8, 1); towerBand(7.8, 9.4);
+  for (const y of [2.6, 5.25, 8.0]) mesh(new THREE.CylinderGeometry(towerRadius(y) - 0.08, towerRadius(y) - 0.08, 0.1, 24), mat('#aaa8a0'), TX, T0 + y, TZ, true, tw);
+  cyl(TX, T0 + 4.95, TZ, 0.1, 8.9, '#7a817d', tw);
+  for (let k = 0; k < 23; k++) { const a = k * 0.67, y = 0.42 + k * 0.38, r = Math.max(0.63, towerRadius(y) - 0.42);
+    const tread = box(TX + Math.cos(a) * r, T0 + y, TZ + Math.sin(a) * r, 0.62, 0.09, 0.36, '#87857e', true, tw); tread.rotation.y = -a;
+  }
   mesh(new THREE.CylinderGeometry(1.2, 1.29, 1.1, 16), mat('#c4412e'), TX, T0 + 0.6 + 3.2, TZ, false, tw);
   mesh(new THREE.CylinderGeometry(1.75, 1.45, 0.3, 16), mat('#6a6e72'), TX, T0 + 9.55, TZ, true, tw);                    // gallery floor
   { const r = mesh(new THREE.TorusGeometry(1.7, 0.04, 5, 24), mat('#4a4f56'), TX, T0 + 10.45, TZ, false, tw); r.rotation.x = PI / 2; for (let i = 0; i < 12; i++) { const a = i / 12 * PI * 2; cyl(TX + Math.cos(a) * 1.7, T0 + 10.0, TZ + Math.sin(a) * 1.7, 0.025, 0.9, '#4a4f56', tw); } }
   const lanternMat = new THREE.MeshBasicMaterial({ color: '#ffe8b8' }), lantern = mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.3, 12), lanternMat, TX, T0 + 10.5, TZ, false, tw); lantern.scale.set(0.82, 1, 0.82);
+  for (const y of [9.95, 10.5, 11.05]) { const lens = mesh(new THREE.TorusGeometry(0.58, 0.045, 6, 16), mat('#bda66d'), TX, T0 + y, TZ, false, tw); lens.rotation.x = PI / 2; }
+  mesh(new THREE.CylinderGeometry(0.38, 0.48, 0.25, 12), mat('#746d5e'), TX, T0 + 9.78, TZ, true, tw);
   mesh(new THREE.CylinderGeometry(0.93, 0.93, 1.5, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#bfe6ea', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }), TX, T0 + 10.5, TZ, false, tw);
   for (let i = 0; i < 8; i++) { const a = i / 8 * PI * 2; cyl(TX + Math.cos(a) * 0.93, T0 + 10.5, TZ + Math.sin(a) * 0.93, 0.03, 1.5, '#3a3f46', tw); }
   mesh(new THREE.ConeGeometry(1.15, 0.7, 12), mat('#c4412e'), TX, T0 + 11.6, TZ, true, tw); cyl(TX, T0 + 11.85, TZ, 0.05, 0.3, '#3a3f46', tw);
-  box(TX + 1.05, T0 + 1.0, TZ + 0.3, 0.5, 1.5, 0.7, '#4a382b', true, tw);                                                 // the door (a dark slab on the shaft)
+  for (const z of [-0.43, 0.43]) box(TX + 1.42, T0 + 1.53, TZ + z, 0.13, 1.88, 0.12, '#5c6160', true, tw);
+  box(TX + 1.42, T0 + 2.43, TZ, 0.14, 0.12, 0.98, '#5c6160', true, tw);
+  box(TX + 1.13, T0 + 1.48, TZ + 0.34, 0.07, 1.73, 0.64, '#4a382b', true, tw); // inward-set partly open door
+  box(TX + 1.45, T0 + 0.63, TZ, 0.52, 0.12, 0.95, '#898780', true, tw);
+  for (const y of [4.57, 7.22]) { const x = towerRadius(y);
+    mesh(new THREE.BoxGeometry(0.025, 0.86, 0.75), new THREE.MeshPhysicalMaterial({ color: '#d0e2e4', transparent: true, opacity: 0.26, roughness: 0.18, depthWrite: false }), TX + x, T0 + y, TZ, false, tw);
+    for (const z of [-0.4, 0.4]) box(TX + x + 0.03, T0 + y, TZ + z, 0.08, 0.98, 0.06, '#59605e', true, tw);
+    box(TX + x + 0.03, T0 + y + 0.48, TZ, 0.08, 0.08, 0.86, '#59605e', true, tw);
+    box(TX + x + 0.03, T0 + y - 0.48, TZ, 0.08, 0.08, 0.86, '#59605e', true, tw);
+  }
   // ---- the keeper's cottage 5 x 4 m: white-washed walls, red tile roof, one lit window facing the south shore
   const ct = group('lm08Cottage'); L.use(ct); const CX = -3.7, CZ = 2.6, C0 = gy(CX, CZ);
-  const house = L.house(CX, CZ, 0.0, { w: 5, d: 4, floors: 1, wall: '#d8d6cc', roof: '#a8412e', rise: 1.5, lit: true }); house.position.y = C0;
+  const house = L.roomHouse(CX, CZ, 0.0, { w: 5, d: 4, floors: 1, role: 'cottage', wall: '#d8d6cc', roof: '#a8412e', rise: 1.5, lit: true }); house.position.y = C0;
+  box(CX - 1.45, C0 + 0.83, CZ - 1.2, 0.75, 0.12, 0.5, '#697477', true, ct); // repair bench
+  box(CX - 1.45, C0 + 1.26, CZ - 1.75, 0.72, 0.7, 0.16, '#667277', true, ct);
+  box(CX + 1.48, C0 + 0.85, CZ - 1.45, 0.7, 1.4, 0.42, '#9d957f', true, ct);
   // ---- jetty on the north shore: 6 m of planks on piles, a boat
   const jt = group('lm08Jetty'); L.use(jt); const JZ0 = -9.2;
   for (let i = 0; i < 12; i++) { const z = JZ0 - i * 0.5; box(0.0, SEA + 0.75, z, 1.6, 0.08, 0.46, '#7a5f48', true, jt); }
   for (let i = 0; i < 7; i++) for (const sx of [-0.7, 0.7]) { const z = JZ0 - i * 1.0, base = Math.min(gy(sx, z), SEA) - 0.3; cyl(sx, (base + SEA + 0.72) / 2, z, 0.07, SEA + 0.72 - base, '#4a382b', jt); }
   cyl(0.5, SEA + 1.1, JZ0 - 5.8, 0.05, 0.7, '#4a382b', jt);
+  for (const sx of [-0.62, 0.62]) box(sx, SEA + 0.54, JZ0 - 2.75, 0.13, 0.16, 5.8, '#514235', true, jt);
+  for (let i = 0; i < 6; i++) box(0, SEA + 0.49, JZ0 - 0.5 - i, 1.45, 0.1, 0.12, '#554638', true, jt);
+  const brace = (a, b) => { const v0 = new THREE.Vector3(...a), v1 = new THREE.Vector3(...b), mid = v0.clone().add(v1).multiplyScalar(0.5), axis = v1.clone().sub(v0);
+    const m = mesh(new THREE.CylinderGeometry(0.045, 0.045, axis.length(), 6), mat('#594638'), mid.x, mid.y, mid.z, true, jt);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.normalize()); };
+  for (const z of [JZ0 - 1, JZ0 - 3, JZ0 - 5]) for (const sx of [-0.7, 0.7]) {
+    brace([sx, SEA + 0.63, z - 0.45], [sx, SEA - 0.1, z + 0.45]);
+    box(sx, SEA + 0.68, z, 0.18, 0.06, 0.2, '#817567', true, jt);
+  }
   // ---- rocks and tide pools
   const rk = group('lm08Rocks'); L.use(rk);
   for (let i = 0; i < 30; i++) { const a = rnd() * PI * 2, r = 6.2 + rnd() * 3.4; const x = Math.sin(a) * r, z = -Math.cos(a) * r; if (Math.abs(x) < 1.6 && z < -7.5) continue; const s = 0.5 + 1.6 * rnd() * rnd(); L.rock(x, Math.max(gy(x, z), SEA - 0.4) - 0.1, z, s, ['#6f6b68', '#7d7875', '#625e5c'][i % 3], a, 0.7); }
@@ -48,7 +81,16 @@
   const beam = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false })); beam.renderOrder = 7;
   const bw = L.sub(TX, T0 + 10.5, TZ); bw.userData.live = true; bw.add(beam); const beam2 = beam.clone(); beam2.rotation.y = PI; bw.add(beam2);
   const bb = L.sub(0.9, SEA, JZ0 - 3.0, 0.2); bb.userData.live = true;
-  { const hs = new THREE.Shape(); hs.moveTo(-1.6, -0.55); hs.lineTo(1.0, -0.6); hs.quadraticCurveTo(1.8, -0.1, 1.8, 0); hs.quadraticCurveTo(1.8, 0.1, 1.0, 0.6); hs.lineTo(-1.6, 0.55); hs.lineTo(-1.6, -0.55); const g = new THREE.ExtrudeGeometry(hs, { depth: 0.5, bevelEnabled: false }); g.rotateX(-PI / 2); g.translate(0, -0.2, 0); mesh(g, mat('#dfe5e8'), 0, 0, 0, true, bb); box(-0.4, 0.45, 0, 0.9, 0.5, 0.8, '#cfd6da', true, bb); }
+  { const hs = new THREE.Shape(); hs.moveTo(-1.6, -0.55); hs.lineTo(1.0, -0.6); hs.quadraticCurveTo(1.8, -0.1, 1.8, 0); hs.quadraticCurveTo(1.8, 0.1, 1.0, 0.6); hs.lineTo(-1.6, 0.55); hs.lineTo(-1.6, -0.55); const g = new THREE.ExtrudeGeometry(hs, { depth: 0.5, bevelEnabled: false }); g.rotateX(-PI / 2); g.translate(0, -0.2, 0); mesh(g, mat('#dfe5e8'), 0, 0, 0, true, bb);
+    box(0, 0.08, 0, 3.0, 0.1, 0.9, '#839096', true, bb);
+    for (const side of [-1, 1]) box(0, 0.35, side * 0.57, 3.1, 0.1, 0.09, '#647784', true, bb);
+    box(-0.4, 0.45, 0, 0.9, 0.5, 0.8, '#cfd6da', true, bb);
+    box(0.65, 0.32, 0, 0.55, 0.08, 0.8, '#8e7760', true, bb);
+    box(-1.1, 0.24, 0, 0.1, 0.4, 0.12, '#6b777a', true, bb);
+    for (const side of [-1, 1]) { const f = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.32, 8), mat('#3f5058'), -0.7, 0.1, side * 0.63, true, bb); f.rotation.x = PI / 2; }
+  }
+  const ropePath = new THREE.CatmullRomCurve3([new THREE.Vector3(0.5, SEA + 1.1, JZ0 - 5.8), new THREE.Vector3(0.8, SEA + 0.48, JZ0 - 5.0), new THREE.Vector3(1.15, SEA + 0.24, JZ0 - 4.0)]);
+  mesh(new THREE.TubeGeometry(ropePath, 12, 0.018, 5, false), mat('#8c7858'), 0, 0, 0, false, jt);
   const line = L.sub(CX - 0.1, C0 + 1.9, CZ + 3.0); line.userData.live = true; const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.8), new THREE.MeshBasicMaterial({ color: '#e8e4d8', side: THREE.DoubleSide })); cloth.position.set(-0.5, -0.45, 0); line.add(cloth);
   const L2 = { beamPeak: 0.10, period: 12 };
   out.stats = { lighthouseHeight: 11.85 + 0.15, period: L2.period, beamPeak: L2.beamPeak, beamLength: 40, cottage: [5, 4], jetty: 6, jettyZ: [JZ0, JZ0 - 6], island: 10, rocks: 30, towerBase: T0 };

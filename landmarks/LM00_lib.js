@@ -66,6 +66,67 @@ globalThis.LMLIB = function (K) {
     const wins = []; for (let f = 0; f < fl; f++) { const nw = Math.max(2, Math.round(w / 2.2)); for (let i = 0; i < nw; i++) { const wx = -w / 2 + (i + 0.5) * w / nw; if (f === 0 && Math.abs(wx) < 1.0) continue; const warmK = o.lit === false ? 0.04 : 0.24 + 0.08 * ((i + f) % 2); wins.push(mesh(new THREE.BoxGeometry(1.0, 0.9, 0.05), warm('#ffcf8a', warmK), wx, 0.2 + f * 2.7 + 1.5, d / 2 + 0.02, false, g)); box(wx, 0.2 + f * 2.7 + 1.5, d / 2 + 0.05, 1.12, 0.06, 0.04, '#3a2d24', false, g); } }
     box(0, 1.2, d / 2 + 0.03, 1.0, 2.0, 0.06, '#4a382b', false, g); box(0, 2.1, d / 2 + 0.2, 1.5, 0.12, 0.4, '#5a4a3c', true, g);
     L.use(prevCur); return g; };
+  // Full close-up house for WD coast sites. The same timber/window geometry accepts separate room plans.
+  L.roomHouse = (x, z, ry, o = {}) => {
+    const w = o.w || 6, d = o.d || 5, fl = o.floors || 1, h = fl * 2.7, role = o.role || 'home';
+    const g = L.sub(x, 0, z, ry), wall = o.wall || '#7a6552', wood = role === 'warehouse' || role === 'ice' ? '#56615e' : '#594638';
+    g.name = `roomHouse-${role}`;
+    const b = (x, y, z, sx, sy, sz, c) => box(x, y, z, sx, sy, sz, c, true, g);
+    const glass = new THREE.MeshPhysicalMaterial({ color: '#c9d9dc', transparent: true, opacity: 0.28, roughness: 0.2, depthWrite: false, side: THREE.DoubleSide });
+    b(0, 0.1, 0, w + 0.3, 0.2, d + 0.3, '#747472');
+    for (let f = 0; f < fl; f++) {
+      const y = 0.2 + f * 2.7, doorW = f === 0 && role === 'warehouse' ? 3.4 : 1.05, doorH = role === 'warehouse' ? 2.4 : 2.0;
+      b(0, y + 0.06, 0, w - 0.18, 0.12, d - 0.18, '#88725a');
+      for (const side of [-1, 1]) {
+        const z = side * d / 2, cuts = side > 0 ? [-w * 0.32, 0, w * 0.32] : [-w * 0.25, w * 0.25]; let left = -w / 2;
+        for (const cx of cuts) {
+          const door = side > 0 && f === 0 && cx === 0, half = door ? doorW / 2 : 0.48;
+          const lo = cx - half, hi = cx + half, bottom = door ? y : y + 0.84, top = door ? y + doorH : y + 1.92;
+          if (lo > left) b((left + lo) / 2, y + 1.35, z, lo - left, 2.7, 0.16, wall);
+          if (bottom > y) b(cx, (y + bottom) / 2, z, half * 2, bottom - y, 0.16, wall);
+          if (top < y + 2.7) b(cx, (top + y + 2.7) / 2, z, half * 2, y + 2.7 - top, 0.16, wall);
+          b(cx, top + 0.035, z, half * 2 + 0.12, 0.07, 0.22, wood);
+          if (!door) {
+            b(cx, bottom - 0.035, z, half * 2 + 0.12, 0.07, 0.24, wood);
+            mesh(new THREE.BoxGeometry(half * 2 - 0.06, top - bottom - 0.08, 0.02), glass, cx, (bottom + top) / 2, z + side * 0.02, false, g);
+            b(cx, (bottom + top) / 2, z + side * 0.05, 0.04, top - bottom, 0.05, wood);
+          } else {
+            for (const sx of [-1, 1]) b(cx + sx * half, y + doorH / 2, z, 0.1, doorH, 0.2, wood);
+            if (role !== 'warehouse') b(cx + 0.35, y + 1.0, z - side * 0.09, 0.48, 1.88, 0.07, wood);
+          }
+          left = hi;
+        }
+        if (left < w / 2) b((left + w / 2) / 2, y + 1.35, z, w / 2 - left, 2.7, 0.16, wall);
+      }
+      for (const side of [-1, 1]) { const xx = side * w / 2;
+        b(xx, y + 1.35, -d * 0.27, 0.16, 2.7, d * 0.46, wall);
+        b(xx, y + 1.35, d * 0.27, 0.16, 2.7, d * 0.46, wall);
+        b(xx, y + 0.42, 0, 0.16, 0.84, d * 0.08, wall); b(xx, y + 2.31, 0, 0.16, 0.78, d * 0.08, wall);
+        mesh(new THREE.BoxGeometry(0.02, 1.0, d * 0.08), glass, xx + side * 0.02, y + 1.36, 0, false, g);
+      }
+      for (const xx of [-w / 2, w / 2]) for (const zz of [-d / 2, d / 2]) b(xx, y + 1.35, zz, 0.16, 2.7, 0.16, wood);
+      b(0, y + 2.62, 0, w - 0.15, 0.14, d - 0.15, '#8a765d');
+      if (role === 'warehouse') {
+        for (const xx of [-w * 0.32, w * 0.32]) for (let k = 0; k < 3; k++) b(xx, y + 0.55 + k * 0.55, -d / 2 + 0.85, 1.35, 0.09, 0.55, '#71807c');
+        b(0, y + 0.7, -d / 2 + 0.95, 1.2, 1.05, 0.4, '#69736b');
+      } else if (role === 'ice') {
+        b(0.2, y + 0.88, -0.55, 1.4, 1.55, 0.9, '#9aadb2');
+        b(-0.65, y + 0.48, d / 2 - 0.55, 0.68, 0.62, 0.6, '#aabdc0');
+      } else {
+        b(-w * 0.25, y + 0.73, d / 2 - 0.85, 0.9, 0.12, 0.6, '#886f53');
+        b(w * 0.24, y + 0.45, d / 2 - 1.05, 0.75, 0.12, 0.55, '#90785a');
+        b(0, y + 1.1, -d / 2 + 0.75, w * 0.4, 1.85, 0.12, '#9c8a70');
+        b(w * 0.25, y + 0.75, -d / 2 + 0.5, 0.85, 1.3, 0.38, '#79644c');
+        if (role === 'cottage' || (f === 0 && o.lit !== false)) mesh(new THREE.BoxGeometry(0.65, 0.22, 0.07), warm('#ffcf8a', role === 'cottage' ? 0.18 : 0.11), -w * 0.22, y + 1.85, -d / 2 + 0.86, false, g);
+      }
+      if (fl > 1) for (let k = 0; k < 7; k++) b(-w / 2 + 0.7, y + 0.25 + k * 0.33, -d / 2 + 0.65 + k * 0.29, 0.7, 0.1, 0.3, '#705b45');
+    }
+    L.gable(w, d, h + 0.2, o.rise || 1.4, 0.5, o.roof || '#3a3f4a', g);
+    for (const zz of [-d / 2, d / 2]) b(0, h + 0.2, zz, w + 0.85, 0.12, 0.12, wood);
+    for (const xx of [-w / 2 + 0.25, w / 2 - 0.25]) b(xx, h / 2, -d / 2 - 0.1, 0.07, h, 0.08, wood);
+    b(0, 0.14, d / 2 + 0.56, role === 'warehouse' ? 3.6 : 1.3, 0.1, 0.82, '#84817a');
+    return g;
+  };
   return L;
 };
 })();
