@@ -21833,6 +21833,9 @@ globalThis.LMLIB = function (K) {
   box(VX + 0.34, 1.31, VZ + 0.46, 0.13, 0.11, 0.02, '#7d8794', true, st); // change return
   box(VX - 0.46, 1.8, VZ + 0.05, 0.025, 1.62, 0.06, '#344b57', false, st); // service door hinge
   for (let i = 0; i < 5; i++) box(VX, 1.27 + i * 0.09, VZ - 0.406, 0.52, 0.018, 0.015, '#344b57', false, st); // rear vent
+  box(VX + 0.31, 1.23, VZ - 0.405, 0.26, 0.21, 0.02, '#45545b', true, st); // rear power access
+  box(VX + 0.31, 1.12, VZ - 0.42, 0.17, 0.035, 0.025, '#a8a39a', false, st);
+  box(VX + 0.31, 0.99, VZ - 0.39, 0.08, 0.25, 0.08, '#586369', true, st); // conduit into the anchored plinth
   const tube = (a, b, r, color, parent = st) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = new THREE.Vector3().subVectors(B, A); const m = mesh(new THREE.CylinderGeometry(r, r, d.length(), 6), mat(color), (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2, false, parent); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); return m; };
   // Parked bicycles and anchored U-racks; the racks still occupy the same small paved bay.
   for (let i = 0; i < 6; i++) {
@@ -21865,10 +21868,20 @@ globalThis.LMLIB = function (K) {
   mesh(new THREE.PlaneGeometry(0.84, 1.72), boothGlass, PX, 1.13, PZ + 0.46, false, st);
   box(PX + 0.27, 1.08, PZ + 0.495, 0.04, 0.16, 0.07, '#e8e4d8', true, st); // door handle
   box(PX, 1.38, PZ - 0.33, 0.64, 0.9, 0.15, '#45545b', true, st); // telephone body
+  box(PX, 0.94, PZ - 0.23, 0.66, 0.055, 0.37, '#6b7076', true, st); // writing shelf below the controls
   box(PX, 1.25, PZ - 0.24, 0.38, 0.22, 0.05, '#e8e4d8', true, st); // dial/keypad face
   for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) box(PX - 0.1 + col * 0.1, 1.28 - row * 0.07, PZ - 0.205, 0.04, 0.04, 0.015, '#6c7377', false, st);
   box(PX - 0.13, 1.65, PZ - 0.2, 0.28, 0.09, 0.1, '#252c31', true, st); // handset
   cyl(PX - 0.27, 1.56, PZ - 0.21, 0.025, 0.18, '#252c31', st);
+  for (let i = 0; i < 8; i++) {
+    const a = i * PI * 2 / 7;
+    tube([PX - 0.26 + 0.035 * Math.sin(a), 1.52 - i * 0.055, PZ - 0.22 + 0.035 * Math.cos(a)],
+      [PX - 0.26 + 0.035 * Math.sin(a + PI * 2 / 7), 1.465 - i * 0.055, PZ - 0.22 + 0.035 * Math.cos(a + PI * 2 / 7)], 0.012, '#252c31');
+  }
+  box(PX - 0.39, 0.48, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, st); // door lower hinge
+  box(PX - 0.39, 1.89, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, st); // door upper hinge
+  box(PX, 1.06, PZ - 0.48, 0.62, 0.37, 0.025, '#8c3832', true, st); // rear service hatch
+  box(PX + 0.21, 1.06, PZ - 0.5, 0.055, 0.07, 0.018, '#d3c9ae', false, st);
   box(-3.0, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
   cyl(-3.0, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
   for (const z of [8.96, 9.04]) { box(-3.0, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(-3.0, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
