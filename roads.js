@@ -886,6 +886,8 @@ function removeTownPavementDuplicates(routes, W) {
     // carry its raised concrete sides past the ±48 m boundary, leaving blue slabs
     // between the original paving and the ring. Cut both sides down to the actual
     // carriageway; the ring's own continuous sheet supplies the junction surface.
+    // Each cut keeps its polygon (flat x, z): terrain.js takes the same rectangles out of this route's ground
+    // cut, so no ground is removed where the road no longer has a surface (CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md).
     const townEdges = rt.def.segs.map(s => W.roadNetwork.edges.find(e => e.id === s.id)).filter(e => e.class.startsWith('TOWN_'));
     const exits = [...new Set(townEdges.flatMap(e => [e.from, e.to]))].filter(id => {
       const n = W.roadNetwork.nodeById[id], p = W.lonLatToTown(n.lon, n.lat);
@@ -904,7 +906,7 @@ function removeTownPavementDuplicates(routes, W) {
           polygon = axis === 'x'
             ? [[along[0], across[0]], [along[1], across[0]], [along[1], across[1]], [along[0], across[1]]]
             : [[across[0], along[0]], [across[1], along[0]], [across[1], along[1]], [across[0], along[1]]];
-        rt.connectorCuts.push({ exit: id, side: direction, ...clipStripOutside(rt.strip, polygon) });
+        rt.connectorCuts.push({ exit: id, side: direction, route: rt.def.id, polygon: polygon.map(q => q.slice()), ...clipStripOutside(rt.strip, polygon) });
       }
     }
     if (!rt.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH')) continue;
