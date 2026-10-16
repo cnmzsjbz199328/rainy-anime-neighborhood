@@ -51,6 +51,27 @@ for (const [name, x, z, dist, yaw, pitch, height, look] of views) {
   await page.screenshot({ path: file });
   report.push({ name, file: path.relative(root, file), look, ...state });
 }
+for (const [name, dist, yaw, pitch, look] of [
+  ['sphere-region', 60, 0.7, 0.75, 'Station region on the clear daytime sphere'],
+  ['sphere-globe', 220, 0.7, 0.75, 'Regional density and terrain relationship on the clear daytime globe'],
+]) {
+  const state = await page.evaluate(({ dist, yaw, pitch }) => {
+    const S = window.__scene, W = window.WORLD, lm = W.landmarks.find(q => q.id === 'LM09');
+    const t = W.lonLatToTown(lm.lon, lm.lat);
+    S.weather.lock('clear'); S.weather.setTime(600);
+    S.transition.setMode('sphere'); S.transition.step(3);
+    S.view.set({ mapMode: 'sphere', mode: 'free', target: [t.x, 1.8, t.z], dist, yaw, pitch });
+    window.__step(8);
+    S.renderer.render(S.scene, S.camera);
+    return { target: [t.x, 1.8, t.z], dist, yaw, pitch, mapMode: S.view.get().mapMode,
+      weather: 'clear', time: 600, calls: S.renderer.info.render.calls,
+      triangles: S.renderer.info.render.triangles, textures: S.renderer.info.memory.textures };
+  }, { dist, yaw, pitch });
+  if (state.mapMode !== 'sphere') throw new Error(`${name}: map mode did not reach sphere`);
+  const file = path.join(dir, `${name}.png`);
+  await page.screenshot({ path: file });
+  report.push({ name, file: path.relative(root, file), look, ...state });
+}
 await fs.writeFile(path.join(dir, 'report.json'), JSON.stringify({ views: report, pageErrors: errors }, null, 2) + '\n');
 console.log(`WD1 look points: ${report.length} PNGs in ${path.relative(root, dir)}; page errors ${errors.length}`);
 await browser.close();

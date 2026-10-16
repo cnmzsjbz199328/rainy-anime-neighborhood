@@ -3256,3 +3256,8 @@
 
 - `tools/wd1_shots.mjs` 新增候车棚左右侧/屋顶/内部、车厢两端、售货机正背面、电话亭正背面十个机位；与原七个机位共 17 张图，均在忽略的 `docs/world/wd1/model-preview/`。该目录 `README.md` 列逐张看点，`report.json` 保存地图模式、天气/时间、target/dist/yaw/pitch、calls/triangles/textures。
 - 机器检查 17 个唯一 PNG 均为 1280×800，页面错误 0。没有审看图像或宣称视觉通过；机位构图与四面、屋顶、室内及操作面可读性均留给用户判断。未改模型和七机位性能对照。
+
+## WD1 球形远景机位（2026-10-17，视觉待用户判断）
+
+- `tools/wd1_shots.mjs` 追加 `sphere-region.png`（60 m）和 `sphere-globe.png`（220 m），切入球形并锁晴天；准确机位和状态写入 `docs/world/wd1/model-preview/report.json`，看点在同目录 `README.md`。现共 19 个唯一 PNG，机器检查全部 1280×800，页面错误 0，两张新增图报告为 `mapMode=sphere`、`weather=clear`。
+- 未打开图像，球形构图、区域辨识度和昼夜光色仍由用户判断。场景源码、锚点、道路和七机位性能对照未改；WD1 仍待视觉及 W10d/WX2 接口验收。
