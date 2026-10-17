@@ -36,6 +36,20 @@ function splitPolygonXZ(poly, a, b, sign, eps = CUT_EPS) {
   const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
   return [clean(inside), clean(outside)];
 }
+// A row interval of a swept road as convex pieces for the cuts (subtractConvexXZ takes a convex clip). It is a convex quad [a0, a1, b1, b0] unless its two
+// rows cross, which they do on the inner side of a turn sharper than the half width (the swept cells fold there: C01-S); then it is the two triangles
+// either side of the crossing point. A quad with one reflex corner is split along the diagonal from that corner. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a
+// crossed quad taken as one clip left the ground over M01-south's ditch outside the turn uncut.)
+function convexPartsXZ(q) {
+  const turn = (a, b, c) => (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]), t = q.map((p, i) => turn(q[(i + 3) % 4], p, q[(i + 1) % 4]));
+  if (t.every(v => v >= -1e-12) || t.every(v => v <= 1e-12)) return { parts: [q], kind: null };
+  const meet = (a, b, c, d) => { const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-15) return null;
+    const u = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, v = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den; return u > 0 && u < 1 && v > 0 && v < 1 ? [a[0] + r[0] * u, a[1] + r[1] * u] : null; };
+  let X = meet(q[0], q[1], q[2], q[3]); if (X) return { parts: [[q[0], X, q[3]], [X, q[1], q[2]]], kind: 'crossed' };
+  X = meet(q[1], q[2], q[3], q[0]); if (X) return { parts: [[q[0], q[1], X], [X, q[2], q[3]]], kind: 'crossed' };
+  const sign = Math.sign(polygonAreaXZ(q)), k = t.findIndex(v => Math.abs(v) > 1e-12 && Math.sign(v) !== sign);
+  return { parts: [[q[k], q[(k + 1) % 4], q[(k + 2) % 4]], [q[(k + 2) % 4], q[(k + 3) % 4], q[k]]], kind: 'reflex' };
+}
 function subtractConvexXZ(subject, clip, eps = CUT_EPS) {
   let rest = subject; const outside = [], sign = polygonAreaXZ(clip) >= 0 ? 1 : -1;
   for (let i = 0; i < clip.length && rest.length >= 3; i++) {
@@ -447,11 +461,13 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       connectorStats.trimmed++; if (!parts.length) connectorStats.removed++; connectorStats.pieces += parts.length;
       for (const q of parts) addPoly(q, { ...src, connector: exits });
     };
-    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [];
+    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [], folds = { crossed: 0, reflex: 0, routes: {} };
+    // a row interval as convex pieces (convexPartsXZ), the folded ones counted per route
+    const rowParts = (rt, A, Bq) => { const r = convexPartsXZ([A[0], A[1], Bq[1], Bq[0]]); if (r.kind) { folds[r.kind]++; folds.routes[rt.def.id] = (folds.routes[rt.def.id] || 0) + 1; } return r.parts; };
     for (const rt of data.routes || []) for (let i = 0; i + 1 < rt.samples.length; i++) {
       const x = rt.flatOf[i].x, a = routeRow(rt, i, 0, x), b = routeRow(rt, i + 1, 0, x), sa = rt.samples[i].s, sb = rt.samples[i + 1].s, I = info.get(rt), row = s => (s === sa ? a : s === sb ? b : lerpRow(a, b, (s - sa) / (sb - sa)));
-      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); addRoutePoly(rt, [A[0], A[1], Bq[1], Bq[0]], { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}), ...(limited.has(rt.def.id + ':' + i) || limited.has(rt.def.id + ':' + (i + 1)) ? { stripEdge: true } : {}) }); }
-      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push([A[0], A[1], Bq[1], Bq[0]]); }      // the uncut footprint over the structure
+      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}), ...(limited.has(rt.def.id + ':' + i) || limited.has(rt.def.id + ':' + (i + 1)) ? { stripEdge: true } : {}) }); }
+      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push(...rowParts(rt, A, Bq)); }      // the uncut footprint over the structure
     }
     // A tunnel mouth: the ground inside the opening between the portal face and the black void behind it (rt.tunnel.voidDepth) would stand in front of the
     // void, so it is cut within the opening's width (the inner profile, +-innerR). Only this short strip: the hill over the tunnel stays (tools/
@@ -471,7 +487,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       const S = rt.samples, last = S.length - 1;
       for (const [i, c0, c1] of [[0, S[0].s - CUT_CAP, S[0].s], [last, S[last].s, S[last].s + CUT_CAP]]) for (const [p0, p1] of outside(c0, c1, info.get(rt).ranges)) {
         const A = routeRow(rt, i, p0 - S[i].s), Bq = routeRow(rt, i, p1 - S[i].s);
-        addRoutePoly(rt, [A[0], A[1], Bq[1], Bq[0]], { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(limited.has(rt.def.id + ':' + i) ? { stripEdge: true } : {}) });
+        for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(limited.has(rt.def.id + ':' + i) ? { stripEdge: true } : {}) });
       }
     }
     for (const br of data.bridges || []) {
@@ -497,7 +513,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     state.roadPolygons = polys;
     const bySource = {}; for (const q of polys) bySource[q.src.kind] = (bySource[q.src.kind] || 0) + 1;
     connectorStats.releasedArea = +connectorStats.releasedArea.toFixed(4); for (const k of Object.keys(connectorStats.byExit)) connectorStats.byExit[k] = +connectorStats.byExit[k].toFixed(4);
-    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped, connector: connectorStats };
+    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped, connector: connectorStats, rowFolds: folds };
     let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0;
     const meshes = [...state.ring, ...state.rest];
     for (const mesh of meshes) {

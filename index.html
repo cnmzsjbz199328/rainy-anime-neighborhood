@@ -2303,6 +2303,20 @@ function splitPolygonXZ(poly, a, b, sign, eps = CUT_EPS) {
   const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
   return [clean(inside), clean(outside)];
 }
+// A row interval of a swept road as convex pieces for the cuts (subtractConvexXZ takes a convex clip). It is a convex quad [a0, a1, b1, b0] unless its two
+// rows cross, which they do on the inner side of a turn sharper than the half width (the swept cells fold there: C01-S); then it is the two triangles
+// either side of the crossing point. A quad with one reflex corner is split along the diagonal from that corner. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a
+// crossed quad taken as one clip left the ground over M01-south's ditch outside the turn uncut.)
+function convexPartsXZ(q) {
+  const turn = (a, b, c) => (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]), t = q.map((p, i) => turn(q[(i + 3) % 4], p, q[(i + 1) % 4]));
+  if (t.every(v => v >= -1e-12) || t.every(v => v <= 1e-12)) return { parts: [q], kind: null };
+  const meet = (a, b, c, d) => { const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-15) return null;
+    const u = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, v = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den; return u > 0 && u < 1 && v > 0 && v < 1 ? [a[0] + r[0] * u, a[1] + r[1] * u] : null; };
+  let X = meet(q[0], q[1], q[2], q[3]); if (X) return { parts: [[q[0], X, q[3]], [X, q[1], q[2]]], kind: 'crossed' };
+  X = meet(q[1], q[2], q[3], q[0]); if (X) return { parts: [[q[0], q[1], X], [X, q[2], q[3]]], kind: 'crossed' };
+  const sign = Math.sign(polygonAreaXZ(q)), k = t.findIndex(v => Math.abs(v) > 1e-12 && Math.sign(v) !== sign);
+  return { parts: [[q[k], q[(k + 1) % 4], q[(k + 2) % 4]], [q[(k + 2) % 4], q[(k + 3) % 4], q[k]]], kind: 'reflex' };
+}
 function subtractConvexXZ(subject, clip, eps = CUT_EPS) {
   let rest = subject; const outside = [], sign = polygonAreaXZ(clip) >= 0 ? 1 : -1;
   for (let i = 0; i < clip.length && rest.length >= 3; i++) {
@@ -2714,11 +2728,13 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       connectorStats.trimmed++; if (!parts.length) connectorStats.removed++; connectorStats.pieces += parts.length;
       for (const q of parts) addPoly(q, { ...src, connector: exits });
     };
-    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [];
+    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [], folds = { crossed: 0, reflex: 0, routes: {} };
+    // a row interval as convex pieces (convexPartsXZ), the folded ones counted per route
+    const rowParts = (rt, A, Bq) => { const r = convexPartsXZ([A[0], A[1], Bq[1], Bq[0]]); if (r.kind) { folds[r.kind]++; folds.routes[rt.def.id] = (folds.routes[rt.def.id] || 0) + 1; } return r.parts; };
     for (const rt of data.routes || []) for (let i = 0; i + 1 < rt.samples.length; i++) {
       const x = rt.flatOf[i].x, a = routeRow(rt, i, 0, x), b = routeRow(rt, i + 1, 0, x), sa = rt.samples[i].s, sb = rt.samples[i + 1].s, I = info.get(rt), row = s => (s === sa ? a : s === sb ? b : lerpRow(a, b, (s - sa) / (sb - sa)));
-      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); addRoutePoly(rt, [A[0], A[1], Bq[1], Bq[0]], { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}), ...(limited.has(rt.def.id + ':' + i) || limited.has(rt.def.id + ':' + (i + 1)) ? { stripEdge: true } : {}) }); }
-      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push([A[0], A[1], Bq[1], Bq[0]]); }      // the uncut footprint over the structure
+      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}), ...(limited.has(rt.def.id + ':' + i) || limited.has(rt.def.id + ':' + (i + 1)) ? { stripEdge: true } : {}) }); }
+      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push(...rowParts(rt, A, Bq)); }      // the uncut footprint over the structure
     }
     // A tunnel mouth: the ground inside the opening between the portal face and the black void behind it (rt.tunnel.voidDepth) would stand in front of the
     // void, so it is cut within the opening's width (the inner profile, +-innerR). Only this short strip: the hill over the tunnel stays (tools/
@@ -2738,7 +2754,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       const S = rt.samples, last = S.length - 1;
       for (const [i, c0, c1] of [[0, S[0].s - CUT_CAP, S[0].s], [last, S[last].s, S[last].s + CUT_CAP]]) for (const [p0, p1] of outside(c0, c1, info.get(rt).ranges)) {
         const A = routeRow(rt, i, p0 - S[i].s), Bq = routeRow(rt, i, p1 - S[i].s);
-        addRoutePoly(rt, [A[0], A[1], Bq[1], Bq[0]], { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(limited.has(rt.def.id + ':' + i) ? { stripEdge: true } : {}) });
+        for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(limited.has(rt.def.id + ':' + i) ? { stripEdge: true } : {}) });
       }
     }
     for (const br of data.bridges || []) {
@@ -2764,7 +2780,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     state.roadPolygons = polys;
     const bySource = {}; for (const q of polys) bySource[q.src.kind] = (bySource[q.src.kind] || 0) + 1;
     connectorStats.releasedArea = +connectorStats.releasedArea.toFixed(4); for (const k of Object.keys(connectorStats.byExit)) connectorStats.byExit[k] = +connectorStats.byExit[k].toFixed(4);
-    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped, connector: connectorStats };
+    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped, connector: connectorStats, rowFolds: folds };
     let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0;
     const meshes = [...state.ring, ...state.rest];
     for (const mesh of meshes) {
@@ -3122,6 +3138,15 @@ else global.FLORA = FLORA;
 (function (global) {
 'use strict';
 const R = 90, D = Math.PI / 180, LON0 = -0.5, SEED = 4004;
+// The plan box of each template that stands on the ground (flora.js, model metres = true metres: x0, x1, z0, z1 of its local x and z; the rails of a fence, a log,
+// a fallen rack or sign reach out to one side of the origin). The CR01 cull below takes the whole box; section.js checks every listed box against the built geometry.
+const FOOTPRINT = { seedling: [-0.03, 0.03, -0.03, 0.08], tuft: [-0.11, 0.13, -0.18, 0.31], flower: [-0.1, 0.11, -0.1, 0.1], weed: [-0.18, 0.19, -0.16, 0.55], shrubLow: [-0.59, 0.55, -0.56, 0.63],
+  shrub: [-0.77, 0.87, -0.8, 0.74], fern: [-0.16, 0.16, -0.1, 0.71], rock: [-0.6, 0.6, -0.43, 0.43], rockBig: [-1.04, 1.17, -0.96, 0.92], mossRock: [-0.6, 0.48, -0.55, 0.59], reefRock: [-0.99, 0.99, -0.84, 0.84],
+  weedShadow: [-0.89, 0.89, -0.57, 0.63], tetra: [-0.59, 0.59, -0.58, 0.59], cairn: [-0.32, 0.36, -0.35, 0.38], stonePost: [-0.11, 0.11, -0.11, 0.11], logMoss: [-4.5, 0.9, -0.22, 0.22], drift: [-3.45, 0.14, -0.13, 1.04],
+  rack: [-3.9, 1.32, -0.12, 0.1], rackFallen: [-3.8, 0.42, -0.04, 1.09], scarecrow: [-1.95, 0.35, -0.35, 0.35], hutFarm: [-1.35, 1.35, -1.05, 1.05], hutRusty: [-1.34, 1.34, -1.05, 1.05], oldMachine: [-1.56, 1.15, -0.91, 0.85],
+  barrier: [-1, 1, -0.03, 0.03], signFallen: [-3.2, 0.13, -0.2, 0.4], guardrail: [-1, 1, -0.04, 0.04], guardrailMetal: [-1, 1, -0.04, 0.04], fenceBamboo: [-3, 0.94, -0.03, 0.06], pole: [-0.95, 0.95, -0.15, 0.15],
+  mirror: [-0.25, 0.44, -0.04, 0.08], signRound: [-0.31, 0.31, -0.04, 0.1], signBus: [-0.25, 0.25, -0.04, 0.04], vending: [-0.53, 0.53, -0.44, 0.44], lantern: [-0.25, 0.25, -0.25, 0.25], torii: [-1.46, 1.46, -0.18, 0.18],
+  mossStep: [-0.75, 0.75, -1.2, 0.18], seaMark: [-0.16, 0.16, -0.05, 0.06] };
 const mulberry = seed => { let s = seed | 0; return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 
 function plan(W) {
@@ -3287,17 +3312,31 @@ function plan(W) {
 
   // spacing check helper for the trees: reported to the checks
   const trees = ['treeRound', 'cedar', 'pine', 'bamboo'].reduce((s, t) => s + (items[t] || []).length, 0);
-  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches
-  // the ring's full RD03 section or the C01-S turning mouth, including scattered plants.
-  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat);
-  const distanceToRing = it => Math.abs(W.lonLatToTown(it.lon, it.lat).z - center.z);
+  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches the ring's full RD03 section or the C01-S turning mouth, including
+  // scattered plants. The ring: in true metres in (u, v), the ring's south straight is the parallel of C01-S (CR01 is the square |x|, |z| = 54 of the flat
+  // frame), so it is the line v = v(C01-S) right across the corridor (its corners begin at |x| = 46 m, well east and west of it) and v is true metres along
+  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S and the placement
+  // margin of the roads up to v 24 m as before, and the full sections of those roads (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides;
+  // the RD07 boardwalk its placement half width). The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
+  // (the ground cut's 0.12 m pad: nothing stands over the cut's edge); a tree, whose crown may overhang, keeps its clearance circle + 0.5 m.
+  // (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: the ring test this replaces took town-frame metres, 0.84 true metres each at the ring, and only |x| <= 12 m of
+  // a corridor that reaches x -15.0 m, and every test a clearance circle that misses the one-sided templates: the farm hut and the westmost seedlings
+  // stood on the ring, a fallen rack reached into the full section of RN06-02.)
+  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat), vRing = toUV(c01.lon, c01.lat).v, RING_FULL = [3.55, 2.75], MARGIN = 0.15, TREE = 0.5;
+  const fullHalf = { RD03: 3.55, RD04: 2.75, RD05: 1.55, RD07: roadHalf.RD07 };
+  const outline = it => { const e = FOOTPRINT[it.type]; if (!e) return null; const c = Math.cos(it.yaw), s = Math.sin(it.yaw);
+    return [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([x, z]) => [it.u + x * it.s[0] * c + z * it.s[2] * s, it.v - x * it.s[0] * s + z * it.s[2] * c]); };
+  const polyDist = (P, u, v) => { let inside = false, d = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], b = P[i], dx = b[0] - a[0], dv = b[1] - a[1], t = Math.max(0, Math.min(1, ((u - a[0]) * dx + (v - a[1]) * dv) / (dx * dx + dv * dv || 1)));
+    d = Math.min(d, Math.hypot(u - a[0] - dx * t, v - a[1] - dv * t)); if ((a[1] > v) !== (b[1] > v) && u < a[0] + (v - a[1]) * dx / dv) inside = !inside; } return inside ? 0 : d; };
+  const fullDist = it => { const P = outline(it), r0 = P ? 0 : it.clearance + TREE - MARGIN; let best = Infinity; for (const r of Object.values(roads)) for (const p of r.pts) best = Math.min(best, (P ? polyDist(P, p.u, p.v) : Math.hypot(p.u - it.u, p.v - it.v)) - r0 - fullHalf[r.class]); return best; };
   const removedAtRing = {};
   for (const [type, list] of Object.entries(items)) {
     items[type] = list.filter(it => {
+      const P = outline(it), r0 = it.clearance + TREE - MARGIN, v0 = P ? Math.min(...P.map(q => q[1])) : it.v - r0, v1 = P ? Math.max(...P.map(q => q[1])) : it.v + r0;
       const p = W.lonLatToTown(it.lon, it.lat), radius = it.clearance + 0.5;
-      const ring = Math.abs(p.x) <= 12 && distanceToRing(it) < 3.55 + radius;
+      const ring = v0 - MARGIN < vRing + RING_FULL[0] && v1 + MARGIN > vRing - RING_FULL[1];
       const mouth = Math.abs(p.z - center.z) <= 7 && Math.abs(p.x - center.x) < 4.4 + radius;
-      const approach = it.v < 24 && roadDist(it.u, it.v).d < radius;
+      const approach = it.v < 24 && (roadDist(it.u, it.v).d < radius || fullDist(it) < MARGIN);
       const conflict = ring || mouth || approach;
       if (conflict) removedAtRing[type] = (removedAtRing[type] || 0) + 1;
       return !conflict;
@@ -3309,7 +3348,7 @@ function plan(W) {
   return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, lampSites, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
-const PLAN = { plan, SEED };
+const PLAN = { plan, SEED, FOOTPRINT };
 if (typeof module !== 'undefined' && module.exports) module.exports = PLAN;
 else global.SECTION_PLAN = PLAN;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -4253,6 +4292,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
+    // the plan boxes that the section's CR01 cull and the land cover take (section_plan.js FOOTPRINT) hold the templates they stand for
+    for (const [type, e] of Object.entries(global.SECTION_PLAN.FOOTPRINT)) {
+      const p = K.geometries[type] && K.geometries[type].attributes.position; if (!p) throw new Error(`section: no ${type} template for its plan box`);
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); if (x < e[0] - 1e-6 || x > e[1] + 1e-6 || z < e[2] - 1e-6 || z > e[3] + 1e-6) throw new Error(`section: the ${type} template leaves its plan box (section_plan.js FOOTPRINT)`); }
+    }
     // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
     H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
@@ -6117,6 +6161,21 @@ function build(W, H, ctx) {
     // weeds and flowers along the ridges
     for (let e = 0; e < c.outer.length; e++) { if (rnd(s.id * 7 + e, 35) > 0.5) continue; const a = c.outer[e], b = c.outer[(e + 1) % c.outer.length], t = rnd(s.id * 7 + e, 37), ll = llOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); put(rnd(s.id * 7 + e, 39) < 0.78 ? 'tuft' : 'flower', ll.lon, ll.lat, c.flatH + SP.ridgeH - 0.02, { s: [1, 0.9 + 0.5 * rnd(s.id, e), 1] }); }
   }
+  // Every thing of a cell keeps its whole plan box (the template's own, ctx.footprint, turned by its yaw and scaled: a rack's or a fallen rack's beam
+  // reaches 3.9 m to one side of its origin) clear of the roads and landmarks by the ground cut's 0.15 m, as the cell's corners keep clear of them: the
+  // box's outline every 0.5 m at most and its centre. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a paddy rack on a corner ridge reached 1.5 m onto CR01.)
+  const FP = ctx.footprint, CLEAR = 0.15; if (!FP) throw new Error('landcover build: ctx.footprint (the plan boxes of the templates) is required');
+  const boxClear = it => {
+    const e = FP[it.type]; if (!e) throw new Error(`landcover build: no plan box for ${it.type}`);
+    const sx = it.s[0], sz = it.s[2], c = Math.cos(it.yaw), sn = Math.sin(it.yaw), k = 1 / Math.cos(it.lat * D), x0 = R * it.lon * D, z0 = -R * Math.asinh(Math.tan(it.lat * D));
+    if (!nearAvoid(it.lon, it.lat, Math.hypot(Math.max(-e[0], e[1]) * sx, Math.max(-e[2], e[3]) * sz) + CLEAR)) return true;     // nothing within the box's reach
+    const corners = [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]], pts = [[0, 0]];
+    for (let i = 0; i < 4; i++) { const a = corners[i], b = corners[(i + 1) % 4], n = Math.max(1, Math.ceil(Math.hypot((b[0] - a[0]) * sx, (b[1] - a[1]) * sz) / 0.5)); for (let j = 0; j < n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]); }
+    return pts.every(([lx, lz]) => { const wx = lx * sx * c + lz * sz * sn, wz = -lx * sx * sn + lz * sz * c, ll = llOf(x0 + wx * k, z0 + wz * k); return !nearAvoid(ll.lon, ll.lat, CLEAR); });
+  };
+  stats.boxCulled = {};
+  const kept = items.filter(it => { if (boxClear(it)) return true; stats.boxCulled[it.type] = (stats.boxCulled[it.type] || 0) + 1; return false; });
+  items.length = 0; items.push(...kept);
   // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
   // Keep the empty mesh record until the ground-cover consumers no longer require the field.
   const edge = { pos: [], col: [], idx: [] };
@@ -6638,7 +6697,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, avoidIndex, corridor });
+    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint: global.SECTION_PLAN.FOOTPRINT });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);

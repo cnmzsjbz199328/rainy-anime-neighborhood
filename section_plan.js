@@ -5,6 +5,15 @@
 (function (global) {
 'use strict';
 const R = 90, D = Math.PI / 180, LON0 = -0.5, SEED = 4004;
+// The plan box of each template that stands on the ground (flora.js, model metres = true metres: x0, x1, z0, z1 of its local x and z; the rails of a fence, a log,
+// a fallen rack or sign reach out to one side of the origin). The CR01 cull below takes the whole box; section.js checks every listed box against the built geometry.
+const FOOTPRINT = { seedling: [-0.03, 0.03, -0.03, 0.08], tuft: [-0.11, 0.13, -0.18, 0.31], flower: [-0.1, 0.11, -0.1, 0.1], weed: [-0.18, 0.19, -0.16, 0.55], shrubLow: [-0.59, 0.55, -0.56, 0.63],
+  shrub: [-0.77, 0.87, -0.8, 0.74], fern: [-0.16, 0.16, -0.1, 0.71], rock: [-0.6, 0.6, -0.43, 0.43], rockBig: [-1.04, 1.17, -0.96, 0.92], mossRock: [-0.6, 0.48, -0.55, 0.59], reefRock: [-0.99, 0.99, -0.84, 0.84],
+  weedShadow: [-0.89, 0.89, -0.57, 0.63], tetra: [-0.59, 0.59, -0.58, 0.59], cairn: [-0.32, 0.36, -0.35, 0.38], stonePost: [-0.11, 0.11, -0.11, 0.11], logMoss: [-4.5, 0.9, -0.22, 0.22], drift: [-3.45, 0.14, -0.13, 1.04],
+  rack: [-3.9, 1.32, -0.12, 0.1], rackFallen: [-3.8, 0.42, -0.04, 1.09], scarecrow: [-1.95, 0.35, -0.35, 0.35], hutFarm: [-1.35, 1.35, -1.05, 1.05], hutRusty: [-1.34, 1.34, -1.05, 1.05], oldMachine: [-1.56, 1.15, -0.91, 0.85],
+  barrier: [-1, 1, -0.03, 0.03], signFallen: [-3.2, 0.13, -0.2, 0.4], guardrail: [-1, 1, -0.04, 0.04], guardrailMetal: [-1, 1, -0.04, 0.04], fenceBamboo: [-3, 0.94, -0.03, 0.06], pole: [-0.95, 0.95, -0.15, 0.15],
+  mirror: [-0.25, 0.44, -0.04, 0.08], signRound: [-0.31, 0.31, -0.04, 0.1], signBus: [-0.25, 0.25, -0.04, 0.04], vending: [-0.53, 0.53, -0.44, 0.44], lantern: [-0.25, 0.25, -0.25, 0.25], torii: [-1.46, 1.46, -0.18, 0.18],
+  mossStep: [-0.75, 0.75, -1.2, 0.18], seaMark: [-0.16, 0.16, -0.05, 0.06] };
 const mulberry = seed => { let s = seed | 0; return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 
 function plan(W) {
@@ -170,17 +179,31 @@ function plan(W) {
 
   // spacing check helper for the trees: reported to the checks
   const trees = ['treeRound', 'cedar', 'pine', 'bamboo'].reduce((s, t) => s + (items[t] || []).length, 0);
-  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches
-  // the ring's full RD03 section or the C01-S turning mouth, including scattered plants.
-  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat);
-  const distanceToRing = it => Math.abs(W.lonLatToTown(it.lon, it.lat).z - center.z);
+  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches the ring's full RD03 section or the C01-S turning mouth, including
+  // scattered plants. The ring: in true metres in (u, v), the ring's south straight is the parallel of C01-S (CR01 is the square |x|, |z| = 54 of the flat
+  // frame), so it is the line v = v(C01-S) right across the corridor (its corners begin at |x| = 46 m, well east and west of it) and v is true metres along
+  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S and the placement
+  // margin of the roads up to v 24 m as before, and the full sections of those roads (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides;
+  // the RD07 boardwalk its placement half width). The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
+  // (the ground cut's 0.12 m pad: nothing stands over the cut's edge); a tree, whose crown may overhang, keeps its clearance circle + 0.5 m.
+  // (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: the ring test this replaces took town-frame metres, 0.84 true metres each at the ring, and only |x| <= 12 m of
+  // a corridor that reaches x -15.0 m, and every test a clearance circle that misses the one-sided templates: the farm hut and the westmost seedlings
+  // stood on the ring, a fallen rack reached into the full section of RN06-02.)
+  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat), vRing = toUV(c01.lon, c01.lat).v, RING_FULL = [3.55, 2.75], MARGIN = 0.15, TREE = 0.5;
+  const fullHalf = { RD03: 3.55, RD04: 2.75, RD05: 1.55, RD07: roadHalf.RD07 };
+  const outline = it => { const e = FOOTPRINT[it.type]; if (!e) return null; const c = Math.cos(it.yaw), s = Math.sin(it.yaw);
+    return [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([x, z]) => [it.u + x * it.s[0] * c + z * it.s[2] * s, it.v - x * it.s[0] * s + z * it.s[2] * c]); };
+  const polyDist = (P, u, v) => { let inside = false, d = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], b = P[i], dx = b[0] - a[0], dv = b[1] - a[1], t = Math.max(0, Math.min(1, ((u - a[0]) * dx + (v - a[1]) * dv) / (dx * dx + dv * dv || 1)));
+    d = Math.min(d, Math.hypot(u - a[0] - dx * t, v - a[1] - dv * t)); if ((a[1] > v) !== (b[1] > v) && u < a[0] + (v - a[1]) * dx / dv) inside = !inside; } return inside ? 0 : d; };
+  const fullDist = it => { const P = outline(it), r0 = P ? 0 : it.clearance + TREE - MARGIN; let best = Infinity; for (const r of Object.values(roads)) for (const p of r.pts) best = Math.min(best, (P ? polyDist(P, p.u, p.v) : Math.hypot(p.u - it.u, p.v - it.v)) - r0 - fullHalf[r.class]); return best; };
   const removedAtRing = {};
   for (const [type, list] of Object.entries(items)) {
     items[type] = list.filter(it => {
+      const P = outline(it), r0 = it.clearance + TREE - MARGIN, v0 = P ? Math.min(...P.map(q => q[1])) : it.v - r0, v1 = P ? Math.max(...P.map(q => q[1])) : it.v + r0;
       const p = W.lonLatToTown(it.lon, it.lat), radius = it.clearance + 0.5;
-      const ring = Math.abs(p.x) <= 12 && distanceToRing(it) < 3.55 + radius;
+      const ring = v0 - MARGIN < vRing + RING_FULL[0] && v1 + MARGIN > vRing - RING_FULL[1];
       const mouth = Math.abs(p.z - center.z) <= 7 && Math.abs(p.x - center.x) < 4.4 + radius;
-      const approach = it.v < 24 && roadDist(it.u, it.v).d < radius;
+      const approach = it.v < 24 && (roadDist(it.u, it.v).d < radius || fullDist(it) < MARGIN);
       const conflict = ring || mouth || approach;
       if (conflict) removedAtRing[type] = (removedAtRing[type] || 0) + 1;
       return !conflict;
@@ -192,7 +215,7 @@ function plan(W) {
   return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, lampSites, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
-const PLAN = { plan, SEED };
+const PLAN = { plan, SEED, FOOTPRINT };
 if (typeof module !== 'undefined' && module.exports) module.exports = PLAN;
 else global.SECTION_PLAN = PLAN;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

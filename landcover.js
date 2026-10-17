@@ -190,6 +190,21 @@ function build(W, H, ctx) {
     // weeds and flowers along the ridges
     for (let e = 0; e < c.outer.length; e++) { if (rnd(s.id * 7 + e, 35) > 0.5) continue; const a = c.outer[e], b = c.outer[(e + 1) % c.outer.length], t = rnd(s.id * 7 + e, 37), ll = llOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); put(rnd(s.id * 7 + e, 39) < 0.78 ? 'tuft' : 'flower', ll.lon, ll.lat, c.flatH + SP.ridgeH - 0.02, { s: [1, 0.9 + 0.5 * rnd(s.id, e), 1] }); }
   }
+  // Every thing of a cell keeps its whole plan box (the template's own, ctx.footprint, turned by its yaw and scaled: a rack's or a fallen rack's beam
+  // reaches 3.9 m to one side of its origin) clear of the roads and landmarks by the ground cut's 0.15 m, as the cell's corners keep clear of them: the
+  // box's outline every 0.5 m at most and its centre. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a paddy rack on a corner ridge reached 1.5 m onto CR01.)
+  const FP = ctx.footprint, CLEAR = 0.15; if (!FP) throw new Error('landcover build: ctx.footprint (the plan boxes of the templates) is required');
+  const boxClear = it => {
+    const e = FP[it.type]; if (!e) throw new Error(`landcover build: no plan box for ${it.type}`);
+    const sx = it.s[0], sz = it.s[2], c = Math.cos(it.yaw), sn = Math.sin(it.yaw), k = 1 / Math.cos(it.lat * D), x0 = R * it.lon * D, z0 = -R * Math.asinh(Math.tan(it.lat * D));
+    if (!nearAvoid(it.lon, it.lat, Math.hypot(Math.max(-e[0], e[1]) * sx, Math.max(-e[2], e[3]) * sz) + CLEAR)) return true;     // nothing within the box's reach
+    const corners = [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]], pts = [[0, 0]];
+    for (let i = 0; i < 4; i++) { const a = corners[i], b = corners[(i + 1) % 4], n = Math.max(1, Math.ceil(Math.hypot((b[0] - a[0]) * sx, (b[1] - a[1]) * sz) / 0.5)); for (let j = 0; j < n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]); }
+    return pts.every(([lx, lz]) => { const wx = lx * sx * c + lz * sz * sn, wz = -lx * sx * sn + lz * sz * c, ll = llOf(x0 + wx * k, z0 + wz * k); return !nearAvoid(ll.lon, ll.lat, CLEAR); });
+  };
+  stats.boxCulled = {};
+  const kept = items.filter(it => { if (boxClear(it)) return true; stats.boxCulled[it.type] = (stats.boxCulled[it.type] || 0) + 1; return false; });
+  items.length = 0; items.push(...kept);
   // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
   // Keep the empty mesh record until the ground-cover consumers no longer require the field.
   const edge = { pos: [], col: [], idx: [] };
@@ -711,7 +726,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, avoidIndex, corridor });
+    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint: global.SECTION_PLAN.FOOTPRINT });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);

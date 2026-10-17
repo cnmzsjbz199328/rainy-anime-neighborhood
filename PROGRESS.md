@@ -1,5 +1,30 @@
 # 进度记录
 
+## W10c CR01 房屋与青草侵路专项 实施与交付（2026-10-17，分支 `world/W10c-cr01-intrusion`；画面待用户确认，LM09 东端待用户裁决）
+
+- **依据与起点**：[审查与修复方案](docs/world/CR01_HOUSE_GRASS_INTRUSION_PLAN.md)（第 5 节为实施记录）。`world/W10c`（`efc190c`，含他人未提交的 WD4 改动）不含已合入本地 `main` 的连接段修复，故在独立工作树 `../rainy-anime-neighborhood-cr01` 自 `main` `88cf78a` 开分支实施；`main` 的 `index.html` 与源码构建逐字节一致。用户截图无相机参数，先对 CR01 全环与十个接入口做机器扫描定位。
+- **新检查** `tools/cr01_intrusion_check.mjs`（I1–I6，`--ref`/`--baseline`/`--report`）：92,341 条射线（CR01 全环 0.25 m 半格错位网格、十个路口各支路 14 m 内），uBend 0 / 0.5 / 1 按 `bend.js` 顶点着色器顺序沿当地法线投射，实例逐个展开；道路分区读最终条带三角形自带的扫掠列偏移与铺装范围；植物按完整变换几何的平面凸包、建筑按三角形平面投影与最终道路三角形求交。开工 `--ref main` 报告 `docs/world/w10c/house-grass-review/report-before.json`：I1 34、I2 3、I3 40、I4 4 失败。
+- **定位**（四类归属见方案 5.2）：W4 断面农舍立在 CR01 南段外侧路肩与边沟、屋檐悬在铺装上 2.10 m²（最低 1.82 m），W4 秧苗 38 株与草簇 2 株在南段车行道/路肩/边沟上——断面的 CR01 剔除用城镇平面米、只看 |x| ≤ 12 m、用间距圆代表外形；景观层稻架横跨西段铺装（只测田块角点）；C01-S 急折处 M01-south 相邻两行横断面在弯内侧交叉，行间四边形自交，地形漏切，高出边沟 0.38 m；LM09 站台/轨道/车厢/棚檐伸入西段外侧路肩与边沟、站前长椅/站牌在 N01-west 加宽铺装路肩（W10b 用户裁决 A 的几何）。城镇建筑无一侵入；旧 `cover:town-edge` 为空。
+- **实现**（`section_plan.js`、`section.js`、`landcover.js`、`terrain.js`；不改 `layout.js`、`world.js`、`bend.js`、`roads.js`、道路线形与道路网格）：
+  - `section_plan.js`：环路剔除改为真实米 (u, v)：南直段即 C01-S 纬线，完整断面外 3.55 m、内 2.75 m 贯穿整条走廊；物品取模板平面盒（新表 `FOOTPRINT`，旋转缩放）加 0.15 m，树保持间距圆 + 0.5 m；口门原规则保留，另加外形不进口门道路完整断面。新增剔除 49 件（农舍 1、秧苗 45、草簇 2、倒伏稻架 1），无原保留物件被加回，电线 5 段与入口灯位不变。
+  - `section.js`：启动时核对 `FOOTPRINT` 盒包住对应 flora.js 模板，不符即报错。
+  - `landcover.js`：田块实例的完整平面盒与道路、地标保持 0.15 m（同角点避让表），盒表经构建上下文传入（`cover_check` 同步）；全球剔除 2 个稻架。
+  - `terrain.js`：`cutRoads()` 行间/结构/端帽多边形先经 `convexPartsXZ` 分解；全网仅 M01-south 6 个四边形自交（`groundCut.rowFolds`），其余多边形不变。
+  - `tools/c01_s_clearance.mjs`：原按 `route === 'CR01'` 选边（实属 RN04，选到 0 条）且用平面米，从未检查环路；改为两端 C01-* 的 18 条边、真实米、内外侧 2.75/3.55 m、模板平面盒。原断面计划 43 处冲突，修复后 0。
+- **机器验收**（`--baseline report-before.json`，报告 `report.json`）：I1 34→0（另有 uBend 0.5 一点路面裂缝，开工已有）、I2 3→0、I3 40→0、I4 4→0、I5 空洞新增 0（既有 10/12/10：RN05 端头 0.3 m 空缝与 C01-S 折角内侧约 0.375 m²）、I6 通过（三态同一几何、页面错误 0、道路几何哈希 `b487b967` 与 `layout.js`/`world.js`/`bend.js` 与开工相同）。LM09 6 件列为 PENDING，不计失败。
+- **回归**（日志 `docs/world/w10c/house-grass-review/checks/*.log`，串行）：`python3 build.py` → `measure_samples`（无页面错误、实测边界一致）→ `layout_check --png` C1–C12 通过，`docs/layout/` 产物与库中一致；`cr01_merge_check` M1–M7、B-ink、B-ground 通过；`unify_check` U0、U0-W10b、U1 全部、U2（平面/球形各 30,769 点，遮挡/无命中/抬高 0）、U3、U4 通过；`connector_ground_check` CG1–CG6 通过（裁切多边形 3,539 → 3,545，即折角处 6 个四边形各拆为两个三角形）；`terrain_structure_check` TS1–TS5 通过；`terrain_check` 7/7；`cover_check` 9/9；`streetlight_check` SL1–SL6；`seam_check` 5 项；`road_check` W5-C1–C11 与 W8f-c 通过；`c01_s_clearance` 399 件、22 条边（CR01 18 条）、5 段电线、冲突 0。`section_check` 在 W4-C1 之后以 `RK.chain is not a function` 中止，开工 `main` 同样如此（既有，PROGRESS 道路路灯专项已记“不作通过证据”）。未跑 `regress`、性能与截图链。
+- **成本**：`index.html` 3,098,876 → 3,107,815（+8,939；最终构建 md5 `be008d10…`） bytes；农田构建 19 ms（Node）；裁切多边形只在 M01-south 折角处由 6 个四边形变为 12 个三角形。未做性能复测（改动只在构建时，不增加逐帧工作）。
+- **冻结**：`layout.js`、`world.js`、`bend.js`、`roads.js`、`roadkit.js`、街道中线与宽度、地块、建筑、摆放、路网线形与最终道路几何均未改。
+- **输出路径**（本地，git 忽略）：`docs/world/w10c/house-grass-review/report-before.json`、`report.json`、`checks/*.log`。没有生成审查截图，没有打开页面或图像作视觉判断。
+- **待用户裁决**：LM09 东端（方案 5.5 的数值与 A′/B/C 三个选项）。
+- **用户看点**（页面控制台 `__scene.view.set(...)`；yaw 0 时相机在目标南侧向北看，yaw π/2 在东侧；进入球形后等约 2 s）：
+  1. 原农舍与秧苗处（CR01 南段外侧）：平面近俯视 `{mapMode:'flat',target:[-12.5,0.3,56],dist:16,yaw:0,pitch:1.2}`，再 `pitch:0.35` 低角度；东侧秧苗处把 `target` 改成 `[12.5,0.3,55.5]`。应见：车行道、路肩、边沟上没有房屋、秧苗与草簇，W4 田面止于边沟外沿；已知：田面与地形盖在道路外侧草肩上（草肩本身贴地，属合法断面），W4 农舍已剔除，是否在别处重放由用户定。
+  2. 原稻架处（CR01 西段外侧）：`{mapMode:'flat',target:[-56.5,0.5,-1.5],dist:14,yaw:-1.57,pitch:0.9}`。应见：稻架不再横跨路面。
+  3. C01-S 南侧 M01-south 外侧边沟：`{mapMode:'flat',target:[6.5,0.2,65.5],dist:12,yaw:0.6,pitch:1.0}` 与 `pitch:0.35`。应见：边沟露出、没有草皮盖住；已知：折角内侧 (−2.3, 59.45) 附近约 0.4 m² 既有小洞、竹篱末端伸入外侧边沟 0.06 m²（均记待办池）。
+  4. LM09 东端（待裁决）：`{mapMode:'flat',target:[-57,0.5,35],dist:16,yaw:-1.57,pitch:0.8}`，看站台、轨道车挡、车厢与 CR01 西侧边沟的关系。
+  5. 以上 1–3 改 `mapMode:'sphere'`、`dist:30`、`pitch:1.0`：同一几何、白天晴；平面雨夜与球形切换中没有突然出现或消失的物件。
+- **遗留**：画面待用户确认；LM09 待裁决；待办池新增 5 条（c01_s_clearance 旧记录更正、RN06-02 杂草、竹篱末端、道路草肩上的地面、既有小洞/裂缝）。未合并、未推送、未启动 W10d。
+
 ## W10c、WD1、WX 合并到 main（2026-10-17，用户要求搁置长时间验证、做基本验证后合并；未推送）
 
 - 合并顺序（全部在独立工作树 `../rainy-anime-neighborhood-main`）：`world/W10c`（`d8f394a`，含 WD1 LM09 细节轨道，快进）→ `world/W10c-merge`（启动提速与合并前收尾记录）→ `world/W10c-connector-fix`（`ac3aade`，连接段地形空洞）→ `world/weather-WX2`（WX1–WX3 与计划归档）。每次合并后重新生成 `index.html`，与源码构建逐字节一致。

@@ -36,6 +36,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
+    // the plan boxes that the section's CR01 cull and the land cover take (section_plan.js FOOTPRINT) hold the templates they stand for
+    for (const [type, e] of Object.entries(global.SECTION_PLAN.FOOTPRINT)) {
+      const p = K.geometries[type] && K.geometries[type].attributes.position; if (!p) throw new Error(`section: no ${type} template for its plan box`);
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); if (x < e[0] - 1e-6 || x > e[1] + 1e-6 || z < e[2] - 1e-6 || z > e[3] + 1e-6) throw new Error(`section: the ${type} template leaves its plan box (section_plan.js FOOTPRINT)`); }
+    }
     // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
     H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
