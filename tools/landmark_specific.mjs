@@ -67,16 +67,17 @@ CHECKS.LM09 = async ({ page, info, fail, f, W, lm, M }) => {
     });
     return Number.isFinite(minX) ? { minX, maxX } : null;
   });
-  info.push(`W10b 裁决 A：站台长 ${st.platformLength} m，局部范围 x ${st.platformExtent?.join('…')} m；小屋 ${st.shed.join(' × ')} m、中心 x = ${st.shedX}（向西移 3 m）；铁轨东端 x = ${st.trackEast} m，车挡 x = ${st.bufferX} m，车厢范围 x ${st.carExtent?.join('…')} m；道口范围 x ${st.crossingExtent?.join('…')} m。CR01 不动，站台与车挡均止于路缘西侧。`);
-  if (Math.abs(st.platformLength - 15.5) > 0.01 || Math.abs(st.platformExtent?.[0] - (-5.5)) > 0.01 || Math.abs(st.platformExtent?.[1] - 10) > 0.01) fail('站台东端没有按 W10b A 退让 4.5 m');
-  if (!platform || Math.abs(platform.min[0] - (-5.5)) > 0.02 || Math.abs(platform.max[0] - 10) > 0.02) fail('LM09 平台实际模型没有落在 x = −5.5…10 m');
+  info.push(`W10d 裁决 C：站台长 ${st.platformLength} m，局部范围 x ${st.platformExtent?.join('…')} m；小屋 ${st.shed.join(' × ')} m、中心 x = ${st.shedX}；铁轨东端 x = ${st.trackEast} m，车挡 x = ${st.bufferX} m，车厢范围 x ${st.carExtent?.join('…')} m；道口范围 x ${st.crossingExtent?.join('…')} m。CR01 不动，站台、轨道及相关设施止于 N11 路缘内侧。`);
+  if (Math.abs(st.platformLength - 14.54) > 0.01 || Math.abs(st.platformExtent?.[0] - (-4.54)) > 0.01 || Math.abs(st.platformExtent?.[1] - 10) > 0.01) fail('站台东端没有按 W10d C 止于 N11 路缘');
+  if (!platform || Math.abs(platform.min[0] - (-4.54)) > 0.02 || Math.abs(platform.max[0] - 10) > 0.02) fail('LM09 平台实际模型没有落在 x = −4.54…10 m');
   if (Math.abs(st.shedX - (-2.5)) > 0.01) fail('候车小屋没有向西移 3 m');
-  if (!shed || Math.abs(shed.min[0] - (st.shedX - 2.5)) > 0.02) fail('候车小屋实际模型没有向西移 3 m');
-  if (!(st.trackEast > -6.15 && st.bufferX > st.trackEast && st.carExtent?.[0] > st.bufferX + 0.15 && st.carExtent?.[1] < st.crossingExtent?.[0])) fail('轨道、车挡、车厢或道口越过 W10b A 退让边界或相互重叠');
-  if (!track || !(track.min[0] > -6.15) || !car || !(car.min[0] > st.bufferX + 0.15 && car.max[0] < st.crossingExtent?.[0])) fail('LM09 实际轨道越过 CR01 路缘，或车厢与车挡/道口相交');
+  // W10d trims the N11-side eave by 0.12 m; with the roof centre shifted 0.06 m, the west bound moves inward 0.12 m.
+  if (!shed || Math.abs(shed.min[0] - (st.shedX - 2.5)) > 0.16) fail('候车小屋实际模型没有向西移 3 m，或檐口边界偏差超过 W10d 收边量');
+  if (!(st.trackEast > -4.54 && st.bufferX < st.trackEast && st.carExtent?.[0] > st.bufferX + 0.15 && st.carExtent?.[1] < st.crossingExtent?.[0])) fail('轨道、车挡、车厢或道口越过 W10d C 退让边界或相互重叠');
+  if (!track || !(track.min[0] > -4.94) || !car || !(car.min[0] > st.bufferX + 0.15 && car.max[0] < st.crossingExtent?.[0])) fail('LM09 实际轨道越过 N11 路缘，或车厢与车挡/道口相交');
   info.push(`站牌、长椅、自行车、售货机、电话亭及灯杆实体最西缘 x = ${f(streetClearance?.minX, 3)} m；距 CR01 道路西缘 x = −6.15 m 为 ${f((streetClearance?.minX ?? -Infinity) + 6.15, 3)} m。`);
   if (!streetClearance || streetClearance.minX < -6.15) fail('LM09 站外设施实体压到 CR01 道路');
-  info.push(`实际模型边界（弯曲前局部坐标）：站台 x ${f(platform?.min[0], 2)}…${f(platform?.max[0], 2)} m；候车小屋西缘 ${f(shed?.min[0], 2)} m；轨道东缘 ${f(track?.min[0], 2)} m（CR01 道路西缘 −6.15 m）；车厢 x ${f(car?.min[0], 2)}…${f(car?.max[0], 2)} m。`);
+  info.push(`实际模型边界（弯曲前局部坐标）：站台 x ${f(platform?.min[0], 2)}…${f(platform?.max[0], 2)} m；候车小屋西缘 ${f(shed?.min[0], 2)} m；轨道东缘 ${f(track?.min[0], 2)} m；车厢 x ${f(car?.min[0], 2)}…${f(car?.max[0], 2)} m。`);
   info.push(`回车场直径 ${st.circle} m（约 12）；柴油车 ${st.cars} 节（静止）；铁轨 ${st.tracks} 条，不连接任何铁路网（D6）；道口警报灯 ${st.lights} 个（周期 6 s 的升余弦交替，不闪烁）；亮着的光：候车小屋灯 + 自动售货机 + 公交站路灯`);
   if (st.tracks !== 1) fail('铁轨不是一条');
   let worst = 0; for (let a = 0; a < 360; a += 10) for (let d = 1; d <= 10; d += 1) { const p = W.destination(lm, a, d), q = W.destination(lm, a, d - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }

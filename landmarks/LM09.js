@@ -18,14 +18,14 @@
   box(0, 0.06, 9.2, 2.6, 0.1, 8.6, '#8a8d90', true, gr);                                      // station lane from the road (z 13.35) down to the turning circle
   const cd = L.ground(6.0, '#767a7e', 0.05); cd.position.z = 1.0; const cg = mesh(new THREE.RingGeometry(5.6, 6.0, 40), mat('#a8a8a0'), 0, 0.08, 1.0, false, gr); cg.rotation.x = -PI / 2;
   box(0, 0.06, -1.6, 2.4, 0.1, 2.4, '#8a8d90', true, gr);                                      // the way from the circle to the platform
-  // W10b decision A: CR01 keeps its approved line. The platform gives the ring-road corridor the eastern 4.5 m: x -5.5..10 (15.5 m total), with the waiting shed moved 3 m west.
-  // ---- platform: 15.5 m long (x -5.5..10), 3 m wide (z -5.2..-2.2), height 0.9 m, tactile strip along the track edge
+  // W10b decision A: CR01 keeps its approved line. W10d choice C ends the platform 0.15 m clear of the N11 road edge: x -4.54..10 (14.54 m total).
+  // ---- platform: 14.54 m long (x -4.54..10), 3 m wide (z -5.2..-2.2), height 0.9 m, tactile strip along the track edge
   const pf = group('lm09Platform'); L.use(pf);
-  const PLATFORM_X = 2.25, PLATFORM_LENGTH = 15.5;
+  const PLATFORM_LENGTH = 14.54, PLATFORM_X = 10 - PLATFORM_LENGTH / 2, PLATFORM_MIN_X = PLATFORM_X - PLATFORM_LENGTH / 2;
   box(PLATFORM_X, 0.45, -3.7, PLATFORM_LENGTH, 0.9, 3.0, '#8d9094', true, pf); box(PLATFORM_X, 0.92, -4.95, PLATFORM_LENGTH, 0.04, 0.45, '#d8b84a', false, pf);
-  for (let i = 0; i < 31; i++) box(-5.25 + i * 0.5, 0.93, -4.95, 0.12, 0.02, 0.4, '#bf9f38', false, pf);
+  for (let x = PLATFORM_MIN_X + 0.25; x <= 10 - 0.25 + 1e-6; x += 0.5) box(x, 0.93, -4.95, 0.12, 0.02, 0.4, '#bf9f38', false, pf);
   for (const z of [-5.12, -2.29]) box(PLATFORM_X, 0.88, z, PLATFORM_LENGTH - 0.04, 0.1, 0.12, '#a9a8a2', true, pf); // cast edge caps
-  for (let i = 1; i < 13; i++) box(-5.5 + i * (PLATFORM_LENGTH / 13), 0.86, -2.25, 0.025, 0.1, 0.055, '#666b6d', false, pf); // expansion joints
+  for (let i = 1; i < 13; i++) box(PLATFORM_MIN_X + i * (PLATFORM_LENGTH / 13), 0.86, -2.25, 0.025, 0.1, 0.055, '#666b6d', false, pf); // expansion joints
   for (const x of [-3.8, 0.6, 5.0, 9.1]) {
     box(x, 0.2, -2.205, 0.44, 0.16, 0.05, '#4f5555', false, pf); // drainage outlets below the rear cap
     box(x, 0.13, -2.32, 0.54, 0.055, 0.22, '#74787a', false, pf);
@@ -45,11 +45,12 @@
     box(x, 2.75, SZ, 0.09, 0.1, 2.28, '#594432', true, sh); // side rails
     box(x, 1.25, SZ - 0.73, 0.08, 0.45, 0.7, '#6e5741', true, sh); // short rear windscreen
   }
-  for (const z of [SZ - 1.08, SZ + 1.08]) box(SX, 3.23, z, 3.92, 0.15, 0.16, '#594432', true, sh);
+  const ROOF_X = SX + 0.06, ROOF_W = 3.88; // W10d: trim the east eave by 0.12 m at the N11 side
+  for (const z of [SZ - 1.08, SZ + 1.08]) box(ROOF_X, 3.23, z, ROOF_W - 0.08, 0.15, 0.16, '#594432', true, sh);
   for (const x of [SX - 1.82, SX, SX + 1.82]) box(x, 3.27, SZ, 0.09, 0.12, 2.4, '#594432', true, sh); // exposed rafters
-  L.gable(4.0, 2.5, 3.3, 0.9, 0.48, '#4a4f58', sh).position.set(SX, 0, SZ);
-  box(SX, 3.23, SZ + 1.26, 3.96, 0.15, 0.1, '#3a2d24', true, sh); // fascia
-  box(SX, 3.13, SZ - 1.28, 3.8, 0.11, 0.12, '#6b7076', true, sh); // rear rain gutter
+  L.gable(ROOF_W, 2.5, 3.3, 0.9, 0.48, '#4a4f58', sh).position.set(ROOF_X, 0, SZ);
+  box(ROOF_X, 3.23, SZ + 1.26, ROOF_W - 0.04, 0.15, 0.1, '#3a2d24', true, sh); // fascia
+  box(ROOF_X, 3.13, SZ - 1.28, ROOF_W - 0.2, 0.11, 0.12, '#6b7076', true, sh); // rear rain gutter
   cyl(SX + 1.82, 1.98, SZ - 1.27, 0.05, 2.0, '#6b7076', sh); // downpipe
   // Bench: legs, seat, back and clear walking space in front.
   for (const x of [SX - 1.23, SX + 1.23]) for (const z of [SZ - 0.8, SZ - 0.27]) box(x, 1.17, z, 0.1, 0.34, 0.1, '#594432', true, sh);
@@ -129,27 +130,29 @@
   box(PX - 0.39, 1.89, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, st); // door upper hinge
   box(PX, 1.06, PZ - 0.48, 0.62, 0.37, 0.025, '#8c3832', true, st); // rear service hatch
   box(PX + 0.21, 1.06, PZ - 0.5, 0.055, 0.07, 0.018, '#d3c9ae', false, st);
-  box(-3.0, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
-  cyl(-3.0, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
-  for (const z of [8.96, 9.04]) { box(-3.0, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(-3.0, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
-  box(-3.0, 1.54, 9.05, 0.37, 0.46, 0.035, '#e8e4d8', true, st); // route and timetable board
-  for (let i = 0; i < 4; i++) box(-3.0, 1.69 - i * 0.1, 9.072, 0.3, 0.013, 0.008, '#7d8794', false, st);
-  for (const x of [-4.77, -3.63]) { box(x, 0.27, 4.7, 0.09, 0.46, 0.1, '#5a4a3c', true, st); box(x, 0.16, 5.01, 0.1, 0.23, 0.08, '#5a4a3c', true, st); }
-  box(-4.2, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(-4.2, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
-  cyl(3.0, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), 3.4, 5.1, 8.0, false, st); cyl(3.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
-  L.pool(3.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
-  // ---- the track: one line along X at z = -6.4; its eastern end now stops west of CR01 at x = -5.5, with the buffer stop; the paddy end still fades west
+  // W10d / CR01 clearance: keep the entrance board, waiting bench and stop lamp outside N01-west's paved shoulder.
+  const BOARD_X = 6.0, BENCH_X = 6.5, STOP_LAMP_X = 6.5;
+  box(BOARD_X, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
+  cyl(BOARD_X, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
+  for (const z of [8.96, 9.04]) { box(BOARD_X, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(BOARD_X, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
+  box(BOARD_X, 1.54, 9.05, 0.37, 0.46, 0.035, '#e8e4d8', true, st); // route and timetable board
+  for (let i = 0; i < 4; i++) box(BOARD_X, 1.69 - i * 0.1, 9.072, 0.3, 0.013, 0.008, '#7d8794', false, st);
+  for (const x of [BENCH_X - 0.57, BENCH_X + 0.57]) { box(x, 0.27, 4.7, 0.09, 0.46, 0.1, '#5a4a3c', true, st); box(x, 0.16, 5.01, 0.1, 0.23, 0.08, '#5a4a3c', true, st); }
+  box(BENCH_X, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(BENCH_X, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
+  cyl(STOP_LAMP_X, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), STOP_LAMP_X + 0.4, 5.1, 8.0, false, st); cyl(STOP_LAMP_X + 0.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
+  L.pool(STOP_LAMP_X + 0.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
+  // ---- the track: one line along X at z = -6.4; its eastern end stops clear of CR01 at x = -4.47, with the buffer stop; the paddy end still fades west
   const tk = group('lm09Track'); L.use(tk);
-  const TRACK_EAST = -5.5, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
-  box(TRACK_MID, 0.06, -6.4, TRACK_LENGTH, 0.12, 1.9, '#7a7872', false, tk); for (let x = -5.3; x <= 10.4; x += 0.7) box(x, 0.15, -6.4, 0.2, 0.08, 1.5, '#4a382b', false, tk);
-  for (let i = 0; i < 18; i++) { const x = -5.05 + i * 0.88; for (const z of [-7.12, -5.68]) box(x, 0.11, z, 0.4, 0.06, 0.21, i % 3 ? '#827f79' : '#aaa59b', false, tk); } // visible ballast shoulders
+  const TRACK_EAST = -4.47, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
+  box(TRACK_MID, 0.06, -6.4, TRACK_LENGTH, 0.12, 1.9, '#7a7872', false, tk); for (let x = TRACK_EAST + 0.2; x <= TRACK_WEST - 0.1; x += 0.7) box(x, 0.15, -6.4, 0.2, 0.08, 1.5, '#4a382b', false, tk);
+  for (let i = 0, x = TRACK_EAST + 0.45; x <= TRACK_WEST - 0.4; i++, x += 0.88) { for (const z of [-7.12, -5.68]) box(x, 0.11, z, 0.4, 0.06, 0.21, i % 3 ? '#827f79' : '#aaa59b', false, tk); } // visible ballast shoulders
   for (const dz of [-0.72, 0.72]) box(TRACK_MID, 0.22, -6.4 + dz, TRACK_LENGTH, 0.08, 0.07, '#7d8794', false, tk);
-  for (let x = -5.3; x <= 10.4; x += 1.4) for (const dz of [-0.72, 0.72]) box(x, 0.27, -6.4 + dz, 0.16, 0.03, 0.18, '#555a5c', false, tk); // rail clips
-  box(-5.2, 0.4, -6.4, 0.3, 0.6, 1.6, '#c4412e', true, tk);                                                                                  // buffer stop on the west side of CR01
+  for (let x = TRACK_EAST + 0.2; x <= TRACK_WEST - 0.1; x += 1.4) for (const dz of [-0.72, 0.72]) box(x, 0.27, -6.4 + dz, 0.16, 0.03, 0.18, '#555a5c', false, tk); // rail clips
+  box(TRACK_EAST - 0.3, 0.4, -6.4, 0.3, 0.6, 1.6, '#c4412e', true, tk);                                                                                  // buffer stop at the track's west end, toward CR01
   for (let i = 0; i < 2; i++) { const x = 11.5 + i * 0.7; box(x, 0.1 - 0.03 * i, -6.4, 0.7, 0.1, 1.9 - 0.4 * i, '#59634c', false, tk); }                       // the ballast fades into the paddy: the line ends
   for (let x = 8.8; x <= 9.8; x += 0.5) box(x, 0.2, -6.4, 0.4, 0.06, 1.8, '#6a5240', true, tk);                                              // foot crossing planks, beyond the car
   const car = group('lm09Car'); L.use(car);
-  const CZ = -6.4, CL = 13.0, CX = 1.8;
+  const CZ = -6.4, CL = 13.0, CX = 2.03;
   // A hollow carbody: the window line exposes seats, central aisle and two driver partitions.
   box(CX, 0.68, CZ, CL, 0.16, 2.6, '#665f57', true, car); // floor
   box(CX, 0.38, CZ, CL - 0.2, 0.27, 1.95, '#4f5356', true, car); // continuous underframe
@@ -213,8 +216,8 @@
   });
   // eave drips (live)
   const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; m.userData.weather = 'drip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }   // WX2: a weather effect
-  out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [-5.5, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
-    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: -5.2, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
+  out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [PLATFORM_MIN_X, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
+    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: TRACK_EAST - 0.3, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
   out.update = (t) => {
     const p = (t % 6) / 6, a = 0.5 - 0.5 * Math.cos(p * PI * 2), b = 1 - a;                                       // 6 s period, raised cosine: no flashing
     posts.forEach(([l, r]) => { l.material.color.setRGB(0.35 + 0.65 * a, 0.12 + 0.12 * a, 0.12 + 0.12 * a); r.material.color.setRGB(0.35 + 0.65 * b, 0.12 + 0.12 * b, 0.12 + 0.12 * b); });

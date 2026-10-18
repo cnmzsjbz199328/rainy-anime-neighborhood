@@ -1,5 +1,5 @@
 // Land cover of the planet (W6): the ground systems laid over the W3 terrain mesh, driven only by world.js, the terrain lattice height and fixed seeds.
-// Batch W6b (this file): BI05 paddies and dry fields, TR04 fallow fields, BI06 terraces with tea rows, TR01 town edges (fences along the patch edge), with the instanced
+// Batch W6b (this file): BI05 paddies and dry fields, TR04 fallow fields, BI06 terraces with tea rows, with the instanced
 // small things of the fields (seedlings, racks, scarecrows, sheds, weeds). The same machinery (global instance table, 16 m tiles, loading around the camera) is used by
 // the later rows (forest, grassland, desert, highland).
 // Pure part: build(W, H, avoid) returns the data (no THREE, no DOM). Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a).
@@ -41,7 +41,7 @@ function createAvoidIndex(W, avoid, cellSize = 12) {
       else if ((f.box[0] + f.box[1]) / 2 < -period / 2) copies.push({ poly: xy.map(([x, z]) => [x + period, z]), box: [f.box[0] + period, f.box[1] + period, f.box[2], f.box[3]] });
       for (const q of copies) { q.id = features.length; features.push(q); insert(q); }
     } else {
-      const [lon, lat] = [a.lon, a.lat], [x, z] = toXY(lon, lat), r = a.r || 0, extent = r / Math.max(0.01, Math.cos(lat * D)), f = { point: [x, z], r, box: [x - extent, x + extent, z - extent, z + extent] };
+      const [lon, lat] = [a.lon, a.lat], [x, z] = toXY(lon, lat), r = a.r || 0, c = Math.max(0.01, Math.cos(lat * D)), extent = r / c, f = { point: [x, z], r, c, box: [x - extent, x + extent, z - extent, z + extent] };
       f.id = features.length; features.push(f); insert(f);
       if (x > period / 2 - extent) { const q = { ...f, point: [x - period, z], box: [f.box[0] - period, f.box[1] - period, f.box[2], f.box[3]], id: features.length }; features.push(q); insert(q); }
       else if (x < -period / 2 + extent) { const q = { ...f, point: [x + period, z], box: [f.box[0] + period, f.box[1] + period, f.box[2], f.box[3]], id: features.length }; features.push(q); insert(q); }
@@ -70,7 +70,15 @@ function createAvoidIndex(W, avoid, cellSize = 12) {
     for (const f of candidates(lon, lat, maxDistance)) { const d = clearance(f, x, z, c); if (d < min) min = d; if (d < hitDistance) return { hit: true, clearance: d }; }
     return { hit: false, clearance: min };
   };
-  return { features, hit: (lon, lat, r) => query(lon, lat, r).hit, clearance: (lon, lat, maxDistance = 12) => query(lon, lat, maxDistance, -Infinity).clearance };
+  const overlaps = poly => {
+    const box = [Math.min(...poly.map(p => p[0])), Math.max(...poly.map(p => p[0])), Math.min(...poly.map(p => p[1])), Math.max(...poly.map(p => p[1]))], found = new Set();
+    for (let x = Math.floor(box[0] / cellSize); x <= Math.floor(box[1] / cellSize); x++) for (let z = Math.floor(box[2] / cellSize); z <= Math.floor(box[3] / cellSize); z++) for (const id of cells.get(key(x, z)) || []) found.add(id);
+    for (const id of broad) found.add(id);
+    for (const id of found) { const f = features[id], b = f.box; if (b[1] < box[0] - 1e-8 || b[0] > box[1] + 1e-8 || b[3] < box[2] - 1e-8 || b[2] > box[3] + 1e-8) continue;
+      if (f.poly ? polygonsOverlap(poly, f.poly) : pointPolyDistance(f.point[0], f.point[1], poly) * f.c < f.r - 1e-8) return true; }
+    return false;
+  };
+  return { features, hit: (lon, lat, r) => query(lon, lat, r).hit, clearance: (lon, lat, maxDistance = 12) => query(lon, lat, maxDistance, -Infinity).clearance, overlaps };
 }
 function nearAvoidRoads(W, avoid, lon, lat, r) { return createAvoidIndex(W, avoid).hit(lon, lat, r); }
 
@@ -92,6 +100,16 @@ function clipHalf(poly, px, pz, nx, nz, off) {         // keep the part where (p
 }
 const polyArea = p => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; };
 const inPoly = (p, x, z) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && (x < (p[j][0] - p[i][0]) * (z - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0])) c = !c; return c; };
+function polygonsOverlap(a, b) {
+  for (const p of [a, b]) for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length], ax = -(q[1] - p[i][1]), az = q[0] - p[i][0], aa = a.map(v => v[0] * ax + v[1] * az), bb = b.map(v => v[0] * ax + v[1] * az);
+    if (Math.max(...aa) < Math.min(...bb) - 1e-8 || Math.max(...bb) < Math.min(...aa) - 1e-8) return false; }
+  return true;
+}
+function pointPolyDistance(x, z, p) {
+  if (inPoly(p, x, z)) return 0; let d = Infinity;
+  for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length], dx = b[0] - a[0], dz = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1))); d = Math.min(d, Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t)); }
+  return d;
+}
 
 function build(W, H, ctx) {
   const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), corridor = ctx.corridor || null;
@@ -117,34 +135,26 @@ function build(W, H, ctx) {
   const nearEdge = (lon, lat) => { for (let a = 0; a < 8; a++) for (const d of [3, 6, SP.fallowBand]) { const p = W.destination({ lon, lat }, a * 45, d); const r = W.regionAt(p.lon, p.lat); if (r.zone !== 'building') return true; } return false; };       // forest, grassland, sea or ice within 8 m (W4: the fallow band is 7.4 m wide)
   const cells = [], T = { tread: { pos: [], col: [], idx: [] }, ridge: { pos: [], col: [], idx: [] }, water: { pos: [], col: [], idx: [], shore: [] } };
   const pushV = (m, x, z, h, c) => { const k = 1 / Math.cos(llOf(x, z).lat * D); m.pos.push(x, (h - BASE) * k, z); m.col.push(c[0], c[1], c[2]); return m.pos.length / 3 - 1; };
-  const stats = { cells: 0, water: 0, dry: 0, fallow: 0, village: 0, area: 0, skipped: 0, terraceCells: 0 };
+  const stats = { cells: 0, water: 0, dry: 0, fallow: 0, village: 0, area: 0, skipped: 0, terraceCells: 0, beforeOccupancyCells: 0, beforeOccupancyArea: 0 };
   for (const s of seeds) {
     const g = farmAt(s.lon, s.lat); if (!g) continue;
     // the cell polygon: bisectors with the neighbouring seeds, then the same inset by the ridge half width
     let outer = [[s.x - 9 * s.k, s.z - 9 * s.k], [s.x + 9 * s.k, s.z - 9 * s.k], [s.x + 9 * s.k, s.z + 9 * s.k], [s.x - 9 * s.k, s.z + 9 * s.k]], inner = outer.slice();
     for (const n of neighbours(s)) { const dx = n.x - s.x, dz = n.z - s.z, l = Math.hypot(dx, dz), ux = dx / l, uz = dz / l, mx = (s.x + n.x) / 2, mz = (s.z + n.z) / 2; outer = clipHalf(outer, mx, mz, ux, uz, 0); inner = clipHalf(inner, mx, mz, ux, uz, -SP.ridgeHalf * s.k); if (outer.length < 3 || inner.length < 3) break; }
     if (outer.length < 3 || inner.length < 3) continue;
-    // the town patch (a rectangle |x|, |z| <= 48 in the flat frame) keeps a 3.4 m strip for TR01: a cell next to it is cut along the strip's outer edge
-    { const P = W.TOWN_PATCH, X = R * P.lonMax * D, Zs = -R * Math.asinh(Math.tan(P.latMax * D)), Zn = -R * Math.asinh(Math.tan(P.latMin * D)), m = 3.4 * s.k;     // Zs < Zn
-      const sides = [[1, 0, X + m - s.x], [-1, 0, s.x + X + m], [0, 1, s.z - (Zn + m)], [0, -1, (Zs - m) - s.z]];            // seed's margin from each side's outer edge (positive: outside that edge)
-      if (Math.abs(s.x) < X + 6 * s.k + 8 && s.z > Zs - 14 * s.k && s.z < Zn + 14 * s.k || true) {
-        const near = s.x > X - 14 * s.k ? 0 : s.x < -X + 14 * s.k ? 1 : null, nearZ = s.z > Zn - 14 * s.k ? 2 : s.z < Zs + 14 * s.k ? 3 : null;
-        void sides; const cut = (p, ax) => { if (ax === 0) { p = clipHalf(p, X + m, 0, -1, 0, 0); } else if (ax === 1) { p = clipHalf(p, -X - m, 0, 1, 0, 0); } else if (ax === 2) { p = clipHalf(p, 0, Zn + m, 0, -1, 0); } else { p = clipHalf(p, 0, Zs - m, 0, 1, 0); } return p; };
-        const inside = Math.abs(s.x) < X + 30 * s.k && s.z > Zs - 30 * s.k && s.z < Zn + 30 * s.k;
-        if (inside) { const ax = [s.x - (X + m), -s.x - (X + m), s.z - (Zn + m), (Zs - m) - s.z]; const best = ax.indexOf(Math.max(...ax)); if (ax[best] > -4 * s.k) { outer = cut(outer, best); inner = cut(inner, best); } else if (W.townPatchDistance(s.lon, s.lat) < 20) continue; }
-        void near; void nearZ;
-      }
-    }
-    if (outer.length < 3 || inner.length < 3) continue;
-    // every corner of the cell must be on dry land of the building belt (farmland, village), clear of roads and landmarks and of the W4 section's own corridor
-    let ok = true; for (const p of outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat); const why = !(farmAt(ll.lon, ll.lat) === g || (r.zone === 'building' && r.kind !== 'town' && W.height(ll.lon, ll.lat) > 0.5)) ? 'region' : nearAvoid(ll.lon, ll.lat, 0.25) ? 'avoid' : inCorridor(ll.lon, ll.lat) ? 'corridor' : W.townPatchDistance(ll.lon, ll.lat) < 3.0 ? 'patch' : null; if (why) { ok = false; (stats.why = stats.why || {})[why] = ((stats.why || {})[why] || 0) + 1; break; } }
+    let ok = true;
+    for (const p of outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat), why = !(farmAt(ll.lon, ll.lat) === g || (r.zone === 'building' && r.kind !== 'town' && W.height(ll.lon, ll.lat) > 0.5)) ? 'region' : inCorridor(ll.lon, ll.lat) ? 'corridor' : null; if (why) { ok = false; (stats.why = stats.why || {})[why] = ((stats.why || {})[why] || 0) + 1; break; } }
     if (!ok) { stats.skipped++; continue; }
-    const areaTrue = Math.abs(polyArea(inner)) / (s.k * s.k); if (areaTrue < 3) continue;
-    const kind = g === 'village' ? 'dry' : nearEdge(s.lon, s.lat) ? 'fallow' : rnd(s.id, 7) < 0.62 ? 'water' : 'dry';
-    // heights: the lattice mesh under every vertex; the whole cell is levelled to its lowest corner + 0.04 (paddies are flat, the lattice differs by a few cm over a cell)
     const hv = ps => ps.map(p => { const ll = llOf(p[0], p[1]); return H(ll.lon, ll.lat); });
     const ho = hv(outer), hi = hv(inner), level = Math.max(...ho, ...hi), lowest = Math.min(...ho, ...hi);
-    if (level - lowest > 0.8) { stats.steep = (stats.steep || 0) + 1; continue; }                    // a plot is level: ground that falls more than 0.8 m across it (ridge and hill flanks, the beach ramp) is not laid; up to 0.8 m is hidden by the earth skirt below
+    if (level - lowest > 0.8) { stats.steep = (stats.steep || 0) + 1; continue; }
+    const areaTrue = Math.abs(polyArea(inner)) / (s.k * s.k);
+    if (areaTrue < 3) continue;
+    stats.beforeOccupancyCells++; stats.beforeOccupancyArea += areaTrue;
+    // The complete outer plot polygon, including its raised berm, clears the shared road/town/landmark occupancy.
+    if (avoidIndex.overlaps(outer)) { (stats.why = stats.why || {}).occupancy = ((stats.why || {}).occupancy || 0) + 1; stats.skipped++; continue; }
+    const kind = g === 'village' ? 'dry' : nearEdge(s.lon, s.lat) ? 'fallow' : rnd(s.id, 7) < 0.62 ? 'water' : 'dry';
+    // heights: the lattice mesh under every vertex; the whole cell is levelled to its lowest corner + 0.04 (paddies are flat, the lattice differs by a few cm over a cell)
     const flatH = level;
     const cellId = cells.length, top = kind === 'water' ? flatH - 0.07 : kind === 'fallow' ? flatH + 0.01 : flatH + 0.03;
     const cc = kind === 'water' ? COL.water : kind === 'dry' ? (rnd(s.id, 11) > 0.5 ? COL.dry : COL.dry2) : (rnd(s.id, 13) > 0.5 ? COL.fall : COL.fall2);
@@ -205,11 +215,7 @@ function build(W, H, ctx) {
   stats.boxCulled = {};
   const kept = items.filter(it => { if (boxClear(it)) return true; stats.boxCulled[it.type] = (stats.boxCulled[it.type] || 0) + 1; return false; });
   items.length = 0; items.push(...kept);
-  // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
-  // Keep the empty mesh record until the ground-cover consumers no longer require the field.
-  const edge = { pos: [], col: [], idx: [] };
-  stats.fences = items.filter(i => i.type === 'fenceBamboo').length;
-  return { seeds, cells, meshes: T, edge, items, stats };
+  return { seeds, cells, meshes: T, items, stats };
 }
 
 const vnoise3 = (x, y, z, s) => { const X = x / s, Y = y / s, Z = z / s, i = Math.floor(X), j = Math.floor(Y), k = Math.floor(Z), fx = X - i, fy = Y - j, fz = Z - k, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz); const h = (a, b, c) => hash(a * 7 + c * 31 + 3, b * 13 + c * 17 + 5); const L = (a, b, t) => a + (b - a) * t; return L(L(L(h(i, j, k), h(i + 1, j, k), u), L(h(i, j + 1, k), h(i + 1, j + 1, k), u), v), L(L(h(i, j, k + 1), h(i + 1, j, k + 1), u), L(h(i, j + 1, k + 1), h(i + 1, j + 1, k + 1), u), v), w); };
@@ -233,6 +239,19 @@ const scatterGrid = (cell, latMax, fn) => runAll(scatterGridSteps(cell, latMax, 
 function edgeDistance(W, lon, lat, test, maxD) {      // metres to the nearest point where test(region) is false (8 directions, 2 m steps), maxD when none is found
   let best = maxD; for (let a = 0; a < 8; a++) for (let d = 2; d < best; d += 2) { const p = W.destination({ lon, lat }, a * 45 + 22.5, d); if (!test(W.regionAt(p.lon, p.lat))) { best = Math.min(best, d); break; } }
   return best;
+}
+
+// W10d: check the complete oriented ground-plan box of every instance against the same index as plots.
+function avoidFootprints(items, avoidIndex, footprint) {
+  const kept = [], culled = {};
+  for (const it of items) {
+    const e = footprint[it.type]; if (!e) throw new Error(`landcover footprint missing: ${it.type}`);
+    const sx = it.s?.[0] || 1, sz = it.s?.[2] || 1, c = Math.cos(it.yaw), sn = Math.sin(it.yaw), k = 1 / Math.cos(it.lat * D), x0 = R * it.lon * D, z0 = -R * Math.asinh(Math.tan(it.lat * D));
+    const poly = [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([lx, lz]) => [x0 + (lx * sx * c + lz * sz * sn) * k, z0 + (-lx * sx * sn + lz * sz * c) * k]);
+    if (avoidIndex.overlaps(poly)) { culled[it.type] = (culled[it.type] || 0) + 1; continue; }
+    kept.push(it);
+  }
+  return { items: kept, culled };
 }
 
 // ---- BI02 forest and TR03 forest edge: four tree shapes by patch (cedar stands, broadleaf, pine, bamboo clumps), clearings, understory (shrubs, ferns, moss rocks, logs);
@@ -511,7 +530,7 @@ function lodDither(shader, pars = 'attribute vec2 aWin;', win = 'aWin') {
 // a dithered copy of a material (the W4 section keeps its materials as they are): the material's own shader edit, then the dither
 const ditherCopy = (base, name) => { const m = base.clone(), own = base._bendUserCompile; m.onBeforeCompile = function (shader, renderer) { if (own) own.call(base, shader, renderer); lodDither(shader); }; m.customProgramCacheKey = () => 'bend|lod|' + name; return m; };
 
-const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, avoidHit: nearAvoidRoads, avoidClearance, createAvoidIndex, SP, COL, SEED,
+const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, avoidHit: nearAvoidRoads, avoidClearance, createAvoidIndex, avoidFootprints, SP, COL, SEED,
   grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps, lodDither, ditherCopy };
 
 // ---------------------------------------------------------------- scene part
@@ -556,8 +575,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeBoundingSphere();
       const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }); const mesh = new THREE.Mesh(g, mat); mesh.name = 'cover:mist'; mesh.matrixAutoUpdate = false; mesh.renderOrder = 4; root.add(mesh); objs.mist = mesh; }
     if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, (() => { const m = M.groundMat.clone(); m.onBeforeCompile = global.WEATHER_FX.duneWet; return m; })(), 'cover:dunes', true); void m; }
-    if (DATA.edge && DATA.edge.idx.length) { const e = DATA.edge; for (let i = 0; i < e.idx.length; i += 3) { const a = e.idx[i] * 3, b = e.idx[i + 1] * 3, c = e.idx[i + 2] * 3, ny = (e.pos[b + 2] - e.pos[a + 2]) * (e.pos[c] - e.pos[a]) - (e.pos[b] - e.pos[a]) * (e.pos[c + 2] - e.pos[a + 2]); if (ny < 0) { const tmp = e.idx[i + 1]; e.idx[i + 1] = e.idx[i + 2]; e.idx[i + 2] = tmp; } } stripMesh(e, M.groundMat, 'cover:town-edge'); }
-    if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
+        if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
   }
   // W8g-c (W8_SPEC 13.3): the level of every instance follows its size on screen (px = the larger of the model's height and width x the instance scale x the local
   // scale of the display frame x pixels per metre / distance to the camera). Trees: near model (with its ink hull) -> far model at 40 px -> canopy group at 6 px;
@@ -625,7 +643,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const density=(lo,la)=>{const p=point(lo,la).map(x=>x/8),a=p.map(Math.floor);let trees=0,small=0,cedar=0;
       for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const b=[a[0]+x,a[1]+y,a[2]+z],c=cells.get(b.join(','));if(!c)continue;const ds=b.reduce((v,q,i)=>v+(q+.5-p[i])**2,0),w=Math.exp(-ds*1.5);trees+=c.trees*w;small+=c.n*w;cedar+=c.cedar*w;}return{trees,small,cedar};};
     for(const mesh of [...TERR.rest,...objs.strips.filter(o=>['cover:dunes','cover:ice'].includes(o.name))]){const g=mesh.geometry,pos=g.attributes.position,old=g.attributes.color,neo=old.clone();
-      for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));if(W.townPatchDistance(ll.lon,ll.lat)<=24)continue;const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
+      for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
         // the floor seen between the crowns from far away, mottled by the instance table: leafA going to the shade of cedarD where the stand is denser or more cedar
         if(reg.kind==='forest'){const shade=Math.min(1,.9*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
@@ -637,7 +655,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     // Each 16 m source tile is split into four local crown patches. Each patch
     // stays at its trees' centroid and uses a single 20-triangle crown.
     for(const ids of INDEX.tiles.values()){
-      const trees=ids.filter(i=>TREE_SET.has(DATA.items[i].type)&&W.regionAt(DATA.items[i].lon,DATA.items[i].lat).kind==='forest'&&W.townPatchDistance(DATA.items[i].lon,DATA.items[i].lat)>24);
+      const trees=ids.filter(i=>TREE_SET.has(DATA.items[i].type)&&W.regionAt(DATA.items[i].lon,DATA.items[i].lat).kind==='forest');
       if(!trees.length)continue;const origin=DATA.items[trees[0]],parts=new Map();
       for(const i of trees){const it=DATA.items[i],dx=wrapLon(it.lon-origin.lon)*R*D*Math.cos(it.lat*D),dz=(it.lat-origin.lat)*R*D,key=Math.floor(dx/8)+','+Math.floor(dz/8);if(!parts.has(key))parts.set(key,[]);parts.get(key).push(i);}
       for(const members of parts.values()){const lo=origin.lon+members.reduce((v,i)=>v+wrapLon(DATA.items[i].lon-origin.lon),0)/members.length,la=members.reduce((v,i)=>v+DATA.items[i].lat,0)/members.length,F=flatOf(wrapLon(lo),la),h=TERR.sampler()(wrapLon(lo),la);canopyGroups.push({members,F,h,scale:Math.min(4,1.2+Math.sqrt(members.length)*.7)});}
@@ -711,7 +729,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(), footprint = global.SECTION_PLAN.LANDCOVER_FOOTPRINT; WATERK = global.WATER.make(THREE);
     const RD = global.ROADS_API && global.ROADS_API.data(); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     // W8g-b (B4): a road keeps plants beyond its whole cross-section (the footprint of roads.js: paved + shoulder + ditch, per sample), plus the same 0.8 m as before
@@ -723,10 +741,11 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (const ex of RD.extras || []) { addPts(ex.centre, 1.6); if (ex.landing) avoid.push({ lon: ex.landing.lon, lat: ex.landing.lat, r: 2.5 }); }
     }
     for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
+    { const P = W.TOWN_PATCH; avoid.push({ poly: [[P.lonMin, P.latMin], [P.lonMax, P.latMin], [P.lonMax, P.latMax], [P.lonMin, P.latMax]], occupancy: 'town-ground' }); }
     const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint: global.SECTION_PLAN.FOOTPRINT });
+    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
@@ -743,10 +762,12 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     yield;
     { const TB = global.TERRAIN.builder(W); DATA.dunes = yield* dunesSteps(W, H, { avoid, avoidIndex, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
     yield;
+    const groundIndex = createAvoidIndex(W, avoid), footprintResult = avoidFootprints(DATA.items, groundIndex, footprint);
+    DATA.items = footprintResult.items; DATA.stats.instanceOccupancyCulled = footprintResult.culled; DATA.stats.instancesBeforeOccupancy = DATA.items.length + Object.values(footprintResult.culled).reduce((a, b) => a + b, 0);
     INDEX = indexItems(DATA.items); S.data = DATA;
     buildMeshes(K, M);
     const roadGrounds = [];
-    S.root.traverse(o => { if (o.isMesh && /^cover:(plots|ridges|ice|lava|dunes|town-edge|terrace-treads)$/.test(o.name)) roadGrounds.push(o); });
+    S.root.traverse(o => { if (o.isMesh && /^cover:(plots|ridges|ice|lava|dunes|terrace-treads)$/.test(o.name)) roadGrounds.push(o); });
     S.roadCut = TERR.cutGroundMeshes ? TERR.cutGroundMeshes(roadGrounds) : null;
     yield;
     buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it

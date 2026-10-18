@@ -20,8 +20,7 @@
 //                 road's full section (paving, shoulder, ditch) by more than 1e-5 m2; a road's own edge plants are listed
 //   I4 structures every building, landmark, section and town part (its triangles in plan) against the same road triangles: a part over a paved zone lower
 //                 than 4.5 m above the road (the clear height of a carriageway) fails; over the shoulder or the ditch, over the verge and higher over the paving
-//                 it is listed with its least height and its least horizontal clearance to the CR01 paving; a tree's crown and road furniture are listed. LM09
-//                 (PENDING): its east end lies where the user's W10b decision A put it; what of it reaches a road section is listed for the user's decision
+//                 it is listed with its least height and its least horizontal clearance to the CR01 paving; a tree's crown and road furniture are listed. W10d gives LM09 no pending-road exception.
 //   I5 holes      every probe without a road: the uncut terrain or an overlay within 0.3 m above it is its first opaque surface (no hole, no far-side hit); with
 //                 --baseline no new hole (a probe that held before)
 //   I6 one display  the terrain, road and ground overlay meshes are the same objects and geometry at the three bend states; page errors 0; with --baseline the
@@ -270,10 +269,9 @@ const MODES = Object.keys(data.modes), PR = data.probes, L = data.labels, f = (v
 const where = q => `${q.set === 'ring' ? 'CR01' : `${q.node}/${q.route}`} s=${f(q.s, 2)} o=${f(q.o, 2)} (${f(q.x, 2)}, ${f(q.z, 2)})`;
 // PAVED: the paving and the shoulder; SECTION: the full section (to the ditch's outer lip). HEADROOM: a lamp arm or head this high over the road is the
 // road's; CLEARANCE: the clear height over a carriageway (Japanese 建築限界 4.5 m), a building part over the paving any lower stands in the road.
-// PENDING: the LM09 east end lies where the user's W10b decision A put it (W10_SPEC 2026-10-11: the platform east end 4.5 m shorter, the buffer stop on the
-// west side of CR01); what of it still reaches a road section is listed for the user's decision, not failed (CR01_HOUSE_GRASS_INTRUSION_PLAN.md 3).
-const PAVED = new Set(['paved', 'shoulder']), SECTION = new Set(['paved', 'shoulder', 'ditch']), HEADROOM = 2.5, CLEARANCE = 4.5, TOL_AREA = 1e-5, PENDING = /^lm09/;
-const pending = label => PENDING.test(label), TREE = /^lm\d\dTree$|^(cover|sec):(treeRound|cedar|pine|bamboo)(_far)?(:ink)?$/;
+// W10d follows the user's choice C: the LM09 platform and adjacent ground are clipped to the N11 curb; any remaining overlap is a failure.
+const PAVED = new Set(['paved', 'shoulder']), SECTION = new Set(['paved', 'shoulder', 'ditch']), HEADROOM = 2.5, CLEARANCE = 4.5, TOL_AREA = 1e-5;
+const TREE = /^lm\d\dTree$|^(cover|sec):(treeRound|cedar|pine|bamboo)(_far)?(:ink)?$/;
 const summary = { commit, ref, html: path.relative(root, html), files, errors, renderer: data.renderer, ms: Date.now() - t0, roadHash: data.roadHash, roadTriangles: data.roadTriangles, junctions: data.junctions, objects: data.stats.objects,
   stripCheck: { routes: data.stripCheck.length, mismatched: data.stripCheck.filter(s => s.mesh && !s.same).map(s => s.route), noOffsets: data.stripCheck.filter(s => s.mesh && s.same && !s.offsets).map(s => s.route) }, probes: { total: PR.length, ring: PR.filter(q => q.set === 'ring').length, junction: PR.filter(q => q.set === 'junction').length, byZone: {} }, modes: {} };
 for (const q of PR) { const z = q.zone || 'ground'; summary.probes.byZone[z] = (summary.probes.byZone[z] || 0) + 1; }
@@ -282,7 +280,7 @@ const keyOf = q => `${q.set}:${q.node || ''}:${q.route || ''}:${q.s}:${q.o}`;
 const failed = { I1: new Map(), I2: new Map(), I5: new Map(), crack: new Map() }, note = (k, q, u, why) => { const id = keyOf(q); let r = failed[k].get(id); if (!r) failed[k].set(id, r = { q, modes: {} }); r.modes[u] = why; };
 const tally = (o, k) => { o[k] = (o[k] || 0) + 1; };
 for (const u of MODES) {
-  const M = data.modes[u], st = summary.modes[u] = { triangles: M.triangles, I1: { probes: 0, fail: 0, by: {}, road: {}, pending: {}, cracks: 0 }, I2: { probes: 0, fail: 0, by: {}, verge: {} }, I5: { probes: 0, holes: 0, holeArea: 0, blocked: {} } };
+  const M = data.modes[u], st = summary.modes[u] = { triangles: M.triangles, I1: { probes: 0, fail: 0, by: {}, road: {}, cracks: 0 }, I2: { probes: 0, fail: 0, by: {}, verge: {} }, I5: { probes: 0, holes: 0, holeArea: 0, blocked: {} } };
   PR.forEach((q, i) => {
     const fid = M.first[i], fl = fid >= 0 ? L[fid] : null, dRoad = M.dRoad[i], tol = M.tol[i], margin = 1e-3 + (tol - 0.002);
     if (q.road) {
@@ -293,7 +291,6 @@ for (const u of MODES) {
         // the road's own furniture (barriers, posts, lamps: an arm or a head overhead) and its own edge weeds (roadkit.js: the wear along the paved edge) are
         // the road's; the LM09 east end is listed for the user's decision
         if (over && (over.cat === 'furniture' || over.cat === 'roadPlant')) tally(st.I1.road, `${over.label}${over.cat === 'furniture' && over.d >= HEADROOM ? '（高处）' : ''}`);
-        else if (over && pending(over.label)) tally(st.I1.pending, over.label);
         else if (over) { st.I1.fail++; tally(st.I1.by, `${over.cat}:${over.label}`); note('I1', q, u, `${over.cat} ${over.label} 高出路面 ${f(over.d, 4)} m`); }
         else if (noRoad) { st.I1.cracks++; note('crack', q, u, fl ? `只命中 ${fl[1]}` : '无命中'); }
       }
@@ -314,11 +311,10 @@ for (const k of ['I1', 'I2', 'I5', 'crack']) for (const [, r] of failed[k]) addF
 const zoneArea = (p, set) => Object.entries(p.byZone).filter(([z]) => set.has(z)).reduce((s, [, a]) => s + a, 0);
 const foreign = data.plants.filter(p => p.cat === 'plant' && zoneArea(p, SECTION) > TOL_AREA), own = data.plants.filter(p => p.cat === 'roadPlant' && zoneArea(p, SECTION) > TOL_AREA);
 const plantLine = p => `${p.label}[${p.inst}] (${f(p.x, 2)}, ${f(p.z, 2)})${p.ring ? ` CR01 s=${p.ring.s} o=${p.ring.o}` : ''} ${Object.entries(p.byZone).map(([z, a]) => `${z} ${f(a, 4)} m²`).join(' ')} 顶 ${p.top}`;
-// I4: structures. A building part over a paved zone lower than CLEARANCE fails; over the shoulder or the ditch, over the verge and high over the paving it is
-// listed with its least height; a tree's crown and road furniture are listed; the LM09 east end is pending
+// I4: structures. A building part over a paved zone lower than CLEARANCE fails; over the shoulder or ditch it is listed; LM09 has no pending-road exception after W10d.
 const isBuilding = r => ['landmark', 'section', 'town', 'other', 'cover'].includes(r.cat) && !TREE.test(r.label), low = (r, z) => r.byZone[z] > TOL_AREA && r.minAbove[z] < CLEARANCE;
-const blds = data.structures.filter(isBuilding), bldFail = blds.filter(r => low(r, 'paved') && !pending(r.label)), bldPending = blds.filter(r => pending(r.label) && Object.keys(r.byZone).some(z => SECTION.has(z)));
-const bldSection = blds.filter(r => !pending(r.label) && !low(r, 'paved') && ['shoulder', 'ditch'].some(z => r.byZone[z] > TOL_AREA)), bldHigh = blds.filter(r => !pending(r.label) && r.byZone.paved > TOL_AREA && !low(r, 'paved'));
+const blds = data.structures.filter(isBuilding), bldFail = blds.filter(r => low(r, 'paved'));
+const bldSection = blds.filter(r => !low(r, 'paved') && ['shoulder', 'ditch'].some(z => r.byZone[z] > TOL_AREA)), bldHigh = blds.filter(r => r.byZone.paved > TOL_AREA && !low(r, 'paved'));
 const trees = data.structures.filter(r => TREE.test(r.label) && Object.keys(r.byZone).length), furn = data.structures.filter(r => r.cat === 'furniture'), furnLow = furn.filter(r => low(r, 'paved'));
 const sLine = r => `${r.id}（${r.cat}）${Object.entries(r.byZone).map(([z, a]) => `${z} ${f(a, 4)} m² 最低高出路面 ${f(r.minAbove[z], 2)} m`).join('，') || '无交叠'}；离 CR01 铺装最近 ${r.clear === null ? '—' : f(r.clear, 2) + ' m'}${r.clearAt ? ` @(${r.clearAt.slice(0, 3).join(', ')}) s=${r.clearAt[3]} o=${r.clearAt[4]}` : ''}${r.routes && r.routes.length ? `；道路 ${r.routes.join('、')}` : ''}`;
 // I6
@@ -333,17 +329,16 @@ if (baselineFile) {
 summary.baseline = baseCmp;
 const zoneLine = () => Object.entries(summary.probes.byZone).map(([k, v]) => `${k} ${v}`).join('、');
 console.log(`  探针 ${PR.length}（环 ${summary.probes.ring}、十路口 ${summary.probes.junction}；${zoneLine()}）；道路三角形 ${data.roadTriangles}；平面道路网格与计划条带一致 ${summary.stripCheck.mismatched.length ? '否：' + summary.stripCheck.mismatched.join('、') : '是'}；对象 ${JSON.stringify(data.stats.objects)}；渲染器 ${data.renderer}`);
-for (const u of MODES) { const s = summary.modes[u]; console.log(`  · uBend ${u}：铺装/路肩 ${s.I1.probes} 点中首命中非道路 ${s.I1.fail}${s.I1.fail ? ' ' + JSON.stringify(s.I1.by) : ''}（道路自身设施与路沿杂草 ${JSON.stringify(s.I1.road)}；待裁决 ${JSON.stringify(s.I1.pending)}）；断面内地面压路 ${s.I2.fail}${s.I2.fail ? ' ' + JSON.stringify(s.I2.by) : ''}；道路草肩上的地面 ${JSON.stringify(s.I2.verge)}；路外地面 ${s.I5.probes} 点中空洞 ${s.I5.holes}（约 ${f(s.I5.holeArea, 3)} m²）`); }
+for (const u of MODES) { const s = summary.modes[u]; console.log(`  · uBend ${u}：铺装/路肩 ${s.I1.probes} 点中首命中非道路 ${s.I1.fail}${s.I1.fail ? ' ' + JSON.stringify(s.I1.by) : ''}（道路自身设施与路沿杂草 ${JSON.stringify(s.I1.road)}）；断面内地面压路 ${s.I2.fail}${s.I2.fail ? ' ' + JSON.stringify(s.I2.by) : ''}；道路草肩上的地面 ${JSON.stringify(s.I2.verge)}；路外地面 ${s.I5.probes} 点中空洞 ${s.I5.holes}（约 ${f(s.I5.holeArea, 3)} m²）`); }
 check('I1', !fails.I1.length && !(newCracks && newCracks.length), `铺装与路肩首个不透明面为道路（或道路自身设施、路沿杂草）${fails.I1.length ? `；例：${fails.I1.slice(0, 8).join('；')}` : ''}；路面无命中（裂缝）${MODES.map(u => `u${u} ${summary.modes[u].I1.cracks}`).join('、')}${newCracks ? `，对照基线新增 ${newCracks.length}` : '（未给 --baseline，只列数）'}${fails.crack.length ? `：${fails.crack.slice(0, 4).join('；')}` : ''}`);
 check('I2', !fails.I2.length, `断面内（铺装、路肩、边沟）没有地形或地面覆盖高出路面${fails.I2.length ? `；例：${fails.I2.slice(0, 8).join('；')}` : ''}`);
 check('I3', !foreign.length, `植物实例（完整外形）与道路相交 ${data.plants.length} 个：外来植物入完整断面 ${foreign.length}${foreign.length ? '（' + foreign.slice(0, 10).map(plantLine).join('；') + '）' : ''}；道路自身路沿草簇/杂草在断面内 ${own.length}（设计如此，列出：${own.slice(0, 6).map(plantLine).join('；') || '—'}）`);
 check('I4', !bldFail.length, `建筑/地标/断面/城镇实体 ${blds.length} 个在 CR01 3 m 内或与道路相交：在铺装上且低于 ${CLEARANCE} m ${bldFail.length}${bldFail.length ? '（' + bldFail.slice(0, 8).map(sLine).join('；') + '）' : ''}；只在路肩/边沟 ${bldSection.length}${bldSection.length ? '（' + bldSection.map(sLine).join('；') + '）' : ''}；高于 ${CLEARANCE} m 悬于铺装 ${bldHigh.length}${bldHigh.length ? '（' + bldHigh.map(sLine).join('；') + '）' : ''}；树冠 ${trees.length}${trees.length ? '（' + trees.map(sLine).join('；') + '）' : ''}；道路设施与路灯 ${furn.length} 个（悬于铺装上 ${furn.filter(r => r.byZone.paved > TOL_AREA).length}，其中低于 ${CLEARANCE} m ${furnLow.length}，均为道路自身设施，列出不判）`);
-if (bldPending.length) console.log(`PENDING I4 LM09 东端（W10b 用户裁决 A 的位置，待用户裁决，不计失败）${bldPending.length} 个：${bldPending.map(sLine).join('；')}`);
 check('I5', !(newHoles && newHoles.length), `路外地面空洞：${MODES.map(u => `u${u} ${summary.modes[u].I5.holes}`).join('、')}${newHoles ? `；对照基线新增 ${newHoles.length}${newHoles.length ? '（' + newHoles.slice(0, 8).join('；') + '）' : ''}` : '（未给 --baseline，只列数）'}${fails.I5.length ? `；例：${fails.I5.slice(0, 6).join('；')}` : ''}`);
 const i6 = same && !errors.length && !summary.stripCheck.mismatched.length && (!baseCmp || (baseCmp.roadHash[0] === baseCmp.roadHash[1] && Object.values(baseCmp.files).every(Boolean)));
 check('I6', i6, `三种弯曲状态地形、道路与地面覆盖网格同一组对象与几何 ${same}；页面错误 ${errors.length}${errors.length ? '（' + errors.slice(0, 3).join(' | ') + '）' : ''}；道路几何哈希 ${data.roadHash}${baseCmp ? `，基线 ${baseCmp.roadHash[0]}（${baseCmp.roadHash[0] === baseCmp.roadHash[1] ? '相同' : '不同'}）；layout.js / world.js / bend.js 与基线相同 ${Object.entries(baseCmp.files).map(([k, v]) => `${k} ${v}`).join('、')}` : '（未给 --baseline，不比较）'}`);
 summary.fails = fails; summary.holes = [...failed.I5.keys()]; summary.cracks = [...failed.crack.keys()]; summary.plants = data.plants; summary.structures = data.structures;
-summary.counts = { I1: failed.I1.size, I2: failed.I2.size, I3: { foreign: foreign.length, own: own.length }, I4: { fail: bldFail.length, section: bldSection.length, high: bldHigh.length, pending: bldPending.map(r => r.id), trees: trees.length, furniture: furn.length }, I5: failed.I5.size };
+summary.counts = { I1: failed.I1.size, I2: failed.I2.size, I3: { foreign: foreign.length, own: own.length }, I4: { fail: bldFail.length, section: bldSection.length, high: bldHigh.length, trees: trees.length, furniture: furn.length }, I5: failed.I5.size };
 if (baseCmp && baseCmp.counts) console.log(`  对照基线：I1 ${baseCmp.counts.I1}→${summary.counts.I1}、I2 ${baseCmp.counts.I2}→${summary.counts.I2}、I3 外来植物 ${baseCmp.counts.I3.foreign}→${summary.counts.I3.foreign}、I4 ${baseCmp.counts.I4.fail ?? baseCmp.counts.I4.buildings}→${summary.counts.I4.fail}、I5 ${baseCmp.counts.I5}→${summary.counts.I5}`);
 summary.failedProbes = Object.fromEntries(['I1', 'I2', 'I5', 'crack'].map(k => [k, [...failed[k].values()].slice(0, 3000).map(r => ({ ...r.q, modes: r.modes }))]));
 fs.mkdirSync(path.dirname(reportFile), { recursive: true });

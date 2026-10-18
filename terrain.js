@@ -1,7 +1,7 @@
 // Planet terrain mesh (W3). Reads world.js (frozen planet layout) and builds:
 //   - the terrain mesh in flat Mercator coordinates, rolled onto the sphere by bend.js (see docs/world/W3_SPEC.md section 2):
 //       x = R lon, z = -R asinh(tan lat), y_flat = (height - 1.6) / cos lat   (bend multiplies y by cos lat again)
-//   - the TR01 ring (everything within 24 m of the town patch) as separate meshes that stay visible at uBend = 0
+//   - continuous terrain through the town plain, split into build chunks only
 //   - two polar caps (|lat| > 85 deg) in native sphere coordinates, excluded from the bend (material.userData.noBend)
 // The mesh builder is pure (no THREE, no DOM) so tools/terrain_check.mjs can run it under Node.
 (function (global) {
@@ -80,8 +80,6 @@ function builder(W) {
     return [...set].sort((a, b) => a - b);
   };
 
-  const inPatch = (lon, lat) => lon >= -P.lonMax - EPS && lon <= P.lonMax + EPS && lat >= P.latMin - EPS && lat <= P.latMax + EPS;
-
   const polyArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
   // W8g-b (W8_SPEC 13.2 B2): the cut of the ring under the exit heads: for every cell of a head's first L metres (rows 0 .. K), the strip's whole width, its outer
   // columns included (ruling 5 of the W8g-b breakdown: that contains the cross-section's footprint, paved + shoulder + ditch, plus 0.3 m for every class, and the outer
@@ -155,7 +153,6 @@ function builder(W) {
     const tris = [];   // {a, b, c} as vertex ids, with chunk and ring flag resolved later
     const keep = (ra, ka, rb, kb, rc, kc) => {
       const A = [rings[ra].lons[ka], rings[ra].lat], B = [rings[rb].lons[kb], rings[rb].lat], C = [rings[rc].lons[kc], rings[rc].lat];
-      if (inPatch(A[0], A[1]) && inPatch(B[0], B[1]) && inPatch(C[0], C[1])) return;                    // the town patch is the town's
       const lon = (A[0] + B[0] + C[0]) / 3, lat = (A[1] + B[1] + C[1]) / 3;
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
       if (opts.chunks && !opts.chunks.has(chunkKeyOf(lon, lat))) return;
@@ -252,7 +249,6 @@ function builder(W) {
         if (Math.floor(lo0) > ci || Math.floor(lo1) < ci) continue;
         const lt0 = Math.min(A[1], Bv[1], C[1]), lt1 = Math.max(A[1], Bv[1], C[1]);
         if (Math.floor(lt0) > cj || Math.floor(lt1) < cj) continue;
-        if (inPatch(A[0], A[1]) && inPatch(Bv[0], Bv[1]) && inPatch(C[0], C[1])) continue;   // the town patch is the town's
         const lon = (A[0] + Bv[0] + C[0]) / 3, lat = (A[1] + Bv[1] + C[1]) / 3, ring = W.townPatchDistance(lon, lat) < RING_M;
         found.push({ ring, key: chunkKeyOf(lon, lat), r, step, tri: [A[0], A[1], hOf(rings, A[2], A[3]), Bv[0], Bv[1], hOf(rings, Bv[2], Bv[3]), C[0], C[1], hOf(rings, C[2], C[3])] });
       }
@@ -261,7 +257,7 @@ function builder(W) {
     return found.map(q => q.tri);
   }
 
-  return { buildFlat, buildRestChunks, buildRestRow, samplerCell, buildCap, vertex, vertexColor, lats, ringLons, inPatch, flatX, flatZ, chunkKeyOf };
+  return { buildFlat, buildRestChunks, buildRestRow, samplerCell, buildCap, vertex, vertexColor, lats, ringLons, flatX, flatZ, chunkKeyOf };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -623,6 +619,82 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     }
     return { meshes: clippedMeshes, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
   }
+  // W10d: all marked town/landmark ground surfaces share one occupancy. After every module has
+  // built, remove the terrain triangles beneath their upward-facing projected triangles.
+  function cutTerrainByGround(meshes) {
+    const CELL = 2, PERIOD = 2 * Math.PI * R, polys = [], cells = new Map(), cellKey = (x, z) => `${x},${z}`;
+    const insert = p => {
+      if (p.length !== 3 || Math.abs(polygonAreaXZ(p)) < 1e-8) return;
+      const box = { x0: Math.min(...p.map(q => q[0])), x1: Math.max(...p.map(q => q[0])), z0: Math.min(...p.map(q => q[1])), z1: Math.max(...p.map(q => q[1])) };
+      const id = polys.length; polys.push({ p, box });
+      for (let x = Math.floor(box.x0 / CELL); x <= Math.floor(box.x1 / CELL); x++) for (let z = Math.floor(box.z0 / CELL); z <= Math.floor(box.z1 / CELL); z++) {
+        const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id);
+      }
+    };
+    const seen = new Set();
+    for (const mesh of meshes) {
+      const g = mesh.geometry, pos = g?.attributes?.position; if (!pos || mesh.isInstancedMesh) continue;
+      mesh.updateWorldMatrix(true, false); const e = mesh.matrixWorld.elements, ix = g.index, count = ix ? ix.count : pos.count;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const ids = [0, 1, 2].map(k => ix ? ix.getX(t + k) : t + k), v = ids.map(i => {
+          const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+          return [e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]];
+        });
+        const normalY = (v[1][2] - v[0][2]) * (v[2][0] - v[0][0]) - (v[1][0] - v[0][0]) * (v[2][2] - v[0][2]);
+        if (normalY <= 1e-10) continue;
+        const p = v.map(q => [q[0], q[2]]), key = p.map(q => `${Math.round(q[0] * 1e4)},${Math.round(q[1] * 1e4)}`).sort().join('|');
+        if (seen.has(key)) continue; seen.add(key);
+        const centre = p.reduce((s, q) => s + q[0], 0) / 3;
+        insert(p);
+        if (centre > PERIOD / 2) insert(p.map(q => [q[0] - PERIOD, q[1]]));
+        else if (centre < -PERIOD / 2) insert(p.map(q => [q[0] + PERIOD, q[1]]));
+      }
+    }
+    if (!polys.length) return { meshes: 0, occupancyTriangles: 0, trianglesBefore: 0, trianglesAfter: 0, clippedTriangles: 0, removedArea: 0 };
+    let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0, clippedMeshes = 0;
+    const read = (a, i, c) => [a.getX, a.getY, a.getZ, a.getW][c].call(a, i);
+    for (const mesh of [...state.ring, ...state.rest]) {
+      const g = mesh.geometry, pos = g.attributes.position, ix = g.index, count = ix ? ix.count : pos.count, index = [], original = [], extras = [];
+      let changed = false;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const ids = [0, 1, 2].map(k => ix ? ix.getX(t + k) : t + k), v = ids.map(i => [pos.getX(i), pos.getY(i), pos.getZ(i)]), tri = v.map(p => [p[0], p[2]]);
+        trianglesBefore++;
+        const box = { x0: Math.min(...tri.map(p => p[0])), x1: Math.max(...tri.map(p => p[0])), z0: Math.min(...tri.map(p => p[1])), z1: Math.max(...tri.map(p => p[1])) };
+        const found = new Set();
+        for (let x = Math.floor(box.x0 / CELL); x <= Math.floor(box.x1 / CELL); x++) for (let z = Math.floor(box.z0 / CELL); z <= Math.floor(box.z1 / CELL); z++) for (const id of cells.get(cellKey(x, z)) || []) found.add(id);
+        const candidates = [...found].filter(id => { const b = polys[id].box; return b.x1 > box.x0 + 1e-7 && b.x0 < box.x1 - 1e-7 && b.z1 > box.z0 + 1e-7 && b.z0 < box.z1 - 1e-7; });
+        if (!candidates.length) { index.push(...ids); trianglesAfter++; continue; }
+        let pieces = [tri];
+        for (const id of candidates) {
+          const cut = polys[id], next = [];
+          for (const q of pieces) {
+            const qb = { x0: Math.min(...q.map(p => p[0])), x1: Math.max(...q.map(p => p[0])), z0: Math.min(...q.map(p => p[1])), z1: Math.max(...q.map(p => p[1])) };
+            if (cut.box.x1 <= qb.x0 + 1e-7 || cut.box.x0 >= qb.x1 - 1e-7 || cut.box.z1 <= qb.z0 + 1e-7 || cut.box.z0 >= qb.z1 - 1e-7) next.push(q);
+            else next.push(...subtractConvexXZ(q, cut.p, 1e-8));
+          }
+          pieces = next; if (!pieces.length) break;
+        }
+        const area = Math.abs(polygonAreaXZ(tri)), remain = pieces.reduce((sum, p) => sum + Math.abs(polygonAreaXZ(p)), 0);
+        if (area < 1e-10 || remain >= area - Math.max(1e-7, area * 1e-7)) { index.push(...ids); trianglesAfter++; continue; }
+        changed = true; clippedTriangles++; removedArea += Math.max(0, area - remain);
+        if (!original.length) { for (const a of Object.values(g.attributes)) original.push(Array.from({ length: a.count * a.itemSize }, (_, j) => read(a, Math.floor(j / a.itemSize), j % a.itemSize))); }
+        const attrs = Object.values(g.attributes), den = (v[1][2] - v[2][2]) * (v[0][0] - v[2][0]) + (v[2][0] - v[1][0]) * (v[0][2] - v[2][2]);
+        const addVertex = p => {
+          const w0 = ((v[1][2] - v[2][2]) * (p[0] - v[2][0]) + (v[2][0] - v[1][0]) * (p[1] - v[2][2])) / den,
+            w1 = ((v[2][2] - v[0][2]) * (p[0] - v[2][0]) + (v[0][0] - v[2][0]) * (p[1] - v[2][2])) / den, weights = [w0, w1, 1 - w0 - w1], out = (original[0].length + extras[0].length) / attrs[0].itemSize;
+          attrs.forEach((a, ai) => { for (let c = 0; c < a.itemSize; c++) extras[ai].push(weights.reduce((sum, w, k) => sum + w * read(a, ids[k], c), 0)); });
+          return out;
+        };
+        if (!extras.length) attrs.forEach(a => extras.push([]));
+        for (const p of pieces) { const vids = p.map(addVertex); for (let k = 1; k + 1 < vids.length; k++) { index.push(vids[0], vids[k], vids[k + 1]); trianglesAfter++; } }
+      }
+      if (changed) {
+        Object.values(g.attributes).forEach((a, i) => g.setAttribute(a.name, new THREE.Float32BufferAttribute(original[i].concat(extras[i]), a.itemSize)));
+        g.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1)); g.computeBoundingSphere(); g.computeBoundingBox(); clippedMeshes++;
+      }
+    }
+    return { meshes: clippedMeshes, occupancyTriangles: polys.length, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
+  }
   // W8g-a: the rest chunks by key, each made once (for the rest meshes or, earlier, for the sampler near a point); the same chunk objects as one global build
   const restChunk = new Map();
   const restChunks = keys => {
@@ -677,6 +749,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   state.cutRoads = cutRoads;
   state.cutGroundMeshes = cutGroundMeshes;
+  state.cutTerrainByGround = cutTerrainByGround;
   return state;
 };
 

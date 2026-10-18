@@ -45,6 +45,6 @@ for (const [type, list] of [...Object.entries(P.items), ['lamp', P.lampSites]]) 
 }
 const poleSet = new Set(P.items.pole || []);
 if (P.wires.some(w => !poleSet.has(w.a) || !poleSet.has(w.b))) errors.push('wire references a removed pole');
-for (const type of ['lamp', 'signRound', 'signBus', 'mirror', 'fenceBamboo', 'pole']) if (!counts[type]) errors.push(`${type} missing from entrance`);
+for (const type of ['lamp', 'signRound', 'signBus', 'mirror', 'pole']) if (!counts[type]) errors.push(`${type} missing from entrance`);
 console.log(`${errors.length ? 'FAIL' : 'PASS'} C01-S section clearance: ${Object.values(counts).reduce((a, b) => a + b, 0)} retained items against ${roads.length} edges (${ring.length} of CR01), ${P.wires.length} connected wires, ${errors.length} conflicts`);
 if (errors.length) { console.log(errors.slice(0, 30).join('\n')); process.exitCode = 1; }

@@ -106,7 +106,7 @@ let landmarkKit=null;
     for(const p of b.parts)if(groups[p.group])bake(groups[p.group]);}
   kit.ground=(lon,lat)=>terrain.sampler()(lon,lat);   // W8g-b (B3): the rendered terrain's height for the landmarks' anchors and entrance pads
   landmarkKit=kit;seed=s0;root=scene;}
-// Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
+// Town ground generated from LAYOUT (layout.js): carriageways, raised pavement islands with
 // curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
 const L=LAYOUT,LV=L.LEVELS,BH=L.BASE.half,R=L.INTERSECTION.curbRadius;
 // Hand-drawn ground textures on the paper grain (own seed, so the building details never shift).
@@ -122,13 +122,11 @@ const texMats={};function matT(c,tex,flat=false){const k=c+tex+flat;return texMa
 const flatMats={};function flatMat(c){return flatMats[c]||(flatMats[c]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map:paperTex,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));}
 // Paper grain repeats every 4 units on ground pieces instead of stretching across the whole face.
 function tileUV(g,sx,sy){const uv=g.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*sx,uv.getY(i)*sy);return g;}
-function slab([x0,z0,x1,z1],y0,y1,c,outline=true){const w=x1-x0,d=z1-z0,h=y1-y0,g=new THREE.BoxGeometry(w,h,d),uv=g.attributes.uv;for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),s=f<2?[d,h]:f<4?[w,d]:[w,h];uv.setXY(i,uv.getX(i)*s[0]/4,uv.getY(i)*s[1]/4);}return mesh(g,c,(x0+x1)/2,(y0+y1)/2,(z0+z1)/2,outline);}
-function flat([x0,z0,x1,z1],y,c){const a=mesh(tileUV(new THREE.PlaneGeometry(x1-x0,z1-z0),(x1-x0)/4,(z1-z0)/4),typeof c==='string'?flatMat(c):c,(x0+x1)/2,y,(z0+z1)/2,false);a.rotation.x=-Math.PI/2;return a;}
+function slab([x0,z0,x1,z1],y0,y1,c,outline=true){const w=x1-x0,d=z1-z0,h=y1-y0,g=new THREE.BoxGeometry(w,h,d),uv=g.attributes.uv;for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),s=f<2?[d,h]:f<4?[w,d]:[w,h];uv.setXY(i,uv.getX(i)*s[0]/4,uv.getY(i)*s[1]/4);}const a=mesh(g,c,(x0+x1)/2,(y0+y1)/2,(z0+z1)/2,outline);a.userData.groundOccupancy=true;return a;}
+function flat([x0,z0,x1,z1],y,c){const a=mesh(tileUV(new THREE.PlaneGeometry(x1-x0,z1-z0),(x1-x0)/4,(z1-z0)/4),typeof c==='string'?flatMat(c):c,(x0+x1)/2,y,(z0+z1)/2,false);a.rotation.x=-Math.PI/2;a.userData.groundOccupancy=true;return a;}
 // Splits a rect along axis i (0 = x, 1 = z) around excluded [a, b] spans.
 function without(r,i,spans){let out=[r];for(const [a,b] of spans)out=out.flatMap(q=>{if(b<=q[i]||a>=q[i+2])return[q];const res=[];if(a>q[i]){const p=q.slice();p[i+2]=a;res.push(p);}if(b<q[i+2]){const p=q.slice();p[i]=b;res.push(p);}return res;});return out;}
 const overlaps=(a,b)=>a[0]<b[2]-1e-6&&b[0]<a[2]-1e-6&&a[1]<b[3]-1e-6&&b[1]<a[3]-1e-6;
-group('base');flat([-BH,-BH,BH,BH],LV.plinth,'#273443');
-// One asphalt sheet under everything: crossing carriageways cannot overlap or leave seams.
 // Pavement islands: corners at intersections are curb-return arcs, curb cuts are notches in the curb.
 for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],names=['NW','NE','SE','SW'],mx=(x0+x1)/2,mz=(z0+z1)/2,pts=[];
   for(let i=0;i<4;i++){const c=C[i],p=C[(i+3)%4],n=C[(i+1)%4];
@@ -149,7 +147,7 @@ for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1
     side=Math.max(...a.map(i=>gp.getZ(i)))-Math.min(...a.map(i=>gp.getZ(i)))>1e-5;
     if(!(outer&&side))kept.push(...a);}
   g.setIndex(kept);
-  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;}
+  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;m.userData.groundOccupancy=true;}
 // Ramps fill the notches: a 1:10 slope from the carriageway up to pavement level, no step at either end.
 for(const k of L.curbCuts){if(k.kind==='driveway'&&/^A0/.test(k.id))continue; // Unified alley strips supply these mouths.
   const lo=LV.carriageway,hi=LV.pavement,a=k.at,b=k.at+k.dir*k.depth;
@@ -157,7 +155,7 @@ for(const k of L.curbCuts){if(k.kind==='driveway'&&/^A0/.test(k.id))continue; //
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(V.flat(),3));
   const l=k.s1-k.s0;g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,l/4,0,l/4,k.depth/4,0,k.depth/4],2));
   const up=(V[1][0]-V[0][0])*(V[2][2]-V[0][2])-(V[1][2]-V[0][2])*(V[2][0]-V[0][0])<0;g.setIndex(up?[0,1,2,0,2,3]:[0,2,1,0,3,2]);g.computeVertexNormals();
-  mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);}
+  const m=mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);m.userData.groundOccupancy=true;}
 // Facility bands (curb strip where lamps, poles and drains stand), cut back at ramps, driveways and
 // the curb returns, which stay plain pavement.
 for(const s of L.surfaces.filter(s=>s.kind==='band')){const road=L.roads.find(r=>r.id===s.road),i=road.axis==='x'?0:1;
@@ -196,7 +194,7 @@ const textTex={};
 for(const m of L.markings.filter(m=>!m.rect)){
   const tex=m.kind==='diamond'?diaTex:textTex[m.text]||(textTex[m.text]=paintTex(512,512,(q,W,H)=>{const k=2.3;q.font='bold 148px sans-serif';q.textAlign='center';q.textBaseline='middle';q.setTransform(1,0,0,k,0,0);q.fillText(m.text,W/2,H/2/k,W-24);}));
   decal(tex,m.size[0],m.size[1],m.x,LV.carriageway,m.z,m.heading,new THREE.MeshBasicMaterial({map:tex,color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6}));}
-// Drainage: L-gutters along the curbs, grates, alley channels and outlets in the plinth face.
+// Drainage: L-gutters along the curbs, grates and alley channels.
 group('drainage',parent);
 quads(L.gutters.map(g=>g.rect),LV.carriageway,flatMat('#737c7d'));
 quads(L.channels.map(c=>c.rect),LV.pavement,flatMat('#5f6661'));
@@ -204,11 +202,6 @@ const grateTex=canvasTex(64,32,(q,W,H)=>{q.fillStyle='#2b3239';q.fillRect(0,0,W,
 const grateMat=new THREE.MeshToonMaterial({color:'#9aa3a6',gradientMap:ramp,map:grateTex});
 for(const g of L.grates){const [w,d]=L.DRAIN.grate,a=box(g.x,LV.carriageway+.006,g.z,g.line==='z'?w:d,.012,g.line==='z'?d:w,grateMat);}
 for(const c of L.channels)for(let x=c.rect[0]+1;x<c.rect[2]-.5;x+=1)box(x,LV.pavement+.004,(c.rect[1]+c.rect[3])/2,.04,.008,L.DRAIN.channel,'#3f4547',false);
-const stain=new THREE.MeshBasicMaterial({color:'#141b26',transparent:true,opacity:.45,depthWrite:false});
-const SHOW_OUTER_DRAIN_OUTLETS=false; // Temporary visual simplification; retain the outlet implementation for review.
-if(SHOW_OUTER_DRAIN_OUTLETS)for(const o of L.outlets){const [fx,fz]=o.face,y=-.22,g=new THREE.Group();g.position.set(o.x,0,o.z);g.rotation.y=faceY(o.face);root.add(g);
-  box(0,y,.03,.55,.36,.06,'#7d8584',true,g);const p=cyl(0,y,.09,.12,.14,'#5d6668',g);p.rotation.x=Math.PI/2;mesh(new THREE.CircleGeometry(.085,16),new THREE.MeshBasicMaterial({color:'#11161d'}),0,y,.161,false,g);
-  mesh(new THREE.PlaneGeometry(.22,1.1),stain,0,y-.72,.004,false,g);}
 // Alley security lamps, utility poles with catenary wires, signals and stop signs; the street lamps are road lamps of streetlights.js (W10c).
 group('streetFurniture',parent);
 const glowTex=canvasTex(128,128,(q,W)=>{const g=q.createRadialGradient(W/2,W/2,0,W/2,W/2,W/2);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.4,'rgba(255,255,255,.35)');g.addColorStop(1,'rgba(255,255,255,0)');q.fillStyle=g;q.fillRect(0,0,W,W);});
@@ -255,7 +248,7 @@ groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.
 // W8f-a: everything built so far is the town (ground, buildings, furniture, puddles); its large faces get sphere copies the first time uBend > 0 (below).
 const townRoots=scene.children.slice();
 // Rain falls in a box that follows the view target, never under the roofs and awnings of the town's buildings (their registered shelter rects, see layout.js).
-// WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the plinth, so 0.2 as
+// WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the street ground, so 0.2 as
 // always; the terrain, the sea, road decks and the landmarks' roofs elsewhere); a drop whose eight tries all fell under a shelter is parked for that fall (drawn
 // nowhere); a drop shows only where the weather rains: its own hash below the field's rain weight at its spot. `positions` keeps the drops exactly as before (the
 // town's Math.random stream and its pictures are unchanged); the GPU buffer `rainShow` is a copy with the hidden drops moved out of sight.
@@ -346,7 +339,8 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
           // keep the object's own orientation and place it at the wrapper origin
           const q=new THREE.Quaternion();o.getWorldQuaternion(q);const sc=new THREE.Vector3();o.getWorldScale(sc);o.parent.remove(o);o.position.set(0,0,0);o.quaternion.copy(q);o.scale.copy(sc);w.add(o);scene.add(w);return w;});
         bake(g,true);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
-        if(terrain.cutGroundMeshes&&(/^(lm02Ground|lm04Sando|lm09Ground|lm07Ice)$/.test(name))){const surfaces=[];g.traverse(o=>{if(o.isMesh&&o.geometry?.userData?.local&&(name!=='lm07Ice'||o.userData.layer==='ice-overlay'))surfaces.push(o);});roadGroundCut=terrain.cutGroundMeshes(surfaces,name==='lm07Ice'?[-1.5,0.2]:[-0.08,0.16]);}
+        if(/(?:Ground|Platform|Sando|Ice)$/.test(name))g.traverse(o=>{if(o.isMesh)o.userData.groundOccupancy=true;});
+        if(terrain.cutGroundMeshes&&(/^(lm02Ground|lm04Sando|lm09Ground|lm09Platform|lm07Ice)$/.test(name))){const surfaces=[];g.traverse(o=>{if(o.isMesh&&o.geometry?.userData?.local&&(name!=='lm07Ice'||o.userData.layer==='ice-overlay'))surfaces.push(o);});const yr=name==='lm07Ice'?[-1.5,0.2]:name==='lm09Platform'?[0.86,0.95]:[-0.08,0.16];roadGroundCut=terrain.cutGroundMeshes(surfaces,yr);}
         g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=true;wraps.forEach(w=>{w.visible=true;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
       landmarkInfo[lm.id]={groups:own,heading:headDeg,height:h,roadGroundCut};
       landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});seed=s0;root=scene;yield;}
@@ -384,7 +378,7 @@ const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P0
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
-// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
+// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m ground and street meshes sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
 // swapped in while uBend > 0; at uBend = 0 the town draws its own geometry again (the default view is bit for bit the old one, WC12).
 const townSphere={built:null,on:false};
@@ -413,6 +407,8 @@ const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('
   {name:'landmarks',deps:['landcover'],label:'正在安放村落',job:landmarkJob}
 ]});
 worldgen.start().then(()=>{
+const groundOccupancy=[];scene.traverse(o=>{if(o.isMesh&&o.userData.groundOccupancy)groundOccupancy.push(o);});
+terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.stats.occupancyCut.meshesTagged=groundOccupancy.length;
 // WX2 (docs/world/WEATHER_COMPLETION_PLAN.md 5.2, 5.3): the weather's receiving surfaces (the rendered terrain, the roads and decks of the lamp table, each landmark's
 // roofs and grounds) and its registered effects: the buildings' animated drips and window runs (their live line batches in the drip colours) and rain rings (live
 // additive rings), the landmarks' tagged parts (userData.weather), the mist belt of ameni-dake. Only their opacity and visibility follow the weather; nothing moves.

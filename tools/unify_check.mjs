@@ -18,7 +18,7 @@
 //              the nine town-exit connectors are separately counted from the town edge to 6 m outward.
 //   U4 (W10c): frozen town alignment, width, level and layout-driven road details; U4-CR01-junctions rebuilds the CR01 paving from the ring's final
 //              indexed triangles round the whole closed ring and tests every other road's whole cross-section against it (CR01_NW_REPAIR_PLAN.md).
-//   U5-U7 are added by W10d-W10g. --no-browser runs the data-only checks.
+//   U5 (W10d): one ground occupancy, no terrain below its marked surfaces, no base wall, no outlet model, plots and instance bounds clear.
 // Real GPU (ANGLE Metal, as the timing tools): the checks are structural, the renderer does not change them.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,6 +36,10 @@ const files = ['scene.js', 'terrain.js', 'section.js', 'roads.js', 'ocean.js', '
 const removed = /\b(?:setExplore|onExplore|setFade|landmarksVisible|buildLandmarks|buildRest|START_DELAY_MS|SLICE_MS|requestIdleCallback|restMat|fadeMaterials|visibilityOf|terrainOf|capsOf|setHeadCaps)\b|\bfunction\s+(?:visibility|ensure)\s*\(|\.explore\b|fade\.rest|opts\.gate|\bgate\s*:/;
 const hits = files.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => (removed.test(l) && !l.trim().startsWith('//') ? [`${f}:${i + 1}`] : [])));
 check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`);
+const w10dFiles = ['scene.js', 'terrain.js', 'landcover.js', 'section_plan.js'];
+const w10dRemoved = /group\('base'\)|SHOW_OUTER_DRAIN_OUTLETS|cover:town-edge|townPatchDistance\([^\n]*\)\s*[<]=?\s*24|put\('fenceBamboo'/;
+const w10dHits = w10dFiles.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => w10dRemoved.test(l) && !l.trim().startsWith('//') ? [`${f}:${i + 1}`] : []));
+check('U0-W10d', !w10dHits.length, `底座、TR01 独立网格/竹篱、外排水模型及补丁距离特例已删除：${w10dHits.join('、') || '无残留'}`);
 
 // ---- U0 (W10b): the retired roads and the old edge ids are gone as identifiers (whole string literals) from the running code and the tools. world.js keeps the
 // old id of an edge only as its source (the second argument of its E( / P( registration line); no table maps old ids to new ones.
@@ -538,8 +542,33 @@ try {
     return { n, nBad, bad };
   });
   check('U3-town', town.nBad === 0, `城镇车行道与巷道 ${town.n} 点，被世界图层盖住或下方 5 cm 内埋着带偏移的世界地面层 ${town.nBad} 点${town.nBad ? '：' + Object.entries(town.bad).map(([k, v]) => `${k} ${v.n}（${v.at.join('、')}）`).join('；') : ''}`);
+  const u5 = await page.evaluate(() => {
+    const S = window.__scene, T = window.THREE, CELL = 2, key = (x, z) => `${x},${z}`, cells = new Map(), occupancy = [], terrain = S.terrain.ring.concat(S.terrain.rest), visible = o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
+    S.scene.updateMatrixWorld(true);
+    const add = tri => { const b = [Math.min(...tri.map(p => p[0])), Math.max(...tri.map(p => p[0])), Math.min(...tri.map(p => p[1])), Math.max(...tri.map(p => p[1]))], id = occupancy.length; occupancy.push({ tri, b });
+      for (let x = Math.floor(b[0] / CELL); x <= Math.floor(b[1] / CELL); x++) for (let z = Math.floor(b[2] / CELL); z <= Math.floor(b[3] / CELL); z++) { const k = key(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id); } };
+    S.scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || !visible(o) || !o.userData.groundOccupancy || !o.geometry?.attributes?.position) return; const g = o.geometry, p = g.attributes.position, ix = g.index, e = o.matrixWorld.elements, n = ix ? ix.count : p.count;
+      for (let t = 0; t + 2 < n; t += 3) { const v = [0,1,2].map(k => { const i = ix ? ix.getX(t+k) : t+k, x=p.getX(i), y=p.getY(i), z=p.getZ(i); return [e[0]*x+e[4]*y+e[8]*z+e[12],e[1]*x+e[5]*y+e[9]*z+e[13],e[2]*x+e[6]*y+e[10]*z+e[14]]; });
+        const ny=(v[1][2]-v[0][2])*(v[2][0]-v[0][0])-(v[1][0]-v[0][0])*(v[2][2]-v[0][2]); if (ny>1e-10) add(v.map(q=>[q[0],q[2]])); }
+    });
+    const area = p => Math.abs(p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2), clip = (subject, edgeA, edgeB, sign) => { const out=[], val=p=>((edgeB[0]-edgeA[0])*(p[1]-edgeA[1])-(edgeB[1]-edgeA[1])*(p[0]-edgeA[0]))*sign; let a=subject.at(-1), da=val(a); for (const b of subject) { const db=val(b); if ((da<0)!==(db<0)) { const t=da/(da-db); out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]); } if (db>=-1e-10) out.push(b); a=b; da=db; } return out; };
+    let terrainTriangles=0, tested=0, overlapPairs=0, overlapArea=0;
+    for (const m of terrain) { const g=m.geometry,p=g.attributes.position,ix=g.index,n=ix?ix.count:p.count; for (let t=0;t+2<n;t+=3) { const tri=[0,1,2].map(k=>{const i=ix?ix.getX(t+k):t+k;return[p.getX(i),p.getZ(i)];}), box=[Math.min(...tri.map(q=>q[0])),Math.max(...tri.map(q=>q[0])),Math.min(...tri.map(q=>q[1])),Math.max(...tri.map(q=>q[1]))], ids=new Set(); terrainTriangles++;
+        for(let x=Math.floor(box[0]/CELL);x<=Math.floor(box[1]/CELL);x++)for(let z=Math.floor(box[2]/CELL);z<=Math.floor(box[3]/CELL);z++)for(const id of cells.get(key(x,z))||[])ids.add(id);
+        for(const id of ids){const o=occupancy[id],b=o.b;if(b[1]<=box[0]+1e-7||b[0]>=box[1]-1e-7||b[3]<=box[2]+1e-7||b[2]>=box[3]-1e-7)continue;tested++;let q=tri, sign=((o.tri[1][0]-o.tri[0][0])*(o.tri[2][1]-o.tri[0][1])-(o.tri[1][1]-o.tri[0][1])*(o.tri[2][0]-o.tri[0][0]))>=0?1:-1;for(let e=0;e<3&&q.length>=3;e++)q=clip(q,o.tri[e],o.tri[(e+1)%3],sign);const a=q.length>=3?area(q):0;if(a>1e-6){overlapPairs++;overlapArea+=a;} }
+      } }
+    let boundaryWalls=0, outletMeshes=0;
+    S.scene.traverse(o=>{ if (!o.isMesh || !visible(o) || !o.geometry?.attributes?.position) return; if (/outlet/i.test(o.name||'')) outletMeshes++; const g=o.geometry,p=g.attributes.position,ix=g.index,n=ix?ix.count:p.count,e=o.matrixWorld.elements;
+      for(let t=0;t+2<n;t+=3){const v=[0,1,2].map(k=>{const i=ix?ix.getX(t+k):t+k,x=p.getX(i),y=p.getY(i),z=p.getZ(i);return[e[0]*x+e[4]*y+e[8]*z+e[12],e[1]*x+e[5]*y+e[9]*z+e[13],e[2]*x+e[6]*y+e[10]*z+e[14]];});const y=v.map(q=>q[1]),x=v.map(q=>q[0]),z=v.map(q=>q[2]),vertical=area(v.map(q=>[q[0],q[2]]))<1e-8,boundary=v.every(q=>Math.min(Math.abs(Math.abs(q[0])-48),Math.abs(Math.abs(q[2])-48))<0.05);if(vertical&&boundary&&Math.max(...y)-Math.min(...y)>0.2&&Math.min(...y)<0)boundaryWalls++; }
+    });
+    const cover=S.cover.stats(), patch=window.WORLD.TOWN_PATCH, W=window.WORLD; let heightEdgeError=0;
+    for(let i=0;i<=100;i++){const t=i/100, lat=patch.latMin+(patch.latMax-patch.latMin)*t, lon=patch.lonMin+(patch.lonMax-patch.lonMin)*t; for(const q of [[patch.lonMin,lat],[patch.lonMax,lat],[lon,patch.latMin],[lon,patch.latMax]]) heightEdgeError=Math.max(heightEdgeError,Math.abs(W.height(q[0],q[1])-1.6));}
+    return { occupancyTriangles:occupancy.length, terrainTriangles, tested, overlapPairs, overlapArea, boundaryWalls, outletMeshes, outletData:window.LAYOUT.outlets.length, taggedMeshes:S.terrain.stats.occupancyCut?.meshesTagged||0, clippedMeshes:S.terrain.stats.occupancyCut?.meshes||0, culled:cover.instanceOccupancyCulled||{}, before:cover.instancesBeforeOccupancy||0, after:cover.items||0, heightEdgeError, townPatch:[patch.lonMin,patch.lonMax,patch.latMin,patch.latMax] };
+  });
+  const u5ok = u5.occupancyTriangles > 0 && u5.taggedMeshes > 0 && u5.overlapPairs === 0 && u5.overlapArea < 1e-5 && u5.clippedMeshes > 0 && u5.heightEdgeError <= 0.01 && u5.boundaryWalls === 0 && u5.outletMeshes === 0 && u5.after <= u5.before;
+  check('U5', u5ok, `占地上方网格 ${u5.occupancyTriangles} 个投影三角面；对 ${u5.terrainTriangles} 个地形三角面精确相交检查 ${u5.tested} 对，正面积残留 ${u5.overlapPairs} 对 / ${u5.overlapArea.toExponential(2)} m²；边界高于 0.2 m 的底座竖面 ${u5.boundaryWalls}，外围出口模型 ${u5.outletMeshes}（layout.js 数据仍为 ${u5.outletData} 条）；平原边界高差 ${u5.heightEdgeError.toFixed(4)} m；实例 ${u5.before} → ${u5.after}，占地筛除 ${JSON.stringify(u5.culled)}`);
   check('U3-errors', !errors.length, errors.join('；') || '无页面错误');
 } finally { await browser.close(); }
 }
-console.log('TODO U5–U7 属于 W10d–W10g，尚未实施（不算通过）');
+console.log('U6–U7 留给 W10f–W10g。');
 process.exitCode = failures ? 1 : 0;

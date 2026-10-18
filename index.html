@@ -2268,7 +2268,7 @@ else global.WORLD = WORLD;
 // Planet terrain mesh (W3). Reads world.js (frozen planet layout) and builds:
 //   - the terrain mesh in flat Mercator coordinates, rolled onto the sphere by bend.js (see docs/world/W3_SPEC.md section 2):
 //       x = R lon, z = -R asinh(tan lat), y_flat = (height - 1.6) / cos lat   (bend multiplies y by cos lat again)
-//   - the TR01 ring (everything within 24 m of the town patch) as separate meshes that stay visible at uBend = 0
+//   - continuous terrain through the town plain, split into build chunks only
 //   - two polar caps (|lat| > 85 deg) in native sphere coordinates, excluded from the bend (material.userData.noBend)
 // The mesh builder is pure (no THREE, no DOM) so tools/terrain_check.mjs can run it under Node.
 (function (global) {
@@ -2347,8 +2347,6 @@ function builder(W) {
     return [...set].sort((a, b) => a - b);
   };
 
-  const inPatch = (lon, lat) => lon >= -P.lonMax - EPS && lon <= P.lonMax + EPS && lat >= P.latMin - EPS && lat <= P.latMax + EPS;
-
   const polyArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
   // W8g-b (W8_SPEC 13.2 B2): the cut of the ring under the exit heads: for every cell of a head's first L metres (rows 0 .. K), the strip's whole width, its outer
   // columns included (ruling 5 of the W8g-b breakdown: that contains the cross-section's footprint, paved + shoulder + ditch, plus 0.3 m for every class, and the outer
@@ -2422,7 +2420,6 @@ function builder(W) {
     const tris = [];   // {a, b, c} as vertex ids, with chunk and ring flag resolved later
     const keep = (ra, ka, rb, kb, rc, kc) => {
       const A = [rings[ra].lons[ka], rings[ra].lat], B = [rings[rb].lons[kb], rings[rb].lat], C = [rings[rc].lons[kc], rings[rc].lat];
-      if (inPatch(A[0], A[1]) && inPatch(B[0], B[1]) && inPatch(C[0], C[1])) return;                    // the town patch is the town's
       const lon = (A[0] + B[0] + C[0]) / 3, lat = (A[1] + B[1] + C[1]) / 3;
       if (lon < win.lonMin || lon > win.lonMax || lat < win.latMin || lat > win.latMax) return;
       if (opts.chunks && !opts.chunks.has(chunkKeyOf(lon, lat))) return;
@@ -2519,7 +2516,6 @@ function builder(W) {
         if (Math.floor(lo0) > ci || Math.floor(lo1) < ci) continue;
         const lt0 = Math.min(A[1], Bv[1], C[1]), lt1 = Math.max(A[1], Bv[1], C[1]);
         if (Math.floor(lt0) > cj || Math.floor(lt1) < cj) continue;
-        if (inPatch(A[0], A[1]) && inPatch(Bv[0], Bv[1]) && inPatch(C[0], C[1])) continue;   // the town patch is the town's
         const lon = (A[0] + Bv[0] + C[0]) / 3, lat = (A[1] + Bv[1] + C[1]) / 3, ring = W.townPatchDistance(lon, lat) < RING_M;
         found.push({ ring, key: chunkKeyOf(lon, lat), r, step, tri: [A[0], A[1], hOf(rings, A[2], A[3]), Bv[0], Bv[1], hOf(rings, Bv[2], Bv[3]), C[0], C[1], hOf(rings, C[2], C[3])] });
       }
@@ -2528,7 +2524,7 @@ function builder(W) {
     return found.map(q => q.tri);
   }
 
-  return { buildFlat, buildRestChunks, buildRestRow, samplerCell, buildCap, vertex, vertexColor, lats, ringLons, inPatch, flatX, flatZ, chunkKeyOf };
+  return { buildFlat, buildRestChunks, buildRestRow, samplerCell, buildCap, vertex, vertexColor, lats, ringLons, flatX, flatZ, chunkKeyOf };
 }
 
 // Window around the town patch that contains the whole 24 m ring (the ring reaches 15.3 degrees of arc beyond the patch).
@@ -2890,6 +2886,82 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     }
     return { meshes: clippedMeshes, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
   }
+  // W10d: all marked town/landmark ground surfaces share one occupancy. After every module has
+  // built, remove the terrain triangles beneath their upward-facing projected triangles.
+  function cutTerrainByGround(meshes) {
+    const CELL = 2, PERIOD = 2 * Math.PI * R, polys = [], cells = new Map(), cellKey = (x, z) => `${x},${z}`;
+    const insert = p => {
+      if (p.length !== 3 || Math.abs(polygonAreaXZ(p)) < 1e-8) return;
+      const box = { x0: Math.min(...p.map(q => q[0])), x1: Math.max(...p.map(q => q[0])), z0: Math.min(...p.map(q => q[1])), z1: Math.max(...p.map(q => q[1])) };
+      const id = polys.length; polys.push({ p, box });
+      for (let x = Math.floor(box.x0 / CELL); x <= Math.floor(box.x1 / CELL); x++) for (let z = Math.floor(box.z0 / CELL); z <= Math.floor(box.z1 / CELL); z++) {
+        const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id);
+      }
+    };
+    const seen = new Set();
+    for (const mesh of meshes) {
+      const g = mesh.geometry, pos = g?.attributes?.position; if (!pos || mesh.isInstancedMesh) continue;
+      mesh.updateWorldMatrix(true, false); const e = mesh.matrixWorld.elements, ix = g.index, count = ix ? ix.count : pos.count;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const ids = [0, 1, 2].map(k => ix ? ix.getX(t + k) : t + k), v = ids.map(i => {
+          const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+          return [e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]];
+        });
+        const normalY = (v[1][2] - v[0][2]) * (v[2][0] - v[0][0]) - (v[1][0] - v[0][0]) * (v[2][2] - v[0][2]);
+        if (normalY <= 1e-10) continue;
+        const p = v.map(q => [q[0], q[2]]), key = p.map(q => `${Math.round(q[0] * 1e4)},${Math.round(q[1] * 1e4)}`).sort().join('|');
+        if (seen.has(key)) continue; seen.add(key);
+        const centre = p.reduce((s, q) => s + q[0], 0) / 3;
+        insert(p);
+        if (centre > PERIOD / 2) insert(p.map(q => [q[0] - PERIOD, q[1]]));
+        else if (centre < -PERIOD / 2) insert(p.map(q => [q[0] + PERIOD, q[1]]));
+      }
+    }
+    if (!polys.length) return { meshes: 0, occupancyTriangles: 0, trianglesBefore: 0, trianglesAfter: 0, clippedTriangles: 0, removedArea: 0 };
+    let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0, clippedMeshes = 0;
+    const read = (a, i, c) => [a.getX, a.getY, a.getZ, a.getW][c].call(a, i);
+    for (const mesh of [...state.ring, ...state.rest]) {
+      const g = mesh.geometry, pos = g.attributes.position, ix = g.index, count = ix ? ix.count : pos.count, index = [], original = [], extras = [];
+      let changed = false;
+      for (let t = 0; t + 2 < count; t += 3) {
+        const ids = [0, 1, 2].map(k => ix ? ix.getX(t + k) : t + k), v = ids.map(i => [pos.getX(i), pos.getY(i), pos.getZ(i)]), tri = v.map(p => [p[0], p[2]]);
+        trianglesBefore++;
+        const box = { x0: Math.min(...tri.map(p => p[0])), x1: Math.max(...tri.map(p => p[0])), z0: Math.min(...tri.map(p => p[1])), z1: Math.max(...tri.map(p => p[1])) };
+        const found = new Set();
+        for (let x = Math.floor(box.x0 / CELL); x <= Math.floor(box.x1 / CELL); x++) for (let z = Math.floor(box.z0 / CELL); z <= Math.floor(box.z1 / CELL); z++) for (const id of cells.get(cellKey(x, z)) || []) found.add(id);
+        const candidates = [...found].filter(id => { const b = polys[id].box; return b.x1 > box.x0 + 1e-7 && b.x0 < box.x1 - 1e-7 && b.z1 > box.z0 + 1e-7 && b.z0 < box.z1 - 1e-7; });
+        if (!candidates.length) { index.push(...ids); trianglesAfter++; continue; }
+        let pieces = [tri];
+        for (const id of candidates) {
+          const cut = polys[id], next = [];
+          for (const q of pieces) {
+            const qb = { x0: Math.min(...q.map(p => p[0])), x1: Math.max(...q.map(p => p[0])), z0: Math.min(...q.map(p => p[1])), z1: Math.max(...q.map(p => p[1])) };
+            if (cut.box.x1 <= qb.x0 + 1e-7 || cut.box.x0 >= qb.x1 - 1e-7 || cut.box.z1 <= qb.z0 + 1e-7 || cut.box.z0 >= qb.z1 - 1e-7) next.push(q);
+            else next.push(...subtractConvexXZ(q, cut.p, 1e-8));
+          }
+          pieces = next; if (!pieces.length) break;
+        }
+        const area = Math.abs(polygonAreaXZ(tri)), remain = pieces.reduce((sum, p) => sum + Math.abs(polygonAreaXZ(p)), 0);
+        if (area < 1e-10 || remain >= area - Math.max(1e-7, area * 1e-7)) { index.push(...ids); trianglesAfter++; continue; }
+        changed = true; clippedTriangles++; removedArea += Math.max(0, area - remain);
+        if (!original.length) { for (const a of Object.values(g.attributes)) original.push(Array.from({ length: a.count * a.itemSize }, (_, j) => read(a, Math.floor(j / a.itemSize), j % a.itemSize))); }
+        const attrs = Object.values(g.attributes), den = (v[1][2] - v[2][2]) * (v[0][0] - v[2][0]) + (v[2][0] - v[1][0]) * (v[0][2] - v[2][2]);
+        const addVertex = p => {
+          const w0 = ((v[1][2] - v[2][2]) * (p[0] - v[2][0]) + (v[2][0] - v[1][0]) * (p[1] - v[2][2])) / den,
+            w1 = ((v[2][2] - v[0][2]) * (p[0] - v[2][0]) + (v[0][0] - v[2][0]) * (p[1] - v[2][2])) / den, weights = [w0, w1, 1 - w0 - w1], out = (original[0].length + extras[0].length) / attrs[0].itemSize;
+          attrs.forEach((a, ai) => { for (let c = 0; c < a.itemSize; c++) extras[ai].push(weights.reduce((sum, w, k) => sum + w * read(a, ids[k], c), 0)); });
+          return out;
+        };
+        if (!extras.length) attrs.forEach(a => extras.push([]));
+        for (const p of pieces) { const vids = p.map(addVertex); for (let k = 1; k + 1 < vids.length; k++) { index.push(vids[0], vids[k], vids[k + 1]); trianglesAfter++; } }
+      }
+      if (changed) {
+        Object.values(g.attributes).forEach((a, i) => g.setAttribute(a.name, new THREE.Float32BufferAttribute(original[i].concat(extras[i]), a.itemSize)));
+        g.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1)); g.computeBoundingSphere(); g.computeBoundingBox(); clippedMeshes++;
+      }
+    }
+    return { meshes: clippedMeshes, occupancyTriangles: polys.length, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
+  }
   // W8g-a: the rest chunks by key, each made once (for the rest meshes or, earlier, for the sampler near a point); the same chunk objects as one global build
   const restChunk = new Map();
   const restChunks = keys => {
@@ -2944,6 +3016,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   state.stats.triangles = () => [...state.ring, ...state.rest, ...state.caps].reduce((s, m) => s + m.geometry.index.count / 3, 0);
   state.cutRoads = cutRoads;
   state.cutGroundMeshes = cutGroundMeshes;
+  state.cutTerrainByGround = cutTerrainByGround;
   return state;
 };
 
@@ -3147,6 +3220,10 @@ const FOOTPRINT = { seedling: [-0.03, 0.03, -0.03, 0.08], tuft: [-0.11, 0.13, -0
   barrier: [-1, 1, -0.03, 0.03], signFallen: [-3.2, 0.13, -0.2, 0.4], guardrail: [-1, 1, -0.04, 0.04], guardrailMetal: [-1, 1, -0.04, 0.04], fenceBamboo: [-3, 0.94, -0.03, 0.06], pole: [-0.95, 0.95, -0.15, 0.15],
   mirror: [-0.25, 0.44, -0.04, 0.08], signRound: [-0.31, 0.31, -0.04, 0.1], signBus: [-0.25, 0.25, -0.04, 0.04], vending: [-0.53, 0.53, -0.44, 0.44], lantern: [-0.25, 0.25, -0.25, 0.25], torii: [-1.46, 1.46, -0.18, 0.18],
   mossStep: [-0.75, 0.75, -1.2, 0.18], seaMark: [-0.16, 0.16, -0.05, 0.06] };
+// Complete local plan bounds for world instances, taken from the actual flora templates. The W4 section keeps its own curated boxes above.
+const LANDCOVER_FOOTPRINT = { ...FOOTPRINT,
+  treeRound: [-1.8024, 2.0137, -1.6891, 1.5727], cedar: [-1.7, 1.7, -1.7, 1.7], pine: [-2.5699, 2.7574, -1.8934, 1.7876], bamboo: [-1.3497, 1.4403, -1.3758, 1.1737],
+  dryShrub: [-0.2037, 0.1702, -0.1946, 0.4555], iceBlock: [-0.6102, 0.9608, -0.5565, 0.6039], lichenPatch: [-0.5362, 0.5362, -0.3964, 0.44], log: [-4.8, 0.2435, -0.2, 0.2], rockPillar: [-0.35, 0.39, -0.3295, 0.2995], ventCone: [-0.9651, 0.9651, -0.9209, 0.98], tubeHole: [-1.78, 1.78, -1.6929, 1.6929], teaRow: [-0.5, 0.5, -1, 1] };
 const mulberry = seed => { let s = seed | 0; return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 
 function plan(W) {
@@ -3159,7 +3236,8 @@ function plan(W) {
   const coastAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.coastDistance(lon, lat); };
 
   // ---- the roads of the section: dense centre lines in (u, v)
-  const roadEdges = [...W.roadNetwork.m01South, 'RN11-01'];          // M01 south of exit N08 (the former T03) and the RN11 boardwalk
+  const ringEdges = W.roadNetwork.edges.filter(e => e.id.startsWith('RN04-')).map(e => e.id);
+  const roadEdges = [...W.roadNetwork.m01South, ...ringEdges, 'RN11-01']; // M01 south, the full CR01 ring and the RN11 boardwalk
   const roads = {};
   for (const id of roadEdges) {
     const e = W.roadNetwork.edges.find(q => q.id === id), S = W.roadNetwork.samplePath(e, 0.5);
@@ -3213,7 +3291,7 @@ function plan(W) {
   { let prev = null; for (let v = 0; v <= 70; v += 0.05) { const [lon, lat] = toLL(-0.5 + 0, v); const r = W.regionAt(-1, LAT0 - v / (R * D)); if (r.id !== prev) { zones.push({ v: +v.toFixed(2), id: r.id, kind: r.kind, zone: r.zone }); prev = r.id; } } }
   const coastV = (() => { for (let v = 30; v < 62; v += 0.02) if (W.coastDistance(-1, LAT0 - v / (R * D)) <= 0) return v; return null; })();
 
-  // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
+// ---- TR01 roadside facilities for the sample section; the bamboo boundary fence is retired in W10d.
   // C01-S: keep the entrance furniture beyond the ring's full section and the turning mouth.
   // The two entrance lamps are road lamps: streetlights.js registers them at these sites (W10c); the sites stay reserved for the rest of the plan.
   const lampSites = [[-6.2, 12.5], [10.5, 13.2]].map(([u, v]) => { const [lon, lat] = toLL(u, v); occupied.push({ u, v, r: 0.6 }); return { u, v, lon, lat, clearance: 0.6 }; });
@@ -3222,7 +3300,6 @@ function plan(W) {
   put('mirror', -6.2, 15.0, { yaw: Math.PI / 2, r: 0.4 });
   { const b = beside('RN02-07', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
   for (let v = 18; v <= 22; v += 2.0) put('guardrailMetal', -6.4, v, { yaw: Math.PI / 2, r: 1.0 });
-  for (const [u0, u1] of [[-12, -7.2], [8.2, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 11.2, { yaw: 0, r: 1.0, clearance: 2.1 });
   // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
   const poleA = [[-8.0, 0.2, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[8.0, 0.2, 0.0], [10.0, 12.8, 0.08], [8.0, 21.0, 0.2]];
   const wires = [];
@@ -3315,15 +3392,17 @@ function plan(W) {
   // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches the ring's full RD03 section or the C01-S turning mouth, including
   // scattered plants. The ring: in true metres in (u, v), the ring's south straight is the parallel of C01-S (CR01 is the square |x|, |z| = 54 of the flat
   // frame), so it is the line v = v(C01-S) right across the corridor (its corners begin at |x| = 46 m, well east and west of it) and v is true metres along
-  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S and the placement
-  // margin of the roads up to v 24 m as before, and the full sections of those roads (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides;
-  // the RD07 boardwalk its placement half width). The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
+  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S; every registered
+  // corridor road uses its full section (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides; RD07 the boardwalk's placement half width).
+  // The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
   // (the ground cut's 0.12 m pad: nothing stands over the cut's edge); a tree, whose crown may overhang, keeps its clearance circle + 0.5 m.
   // (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: the ring test this replaces took town-frame metres, 0.84 true metres each at the ring, and only |x| <= 12 m of
   // a corridor that reaches x -15.0 m, and every test a clearance circle that misses the one-sided templates: the farm hut and the westmost seedlings
   // stood on the ring, a fallen rack reached into the full section of RN06-02.)
   const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat), vRing = toUV(c01.lon, c01.lat).v, RING_FULL = [3.55, 2.75], MARGIN = 0.15, TREE = 0.5;
-  const fullHalf = { RD03: 3.55, RD04: 2.75, RD05: 1.55, RD07: roadHalf.RD07 };
+  // RD04's rendered grass profile reaches 3.6 m from the centreline even though its paved/shoulder footprint is 2.75 m;
+  // keep corridor plants outside that visible edge as well, so the complete plant hull cannot touch the swept road profile.
+  const fullHalf = { RD03: 3.55, RD04: 3.6, RD05: 1.55, RD07: roadHalf.RD07 };
   const outline = it => { const e = FOOTPRINT[it.type]; if (!e) return null; const c = Math.cos(it.yaw), s = Math.sin(it.yaw);
     return [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([x, z]) => [it.u + x * it.s[0] * c + z * it.s[2] * s, it.v - x * it.s[0] * s + z * it.s[2] * c]); };
   const polyDist = (P, u, v) => { let inside = false, d = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], b = P[i], dx = b[0] - a[0], dv = b[1] - a[1], t = Math.max(0, Math.min(1, ((u - a[0]) * dx + (v - a[1]) * dv) / (dx * dx + dv * dv || 1)));
@@ -3336,7 +3415,7 @@ function plan(W) {
       const p = W.lonLatToTown(it.lon, it.lat), radius = it.clearance + 0.5;
       const ring = v0 - MARGIN < vRing + RING_FULL[0] && v1 + MARGIN > vRing - RING_FULL[1];
       const mouth = Math.abs(p.z - center.z) <= 7 && Math.abs(p.x - center.x) < 4.4 + radius;
-      const approach = it.v < 24 && (roadDist(it.u, it.v).d < radius || fullDist(it) < MARGIN);
+      const approach = fullDist(it) < MARGIN;
       const conflict = ring || mouth || approach;
       if (conflict) removedAtRing[type] = (removedAtRing[type] || 0) + 1;
       return !conflict;
@@ -3348,7 +3427,7 @@ function plan(W) {
   return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, lampSites, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
-const PLAN = { plan, SEED, FOOTPRINT };
+const PLAN = { plan, SEED, FOOTPRINT, LANDCOVER_FOOTPRINT };
 if (typeof module !== 'undefined' && module.exports) module.exports = PLAN;
 else global.SECTION_PLAN = PLAN;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -5970,7 +6049,7 @@ else global.OCEAN = OCEAN;
 
 </script><script>
 // Land cover of the planet (W6): the ground systems laid over the W3 terrain mesh, driven only by world.js, the terrain lattice height and fixed seeds.
-// Batch W6b (this file): BI05 paddies and dry fields, TR04 fallow fields, BI06 terraces with tea rows, TR01 town edges (fences along the patch edge), with the instanced
+// Batch W6b (this file): BI05 paddies and dry fields, TR04 fallow fields, BI06 terraces with tea rows, with the instanced
 // small things of the fields (seedlings, racks, scarecrows, sheds, weeds). The same machinery (global instance table, 16 m tiles, loading around the camera) is used by
 // the later rows (forest, grassland, desert, highland).
 // Pure part: build(W, H, avoid) returns the data (no THREE, no DOM). Scene part: attach(...) gives the stepped build that worldgen.js runs at start-up (W10a).
@@ -6012,7 +6091,7 @@ function createAvoidIndex(W, avoid, cellSize = 12) {
       else if ((f.box[0] + f.box[1]) / 2 < -period / 2) copies.push({ poly: xy.map(([x, z]) => [x + period, z]), box: [f.box[0] + period, f.box[1] + period, f.box[2], f.box[3]] });
       for (const q of copies) { q.id = features.length; features.push(q); insert(q); }
     } else {
-      const [lon, lat] = [a.lon, a.lat], [x, z] = toXY(lon, lat), r = a.r || 0, extent = r / Math.max(0.01, Math.cos(lat * D)), f = { point: [x, z], r, box: [x - extent, x + extent, z - extent, z + extent] };
+      const [lon, lat] = [a.lon, a.lat], [x, z] = toXY(lon, lat), r = a.r || 0, c = Math.max(0.01, Math.cos(lat * D)), extent = r / c, f = { point: [x, z], r, c, box: [x - extent, x + extent, z - extent, z + extent] };
       f.id = features.length; features.push(f); insert(f);
       if (x > period / 2 - extent) { const q = { ...f, point: [x - period, z], box: [f.box[0] - period, f.box[1] - period, f.box[2], f.box[3]], id: features.length }; features.push(q); insert(q); }
       else if (x < -period / 2 + extent) { const q = { ...f, point: [x + period, z], box: [f.box[0] + period, f.box[1] + period, f.box[2], f.box[3]], id: features.length }; features.push(q); insert(q); }
@@ -6041,7 +6120,15 @@ function createAvoidIndex(W, avoid, cellSize = 12) {
     for (const f of candidates(lon, lat, maxDistance)) { const d = clearance(f, x, z, c); if (d < min) min = d; if (d < hitDistance) return { hit: true, clearance: d }; }
     return { hit: false, clearance: min };
   };
-  return { features, hit: (lon, lat, r) => query(lon, lat, r).hit, clearance: (lon, lat, maxDistance = 12) => query(lon, lat, maxDistance, -Infinity).clearance };
+  const overlaps = poly => {
+    const box = [Math.min(...poly.map(p => p[0])), Math.max(...poly.map(p => p[0])), Math.min(...poly.map(p => p[1])), Math.max(...poly.map(p => p[1]))], found = new Set();
+    for (let x = Math.floor(box[0] / cellSize); x <= Math.floor(box[1] / cellSize); x++) for (let z = Math.floor(box[2] / cellSize); z <= Math.floor(box[3] / cellSize); z++) for (const id of cells.get(key(x, z)) || []) found.add(id);
+    for (const id of broad) found.add(id);
+    for (const id of found) { const f = features[id], b = f.box; if (b[1] < box[0] - 1e-8 || b[0] > box[1] + 1e-8 || b[3] < box[2] - 1e-8 || b[2] > box[3] + 1e-8) continue;
+      if (f.poly ? polygonsOverlap(poly, f.poly) : pointPolyDistance(f.point[0], f.point[1], poly) * f.c < f.r - 1e-8) return true; }
+    return false;
+  };
+  return { features, hit: (lon, lat, r) => query(lon, lat, r).hit, clearance: (lon, lat, maxDistance = 12) => query(lon, lat, maxDistance, -Infinity).clearance, overlaps };
 }
 function nearAvoidRoads(W, avoid, lon, lat, r) { return createAvoidIndex(W, avoid).hit(lon, lat, r); }
 
@@ -6063,6 +6150,16 @@ function clipHalf(poly, px, pz, nx, nz, off) {         // keep the part where (p
 }
 const polyArea = p => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; };
 const inPoly = (p, x, z) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && (x < (p[j][0] - p[i][0]) * (z - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0])) c = !c; return c; };
+function polygonsOverlap(a, b) {
+  for (const p of [a, b]) for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length], ax = -(q[1] - p[i][1]), az = q[0] - p[i][0], aa = a.map(v => v[0] * ax + v[1] * az), bb = b.map(v => v[0] * ax + v[1] * az);
+    if (Math.max(...aa) < Math.min(...bb) - 1e-8 || Math.max(...bb) < Math.min(...aa) - 1e-8) return false; }
+  return true;
+}
+function pointPolyDistance(x, z, p) {
+  if (inPoly(p, x, z)) return 0; let d = Infinity;
+  for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length], dx = b[0] - a[0], dz = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1))); d = Math.min(d, Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t)); }
+  return d;
+}
 
 function build(W, H, ctx) {
   const avoid = ctx.avoid || [], avoidIndex = ctx.avoidIndex || createAvoidIndex(W, avoid), corridor = ctx.corridor || null;
@@ -6088,34 +6185,26 @@ function build(W, H, ctx) {
   const nearEdge = (lon, lat) => { for (let a = 0; a < 8; a++) for (const d of [3, 6, SP.fallowBand]) { const p = W.destination({ lon, lat }, a * 45, d); const r = W.regionAt(p.lon, p.lat); if (r.zone !== 'building') return true; } return false; };       // forest, grassland, sea or ice within 8 m (W4: the fallow band is 7.4 m wide)
   const cells = [], T = { tread: { pos: [], col: [], idx: [] }, ridge: { pos: [], col: [], idx: [] }, water: { pos: [], col: [], idx: [], shore: [] } };
   const pushV = (m, x, z, h, c) => { const k = 1 / Math.cos(llOf(x, z).lat * D); m.pos.push(x, (h - BASE) * k, z); m.col.push(c[0], c[1], c[2]); return m.pos.length / 3 - 1; };
-  const stats = { cells: 0, water: 0, dry: 0, fallow: 0, village: 0, area: 0, skipped: 0, terraceCells: 0 };
+  const stats = { cells: 0, water: 0, dry: 0, fallow: 0, village: 0, area: 0, skipped: 0, terraceCells: 0, beforeOccupancyCells: 0, beforeOccupancyArea: 0 };
   for (const s of seeds) {
     const g = farmAt(s.lon, s.lat); if (!g) continue;
     // the cell polygon: bisectors with the neighbouring seeds, then the same inset by the ridge half width
     let outer = [[s.x - 9 * s.k, s.z - 9 * s.k], [s.x + 9 * s.k, s.z - 9 * s.k], [s.x + 9 * s.k, s.z + 9 * s.k], [s.x - 9 * s.k, s.z + 9 * s.k]], inner = outer.slice();
     for (const n of neighbours(s)) { const dx = n.x - s.x, dz = n.z - s.z, l = Math.hypot(dx, dz), ux = dx / l, uz = dz / l, mx = (s.x + n.x) / 2, mz = (s.z + n.z) / 2; outer = clipHalf(outer, mx, mz, ux, uz, 0); inner = clipHalf(inner, mx, mz, ux, uz, -SP.ridgeHalf * s.k); if (outer.length < 3 || inner.length < 3) break; }
     if (outer.length < 3 || inner.length < 3) continue;
-    // the town patch (a rectangle |x|, |z| <= 48 in the flat frame) keeps a 3.4 m strip for TR01: a cell next to it is cut along the strip's outer edge
-    { const P = W.TOWN_PATCH, X = R * P.lonMax * D, Zs = -R * Math.asinh(Math.tan(P.latMax * D)), Zn = -R * Math.asinh(Math.tan(P.latMin * D)), m = 3.4 * s.k;     // Zs < Zn
-      const sides = [[1, 0, X + m - s.x], [-1, 0, s.x + X + m], [0, 1, s.z - (Zn + m)], [0, -1, (Zs - m) - s.z]];            // seed's margin from each side's outer edge (positive: outside that edge)
-      if (Math.abs(s.x) < X + 6 * s.k + 8 && s.z > Zs - 14 * s.k && s.z < Zn + 14 * s.k || true) {
-        const near = s.x > X - 14 * s.k ? 0 : s.x < -X + 14 * s.k ? 1 : null, nearZ = s.z > Zn - 14 * s.k ? 2 : s.z < Zs + 14 * s.k ? 3 : null;
-        void sides; const cut = (p, ax) => { if (ax === 0) { p = clipHalf(p, X + m, 0, -1, 0, 0); } else if (ax === 1) { p = clipHalf(p, -X - m, 0, 1, 0, 0); } else if (ax === 2) { p = clipHalf(p, 0, Zn + m, 0, -1, 0); } else { p = clipHalf(p, 0, Zs - m, 0, 1, 0); } return p; };
-        const inside = Math.abs(s.x) < X + 30 * s.k && s.z > Zs - 30 * s.k && s.z < Zn + 30 * s.k;
-        if (inside) { const ax = [s.x - (X + m), -s.x - (X + m), s.z - (Zn + m), (Zs - m) - s.z]; const best = ax.indexOf(Math.max(...ax)); if (ax[best] > -4 * s.k) { outer = cut(outer, best); inner = cut(inner, best); } else if (W.townPatchDistance(s.lon, s.lat) < 20) continue; }
-        void near; void nearZ;
-      }
-    }
-    if (outer.length < 3 || inner.length < 3) continue;
-    // every corner of the cell must be on dry land of the building belt (farmland, village), clear of roads and landmarks and of the W4 section's own corridor
-    let ok = true; for (const p of outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat); const why = !(farmAt(ll.lon, ll.lat) === g || (r.zone === 'building' && r.kind !== 'town' && W.height(ll.lon, ll.lat) > 0.5)) ? 'region' : nearAvoid(ll.lon, ll.lat, 0.25) ? 'avoid' : inCorridor(ll.lon, ll.lat) ? 'corridor' : W.townPatchDistance(ll.lon, ll.lat) < 3.0 ? 'patch' : null; if (why) { ok = false; (stats.why = stats.why || {})[why] = ((stats.why || {})[why] || 0) + 1; break; } }
+    let ok = true;
+    for (const p of outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat), why = !(farmAt(ll.lon, ll.lat) === g || (r.zone === 'building' && r.kind !== 'town' && W.height(ll.lon, ll.lat) > 0.5)) ? 'region' : inCorridor(ll.lon, ll.lat) ? 'corridor' : null; if (why) { ok = false; (stats.why = stats.why || {})[why] = ((stats.why || {})[why] || 0) + 1; break; } }
     if (!ok) { stats.skipped++; continue; }
-    const areaTrue = Math.abs(polyArea(inner)) / (s.k * s.k); if (areaTrue < 3) continue;
-    const kind = g === 'village' ? 'dry' : nearEdge(s.lon, s.lat) ? 'fallow' : rnd(s.id, 7) < 0.62 ? 'water' : 'dry';
-    // heights: the lattice mesh under every vertex; the whole cell is levelled to its lowest corner + 0.04 (paddies are flat, the lattice differs by a few cm over a cell)
     const hv = ps => ps.map(p => { const ll = llOf(p[0], p[1]); return H(ll.lon, ll.lat); });
     const ho = hv(outer), hi = hv(inner), level = Math.max(...ho, ...hi), lowest = Math.min(...ho, ...hi);
-    if (level - lowest > 0.8) { stats.steep = (stats.steep || 0) + 1; continue; }                    // a plot is level: ground that falls more than 0.8 m across it (ridge and hill flanks, the beach ramp) is not laid; up to 0.8 m is hidden by the earth skirt below
+    if (level - lowest > 0.8) { stats.steep = (stats.steep || 0) + 1; continue; }
+    const areaTrue = Math.abs(polyArea(inner)) / (s.k * s.k);
+    if (areaTrue < 3) continue;
+    stats.beforeOccupancyCells++; stats.beforeOccupancyArea += areaTrue;
+    // The complete outer plot polygon, including its raised berm, clears the shared road/town/landmark occupancy.
+    if (avoidIndex.overlaps(outer)) { (stats.why = stats.why || {}).occupancy = ((stats.why || {}).occupancy || 0) + 1; stats.skipped++; continue; }
+    const kind = g === 'village' ? 'dry' : nearEdge(s.lon, s.lat) ? 'fallow' : rnd(s.id, 7) < 0.62 ? 'water' : 'dry';
+    // heights: the lattice mesh under every vertex; the whole cell is levelled to its lowest corner + 0.04 (paddies are flat, the lattice differs by a few cm over a cell)
     const flatH = level;
     const cellId = cells.length, top = kind === 'water' ? flatH - 0.07 : kind === 'fallow' ? flatH + 0.01 : flatH + 0.03;
     const cc = kind === 'water' ? COL.water : kind === 'dry' ? (rnd(s.id, 11) > 0.5 ? COL.dry : COL.dry2) : (rnd(s.id, 13) > 0.5 ? COL.fall : COL.fall2);
@@ -6176,11 +6265,7 @@ function build(W, H, ctx) {
   stats.boxCulled = {};
   const kept = items.filter(it => { if (boxClear(it)) return true; stats.boxCulled[it.type] = (stats.boxCulled[it.type] || 0) + 1; return false; });
   items.length = 0; items.push(...kept);
-  // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
-  // Keep the empty mesh record until the ground-cover consumers no longer require the field.
-  const edge = { pos: [], col: [], idx: [] };
-  stats.fences = items.filter(i => i.type === 'fenceBamboo').length;
-  return { seeds, cells, meshes: T, edge, items, stats };
+  return { seeds, cells, meshes: T, items, stats };
 }
 
 const vnoise3 = (x, y, z, s) => { const X = x / s, Y = y / s, Z = z / s, i = Math.floor(X), j = Math.floor(Y), k = Math.floor(Z), fx = X - i, fy = Y - j, fz = Z - k, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz); const h = (a, b, c) => hash(a * 7 + c * 31 + 3, b * 13 + c * 17 + 5); const L = (a, b, t) => a + (b - a) * t; return L(L(L(h(i, j, k), h(i + 1, j, k), u), L(h(i, j + 1, k), h(i + 1, j + 1, k), u), v), L(L(h(i, j, k + 1), h(i + 1, j, k + 1), u), L(h(i, j + 1, k + 1), h(i + 1, j + 1, k + 1), u), v), w); };
@@ -6204,6 +6289,19 @@ const scatterGrid = (cell, latMax, fn) => runAll(scatterGridSteps(cell, latMax, 
 function edgeDistance(W, lon, lat, test, maxD) {      // metres to the nearest point where test(region) is false (8 directions, 2 m steps), maxD when none is found
   let best = maxD; for (let a = 0; a < 8; a++) for (let d = 2; d < best; d += 2) { const p = W.destination({ lon, lat }, a * 45 + 22.5, d); if (!test(W.regionAt(p.lon, p.lat))) { best = Math.min(best, d); break; } }
   return best;
+}
+
+// W10d: check the complete oriented ground-plan box of every instance against the same index as plots.
+function avoidFootprints(items, avoidIndex, footprint) {
+  const kept = [], culled = {};
+  for (const it of items) {
+    const e = footprint[it.type]; if (!e) throw new Error(`landcover footprint missing: ${it.type}`);
+    const sx = it.s?.[0] || 1, sz = it.s?.[2] || 1, c = Math.cos(it.yaw), sn = Math.sin(it.yaw), k = 1 / Math.cos(it.lat * D), x0 = R * it.lon * D, z0 = -R * Math.asinh(Math.tan(it.lat * D));
+    const poly = [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([lx, lz]) => [x0 + (lx * sx * c + lz * sz * sn) * k, z0 + (-lx * sx * sn + lz * sz * c) * k]);
+    if (avoidIndex.overlaps(poly)) { culled[it.type] = (culled[it.type] || 0) + 1; continue; }
+    kept.push(it);
+  }
+  return { items: kept, culled };
 }
 
 // ---- BI02 forest and TR03 forest edge: four tree shapes by patch (cedar stands, broadleaf, pine, bamboo clumps), clearings, understory (shrubs, ferns, moss rocks, logs);
@@ -6482,7 +6580,7 @@ function lodDither(shader, pars = 'attribute vec2 aWin;', win = 'aWin') {
 // a dithered copy of a material (the W4 section keeps its materials as they are): the material's own shader edit, then the dither
 const ditherCopy = (base, name) => { const m = base.clone(), own = base._bendUserCompile; m.onBeforeCompile = function (shader, renderer) { if (own) own.call(base, shader, renderer); lodDither(shader); }; m.customProgramCacheKey = () => 'bend|lod|' + name; return m; };
 
-const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, avoidHit: nearAvoidRoads, avoidClearance, createAvoidIndex, SP, COL, SEED,
+const LANDCOVER = { vnoise3, build, terraces, forest, grassland, dunes, highland, iceField, lavaField, overlayGrid, scatterGrid, vnoise, edgeDistance, avoidHit: nearAvoidRoads, avoidClearance, createAvoidIndex, avoidFootprints, SP, COL, SEED,
   grasslandSteps, dunesSteps, iceFieldSteps, scatterGridSteps, lodDither, ditherCopy };
 
 // ---------------------------------------------------------------- scene part
@@ -6527,8 +6625,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeBoundingSphere();
       const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }); const mesh = new THREE.Mesh(g, mat); mesh.name = 'cover:mist'; mesh.matrixAutoUpdate = false; mesh.renderOrder = 4; root.add(mesh); objs.mist = mesh; }
     if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, (() => { const m = M.groundMat.clone(); m.onBeforeCompile = global.WEATHER_FX.duneWet; return m; })(), 'cover:dunes', true); void m; }
-    if (DATA.edge && DATA.edge.idx.length) { const e = DATA.edge; for (let i = 0; i < e.idx.length; i += 3) { const a = e.idx[i] * 3, b = e.idx[i + 1] * 3, c = e.idx[i + 2] * 3, ny = (e.pos[b + 2] - e.pos[a + 2]) * (e.pos[c] - e.pos[a]) - (e.pos[b] - e.pos[a]) * (e.pos[c + 2] - e.pos[a + 2]); if (ny < 0) { const tmp = e.idx[i + 1]; e.idx[i + 1] = e.idx[i + 2]; e.idx[i + 2] = tmp; } } stripMesh(e, M.groundMat, 'cover:town-edge'); }
-    if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
+        if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
   }
   // W8g-c (W8_SPEC 13.3): the level of every instance follows its size on screen (px = the larger of the model's height and width x the instance scale x the local
   // scale of the display frame x pixels per metre / distance to the camera). Trees: near model (with its ink hull) -> far model at 40 px -> canopy group at 6 px;
@@ -6596,7 +6693,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const density=(lo,la)=>{const p=point(lo,la).map(x=>x/8),a=p.map(Math.floor);let trees=0,small=0,cedar=0;
       for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const b=[a[0]+x,a[1]+y,a[2]+z],c=cells.get(b.join(','));if(!c)continue;const ds=b.reduce((v,q,i)=>v+(q+.5-p[i])**2,0),w=Math.exp(-ds*1.5);trees+=c.trees*w;small+=c.n*w;cedar+=c.cedar*w;}return{trees,small,cedar};};
     for(const mesh of [...TERR.rest,...objs.strips.filter(o=>['cover:dunes','cover:ice'].includes(o.name))]){const g=mesh.geometry,pos=g.attributes.position,old=g.attributes.color,neo=old.clone();
-      for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));if(W.townPatchDistance(ll.lon,ll.lat)<=24)continue;const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
+      for(let i=0;i<pos.count;i++){const ll=llOf(pos.getX(i),pos.getZ(i));const reg=W.regionAt(ll.lon,ll.lat),den=density(ll.lon,ll.lat),base=[old.getX(i),old.getY(i),old.getZ(i)];let color=base;
         // the floor seen between the crowns from far away, mottled by the instance table: leafA going to the shade of cedarD where the stand is denser or more cedar
         if(reg.kind==='forest'){const shade=Math.min(1,.9*smoothCover(3,18,den.trees)+.5*den.cedar/Math.max(1,den.trees));color=mix(base,mix(lin(P.leafA),lin(P.cedarD),shade),smoothCover(0,5,den.trees)*smoothCover(.45,.85,g.attributes.normal.getY(i))*(1-smoothCover(.05,.1,base[0])));}
         else if(['grassland','grass','desert','ice-north','ice-south'].includes(reg.kind)){const amount=Math.min(1,den.small/16);color=base.map(c=>c*(reg.kind==='grassland'?1+.4*amount:1-.25*amount));}
@@ -6608,7 +6705,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     // Each 16 m source tile is split into four local crown patches. Each patch
     // stays at its trees' centroid and uses a single 20-triangle crown.
     for(const ids of INDEX.tiles.values()){
-      const trees=ids.filter(i=>TREE_SET.has(DATA.items[i].type)&&W.regionAt(DATA.items[i].lon,DATA.items[i].lat).kind==='forest'&&W.townPatchDistance(DATA.items[i].lon,DATA.items[i].lat)>24);
+      const trees=ids.filter(i=>TREE_SET.has(DATA.items[i].type)&&W.regionAt(DATA.items[i].lon,DATA.items[i].lat).kind==='forest');
       if(!trees.length)continue;const origin=DATA.items[trees[0]],parts=new Map();
       for(const i of trees){const it=DATA.items[i],dx=wrapLon(it.lon-origin.lon)*R*D*Math.cos(it.lat*D),dz=(it.lat-origin.lat)*R*D,key=Math.floor(dx/8)+','+Math.floor(dz/8);if(!parts.has(key))parts.set(key,[]);parts.get(key).push(i);}
       for(const members of parts.values()){const lo=origin.lon+members.reduce((v,i)=>v+wrapLon(DATA.items[i].lon-origin.lon),0)/members.length,la=members.reduce((v,i)=>v+DATA.items[i].lat,0)/members.length,F=flatOf(wrapLon(lo),la),h=TERR.sampler()(wrapLon(lo),la);canopyGroups.push({members,F,h,scale:Math.min(4,1.2+Math.sqrt(members.length)*.7)});}
@@ -6682,7 +6779,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   // W8g-a: a stepped build (TERRAIN.job): one step per part; the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(); WATERK = global.WATER.make(THREE);
+    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler(), footprint = global.SECTION_PLAN.LANDCOVER_FOOTPRINT; WATERK = global.WATER.make(THREE);
     const RD = global.ROADS_API && global.ROADS_API.data(); const avoid = [];
     const addPts = (samples, hw) => samples.forEach((p, i) => { if (i % 3 === 0) avoid.push({ lon: p.lon, lat: p.lat, r: hw + 0.8 }); });
     // W8g-b (B4): a road keeps plants beyond its whole cross-section (the footprint of roads.js: paved + shoulder + ditch, per sample), plus the same 0.8 m as before
@@ -6694,10 +6791,11 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (const ex of RD.extras || []) { addPts(ex.centre, 1.6); if (ex.landing) avoid.push({ lon: ex.landing.lon, lat: ex.landing.lat, r: 2.5 }); }
     }
     for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
+    { const P = W.TOWN_PATCH; avoid.push({ poly: [[P.lonMin, P.latMin], [P.lonMax, P.latMin], [P.lonMax, P.latMax], [P.lonMin, P.latMax]], occupancy: 'town-ground' }); }
     const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint: global.SECTION_PLAN.FOOTPRINT });
+    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
@@ -6714,10 +6812,12 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     yield;
     { const TB = global.TERRAIN.builder(W); DATA.dunes = yield* dunesSteps(W, H, { avoid, avoidIndex, terrainColor: (lo, la) => TB.vertex(lo, la).c }); }
     yield;
+    const groundIndex = createAvoidIndex(W, avoid), footprintResult = avoidFootprints(DATA.items, groundIndex, footprint);
+    DATA.items = footprintResult.items; DATA.stats.instanceOccupancyCulled = footprintResult.culled; DATA.stats.instancesBeforeOccupancy = DATA.items.length + Object.values(footprintResult.culled).reduce((a, b) => a + b, 0);
     INDEX = indexItems(DATA.items); S.data = DATA;
     buildMeshes(K, M);
     const roadGrounds = [];
-    S.root.traverse(o => { if (o.isMesh && /^cover:(plots|ridges|ice|lava|dunes|town-edge|terrace-treads)$/.test(o.name)) roadGrounds.push(o); });
+    S.root.traverse(o => { if (o.isMesh && /^cover:(plots|ridges|ice|lava|dunes|terrace-treads)$/.test(o.name)) roadGrounds.push(o); });
     S.roadCut = TERR.cutGroundMeshes ? TERR.cutGroundMeshes(roadGrounds) : null;
     yield;
     buildInstances(K, M); buildLines(); if (BEND.seamSplit) BEND.seamSplit(S.root);     // W8e-b: ice and other cover meshes that cross the seam are cut along it
@@ -22565,14 +22665,14 @@ globalThis.LMLIB = function (K) {
   box(0, 0.06, 9.2, 2.6, 0.1, 8.6, '#8a8d90', true, gr);                                      // station lane from the road (z 13.35) down to the turning circle
   const cd = L.ground(6.0, '#767a7e', 0.05); cd.position.z = 1.0; const cg = mesh(new THREE.RingGeometry(5.6, 6.0, 40), mat('#a8a8a0'), 0, 0.08, 1.0, false, gr); cg.rotation.x = -PI / 2;
   box(0, 0.06, -1.6, 2.4, 0.1, 2.4, '#8a8d90', true, gr);                                      // the way from the circle to the platform
-  // W10b decision A: CR01 keeps its approved line. The platform gives the ring-road corridor the eastern 4.5 m: x -5.5..10 (15.5 m total), with the waiting shed moved 3 m west.
-  // ---- platform: 15.5 m long (x -5.5..10), 3 m wide (z -5.2..-2.2), height 0.9 m, tactile strip along the track edge
+  // W10b decision A: CR01 keeps its approved line. W10d choice C ends the platform 0.15 m clear of the N11 road edge: x -4.54..10 (14.54 m total).
+  // ---- platform: 14.54 m long (x -4.54..10), 3 m wide (z -5.2..-2.2), height 0.9 m, tactile strip along the track edge
   const pf = group('lm09Platform'); L.use(pf);
-  const PLATFORM_X = 2.25, PLATFORM_LENGTH = 15.5;
+  const PLATFORM_LENGTH = 14.54, PLATFORM_X = 10 - PLATFORM_LENGTH / 2, PLATFORM_MIN_X = PLATFORM_X - PLATFORM_LENGTH / 2;
   box(PLATFORM_X, 0.45, -3.7, PLATFORM_LENGTH, 0.9, 3.0, '#8d9094', true, pf); box(PLATFORM_X, 0.92, -4.95, PLATFORM_LENGTH, 0.04, 0.45, '#d8b84a', false, pf);
-  for (let i = 0; i < 31; i++) box(-5.25 + i * 0.5, 0.93, -4.95, 0.12, 0.02, 0.4, '#bf9f38', false, pf);
+  for (let x = PLATFORM_MIN_X + 0.25; x <= 10 - 0.25 + 1e-6; x += 0.5) box(x, 0.93, -4.95, 0.12, 0.02, 0.4, '#bf9f38', false, pf);
   for (const z of [-5.12, -2.29]) box(PLATFORM_X, 0.88, z, PLATFORM_LENGTH - 0.04, 0.1, 0.12, '#a9a8a2', true, pf); // cast edge caps
-  for (let i = 1; i < 13; i++) box(-5.5 + i * (PLATFORM_LENGTH / 13), 0.86, -2.25, 0.025, 0.1, 0.055, '#666b6d', false, pf); // expansion joints
+  for (let i = 1; i < 13; i++) box(PLATFORM_MIN_X + i * (PLATFORM_LENGTH / 13), 0.86, -2.25, 0.025, 0.1, 0.055, '#666b6d', false, pf); // expansion joints
   for (const x of [-3.8, 0.6, 5.0, 9.1]) {
     box(x, 0.2, -2.205, 0.44, 0.16, 0.05, '#4f5555', false, pf); // drainage outlets below the rear cap
     box(x, 0.13, -2.32, 0.54, 0.055, 0.22, '#74787a', false, pf);
@@ -22592,11 +22692,12 @@ globalThis.LMLIB = function (K) {
     box(x, 2.75, SZ, 0.09, 0.1, 2.28, '#594432', true, sh); // side rails
     box(x, 1.25, SZ - 0.73, 0.08, 0.45, 0.7, '#6e5741', true, sh); // short rear windscreen
   }
-  for (const z of [SZ - 1.08, SZ + 1.08]) box(SX, 3.23, z, 3.92, 0.15, 0.16, '#594432', true, sh);
+  const ROOF_X = SX + 0.06, ROOF_W = 3.88; // W10d: trim the east eave by 0.12 m at the N11 side
+  for (const z of [SZ - 1.08, SZ + 1.08]) box(ROOF_X, 3.23, z, ROOF_W - 0.08, 0.15, 0.16, '#594432', true, sh);
   for (const x of [SX - 1.82, SX, SX + 1.82]) box(x, 3.27, SZ, 0.09, 0.12, 2.4, '#594432', true, sh); // exposed rafters
-  L.gable(4.0, 2.5, 3.3, 0.9, 0.48, '#4a4f58', sh).position.set(SX, 0, SZ);
-  box(SX, 3.23, SZ + 1.26, 3.96, 0.15, 0.1, '#3a2d24', true, sh); // fascia
-  box(SX, 3.13, SZ - 1.28, 3.8, 0.11, 0.12, '#6b7076', true, sh); // rear rain gutter
+  L.gable(ROOF_W, 2.5, 3.3, 0.9, 0.48, '#4a4f58', sh).position.set(ROOF_X, 0, SZ);
+  box(ROOF_X, 3.23, SZ + 1.26, ROOF_W - 0.04, 0.15, 0.1, '#3a2d24', true, sh); // fascia
+  box(ROOF_X, 3.13, SZ - 1.28, ROOF_W - 0.2, 0.11, 0.12, '#6b7076', true, sh); // rear rain gutter
   cyl(SX + 1.82, 1.98, SZ - 1.27, 0.05, 2.0, '#6b7076', sh); // downpipe
   // Bench: legs, seat, back and clear walking space in front.
   for (const x of [SX - 1.23, SX + 1.23]) for (const z of [SZ - 0.8, SZ - 0.27]) box(x, 1.17, z, 0.1, 0.34, 0.1, '#594432', true, sh);
@@ -22676,27 +22777,29 @@ globalThis.LMLIB = function (K) {
   box(PX - 0.39, 1.89, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, st); // door upper hinge
   box(PX, 1.06, PZ - 0.48, 0.62, 0.37, 0.025, '#8c3832', true, st); // rear service hatch
   box(PX + 0.21, 1.06, PZ - 0.5, 0.055, 0.07, 0.018, '#d3c9ae', false, st);
-  box(-3.0, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
-  cyl(-3.0, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
-  for (const z of [8.96, 9.04]) { box(-3.0, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(-3.0, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
-  box(-3.0, 1.54, 9.05, 0.37, 0.46, 0.035, '#e8e4d8', true, st); // route and timetable board
-  for (let i = 0; i < 4; i++) box(-3.0, 1.69 - i * 0.1, 9.072, 0.3, 0.013, 0.008, '#7d8794', false, st);
-  for (const x of [-4.77, -3.63]) { box(x, 0.27, 4.7, 0.09, 0.46, 0.1, '#5a4a3c', true, st); box(x, 0.16, 5.01, 0.1, 0.23, 0.08, '#5a4a3c', true, st); }
-  box(-4.2, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(-4.2, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
-  cyl(3.0, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), 3.4, 5.1, 8.0, false, st); cyl(3.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
-  L.pool(3.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
-  // ---- the track: one line along X at z = -6.4; its eastern end now stops west of CR01 at x = -5.5, with the buffer stop; the paddy end still fades west
+  // W10d / CR01 clearance: keep the entrance board, waiting bench and stop lamp outside N01-west's paved shoulder.
+  const BOARD_X = 6.0, BENCH_X = 6.5, STOP_LAMP_X = 6.5;
+  box(BOARD_X, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
+  cyl(BOARD_X, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
+  for (const z of [8.96, 9.04]) { box(BOARD_X, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(BOARD_X, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
+  box(BOARD_X, 1.54, 9.05, 0.37, 0.46, 0.035, '#e8e4d8', true, st); // route and timetable board
+  for (let i = 0; i < 4; i++) box(BOARD_X, 1.69 - i * 0.1, 9.072, 0.3, 0.013, 0.008, '#7d8794', false, st);
+  for (const x of [BENCH_X - 0.57, BENCH_X + 0.57]) { box(x, 0.27, 4.7, 0.09, 0.46, 0.1, '#5a4a3c', true, st); box(x, 0.16, 5.01, 0.1, 0.23, 0.08, '#5a4a3c', true, st); }
+  box(BENCH_X, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(BENCH_X, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
+  cyl(STOP_LAMP_X, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), STOP_LAMP_X + 0.4, 5.1, 8.0, false, st); cyl(STOP_LAMP_X + 0.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
+  L.pool(STOP_LAMP_X + 0.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
+  // ---- the track: one line along X at z = -6.4; its eastern end stops clear of CR01 at x = -4.47, with the buffer stop; the paddy end still fades west
   const tk = group('lm09Track'); L.use(tk);
-  const TRACK_EAST = -5.5, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
-  box(TRACK_MID, 0.06, -6.4, TRACK_LENGTH, 0.12, 1.9, '#7a7872', false, tk); for (let x = -5.3; x <= 10.4; x += 0.7) box(x, 0.15, -6.4, 0.2, 0.08, 1.5, '#4a382b', false, tk);
-  for (let i = 0; i < 18; i++) { const x = -5.05 + i * 0.88; for (const z of [-7.12, -5.68]) box(x, 0.11, z, 0.4, 0.06, 0.21, i % 3 ? '#827f79' : '#aaa59b', false, tk); } // visible ballast shoulders
+  const TRACK_EAST = -4.47, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
+  box(TRACK_MID, 0.06, -6.4, TRACK_LENGTH, 0.12, 1.9, '#7a7872', false, tk); for (let x = TRACK_EAST + 0.2; x <= TRACK_WEST - 0.1; x += 0.7) box(x, 0.15, -6.4, 0.2, 0.08, 1.5, '#4a382b', false, tk);
+  for (let i = 0, x = TRACK_EAST + 0.45; x <= TRACK_WEST - 0.4; i++, x += 0.88) { for (const z of [-7.12, -5.68]) box(x, 0.11, z, 0.4, 0.06, 0.21, i % 3 ? '#827f79' : '#aaa59b', false, tk); } // visible ballast shoulders
   for (const dz of [-0.72, 0.72]) box(TRACK_MID, 0.22, -6.4 + dz, TRACK_LENGTH, 0.08, 0.07, '#7d8794', false, tk);
-  for (let x = -5.3; x <= 10.4; x += 1.4) for (const dz of [-0.72, 0.72]) box(x, 0.27, -6.4 + dz, 0.16, 0.03, 0.18, '#555a5c', false, tk); // rail clips
-  box(-5.2, 0.4, -6.4, 0.3, 0.6, 1.6, '#c4412e', true, tk);                                                                                  // buffer stop on the west side of CR01
+  for (let x = TRACK_EAST + 0.2; x <= TRACK_WEST - 0.1; x += 1.4) for (const dz of [-0.72, 0.72]) box(x, 0.27, -6.4 + dz, 0.16, 0.03, 0.18, '#555a5c', false, tk); // rail clips
+  box(TRACK_EAST - 0.3, 0.4, -6.4, 0.3, 0.6, 1.6, '#c4412e', true, tk);                                                                                  // buffer stop at the track's west end, toward CR01
   for (let i = 0; i < 2; i++) { const x = 11.5 + i * 0.7; box(x, 0.1 - 0.03 * i, -6.4, 0.7, 0.1, 1.9 - 0.4 * i, '#59634c', false, tk); }                       // the ballast fades into the paddy: the line ends
   for (let x = 8.8; x <= 9.8; x += 0.5) box(x, 0.2, -6.4, 0.4, 0.06, 1.8, '#6a5240', true, tk);                                              // foot crossing planks, beyond the car
   const car = group('lm09Car'); L.use(car);
-  const CZ = -6.4, CL = 13.0, CX = 1.8;
+  const CZ = -6.4, CL = 13.0, CX = 2.03;
   // A hollow carbody: the window line exposes seats, central aisle and two driver partitions.
   box(CX, 0.68, CZ, CL, 0.16, 2.6, '#665f57', true, car); // floor
   box(CX, 0.38, CZ, CL - 0.2, 0.27, 1.95, '#4f5356', true, car); // continuous underframe
@@ -22760,8 +22863,8 @@ globalThis.LMLIB = function (K) {
   });
   // eave drips (live)
   const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; m.userData.weather = 'drip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }   // WX2: a weather effect
-  out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [-5.5, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
-    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: -5.2, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
+  out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [PLATFORM_MIN_X, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
+    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: TRACK_EAST - 0.3, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
   out.update = (t) => {
     const p = (t % 6) / 6, a = 0.5 - 0.5 * Math.cos(p * PI * 2), b = 1 - a;                                       // 6 s period, raised cosine: no flashing
     posts.forEach(([l, r]) => { l.material.color.setRGB(0.35 + 0.65 * a, 0.12 + 0.12 * a, 0.12 + 0.12 * a); r.material.color.setRGB(0.35 + 0.65 * b, 0.12 + 0.12 * b, 0.12 + 0.12 * b); });
@@ -23002,7 +23105,7 @@ let landmarkKit=null;
     for(const p of b.parts)if(groups[p.group])bake(groups[p.group]);}
   kit.ground=(lon,lat)=>terrain.sampler()(lon,lat);   // W8g-b (B3): the rendered terrain's height for the landmarks' anchors and entrance pads
   landmarkKit=kit;seed=s0;root=scene;}
-// Town ground generated from LAYOUT (layout.js): plinth, carriageways, raised pavement islands with
+// Town ground generated from LAYOUT (layout.js): carriageways, raised pavement islands with
 // curb returns and step-free curb cuts, facility bands, alleys, walkway, bus aprons, edge trim and plots.
 const L=LAYOUT,LV=L.LEVELS,BH=L.BASE.half,R=L.INTERSECTION.curbRadius;
 // Hand-drawn ground textures on the paper grain (own seed, so the building details never shift).
@@ -23018,13 +23121,11 @@ const texMats={};function matT(c,tex,flat=false){const k=c+tex+flat;return texMa
 const flatMats={};function flatMat(c){return flatMats[c]||(flatMats[c]=new THREE.MeshToonMaterial({color:c,gradientMap:ramp,map:paperTex,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));}
 // Paper grain repeats every 4 units on ground pieces instead of stretching across the whole face.
 function tileUV(g,sx,sy){const uv=g.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*sx,uv.getY(i)*sy);return g;}
-function slab([x0,z0,x1,z1],y0,y1,c,outline=true){const w=x1-x0,d=z1-z0,h=y1-y0,g=new THREE.BoxGeometry(w,h,d),uv=g.attributes.uv;for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),s=f<2?[d,h]:f<4?[w,d]:[w,h];uv.setXY(i,uv.getX(i)*s[0]/4,uv.getY(i)*s[1]/4);}return mesh(g,c,(x0+x1)/2,(y0+y1)/2,(z0+z1)/2,outline);}
-function flat([x0,z0,x1,z1],y,c){const a=mesh(tileUV(new THREE.PlaneGeometry(x1-x0,z1-z0),(x1-x0)/4,(z1-z0)/4),typeof c==='string'?flatMat(c):c,(x0+x1)/2,y,(z0+z1)/2,false);a.rotation.x=-Math.PI/2;return a;}
+function slab([x0,z0,x1,z1],y0,y1,c,outline=true){const w=x1-x0,d=z1-z0,h=y1-y0,g=new THREE.BoxGeometry(w,h,d),uv=g.attributes.uv;for(let i=0;i<uv.count;i++){const f=Math.floor(i/4),s=f<2?[d,h]:f<4?[w,d]:[w,h];uv.setXY(i,uv.getX(i)*s[0]/4,uv.getY(i)*s[1]/4);}const a=mesh(g,c,(x0+x1)/2,(y0+y1)/2,(z0+z1)/2,outline);a.userData.groundOccupancy=true;return a;}
+function flat([x0,z0,x1,z1],y,c){const a=mesh(tileUV(new THREE.PlaneGeometry(x1-x0,z1-z0),(x1-x0)/4,(z1-z0)/4),typeof c==='string'?flatMat(c):c,(x0+x1)/2,y,(z0+z1)/2,false);a.rotation.x=-Math.PI/2;a.userData.groundOccupancy=true;return a;}
 // Splits a rect along axis i (0 = x, 1 = z) around excluded [a, b] spans.
 function without(r,i,spans){let out=[r];for(const [a,b] of spans)out=out.flatMap(q=>{if(b<=q[i]||a>=q[i+2])return[q];const res=[];if(a>q[i]){const p=q.slice();p[i+2]=a;res.push(p);}if(b<q[i+2]){const p=q.slice();p[i]=b;res.push(p);}return res;});return out;}
 const overlaps=(a,b)=>a[0]<b[2]-1e-6&&b[0]<a[2]-1e-6&&a[1]<b[3]-1e-6&&b[1]<a[3]-1e-6;
-group('base');flat([-BH,-BH,BH,BH],LV.plinth,'#273443');
-// One asphalt sheet under everything: crossing carriageways cannot overlap or leave seams.
 // Pavement islands: corners at intersections are curb-return arcs, curb cuts are notches in the curb.
 for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],names=['NW','NE','SE','SW'],mx=(x0+x1)/2,mz=(z0+z1)/2,pts=[];
   for(let i=0;i<4;i++){const c=C[i],p=C[(i+3)%4],n=C[(i+1)%4];
@@ -23045,7 +23146,7 @@ for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1
     side=Math.max(...a.map(i=>gp.getZ(i)))-Math.min(...a.map(i=>gp.getZ(i)))>1e-5;
     if(!(outer&&side))kept.push(...a);}
   g.setIndex(kept);
-  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;}
+  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;m.userData.groundOccupancy=true;}
 // Ramps fill the notches: a 1:10 slope from the carriageway up to pavement level, no step at either end.
 for(const k of L.curbCuts){if(k.kind==='driveway'&&/^A0/.test(k.id))continue; // Unified alley strips supply these mouths.
   const lo=LV.carriageway,hi=LV.pavement,a=k.at,b=k.at+k.dir*k.depth;
@@ -23053,7 +23154,7 @@ for(const k of L.curbCuts){if(k.kind==='driveway'&&/^A0/.test(k.id))continue; //
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(V.flat(),3));
   const l=k.s1-k.s0;g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,l/4,0,l/4,k.depth/4,0,k.depth/4],2));
   const up=(V[1][0]-V[0][0])*(V[2][2]-V[0][2])-(V[1][2]-V[0][2])*(V[2][0]-V[0][0])<0;g.setIndex(up?[0,1,2,0,2,3]:[0,2,1,0,3,2]);g.computeVertexNormals();
-  mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);}
+  const m=mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);m.userData.groundOccupancy=true;}
 // Facility bands (curb strip where lamps, poles and drains stand), cut back at ramps, driveways and
 // the curb returns, which stay plain pavement.
 for(const s of L.surfaces.filter(s=>s.kind==='band')){const road=L.roads.find(r=>r.id===s.road),i=road.axis==='x'?0:1;
@@ -23092,7 +23193,7 @@ const textTex={};
 for(const m of L.markings.filter(m=>!m.rect)){
   const tex=m.kind==='diamond'?diaTex:textTex[m.text]||(textTex[m.text]=paintTex(512,512,(q,W,H)=>{const k=2.3;q.font='bold 148px sans-serif';q.textAlign='center';q.textBaseline='middle';q.setTransform(1,0,0,k,0,0);q.fillText(m.text,W/2,H/2/k,W-24);}));
   decal(tex,m.size[0],m.size[1],m.x,LV.carriageway,m.z,m.heading,new THREE.MeshBasicMaterial({map:tex,color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6}));}
-// Drainage: L-gutters along the curbs, grates, alley channels and outlets in the plinth face.
+// Drainage: L-gutters along the curbs, grates and alley channels.
 group('drainage',parent);
 quads(L.gutters.map(g=>g.rect),LV.carriageway,flatMat('#737c7d'));
 quads(L.channels.map(c=>c.rect),LV.pavement,flatMat('#5f6661'));
@@ -23100,11 +23201,6 @@ const grateTex=canvasTex(64,32,(q,W,H)=>{q.fillStyle='#2b3239';q.fillRect(0,0,W,
 const grateMat=new THREE.MeshToonMaterial({color:'#9aa3a6',gradientMap:ramp,map:grateTex});
 for(const g of L.grates){const [w,d]=L.DRAIN.grate,a=box(g.x,LV.carriageway+.006,g.z,g.line==='z'?w:d,.012,g.line==='z'?d:w,grateMat);}
 for(const c of L.channels)for(let x=c.rect[0]+1;x<c.rect[2]-.5;x+=1)box(x,LV.pavement+.004,(c.rect[1]+c.rect[3])/2,.04,.008,L.DRAIN.channel,'#3f4547',false);
-const stain=new THREE.MeshBasicMaterial({color:'#141b26',transparent:true,opacity:.45,depthWrite:false});
-const SHOW_OUTER_DRAIN_OUTLETS=false; // Temporary visual simplification; retain the outlet implementation for review.
-if(SHOW_OUTER_DRAIN_OUTLETS)for(const o of L.outlets){const [fx,fz]=o.face,y=-.22,g=new THREE.Group();g.position.set(o.x,0,o.z);g.rotation.y=faceY(o.face);root.add(g);
-  box(0,y,.03,.55,.36,.06,'#7d8584',true,g);const p=cyl(0,y,.09,.12,.14,'#5d6668',g);p.rotation.x=Math.PI/2;mesh(new THREE.CircleGeometry(.085,16),new THREE.MeshBasicMaterial({color:'#11161d'}),0,y,.161,false,g);
-  mesh(new THREE.PlaneGeometry(.22,1.1),stain,0,y-.72,.004,false,g);}
 // Alley security lamps, utility poles with catenary wires, signals and stop signs; the street lamps are road lamps of streetlights.js (W10c).
 group('streetFurniture',parent);
 const glowTex=canvasTex(128,128,(q,W)=>{const g=q.createRadialGradient(W/2,W/2,0,W/2,W/2,W/2);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.4,'rgba(255,255,255,.35)');g.addColorStop(1,'rgba(255,255,255,0)');q.fillStyle=g;q.fillRect(0,0,W,W);});
@@ -23151,7 +23247,7 @@ groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.
 // W8f-a: everything built so far is the town (ground, buildings, furniture, puddles); its large faces get sphere copies the first time uBend > 0 (below).
 const townRoots=scene.children.slice();
 // Rain falls in a box that follows the view target, never under the roofs and awnings of the town's buildings (their registered shelter rects, see layout.js).
-// WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the plinth, so 0.2 as
+// WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the street ground, so 0.2 as
 // always; the terrain, the sea, road decks and the landmarks' roofs elsewhere); a drop whose eight tries all fell under a shelter is parked for that fall (drawn
 // nowhere); a drop shows only where the weather rains: its own hash below the field's rain weight at its spot. `positions` keeps the drops exactly as before (the
 // town's Math.random stream and its pictures are unchanged); the GPU buffer `rainShow` is a copy with the hidden drops moved out of sight.
@@ -23242,7 +23338,8 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
           // keep the object's own orientation and place it at the wrapper origin
           const q=new THREE.Quaternion();o.getWorldQuaternion(q);const sc=new THREE.Vector3();o.getWorldScale(sc);o.parent.remove(o);o.position.set(0,0,0);o.quaternion.copy(q);o.scale.copy(sc);w.add(o);scene.add(w);return w;});
         bake(g,true);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
-        if(terrain.cutGroundMeshes&&(/^(lm02Ground|lm04Sando|lm09Ground|lm07Ice)$/.test(name))){const surfaces=[];g.traverse(o=>{if(o.isMesh&&o.geometry?.userData?.local&&(name!=='lm07Ice'||o.userData.layer==='ice-overlay'))surfaces.push(o);});roadGroundCut=terrain.cutGroundMeshes(surfaces,name==='lm07Ice'?[-1.5,0.2]:[-0.08,0.16]);}
+        if(/(?:Ground|Platform|Sando|Ice)$/.test(name))g.traverse(o=>{if(o.isMesh)o.userData.groundOccupancy=true;});
+        if(terrain.cutGroundMeshes&&(/^(lm02Ground|lm04Sando|lm09Ground|lm09Platform|lm07Ice)$/.test(name))){const surfaces=[];g.traverse(o=>{if(o.isMesh&&o.geometry?.userData?.local&&(name!=='lm07Ice'||o.userData.layer==='ice-overlay'))surfaces.push(o);});const yr=name==='lm07Ice'?[-1.5,0.2]:name==='lm09Platform'?[0.86,0.95]:[-0.08,0.16];roadGroundCut=terrain.cutGroundMeshes(surfaces,yr);}
         g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1);g.visible=true;wraps.forEach(w=>{w.visible=true;g.userData.wraps=(g.userData.wraps||[]).concat(w);landmarkGroups.push(w);});landmarkGroups.push(g);own.push(g);}
       landmarkInfo[lm.id]={groups:own,heading:headDeg,height:h,roadGroundCut};
       landmarkInfo[lm.id].fx=fx||null;if(fx&&fx.update)landmarkFx.push({id:lm.id,update:fx.update,groups:own});seed=s0;root=scene;yield;}
@@ -23280,7 +23377,7 @@ const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P0
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
-// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
+// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m ground and street meshes sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
 // swapped in while uBend > 0; at uBend = 0 the town draws its own geometry again (the default view is bit for bit the old one, WC12).
 const townSphere={built:null,on:false};
@@ -23309,6 +23406,8 @@ const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('
   {name:'landmarks',deps:['landcover'],label:'正在安放村落',job:landmarkJob}
 ]});
 worldgen.start().then(()=>{
+const groundOccupancy=[];scene.traverse(o=>{if(o.isMesh&&o.userData.groundOccupancy)groundOccupancy.push(o);});
+terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.stats.occupancyCut.meshesTagged=groundOccupancy.length;
 // WX2 (docs/world/WEATHER_COMPLETION_PLAN.md 5.2, 5.3): the weather's receiving surfaces (the rendered terrain, the roads and decks of the lamp table, each landmark's
 // roofs and grounds) and its registered effects: the buildings' animated drips and window runs (their live line batches in the drip colours) and rain rings (live
 // additive rings), the landmarks' tagged parts (userData.weather), the mist belt of ameni-dake. Only their opacity and visibility follow the weather; nothing moves.

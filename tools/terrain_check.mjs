@@ -45,11 +45,13 @@ const triArea = v => {
 const totalVerts = chunks.reduce((s, c) => s + c.vertexCount, 0) + caps.reduce((s, c) => s + c.vertexCount, 0);
 const ringTris = tris.filter(t => t.ring).length, restTris = tris.length - ringTris, capTris = caps.reduce((s, c) => s + c.index.length / 3, 0);
 
-check('W3-C0', '网格规模在预算内（≤ 90k 三角形、≤ 50k 顶点；环内 ≤ 12k 三角形）', ({ info, fail }) => {
+// W10d restores the continuous 96 × 96 m town plain to the terrain mesh. Its triangles
+// are part of the global ground budget; the former W3 cap excluded this footprint.
+check('W3-C0', '连续城镇平原后的网格规模在预算内（≤ 90k 三角形、≤ 51k 顶点；环内 ≤ 16k 三角形）', ({ info, fail }) => {
   info(`地形块 ${chunks.length}，环内三角形 ${ringTris}，其余三角形 ${restTris}，极帽 ${capTris}，合计 ${ringTris + restTris + capTris} 个三角形、${totalVerts} 个顶点（含块边界重复）；构建 ${buildMs} ms（Node）`);
   if (ringTris + restTris + capTris > 90000) fail('三角形超过 90k');
-  if (totalVerts > 50000) fail('顶点超过 50k');
-  if (ringTris > 12000) fail('环内三角形超过 12k');
+  if (totalVerts > 51000) fail('顶点超过 51k');
+  if (ringTris > 16000) fail('环内三角形超过 16k');
 });
 
 // ---- W3-C1: heights
@@ -68,7 +70,6 @@ check('W3-C1', '高度一致：顶点 y_flat·cos φ = height − 1.6；确定�
   let low = 0, high = 0, worstLow = 0, worstHigh = 0, miss = 0, over = 0, wl = '', wh = '', ow = '', coastN = 0, coastWorst = 0;
   for (let k = 0; k < 5000; k++) {
     const lon = -180 + rnd() * 360, lat = -84 + rnd() * 168;
-    if (B.inPatch(lon, lat)) continue;
     const cx = Math.min(23, Math.floor((lon + 180) / 15)), cy = Math.min(11, Math.floor((lat + 90) / 15));
     let found = null;
     for (let dy = -1; dy <= 1 && !found; dy++) for (let dx = -1; dx <= 1 && !found; dx++) {
@@ -100,15 +101,15 @@ check('W3-C1', '高度一致：顶点 y_flat·cos φ = height − 1.6；确定�
 });
 
 // ---- W3-C2: areas
-check('W3-C2', '面积一致：总面积 = 4πR²(−85°..85°) − 补丁面积；四类面积与 WC1 的栅格相差 ≤ 0.2 个百分点', ({ info, fail }) => {
+check('W3-C2', '面积一致：总面积 = 4πR²(−85°..85°)；四类面积与 WC1 的栅格相差 ≤ 0.2 个百分点', ({ info, fail }) => {
   let total = 0; const zone = { building: 0, ocean: 0, wild: 0, ice: 0 };
   for (const t of tris) { const a = triArea(t.v), lon = (t.v[0].lon + t.v[1].lon + t.v[2].lon) / 3, lat = (t.v[0].lat + t.v[1].lat + t.v[2].lat) / 3; total += a; zone[W.regionAt(lon, lat).zone] += a; }
-  const band = 4 * Math.PI * R * R * Math.sin(85 * D), patch = R * R * (2 * P.lonMax * D) * (2 * Math.sin(P.latMax * D)), expect = band - patch;
-  info(`网格总面积 ${f(total, 0)} m²，期望 ${f(expect, 0)} m²（纬度带 ${f(band, 0)} − 补丁 ${f(patch, 0)}），相差 ${f((total / expect - 1) * 100, 3)}%`);
+  const band = 4 * Math.PI * R * R * Math.sin(85 * D), expect = band;
+  info(`网格总面积 ${f(total, 0)} m²，期望连续纬度带 ${f(expect, 0)} m²，相差 ${f((total / expect - 1) * 100, 3)}%`);
   if (Math.abs(total / expect - 1) > 0.005) fail('总面积偏差 > 0.5%');
   // raster expectation over the same domain
   const ras = W.zoneRaster(0.25), want = { building: 0, ocean: 0, wild: 0, ice: 0 };
-  for (let y = 0; y < ras.ny; y++) { const lat = -90 + (y + 0.5) * ras.gridDeg; if (Math.abs(lat) > 85) continue; for (let x = 0; x < ras.nx; x++) { const lon = -180 + (x + 0.5) * ras.gridDeg; if (B.inPatch(lon, lat)) continue; const i = ras.cell[y * ras.nx + x], r = i ? W.regions[i - 1] : { zone: 'wild' }; want[r.zone] += Math.cos(lat * D) * (ras.gridDeg * D) ** 2 * R * R; } }
+  for (let y = 0; y < ras.ny; y++) { const lat = -90 + (y + 0.5) * ras.gridDeg; if (Math.abs(lat) > 85) continue; for (let x = 0; x < ras.nx; x++) { const lon = -180 + (x + 0.5) * ras.gridDeg; const i = ras.cell[y * ras.nx + x], r = i ? W.regions[i - 1] : { zone: 'wild' }; want[r.zone] += Math.cos(lat * D) * (ras.gridDeg * D) ** 2 * R * R; } }
   for (const z of Object.keys(zone)) {
     const d = (zone[z] - want[z]) / AREA * 100;
     info(`${z}：网格 ${f(zone[z], 0)} m²，栅格 ${f(want[z], 0)} m²，相差 ${f(d, 3)} 个百分点`);
@@ -161,12 +162,11 @@ check('W3-C4', '无缝：块边界顶点位置与法线逐位相同；基础地�
     if (n > 2) many++;
     if (n === 1) {
       const [a, b] = ek.split('|').map(s => s.split(',').map(v => +v / 1e7));
-      const onPatch = (p, q) => (Math.abs(Math.abs(p[0]) - P.lonMax) < 1e-6 && Math.abs(Math.abs(q[0]) - P.lonMax) < 1e-6 && Math.abs(p[1]) <= P.latMax + 1e-6 && Math.abs(q[1]) <= P.latMax + 1e-6) || (Math.abs(Math.abs(p[1]) - P.latMax) < 1e-6 && Math.abs(Math.abs(q[1]) - P.latMax) < 1e-6 && Math.abs(p[0]) <= P.lonMax + 1e-6 && Math.abs(q[0]) <= P.lonMax + 1e-6);
       const onEdge85 = Math.abs(Math.abs(a[1]) - 85) < 1e-6 && Math.abs(Math.abs(b[1]) - 85) < 1e-6;
-      if (!onPatch(a, b) && !onEdge85) { single++; if (!strayAt) strayAt = `(${a[1]}, ${a[0]})–(${b[1]}, ${b[0]})`; }
+      if (!onEdge85) { single++; if (!strayAt) strayAt = `(${a[1]}, ${a[0]})–(${b[1]}, ${b[0]})`; }
     }
   }
-  info(`三角形边 ${edges.size} 条；只属于一个三角形的边（除补丁边线与 ±85° 外沿）${single} 条${strayAt ? '，例 ' + strayAt : ''}；被三个以上三角形共用 ${many} 条`);
+  info(`三角形边 ${edges.size} 条；只属于一个三角形的边（除 ±85° 外沿）${single} 条${strayAt ? '，例 ' + strayAt : ''}；被三个以上三角形共用 ${many} 条`);
   if (single) fail(`${single} 条内部边没有配对（裂缝）`);
   if (many) fail(`${many} 条边被三个以上三角形共用`);
   // antimeridian: bent positions of the -180 and +180 vertices of the same ring
@@ -190,7 +190,7 @@ check('W3-C4', '无缝：块边界顶点位置与法线逐位相同；基础地�
 });
 
 // ---- W3-C5: town edge
-check('W3-C5', '城镇边缘：补丁边界顶点在边线上、高度 1.6；补丁外 15 m 内偏差与坡度达标；底座侧面被地形遮住', ({ info, fail }) => {
+check('W3-C5', '连续城镇平原：补丁边界顶点在边线上、高度 1.6；补丁外 15 m 内偏差与坡度达标', ({ info, fail }) => {
   let nb = 0, offLine = 0, offH = 0;
   for (const c of chunks) for (let i = 0; i < c.vertexCount; i++) {
     const lon = c.lonlat[i * 2], lat = c.lonlat[i * 2 + 1], onLon = Math.abs(Math.abs(lon) - P.lonMax) < 1e-9 && Math.abs(lat) <= P.latMax + 1e-9, onLat = Math.abs(Math.abs(lat) - P.latMax) < 1e-9 && Math.abs(lon) <= P.lonMax + 1e-9;
@@ -203,6 +203,10 @@ check('W3-C5', '城镇边缘：补丁边界顶点在边线上、高度 1.6；补
   }
   info(`补丁边界顶点 ${nb} 个；偏离边线 > 0.01 m 的 ${offLine} 个；高度偏离 1.6 > 0.001 的 ${offH} 个`);
   if (!nb || offLine || offH) fail('补丁边界顶点不在边线上或高度不是 1.6');
+  let townTriangles = 0, townBadHeight = 0;
+  for (const t of tris) if (t.v.every(v => Math.abs(v.lon) <= P.lonMax + 1e-9 && v.lat >= P.latMin - 1e-9 && v.lat <= P.latMax + 1e-9)) { townTriangles++; for (const v of t.v) if (Math.abs(v.h - 1.6) > 0.001) townBadHeight++; }
+  info(`城镇补丁内连续地形三角形 ${townTriangles} 个，标高偏离 1.6 m 超 0.001 m 的顶点 ${townBadHeight} 个`);
+  if (!townTriangles || townBadHeight) fail('城镇补丁内缺少连续地形或平原高度不为 1.6 m');
   // 15 m band: height deviation per vertex, slope per facet (metres on the sphere)
   let worstDev = -Infinity, worstSlope = 0, nv = 0, nf = 0, minRing = Infinity;
   for (const t of tris) {
@@ -219,8 +223,7 @@ check('W3-C5', '城镇边缘：补丁边界顶点在边线上、高度 1.6；补
   info(`补丁外 15 m 内：${nv} 个顶点 max(|h−1.6| − 0.05d) = ${f(worstDev)} m（须 ≤ 0.05）；${nf} 个三角面最大坡度 ${f(worstSlope * 100, 2)}%（须 ≤ 5%）`);
   if (worstDev > 0.05) fail(`高度偏差 ${worstDev} > 0.05`);
   if (worstSlope > 0.05) fail(`三角面坡度 ${worstSlope} > 5%`);
-  info(`补丁外 15 m 内最低顶点海拔 ${f(minRing, 3)} m（底座侧面在海拔 [0, 1.6] 即 y ∈ [−1.6, 0]；该带内地形不低于 1.6 时侧面被遮住）`);
-  if (minRing < 1.6 - 0.02) fail(`补丁外 15 m 内有顶点低于 1.6 m：${minRing}，底座侧面可能外露`);
+  info(`补丁外 15 m 内最低顶点海拔 ${f(minRing, 3)} m；外围承接由连续网格及其缓坡完成，不再检验底座立面`);
 });
 
 // W10c retires the former exit-head geometry check. Unified road coverage, including all nine town

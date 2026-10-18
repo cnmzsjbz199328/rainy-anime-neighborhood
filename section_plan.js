@@ -14,6 +14,10 @@ const FOOTPRINT = { seedling: [-0.03, 0.03, -0.03, 0.08], tuft: [-0.11, 0.13, -0
   barrier: [-1, 1, -0.03, 0.03], signFallen: [-3.2, 0.13, -0.2, 0.4], guardrail: [-1, 1, -0.04, 0.04], guardrailMetal: [-1, 1, -0.04, 0.04], fenceBamboo: [-3, 0.94, -0.03, 0.06], pole: [-0.95, 0.95, -0.15, 0.15],
   mirror: [-0.25, 0.44, -0.04, 0.08], signRound: [-0.31, 0.31, -0.04, 0.1], signBus: [-0.25, 0.25, -0.04, 0.04], vending: [-0.53, 0.53, -0.44, 0.44], lantern: [-0.25, 0.25, -0.25, 0.25], torii: [-1.46, 1.46, -0.18, 0.18],
   mossStep: [-0.75, 0.75, -1.2, 0.18], seaMark: [-0.16, 0.16, -0.05, 0.06] };
+// Complete local plan bounds for world instances, taken from the actual flora templates. The W4 section keeps its own curated boxes above.
+const LANDCOVER_FOOTPRINT = { ...FOOTPRINT,
+  treeRound: [-1.8024, 2.0137, -1.6891, 1.5727], cedar: [-1.7, 1.7, -1.7, 1.7], pine: [-2.5699, 2.7574, -1.8934, 1.7876], bamboo: [-1.3497, 1.4403, -1.3758, 1.1737],
+  dryShrub: [-0.2037, 0.1702, -0.1946, 0.4555], iceBlock: [-0.6102, 0.9608, -0.5565, 0.6039], lichenPatch: [-0.5362, 0.5362, -0.3964, 0.44], log: [-4.8, 0.2435, -0.2, 0.2], rockPillar: [-0.35, 0.39, -0.3295, 0.2995], ventCone: [-0.9651, 0.9651, -0.9209, 0.98], tubeHole: [-1.78, 1.78, -1.6929, 1.6929], teaRow: [-0.5, 0.5, -1, 1] };
 const mulberry = seed => { let s = seed | 0; return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 
 function plan(W) {
@@ -26,7 +30,8 @@ function plan(W) {
   const coastAt = (u, v) => { const [lon, lat] = toLL(u, v); return W.coastDistance(lon, lat); };
 
   // ---- the roads of the section: dense centre lines in (u, v)
-  const roadEdges = [...W.roadNetwork.m01South, 'RN11-01'];          // M01 south of exit N08 (the former T03) and the RN11 boardwalk
+  const ringEdges = W.roadNetwork.edges.filter(e => e.id.startsWith('RN04-')).map(e => e.id);
+  const roadEdges = [...W.roadNetwork.m01South, ...ringEdges, 'RN11-01']; // M01 south, the full CR01 ring and the RN11 boardwalk
   const roads = {};
   for (const id of roadEdges) {
     const e = W.roadNetwork.edges.find(q => q.id === id), S = W.roadNetwork.samplePath(e, 0.5);
@@ -80,7 +85,7 @@ function plan(W) {
   { let prev = null; for (let v = 0; v <= 70; v += 0.05) { const [lon, lat] = toLL(-0.5 + 0, v); const r = W.regionAt(-1, LAT0 - v / (R * D)); if (r.id !== prev) { zones.push({ v: +v.toFixed(2), id: r.id, kind: r.kind, zone: r.zone }); prev = r.id; } } }
   const coastV = (() => { for (let v = 30; v < 62; v += 0.02) if (W.coastDistance(-1, LAT0 - v / (R * D)) <= 0) return v; return null; })();
 
-  // ---- TR01 town edge: poles with wires, guard rail, signs, vending machine, bamboo fence
+// ---- TR01 roadside facilities for the sample section; the bamboo boundary fence is retired in W10d.
   // C01-S: keep the entrance furniture beyond the ring's full section and the turning mouth.
   // The two entrance lamps are road lamps: streetlights.js registers them at these sites (W10c); the sites stay reserved for the rest of the plan.
   const lampSites = [[-6.2, 12.5], [10.5, 13.2]].map(([u, v]) => { const [lon, lat] = toLL(u, v); occupied.push({ u, v, r: 0.6 }); return { u, v, lon, lat, clearance: 0.6 }; });
@@ -89,7 +94,6 @@ function plan(W) {
   put('mirror', -6.2, 15.0, { yaw: Math.PI / 2, r: 0.4 });
   { const b = beside('RN02-07', 0.6, -6.5); put('vending', b.u, b.v, { yaw: b.yaw + Math.PI / 2, r: 1.0 }); }
   for (let v = 18; v <= 22; v += 2.0) put('guardrailMetal', -6.4, v, { yaw: Math.PI / 2, r: 1.0 });
-  for (const [u0, u1] of [[-12, -7.2], [8.2, 12]]) for (let u = u0; u <= u1; u += 2.0) put('fenceBamboo', u + 1, 11.2, { yaw: 0, r: 1.0, clearance: 2.1 });
   // old poles with wires: chain A heads south along the left side, chain B follows the road's right side
   const poleA = [[-8.0, 0.2, 0], [-7.4, 11.6, 0.03], [-6.2, 19.8, 0.14], [-5.2, 27.0, 0.38]], poleB = [[8.0, 0.2, 0.0], [10.0, 12.8, 0.08], [8.0, 21.0, 0.2]];
   const wires = [];
@@ -182,15 +186,17 @@ function plan(W) {
   // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches the ring's full RD03 section or the C01-S turning mouth, including
   // scattered plants. The ring: in true metres in (u, v), the ring's south straight is the parallel of C01-S (CR01 is the square |x|, |z| = 54 of the flat
   // frame), so it is the line v = v(C01-S) right across the corridor (its corners begin at |x| = 46 m, well east and west of it) and v is true metres along
-  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S and the placement
-  // margin of the roads up to v 24 m as before, and the full sections of those roads (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides;
-  // the RD07 boardwalk its placement half width). The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
+  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S; every registered
+  // corridor road uses its full section (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides; RD07 the boardwalk's placement half width).
+  // The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
   // (the ground cut's 0.12 m pad: nothing stands over the cut's edge); a tree, whose crown may overhang, keeps its clearance circle + 0.5 m.
   // (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: the ring test this replaces took town-frame metres, 0.84 true metres each at the ring, and only |x| <= 12 m of
   // a corridor that reaches x -15.0 m, and every test a clearance circle that misses the one-sided templates: the farm hut and the westmost seedlings
   // stood on the ring, a fallen rack reached into the full section of RN06-02.)
   const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat), vRing = toUV(c01.lon, c01.lat).v, RING_FULL = [3.55, 2.75], MARGIN = 0.15, TREE = 0.5;
-  const fullHalf = { RD03: 3.55, RD04: 2.75, RD05: 1.55, RD07: roadHalf.RD07 };
+  // RD04's rendered grass profile reaches 3.6 m from the centreline even though its paved/shoulder footprint is 2.75 m;
+  // keep corridor plants outside that visible edge as well, so the complete plant hull cannot touch the swept road profile.
+  const fullHalf = { RD03: 3.55, RD04: 3.6, RD05: 1.55, RD07: roadHalf.RD07 };
   const outline = it => { const e = FOOTPRINT[it.type]; if (!e) return null; const c = Math.cos(it.yaw), s = Math.sin(it.yaw);
     return [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([x, z]) => [it.u + x * it.s[0] * c + z * it.s[2] * s, it.v - x * it.s[0] * s + z * it.s[2] * c]); };
   const polyDist = (P, u, v) => { let inside = false, d = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], b = P[i], dx = b[0] - a[0], dv = b[1] - a[1], t = Math.max(0, Math.min(1, ((u - a[0]) * dx + (v - a[1]) * dv) / (dx * dx + dv * dv || 1)));
@@ -203,7 +209,7 @@ function plan(W) {
       const p = W.lonLatToTown(it.lon, it.lat), radius = it.clearance + 0.5;
       const ring = v0 - MARGIN < vRing + RING_FULL[0] && v1 + MARGIN > vRing - RING_FULL[1];
       const mouth = Math.abs(p.z - center.z) <= 7 && Math.abs(p.x - center.x) < 4.4 + radius;
-      const approach = it.v < 24 && (roadDist(it.u, it.v).d < radius || fullDist(it) < MARGIN);
+      const approach = fullDist(it) < MARGIN;
       const conflict = ring || mouth || approach;
       if (conflict) removedAtRing[type] = (removedAtRing[type] || 0) + 1;
       return !conflict;
@@ -215,7 +221,7 @@ function plan(W) {
   return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, lampSites, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
-const PLAN = { plan, SEED, FOOTPRINT };
+const PLAN = { plan, SEED, FOOTPRINT, LANDCOVER_FOOTPRINT };
 if (typeof module !== 'undefined' && module.exports) module.exports = PLAN;
 else global.SECTION_PLAN = PLAN;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
