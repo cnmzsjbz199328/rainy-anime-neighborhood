@@ -73,8 +73,8 @@ CHECKS.LM09 = async ({ page, info, fail, f, W, lm, M }) => {
   if (Math.abs(st.shedX - (-2.5)) > 0.01) fail('候车小屋没有向西移 3 m');
   // W10d trims the N11-side eave by 0.12 m; with the roof centre shifted 0.06 m, the west bound moves inward 0.12 m.
   if (!shed || Math.abs(shed.min[0] - (st.shedX - 2.5)) > 0.16) fail('候车小屋实际模型没有向西移 3 m，或檐口边界偏差超过 W10d 收边量');
-  if (!(st.trackEast > -4.54 && st.bufferX < st.trackEast && st.carExtent?.[0] > st.bufferX + 0.15 && st.carExtent?.[1] < st.crossingExtent?.[0])) fail('轨道、车挡、车厢或道口越过 W10d C 退让边界或相互重叠');
-  if (!track || !(track.min[0] > -4.94) || !car || !(car.min[0] > st.bufferX + 0.15 && car.max[0] < st.crossingExtent?.[0])) fail('LM09 实际轨道越过 N11 路缘，或车厢与车挡/道口相交');
+  if (!(st.trackEast > -4.54 && Math.abs(st.bufferX - st.trackEast) < 0.01 && st.carExtent?.[0] > st.bufferX + 0.15 && st.carExtent?.[1] < st.crossingExtent?.[0])) fail('轨道/车挡没有止于 N11 路缘，或车厢与车挡/道口相交');
+  if (!track || !(track.min[0] > -4.56) || !car || !(car.min[0] > st.bufferX + 0.15 && car.max[0] < st.crossingExtent?.[0])) fail('LM09 实际轨道越过 N11 路缘，或车厢与车挡/道口相交');
   info.push(`站牌、长椅、自行车、售货机、电话亭及灯杆实体最西缘 x = ${f(streetClearance?.minX, 3)} m；距 CR01 道路西缘 x = −6.15 m 为 ${f((streetClearance?.minX ?? -Infinity) + 6.15, 3)} m。`);
   if (!streetClearance || streetClearance.minX < -6.15) fail('LM09 站外设施实体压到 CR01 道路');
   info.push(`实际模型边界（弯曲前局部坐标）：站台 x ${f(platform?.min[0], 2)}…${f(platform?.max[0], 2)} m；候车小屋西缘 ${f(shed?.min[0], 2)} m；轨道东缘 ${f(track?.min[0], 2)} m；车厢 x ${f(car?.min[0], 2)}…${f(car?.max[0], 2)} m。`);

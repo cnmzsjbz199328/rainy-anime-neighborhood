@@ -141,18 +141,18 @@
   box(BENCH_X, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(BENCH_X, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
   cyl(STOP_LAMP_X, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), STOP_LAMP_X + 0.4, 5.1, 8.0, false, st); cyl(STOP_LAMP_X + 0.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
   L.pool(STOP_LAMP_X + 0.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
-  // ---- the track: one line along X at z = -6.4; its eastern end stops clear of CR01 at x = -4.47, with the buffer stop; the paddy end still fades west
+  // ---- the track: one line along X at z = -6.4; its eastern end and buffer stop end at the N11-side platform curb; the paddy end still fades west
   const tk = group('lm09Track'); L.use(tk);
   const TRACK_EAST = -4.47, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
   box(TRACK_MID, 0.06, -6.4, TRACK_LENGTH, 0.12, 1.9, '#7a7872', false, tk); for (let x = TRACK_EAST + 0.2; x <= TRACK_WEST - 0.1; x += 0.7) box(x, 0.15, -6.4, 0.2, 0.08, 1.5, '#4a382b', false, tk);
   for (let i = 0, x = TRACK_EAST + 0.45; x <= TRACK_WEST - 0.4; i++, x += 0.88) { for (const z of [-7.12, -5.68]) box(x, 0.11, z, 0.4, 0.06, 0.21, i % 3 ? '#827f79' : '#aaa59b', false, tk); } // visible ballast shoulders
   for (const dz of [-0.72, 0.72]) box(TRACK_MID, 0.22, -6.4 + dz, TRACK_LENGTH, 0.08, 0.07, '#7d8794', false, tk);
   for (let x = TRACK_EAST + 0.2; x <= TRACK_WEST - 0.1; x += 1.4) for (const dz of [-0.72, 0.72]) box(x, 0.27, -6.4 + dz, 0.16, 0.03, 0.18, '#555a5c', false, tk); // rail clips
-  box(TRACK_EAST - 0.3, 0.4, -6.4, 0.3, 0.6, 1.6, '#c4412e', true, tk);                                                                                  // buffer stop at the track's west end, toward CR01
+  box(TRACK_EAST, 0.4, -6.4, 0.14, 0.6, 1.6, '#c4412e', true, tk);                                                                                       // 14 cm stop plate centred on the rail end, within the curb
   for (let i = 0; i < 2; i++) { const x = 11.5 + i * 0.7; box(x, 0.1 - 0.03 * i, -6.4, 0.7, 0.1, 1.9 - 0.4 * i, '#59634c', false, tk); }                       // the ballast fades into the paddy: the line ends
-  for (let x = 8.8; x <= 9.8; x += 0.5) box(x, 0.2, -6.4, 0.4, 0.06, 1.8, '#6a5240', true, tk);                                              // foot crossing planks, beyond the car
+  for (let x = 9.1; x <= 10.1; x += 0.5) box(x, 0.2, -6.4, 0.4, 0.06, 1.8, '#6a5240', true, tk);                                             // foot crossing planks, beyond the car
   const car = group('lm09Car'); L.use(car);
-  const CZ = -6.4, CL = 13.0, CX = 2.03;
+  const CZ = -6.4, CL = 13.0, CX = 2.33;
   // A hollow carbody: the window line exposes seats, central aisle and two driver partitions.
   box(CX, 0.68, CZ, CL, 0.16, 2.6, '#665f57', true, car); // floor
   box(CX, 0.38, CZ, CL - 0.2, 0.27, 1.95, '#4f5356', true, car); // continuous underframe
@@ -206,7 +206,7 @@
   mesh(new THREE.BoxGeometry(0.08, 0.32, 0.8), warm('#ffe8b0', 0.1), CX + CL / 2 + 0.01, 1.96, CZ, false, car); // dim headlamp
   // ---- crossing warning posts (live: the two lamps alternate with a period of 6 s, soft ramps)
   const lv = group('lm09Live'); L.use(lv);
-  const posts = [[9.3, -4.6], [9.3, -8.2]].map(([x, z]) => {
+  const posts = [[9.6, -4.6], [9.6, -8.2]].map(([x, z]) => {
     box(x, 0.13, z, 0.28, 0.26, 0.28, '#898884', true, lv); // fixed concrete foot
     box(x, 0.9, z, 0.08, 1.8, 0.08, '#e8e4d8', true, lv);
     box(x, 2.03, z, 0.42, 0.09, 0.09, '#e8e4d8', true, lv); // crossbuck
@@ -217,7 +217,7 @@
   // eave drips (live)
   const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; m.userData.weather = 'drip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }   // WX2: a weather effect
   out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [PLATFORM_MIN_X, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
-    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: TRACK_EAST - 0.3, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
+    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: TRACK_EAST, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [9.1, 10.1], lights: 4, lampsOn: 3 };
   out.update = (t) => {
     const p = (t % 6) / 6, a = 0.5 - 0.5 * Math.cos(p * PI * 2), b = 1 - a;                                       // 6 s period, raised cosine: no flashing
     posts.forEach(([l, r]) => { l.material.color.setRGB(0.35 + 0.65 * a, 0.12 + 0.12 * a, 0.12 + 0.12 * a); r.material.color.setRGB(0.35 + 0.65 * b, 0.12 + 0.12 * b, 0.12 + 0.12 * b); });
