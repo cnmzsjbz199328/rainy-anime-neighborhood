@@ -4,7 +4,7 @@
 
 进度（2026-10-15）：WX1 已在分支 `world/weather-WX1` 实施，纯数据检查通过，只本地提交；记录、实测参数与交接见 [weather/WX_PROGRESS.md](weather/WX_PROGRESS.md)。WX2、WX3 待实施。
 
-状态（2026-10-16，归档）：**WX1–WX3 全部实施完毕，机器检查全部通过，画面待用户确认**；只本地提交，未合并、未推送。提交：WX1 `764a2b3`（分支 `world/weather-WX1`）；WX2 `e845da5`、WX3 `e375e0e`（分支 `world/weather-WX2`，集成起点 `ff72599` = `world/W10c` `96342bc` + WX1）。完整记录（基线、阶段细化、效果登记清单、参数、检查数字、性能、差异、看点、遗留）在 `world/weather-WX2` 分支的 [weather/WX_PROGRESS.md](weather/WX_PROGRESS.md)；ROADMAP 的天气专项段落、PROGRESS「天气完善专项」一节与 BACKLOG 已按第 7 节更新，历史 W8b / W8e-c 记录未改。待用户决定：雨见岳山顶在 `lava-north` 区域内只下雨（熔岩先于雪线）、远景 d ≥ 110 m 不再画檐滴、锁雨时远处雪线以上山坡的薄层增白。本计划没有待实施的阶段；以后的天气改动另立计划。同日早些时候的审查与进度条目已被本条取代。
+状态（2026-10-18，归档）：**WX1–WX3 全部实施完毕，机器检查全部通过；用户已确认 WX2、WX3 画面**。WX2 `e845da5`、WX3 `e375e0e`；未推送。提交：WX1 `764a2b3`（分支 `world/weather-WX1`）；WX2 `e845da5`、WX3 `e375e0e`（分支 `world/weather-WX2`，集成起点 `ff72599` = `world/W10c` `96342bc` + WX1）。完整记录（基线、阶段细化、效果登记清单、参数、检查数字、性能、差异、看点、遗留）在 `world/weather-WX2` 分支的 [weather/WX_PROGRESS.md](weather/WX_PROGRESS.md)；ROADMAP 的天气专项段落、PROGRESS「天气完善专项」一节与 BACKLOG 已按第 7 节更新，历史 W8b / W8e-c 记录未改。待用户决定：雨见岳山顶在 `lava-north` 区域内只下雨（熔岩先于雪线）、远景 d ≥ 110 m 不再画檐滴、锁雨时远处雪线以上山坡的薄层增白。本计划没有待实施的阶段；以后的天气改动另立计划。同日早些时候的审查与进度条目已被本条取代。
 
 ## 1. 结论与决策依据
 
