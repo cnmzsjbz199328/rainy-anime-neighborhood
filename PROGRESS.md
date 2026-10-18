@@ -3523,7 +3523,7 @@
 - 风险/停止条件：全局规则若无法保住原走廊至少 80% 的几何/实例数量，或必须改冻结数据、保留断面开关/旧路径才能实现，则停下报告；不得靠放宽占地、LOD 或检查阈值消除失败。
 - 裁决：ST03 图仅作形态与氛围参考，断面长度、区域与放置仍以冻结 `world.js` 及 W4 数值为准；沿用已确认的 D9 夜景/球形晴天和天气接口，`look.js` 不接管天气状态机；参考图/最终画面均不作为本轮机器通过证据。
 
-## W10e 实施与交付（2026-10-19，本地 `main`，画面待用户确认）
+## W10e 实施与交付（2026-10-19，本地 `main`，提交 `f45ec1e`，未推送；画面待用户确认）
 
 - 完成：新建 `look.js` 统一外观参数；W4 田块/稻田面进入全球地表、树和草带按全局 `forest`/`grassland` 生成并经共用实例表及占位检查；海岸使用全球 `ocean`；`scene.js` 移除断面模式/作业；删除 `section.js`、`section_plan.js` 与断面专用工具，`build.py` 生成新的单文件 [index.html](index.html)。未改 `layout.js`、`world.js`。
 - 检查：`python3 build.py` 成功；`node tools/unify_check.mjs --only U0` 通过；`node tools/cover_check.mjs --no-browser` 13 项通过；`node tools/road_check.mjs --only W10e` 通过；`node tools/lod_check.mjs --only W10e` 通过（31 棵走廊树具备近/远模交接，46/40/34 px 抽查通过，页面错误 0）；`git diff --check` 通过。
