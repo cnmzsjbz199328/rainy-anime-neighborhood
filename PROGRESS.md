@@ -31,7 +31,7 @@
 - `terrain.js` 将城镇、田块、道路、地标的占地合并为同一套裁切；移除城镇补丁地形跳过和底座竖面。`landcover.js`、`section_plan.js` 使用统一道路/地标避让；移除绕城镇 3.4 m 留带、TR01 独立带、外围种植带/竹篱/排水出口模型，保留 `layout.js` 出口数据。`layout.js`、`world.js`、道路中心线/宽度、建筑和地块摆位未改。
 - LM09 落实选择 C：站台范围 x −4.54…10 m，轨道端与缓冲止挡收至路缘内，实际轨道组 x 最小 −4.54 m；调整车厢、道口和檐口，搬开站牌、长椅与站灯以避让 N01-west。
 - 首轮 W10d 检查：`terrain_check` 7/7（84,364 地形三角形）、`height_check --random 200000`、`road_check --no-browser` 及 `unify_check`（含 U0/U5）通过。最后的边缘避让调整后重跑：`python3 build.py`；`cover_check --no-browser` 9/9，W10d-U5-cover 田块由 195 格 / 7,618 m² 到 68 格 / 2,624 m²，最终完整外形相交 0，实例 8,379 → 8,297、复检新增剔除 0；`cr01_intrusion_check --swiftshader` I1–I6 全通过（92,341 探针、三种弯曲、外来植物入完整断面 0、建筑/地标/断面在路肩或边沟交叠 0、页面错误 0，道路哈希 `fdc08f6b`）；`landmark_check LM09 --no-shots` 3 项通过；`git diff --check` 通过。CR01 的 I5 本次只列洞点，没有传 `--baseline`，不据此宣称“无新增空洞”。
-- 按最新指示没有重跑 `measure_samples`、`layout_check --png`、性能截图链或无关专项；不打开截图/页面判断外观。生成页面为仓库根目录 `index.html`，CR01 数值报告 `docs/world/w10c/house-grass-review/report.json`（本地忽略）。
+- 按轻量验证要求没有重跑 `measure_samples`、`layout_check --png`、性能截图链或无关专项；仅做一次 Metal/high 视角性能量测及 `pre-w10d` 单次对照，数据在 [`w10d.json`](docs/world/perf/w10d.json) 与 [`w10d-pre.json`](docs/world/perf/w10d-pre.json)。默认机位为 16.6/19.6 ms、2,402 calls，对照为 16.6/18.0 ms、2,401 calls；首个完整画面 4,658 ms，对照 4,207 ms。球形最高 p95 为 42.2 ms，对照 42.1 ms。当前冷启动时空闲内存仅 73 MB、load average 6.29，对照分别为 731 MB 与 3.68；因此这组单次数据只作参考，不据此判定预算通过或性能退化。默认调用增量 +1；HTML 为 3,141,933 字节，比 `pre-w10d` 增加 7,445 字节。没有打开截图/页面判断外观。生成页面为仓库根目录 `index.html`，CR01 数值报告 `docs/world/w10c/house-grass-review/report.json`（本地忽略）。
 - W10d 实施与 LM09 路缘修正已提交 `4ce13f2`、`2a827c9`，仅在本地分支，尚未合并到 `main`、未推送；等用户确认画面后再按阶段规则快进合并。
 - 画面关卡仍待用户确认。看点：城镇四边与连续地形接缝；N11 路口平台边界及 LM09 轨道/车挡与边沟的关系；东北/西南田块边缘有无露底或竖直墙。用户确认后再解锁 W10e；骑行 R1–R3 继续列为 W10f 确认后的首要功能工作。
 
