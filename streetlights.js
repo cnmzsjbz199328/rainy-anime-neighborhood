@@ -346,7 +346,18 @@ function plan(ctx) {
     }
   }
   const byModel = {}; for (const q of lamps) byModel[q.model] = (byModel[q.model] || 0) + 1;
-  return { lamps, removed, mapping, junctions: log, coverage, reflections, ripples, pool: { pos: Float32Array.from(pos), col: Float32Array.from(col), lamp: Float32Array.from(lampIx), index: Uint32Array.from(idx), alleySlot: lamps.length },
+  // WX2: the top of the roads at a flat point (true altitude), the receiving surface of the rain and the snow (weather_fx.js); null away from every road. A bridge deck
+  // within 4.6 m of its axis (the deck its lamps light; under the deck nothing falls); a route's strip within its grid (the ground it replaces: cuttings, fills,
+  // ditches), not inside a tunnel (the hill above is the surface there)
+  const deckLines = lines.filter(l => l.kind === 'bridge'), routeLines = lines.filter(l => l.kind === 'route');
+  const surface = (x, z) => {
+    let y = null;
+    for (const Lb of deckLines) { const q = Lb.project(x, z, 6); if (q && !q.end && Math.abs(q.o) <= 4.6) { const a = deckAlt(Lb.b, q.s); if (y === null || a > y) y = a; } }
+    for (const Lr2 of routeLines) { const q = Lr2.project(x, z, 12); if (!q || q.end || q.o < Lr2.rt.grid[0] || q.o > Lr2.rt.grid[Lr2.rt.grid.length - 1]) continue;
+      if (Lr2.tunnel && q.s > Lr2.tunnel[0] && q.s < Lr2.tunnel[1]) continue; const a = RK.surfS(Lr2.rt, q.s, q.o); if (y === null || a > y) y = a; }
+    return y;
+  };
+  return { surface, lamps, removed, mapping, junctions: log, coverage, reflections, ripples, pool: { pos: Float32Array.from(pos), col: Float32Array.from(col), lamp: Float32Array.from(lampIx), index: Uint32Array.from(idx), alleySlot: lamps.length },
     stats: { lamps: lamps.length, byModel, removed: removed.length, obstacles: OB.count, poolVertices: pos.length / 3, poolTriangles: idx.length / 3, reflections: reflections.length, ripples: ripples.length } };
 }
 
@@ -418,7 +429,7 @@ STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
     lens.onBeforeCompile = shader => LC.lodDither(shader); lens.customProgramCacheKey = () => 'bend|lod|sl-lens';
     const N = DATA.lamps.length + 1, winU = { value: Array.from({ length: N }, () => new THREE.Vector2(0, 1)) };
     const poolMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); };
+    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); global.WEATHER_FX.poolWet(shader); };   // WX3: brighter on wet ground
     poolMat.customProgramCacheKey = () => 'bend|lod|sl-pool|' + N;
     objs.materials = { body, hull, lens, pool: poolMat, win: winU };
     // per model: the instances in table order (their windows are written by lamp in tick)

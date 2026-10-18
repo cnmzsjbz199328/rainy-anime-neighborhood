@@ -682,9 +682,13 @@ function* mergeCr01(W, routes, prep, RK) {
     // moved corner in the middle of a neighbour's edge would open a crack): such a triangle is refanned round its centre with that corner in its outline
     const at = id => (id < nv0 ? vertexOf(st, id) : extra[id - nv0]), xz = id => { const v = at(id); return [v[0], v[2]]; }, final = [];
     const moved = boxGrid([...snapped].map(id => { const p = xz(id); return { id, p, box: [p[0], p[0], p[1], p[1]] }; }));
+    const px = id => (id < nv0 ? P[id * 3] : extra[id - nv0][0]), pz = id => (id < nv0 ? P[id * 3 + 2] : extra[id - nv0][2]);   // (merge-ready speedup: no vertex arrays for the box test)
     for (let t = 0; t < out.length; t += 3) {
-      const ids = [out[t], out[t + 1], out[t + 2]], P = ids.map(xz), box = [Math.min(P[0][0], P[1][0], P[2][0]), Math.max(P[0][0], P[1][0], P[2][0]), Math.min(P[0][1], P[1][1], P[2][1]), Math.max(P[0][1], P[1][1], P[2][1])];
-      const near = snapped.size ? moved.query(box).filter(q => !ids.includes(q.id)) : [];
+      const i0 = out[t], i1 = out[t + 1], i2 = out[t + 2], x0 = px(i0), x1 = px(i1), x2 = px(i2), z0 = pz(i0), z1 = pz(i1), z2 = pz(i2);
+      const box = [Math.min(x0, x1, x2), Math.max(x0, x1, x2), Math.min(z0, z1, z2), Math.max(z0, z1, z2)];
+      if (!snapped.size || !moved.any(box)) { final.push(i0, i1, i2); continue; }                   // no moved corner near it: the triangle stays as it is
+      const ids = [i0, i1, i2], P = ids.map(xz);
+      const near = moved.query(box).filter(q => !ids.includes(q.id));
       const outline = []; let inserted = 0;
       for (let e = 0; e < 3; e++) {
         const a = P[e], b = P[(e + 1) % 3], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1e-24, on = []; outline.push(ids[e]);
@@ -733,9 +737,10 @@ function* mergeCr01(W, routes, prep, RK) {
   // the ring's side bands: the regions a branch owns (its paving, or its verge where its paving is nearer than the ring's). A new corner of the ring on
   // such a region takes the branch's final surface: along the equal-distance line that is the ring's own height again (the branch took it above), and
   // where a narrow branch ends inside the ring's verge (its strip's outer edge) the ring's ditch or verge comes up to that edge instead of a step.
-  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip; for (let t = 0; t < st.index.length; t += 3) {
-    const tri = [0, 1, 2].map(k => { const v = st.index[t + k]; return [st.pos[v * 3], st.pos[v * 3 + 1], st.pos[v * 3 + 2]]; }), box = boxXZ(tri);
-    if (box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box)) branchFinal.push({ tri, box }); } }
+  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip, SP = st.pos, SI = st.index; for (let t = 0; t < SI.length; t += 3) {
+    const a = SI[t] * 3, b = SI[t + 1] * 3, c = SI[t + 2] * 3, box = [Math.min(SP[a], SP[b], SP[c]), Math.max(SP[a], SP[b], SP[c]), Math.min(SP[a + 2], SP[b + 2], SP[c + 2]), Math.max(SP[a + 2], SP[b + 2], SP[c + 2])];
+    if (!(box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box))) continue;   // (merge-ready speedup: the box from the floats first)
+    branchFinal.push({ tri: [a, b, c].map(k => [SP[k], SP[k + 1], SP[k + 2]]), box }); } }
   const branchFinalIndex = boxGrid(branchFinal), branchY = (x, z) => surfaceY(branchFinalIndex, x, z);
   const pieceIndex = boxGrid(pieces); let ringRemoved = 0;
   const O = rs.clipOffset;
@@ -886,6 +891,8 @@ function removeTownPavementDuplicates(routes, W) {
     // carry its raised concrete sides past the ±48 m boundary, leaving blue slabs
     // between the original paving and the ring. Cut both sides down to the actual
     // carriageway; the ring's own continuous sheet supplies the junction surface.
+    // Each cut keeps its polygon (flat x, z): terrain.js takes the same rectangles out of this route's ground
+    // cut, so no ground is removed where the road no longer has a surface (CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md).
     const townEdges = rt.def.segs.map(s => W.roadNetwork.edges.find(e => e.id === s.id)).filter(e => e.class.startsWith('TOWN_'));
     const exits = [...new Set(townEdges.flatMap(e => [e.from, e.to]))].filter(id => {
       const n = W.roadNetwork.nodeById[id], p = W.lonLatToTown(n.lon, n.lat);
@@ -904,7 +911,7 @@ function removeTownPavementDuplicates(routes, W) {
           polygon = axis === 'x'
             ? [[along[0], across[0]], [along[1], across[0]], [along[1], across[1]], [along[0], across[1]]]
             : [[across[0], along[0]], [across[1], along[0]], [across[1], along[1]], [across[0], along[1]]];
-        rt.connectorCuts.push({ exit: id, side: direction, ...clipStripOutside(rt.strip, polygon) });
+        rt.connectorCuts.push({ exit: id, side: direction, route: rt.def.id, polygon: polygon.map(q => q.slice()), ...clipStripOutside(rt.strip, polygon) });
       }
     }
     if (!rt.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH')) continue;
@@ -1150,12 +1157,17 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const N = S.night; S.night = null;
     const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:lampSmall(:glow|:ink)?$/;
     const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
-    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || (SEC.state.settings.rain && S.puddleWeight > 0.001));
+    // WX2: the puddle rings are rain impacts: each spot follows the rain of its own place (weather_fx field, re-read when the weather's stamp changes) times the
+    // impact gain (the rain switch x (1 - uBend) x w_local, applied once); after the rain and in the clear night there are none
+    const WXL = global.WEATHER_FX.live, R0 = S.ripples;
+    if (R0 && R0.stamp !== WXL.stamp()) { const sp = R0.spots, w = R0.w || (R0.w = new Float32Array(sp.length)), o = {}; let any = 0; for (let i = 0; i < sp.length; i++) { w[i] = WXL.field(sp[i].lon, sp[i].lat, o).rain; if (w[i] > 0) any++; } R0.any = any; R0.stamp = WXL.stamp(); }
+    const ripK = R0 && R0.any > 0 ? WXL.gains().impact : 0;
+    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || ripK > 0.001);
     for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
     for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); if (l.userData.baseOpacity === undefined) l.userData.baseOpacity = l.material.opacity > 0.95 ? 1 : 0.9; l.material.opacity = Math.min(l.userData.baseOpacity, o); l.visible = o > 0.01; }
-    if (S.ripples && near && SEC.state.settings.rain && S.puddleWeight > 0.001) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * S.puddleWeight; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
+    if (S.ripples && near && ripK > 0.001) { const { mesh, mats, spots, w } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * ripK * w[i]; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
     if (!S.bandManual) S.band.set(N ? { opacity: S.band.max * N.band } : { distance: ink.distance });
     S.band.breathe(t);
@@ -1164,7 +1176,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const api = {
     tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
-    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },
+    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },   // the wetness at the view (weather_fx); the rings follow the rain of their own spots (tick)
     setLampRipples(spots) { buildRipples(spots); },          // W10c: the ripple spots of the road lamps (streetlights.js), once before the first frame
     setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },

@@ -190,6 +190,21 @@ function build(W, H, ctx) {
     // weeds and flowers along the ridges
     for (let e = 0; e < c.outer.length; e++) { if (rnd(s.id * 7 + e, 35) > 0.5) continue; const a = c.outer[e], b = c.outer[(e + 1) % c.outer.length], t = rnd(s.id * 7 + e, 37), ll = llOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); put(rnd(s.id * 7 + e, 39) < 0.78 ? 'tuft' : 'flower', ll.lon, ll.lat, c.flatH + SP.ridgeH - 0.02, { s: [1, 0.9 + 0.5 * rnd(s.id, e), 1] }); }
   }
+  // Every thing of a cell keeps its whole plan box (the template's own, ctx.footprint, turned by its yaw and scaled: a rack's or a fallen rack's beam
+  // reaches 3.9 m to one side of its origin) clear of the roads and landmarks by the ground cut's 0.15 m, as the cell's corners keep clear of them: the
+  // box's outline every 0.5 m at most and its centre. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a paddy rack on a corner ridge reached 1.5 m onto CR01.)
+  const FP = ctx.footprint, CLEAR = 0.15; if (!FP) throw new Error('landcover build: ctx.footprint (the plan boxes of the templates) is required');
+  const boxClear = it => {
+    const e = FP[it.type]; if (!e) throw new Error(`landcover build: no plan box for ${it.type}`);
+    const sx = it.s[0], sz = it.s[2], c = Math.cos(it.yaw), sn = Math.sin(it.yaw), k = 1 / Math.cos(it.lat * D), x0 = R * it.lon * D, z0 = -R * Math.asinh(Math.tan(it.lat * D));
+    if (!nearAvoid(it.lon, it.lat, Math.hypot(Math.max(-e[0], e[1]) * sx, Math.max(-e[2], e[3]) * sz) + CLEAR)) return true;     // nothing within the box's reach
+    const corners = [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]], pts = [[0, 0]];
+    for (let i = 0; i < 4; i++) { const a = corners[i], b = corners[(i + 1) % 4], n = Math.max(1, Math.ceil(Math.hypot((b[0] - a[0]) * sx, (b[1] - a[1]) * sz) / 0.5)); for (let j = 0; j < n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]); }
+    return pts.every(([lx, lz]) => { const wx = lx * sx * c + lz * sz * sn, wz = -lx * sx * sn + lz * sz * c, ll = llOf(x0 + wx * k, z0 + wz * k); return !nearAvoid(ll.lon, ll.lat, CLEAR); });
+  };
+  stats.boxCulled = {};
+  const kept = items.filter(it => { if (boxClear(it)) return true; stats.boxCulled[it.type] = (stats.boxCulled[it.type] || 0) + 1; return false; });
+  items.length = 0; items.push(...kept);
   // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
   // Keep the empty mesh record until the ground-cover consumers no longer require the field.
   const edge = { pos: [], col: [], idx: [] };
@@ -540,7 +555,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (let li = 0; li + 1 < levels.length; li++) for (let a = 0; a < ring; a++) { const i0 = li * (ring + 1) + a, i1 = i0 + 1, i2 = i0 + ring + 1, i3 = i2 + 1; idx.push(i0, i2, i1, i1, i2, i3); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeBoundingSphere();
       const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }); const mesh = new THREE.Mesh(g, mat); mesh.name = 'cover:mist'; mesh.matrixAutoUpdate = false; mesh.renderOrder = 4; root.add(mesh); objs.mist = mesh; }
-    if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, M.groundMat, 'cover:dunes', true); void m; }
+    if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, (() => { const m = M.groundMat.clone(); m.onBeforeCompile = global.WEATHER_FX.duneWet; return m; })(), 'cover:dunes', true); void m; }
     if (DATA.edge && DATA.edge.idx.length) { const e = DATA.edge; for (let i = 0; i < e.idx.length; i += 3) { const a = e.idx[i] * 3, b = e.idx[i + 1] * 3, c = e.idx[i + 2] * 3, ny = (e.pos[b + 2] - e.pos[a + 2]) * (e.pos[c] - e.pos[a]) - (e.pos[b] - e.pos[a]) * (e.pos[c + 2] - e.pos[a + 2]); if (ny < 0) { const tmp = e.idx[i + 1]; e.idx[i + 1] = e.idx[i + 2]; e.idx[i + 2] = tmp; } } stripMesh(e, M.groundMat, 'cover:town-edge'); }
     if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
   }
@@ -711,7 +726,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, avoidIndex, corridor });
+    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint: global.SECTION_PLAN.FOOTPRINT });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
@@ -742,10 +757,10 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
   function tick(t, camera) {
-    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
+    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = global.WEATHER_FX.live.gains().impact; }   // WX2: the switch x (1 - uBend) x w_local; the place's rain is in the shader
     if (!S.built || !S.root.visible) return;
     select(camera, false);
-    if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
+    if (objs.mist) { objs.mist.material.opacity = 0.5 + 0.12 * Math.sin(t * 0.35); objs.mist.visible = SEC.state.ink.distance > 8; }   // the mist belt is weather: weather_fx.js multiplies it by the weather at ameni-dake and by (1 - uBend), none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01 && h.count > 0; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
     { const LM = objs.lodMaterials, M = SEC.state.materials; if (LM) { LM.hull.opacity = M.hullMat.opacity; LM.treeHull.opacity = M.treeHullMat.opacity; } }     // the copies follow the section's ink weight
   }

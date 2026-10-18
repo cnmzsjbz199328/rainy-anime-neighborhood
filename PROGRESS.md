@@ -1,5 +1,136 @@
 # 进度记录
 
+## WD4 神社、山顶、石室与石环（2026-10-18，机器交付；视觉待确认）
+
+- 建立 [`WD4_SACRED_STONE_CARD.md`](docs/world/WD4_SACRED_STONE_CARD.md)，逐项记录 LM01/LM03/LM04/LM05 的结构与场地重点。保留原锚点、道路、地标排列和批准尺寸；LM05 保留十三块立石的半径、间距及中央线索节奏，明确逐块轮廓不再受旧 W7 同形几何描述约束。
+- 当前中间版本为 LM01 火口岩缘、小祠供奉空间与灯笼基础；LM03 石室承重垫、石缝、入口铺地和后门槛；LM04 本殿柱梁、室内祭台、檐部受损支撑、狛犬/石佛轮廓和神木根系/注连绳；LM05 独立石形、石脚与局部风化。LM04 檐滴改用 `userData.weather = 'drip'` 标记以接入共享天气登记。
+- `node --check`（四个地标与专项检查器）、`python3 build.py`、`node tools/landmark_check.mjs LM01/LM03/LM04/LM05 --no-shots` 均通过；各地标 W7-C1/C2/C3/C4 全通过，最大弯曲尺寸差依次为 0.08%、0.32%、0.55%、0.22%，LM05 实测 13 种独立轮廓、圆心间距 4.3077 m。`git diff --check` 通过。
+- 合并前中间提交：`8d28a9a`。随后从起点 `main` `875dc58` 合并天气 WX1–WX3、连接段修复 `ac3aade` 和 CR01 修复 `42b4505`；最终合并与快进哈希记录在本轮交接。只在 `world/W10c` 操作，未推送。
+- 冲突与接口：`LM04.js` 保留 WD4 本殿、鸟居、狛犬、石佛和神木几何，檐滴改用 main 的 `userData.weather = 'drip'` 登记；`landmarks/` 与 `scene.js` 均无 `K.weather` / `landmarkKit.weather`。`scene.js` 同时保留 main 天气接线和 W10c 的 LM10 `mapRigid`。`wd1_weather_check` 保留 main 登记表断言，并合入 WD1 的 12 个天气情形。
+- 构建与通用检查：`python3 build.py`、`node tools/measure_samples.mjs`、`node tools/layout_check.mjs --png`、`c01_s_clearance`、`connector_ground_check`、`cr01_merge_check`、`unify_check`（U0–U4）、`cover_check`（9/9）、`terrain_structure_check`（TS1–TS5）通过。CR01 的 `--ref main` 基线与 `--baseline` 复验均 I1–I6 通过、无新增失败；LM09 东端 6 件仍为 PENDING，未改 LM09。天气 `wd1_weather_check`（12 项）及 `weather_integration_check --only R,I8` 通过，LM04 6 个檐滴已登记。LM01/LM03/LM04/LM05 专项和 W7 几何检查通过；LM02、LM10 复验通过。
+- 已知既有失败：`section_check` 在 W4-C1 后因 `RK.chain is not a function` 中止；`tools/section_check.mjs`、`roadkit.js`、`tools/section_views.mjs` 与 main 完全相同。LM08 的 W7-C5 动态像素差为 0；ROADMAP/BACKLOG 已记录同一检查在 `pre-w8f-b`、`pre-w10a` 也有相同结果，本轮 LM08 动画代码未改。两项不作通过证据，也未放宽断言。
+- 预览：LM01、LM03、LM04、LM05 各 8 张固定图，共 32 张，位于 `docs/world/wd4/model-preview/`（本地忽略，不入库）；机位与看点见同目录 `README.md`。机器输出未作视觉判断，状态为“待确认”。
+- 性能记录 `docs/world/perf/wd4-merge-current.json`（Apple M4 / Metal / high，单次）：默认视角中位/p95 16.7/18.1 ms、2,401 calls、1,595,130 triangles；首个完整画面 4,308 ms；球形 d140 为 39.6/42.5 ms，d400 为 39.3/42.1 ms。该报告记录合并前的脏工作树，WD0/W10 旧报告不是同一提交的 A/B 基线，不据此宣称增量通过；纹理数未由此工具采集。
+- CR01 基线报告为 `docs/world/w10c/house-grass-review/report-main.json`。视觉看点：LM01 看祠内供奉空间、台阶/灯笼基础和火口岩层；LM03 看石室入口进深、铺地、盖石接缝和土丘落地；LM04 看四面柱梁、剖面祭台/楼板、鸟居损坏序列、狛犬/石佛与神木根系；LM05 看 13 个不同轮廓及等间距石脚、中央石台和线索亮度。详细固定机位见 `docs/world/wd4/model-preview/README.md`。
+- WD4 独立模型轮次已交付，后续阶段保持等待用户集中视觉确认；W10d 地形/场地最终集成另按 ROADMAP 安排。WD4 视觉状态为 `待确认`。
+
+## W10c CR01 房屋与青草侵路专项 实施与交付（2026-10-17，分支 `world/W10c-cr01-intrusion`，`42b4505` 已按用户要求快进合并到本地 main；画面待用户确认，LM09 东端待用户裁决）
+
+- **依据与起点**：[审查与修复方案](docs/world/CR01_HOUSE_GRASS_INTRUSION_PLAN.md)（第 5 节为实施记录）。`world/W10c`（`efc190c`，含他人未提交的 WD4 改动）不含已合入本地 `main` 的连接段修复，故在独立工作树 `../rainy-anime-neighborhood-cr01` 自 `main` `88cf78a` 开分支实施；`main` 的 `index.html` 与源码构建逐字节一致。用户截图无相机参数，先对 CR01 全环与十个接入口做机器扫描定位。
+- **新检查** `tools/cr01_intrusion_check.mjs`（I1–I6，`--ref`/`--baseline`/`--report`）：92,341 条射线（CR01 全环 0.25 m 半格错位网格、十个路口各支路 14 m 内），uBend 0 / 0.5 / 1 按 `bend.js` 顶点着色器顺序沿当地法线投射，实例逐个展开；道路分区读最终条带三角形自带的扫掠列偏移与铺装范围；植物按完整变换几何的平面凸包、建筑按三角形平面投影与最终道路三角形求交。开工 `--ref main` 报告 `docs/world/w10c/house-grass-review/report-before.json`：I1 34、I2 3、I3 40、I4 4 失败。
+- **定位**（四类归属见方案 5.2）：W4 断面农舍立在 CR01 南段外侧路肩与边沟、屋檐悬在铺装上 2.10 m²（最低 1.82 m），W4 秧苗 38 株与草簇 2 株在南段车行道/路肩/边沟上——断面的 CR01 剔除用城镇平面米、只看 |x| ≤ 12 m、用间距圆代表外形；景观层稻架横跨西段铺装（只测田块角点）；C01-S 急折处 M01-south 相邻两行横断面在弯内侧交叉，行间四边形自交，地形漏切，高出边沟 0.38 m；LM09 站台/轨道/车厢/棚檐伸入西段外侧路肩与边沟、站前长椅/站牌在 N01-west 加宽铺装路肩（W10b 用户裁决 A 的几何）。城镇建筑无一侵入；旧 `cover:town-edge` 为空。
+- **实现**（`section_plan.js`、`section.js`、`landcover.js`、`terrain.js`；不改 `layout.js`、`world.js`、`bend.js`、`roads.js`、道路线形与道路网格）：
+  - `section_plan.js`：环路剔除改为真实米 (u, v)：南直段即 C01-S 纬线，完整断面外 3.55 m、内 2.75 m 贯穿整条走廊；物品取模板平面盒（新表 `FOOTPRINT`，旋转缩放）加 0.15 m，树保持间距圆 + 0.5 m；口门原规则保留，另加外形不进口门道路完整断面。新增剔除 49 件（农舍 1、秧苗 45、草簇 2、倒伏稻架 1），无原保留物件被加回，电线 5 段与入口灯位不变。
+  - `section.js`：启动时核对 `FOOTPRINT` 盒包住对应 flora.js 模板，不符即报错。
+  - `landcover.js`：田块实例的完整平面盒与道路、地标保持 0.15 m（同角点避让表），盒表经构建上下文传入（`cover_check` 同步）；全球剔除 2 个稻架。
+  - `terrain.js`：`cutRoads()` 行间/结构/端帽多边形先经 `convexPartsXZ` 分解；全网仅 M01-south 6 个四边形自交（`groundCut.rowFolds`），其余多边形不变。
+  - `tools/c01_s_clearance.mjs`：原按 `route === 'CR01'` 选边（实属 RN04，选到 0 条）且用平面米，从未检查环路；改为两端 C01-* 的 18 条边、真实米、内外侧 2.75/3.55 m、模板平面盒。原断面计划 43 处冲突，修复后 0。
+- **机器验收**（`--baseline report-before.json`，报告 `report.json`）：I1 34→0（另有 uBend 0.5 一点路面裂缝，开工已有）、I2 3→0、I3 40→0、I4 4→0、I5 空洞新增 0（既有 10/12/10：RN05 端头 0.3 m 空缝与 C01-S 折角内侧约 0.375 m²）、I6 通过（三态同一几何、页面错误 0、道路几何哈希 `b487b967` 与 `layout.js`/`world.js`/`bend.js` 与开工相同）。LM09 6 件列为 PENDING，不计失败。
+- **回归**（日志 `docs/world/w10c/house-grass-review/checks/*.log`，串行）：`python3 build.py` → `measure_samples`（无页面错误、实测边界一致）→ `layout_check --png` C1–C12 通过，`docs/layout/` 产物与库中一致；`cr01_merge_check` M1–M7、B-ink、B-ground 通过；`unify_check` U0、U0-W10b、U1 全部、U2（平面/球形各 30,769 点，遮挡/无命中/抬高 0）、U3、U4 通过；`connector_ground_check` CG1–CG6 通过（裁切多边形 3,539 → 3,545，即折角处 6 个四边形各拆为两个三角形）；`terrain_structure_check` TS1–TS5 通过；`terrain_check` 7/7；`cover_check` 9/9；`streetlight_check` SL1–SL6；`seam_check` 5 项；`road_check` W5-C1–C11 与 W8f-c 通过；`c01_s_clearance` 399 件、22 条边（CR01 18 条）、5 段电线、冲突 0。`section_check` 在 W4-C1 之后以 `RK.chain is not a function` 中止，开工 `main` 同样如此（既有，PROGRESS 道路路灯专项已记“不作通过证据”）。未跑 `regress`、性能与截图链。
+- **成本**：`index.html` 3,098,876 → 3,107,815（+8,939；最终构建 md5 `be008d10…`） bytes；农田构建 19 ms（Node）；裁切多边形只在 M01-south 折角处由 6 个四边形变为 12 个三角形。未做性能复测（改动只在构建时，不增加逐帧工作）。
+- **冻结**：`layout.js`、`world.js`、`bend.js`、`roads.js`、`roadkit.js`、街道中线与宽度、地块、建筑、摆放、路网线形与最终道路几何均未改。
+- **输出路径**（本地，git 忽略）：`docs/world/w10c/house-grass-review/report-before.json`、`report.json`、`checks/*.log`。没有生成审查截图，没有打开页面或图像作视觉判断。
+- **待用户裁决**：LM09 东端（方案 5.5 的数值与 A′/B/C 三个选项）。
+- **用户看点**（页面控制台 `__scene.view.set(...)`；yaw 0 时相机在目标南侧向北看，yaw π/2 在东侧；进入球形后等约 2 s）：
+  1. 原农舍与秧苗处（CR01 南段外侧）：平面近俯视 `{mapMode:'flat',target:[-12.5,0.3,56],dist:16,yaw:0,pitch:1.2}`，再 `pitch:0.35` 低角度；东侧秧苗处把 `target` 改成 `[12.5,0.3,55.5]`。应见：车行道、路肩、边沟上没有房屋、秧苗与草簇，W4 田面止于边沟外沿；已知：田面与地形盖在道路外侧草肩上（草肩本身贴地，属合法断面），W4 农舍已剔除，是否在别处重放由用户定。
+  2. 原稻架处（CR01 西段外侧）：`{mapMode:'flat',target:[-56.5,0.5,-1.5],dist:14,yaw:-1.57,pitch:0.9}`。应见：稻架不再横跨路面。
+  3. C01-S 南侧 M01-south 外侧边沟：`{mapMode:'flat',target:[6.5,0.2,65.5],dist:12,yaw:0.6,pitch:1.0}` 与 `pitch:0.35`。应见：边沟露出、没有草皮盖住；已知：折角内侧 (−2.3, 59.45) 附近约 0.4 m² 既有小洞、竹篱末端伸入外侧边沟 0.06 m²（均记待办池）。
+  4. LM09 东端（待裁决）：`{mapMode:'flat',target:[-57,0.5,35],dist:16,yaw:-1.57,pitch:0.8}`，看站台、轨道车挡、车厢与 CR01 西侧边沟的关系。
+  5. 以上 1–3 改 `mapMode:'sphere'`、`dist:30`、`pitch:1.0`：同一几何、白天晴；平面雨夜与球形切换中没有突然出现或消失的物件。
+- **遗留**：画面待用户确认；LM09 待裁决；待办池新增 5 条（c01_s_clearance 旧记录更正、RN06-02 杂草、竹篱末端、道路草肩上的地面、既有小洞/裂缝）。2026-10-17 用户要求合并：`main` 由 `88cf78a` 快进到 `42b4505`，在 main 工作树重新生成的 `index.html` 与提交逐字节一致（md5 `be008d10…`）；未推送、未启动 W10d；`world/W10c`（`efc190c`，WD2/WD3 线）尚未包含本修复。
+
+## W10c、WD1、WX 合并到 main（2026-10-17，用户要求搁置长时间验证、做基本验证后合并；未推送）
+
+- 合并顺序（全部在独立工作树 `../rainy-anime-neighborhood-main`）：`world/W10c`（`d8f394a`，含 WD1 LM09 细节轨道，快进）→ `world/W10c-merge`（启动提速与合并前收尾记录）→ `world/W10c-connector-fix`（`ac3aade`，连接段地形空洞）→ `world/weather-WX2`（WX1–WX3 与计划归档）。每次合并后重新生成 `index.html`，与源码构建逐字节一致。
+- 冲突处理：PROGRESS 两段新章节并存；LM09 檐滴同时保留 WD1 的名字 `lm09EaveDrip` 与 WX2 的天气标记，去掉 WD1 在 `update` 里自己乘的天气系数和 scene.js 的 `landmarkKit.weather`（否则与 weather_fx 的统一登记表重复相乘）；scene.js 采用 WX2 的雨与天气接线，`bake` / 描边缓存提速保留。
+- 基本验证（合并后的最终构建）：`weather_field_check` 5/5；`cr01_merge_check --no-browser` M1–M7；`unify_check --no-browser` U0、U1、U4；`wd1_weather_check`（平面雨、雨后檐滴可见，晴与球形为 0）通过；`connector_ground_check` CG1–CG6 通过；`weather_integration_check --only R,I8`（登记 124 个；晴天降水对象 0 绘制，同帧差分 0 像素）通过；`measure_samples` → `layout_check --png` C1–C12 通过。
+- 未做（按用户指示搁置）：完整检查链、`regress` 像素对照、性能复测、截图审查。各分支自己的完整验证结果见上面各章节（W10c 合并前收尾、连接段专项、WX_PROGRESS）。
+- 状态：W10c、WD1、WX2/WX3、连接段修复的画面仍待用户确认；未推送。
+
+## W10c 连接段地形空洞专项 实施与交付（2026-10-16 实施，2026-10-17 提交，分支 `world/W10c-connector-fix`；画面待用户确认）
+
+- **先建失败用例**：新增 `tools/connector_ground_check.mjs`（CG1–CG6，`--ref`/`--baseline`/`--report`）。九个出口由 `world.js` 推导（城镇边界节点与 C01-* 节点之间的边），“道路/地面”分类按页面实际显示的道路面平面投影，参考是地形 chunk 原始网格，射线按 `bend.js` 顶点着色器顺序在 uBend 0 / 0.5 / 1 下沿当地法线投射（同 `terrain_structure_check` 的构造），不读被测裁切代码。每个出口：城镇边外 0.125–6.875 m × 两侧 0.125–7.875 m 的 0.25 m 网格（16,128 点）、城镇边外 0.01/0.03/0.06 m（1,728 点）、连接段网格侧边（工具自己二分求得）两侧 0.01/0.03/0.06/0.12/0.20 m（2,200 点），加方案第 3 节 18 点，共 20,074 个探针。
+- **开工版本**（`node tools/connector_ground_check.mjs --ref 2e78e1c`，报告 `docs/world/w10c/connector-ground-review/report-2e78e1c.json`）：CG1、CG2、CG5 失败，CG3/CG4/CG6 通过。18 点中 N01/N03/N09/N10 的 8 点三种状态都“地形缺面”（与方案抽查一致；N04/N08 四点在道路上，N11–N13 六点正常）；0.25 m 网格地面空洞 N01 140 点、N03 148、N04 96、N08 96、N09 165、N10 168，估计 50.8 m²（N04/N08 侧带同样有洞，只是方案的抽查点恰好落在 CR01 草肩上）；N11–N13 小巷口各 12 个侧边细探针缺面（开工约 0.07–0.12 m 宽的窄缝，方案所说“较窄遗漏”确有）；无道路却在裁切多边形内的地面探针 1,614 个，来源全部是该出口自己的路线裁切（`route:N01-west` 等），没有发现第二种根因。球形下同样缺面（工具只取探针附近的三角形，对面地表不会被算作通过）。
+- **实现**（`roads.js` 只改 `removeTownPavementDuplicates` 一行元数据，`terrain.js` 只改 `cutRoads()` 与两个裁切函数的可选容差参数）：
+  - `roads.js`：`rt.connectorCuts` 每项增加 `route` 与 `polygon`（与裁道路网格的同一矩形副本）。道路网格不变：显示道路面哈希 `b487b967` 与开工版相同。
+  - `terrain.js` `cutRoads()`：在每个出口的“走廊”（该出口两块矩形的外包框，四周各放 0.5 m 以覆盖跨城镇边的那一行）内，路线裁切行不超过本路线条带自己的最外列（`routeRow` 取 `min(footprint ± CUT_PAD, 条带外列)`：小巷口在城镇边附近的条带比 footprint + 余量窄，这是 N11–N13 窄缝的原因）；路线与端帽多边形再精确减去本路线的连接段矩形（`subtractConvexXZ(…, 1e-9)`，地面止于道路裁剪边）。走廊外的多边形与开工版逐位相同；CR01 与其他道路、路口的裁切不变（CR01 草肩照全环做法贴地压在地形上）。碎片保留原 `src`，另记 `connector: [出口]` / `stripEdge: true`；`state.stats.groundCut.connector` 记统计：9 条路线、86 个多边形被扣、得 103 个碎片、32 行按条带外列收窄。仍写入唯一 `state.roadPolygons`，`cutGroundMeshes()` 同用；无补面、无开关、无球形专用路径、无逐帧处理。
+  - 与阶段细化的差别：细化只写了“扣除矩形”，实施中检查发现小巷口窄缝，按方案 4.2 补了走廊内“不超过条带外列”的局部限制，未改 `CUT_PAD`/`CUT_CAP` 全局值。
+  - 数量：裁切多边形 3,522 → 3,539；地形被删面积 6,958.561 → 6,864.582 m²（恢复 93.98 m²，其中约 50.8 m² 是原空洞，其余在 CR01 内侧草肩下）；裁切后地形显示三角形 82,644 → 82,914（+270）；`index.html` 3,031,385 → 3,034,329 bytes（+2,944）。
+- **修复后**（`node tools/connector_ground_check.mjs --baseline docs/world/w10c/connector-ground-review/report-2e78e1c.json`，报告 `report.json`）：CG1–CG6 全部通过。
+  - CG1：18 点三种状态全部符合（8 个原空点 fail/fail/fail → ok/ok/ok，其余 10 点不变）。
+  - CG2：九个出口地面探针 432/432、432/432、320/320、320/320、472/472、472/472、518/518、518/518、508/508（三种状态相同），空洞估计 0 m²。
+  - CG3：道路探针 1,814 / 1,814 / 1,886 / 1,886 / 1,774 / 1,774 / 1,708 / 1,708 / 1,718 第一个不透明面都是道路；道路探针处地形最多高出路面 0.0001 m（平面）/ 0.0011 m（球形，弦差容差内）；侧边 208 对：边外 0.01 m 地形从不高于边内路面（平面最大 0.0000 m，球形 0.0017 m），路面高出地形 0–9.6 cm（见遗留）。
+  - CG4：三种状态地形同一组对象与几何，探针附近 13 个不透明网格三种状态相同。
+  - CG5：无道路却被裁的地面探针 1,614 → 0；3,539 个多边形都有来源。
+  - CG6：页面错误 0；道路几何哈希、`layout.js`/`world.js`/`bend.js` 与开工版相同；渲染器 ANGLE Metal Apple M4。
+- **回归**（最终构建 md5 `e7a156c4…`，日志 `docs/world/w10c/connector-ground-review/checks/*.log`，不入库；所有浏览器检查逐个串行）：
+  - `python3 build.py` → `measure_samples`（无页面错误、实测边界一致）→ `layout_check --png` C1–C12 通过，`docs/layout/` 产物与库中一致。
+  - `cr01_merge_check` 全部通过（M1–M7、B-ink、B-ground；B-ground 端头 cap 31 与开工相同）。
+  - `unify_check`：U0、U0-W10b、U1 全部、U2（平面/球形各 30,769 点，遮挡/无命中/抬高 0）、U3、U4（含 U4-CR01）通过；U5–U7 为后续阶段 TODO。
+  - `road_check` 11/11；`town_pavement_check`：人行道 2,370、圆角 752、坡道 51、内巷 52、九出口 405 个接口探针，残留/缺面 0，页面错误 0。
+  - `c01_s_clearance`：448 件、5 段电线、冲突 0；`terrain_check` 7/7。
+  - `terrain_structure_check` TS1–TS5 通过（桥下空洞 0、隧道应埋 124/124、引道/桥台/端墙全部通过；裁切多边形 3,539 全有来源，与桥面重叠 0.0000 m²、与隧道内部 0.0001 m²）。
+  - `seam_check` 5 项、`cover_check` 9/9、`ocean_check` 4/4、`streetlight_check` SL1–SL6、`fog_view_check` G1–G4、`weather_check` 4/4（不带 `--shots`）、`day_check` D1–D4 通过。
+  - `night_check`、`regress --weather lock:rain`：2026-10-17 用户要求搁置长时间验证、做基本验证后合并，未跑（`night_check` C2 是既有失败）。
+- **性能**：同上搁置，未测；合并到 main 后只做基本验证（见 PROGRESS「W10c、WX 合并到 main」）。
+- **冻结**：`layout.js`、`world.js`、`bend.js`、`roadkit.js`、街道中线与宽度、地块、建筑、路网线形、最终道路几何均未改；没有恢复人行道、加宽车行道、补面、改透明度或加开关。
+- **输出路径**（本地，git 忽略）：`docs/world/w10c/connector-ground-review/report-2e78e1c.json`（开工）、`report.json`（修复后）、`terrain-structure-report.json`、`checks/*.log`、`regress-rain/{baseline,current}/*.png`（回归工具的机器比对图，未打开查看）与 `regress-rain/attribution.json`。没有生成审查截图，没有打开页面或图像作视觉判断。
+- **用户看点**（页面控制台；进入球形后等约 2 s 完成切换）：
+  1. 球形，四个原空洞出口：N03 `__scene.view.set({mapMode:'sphere',target:[49.5,1.2,15],dist:22,yaw:1.57,pitch:0.85})`，N01 `{mapMode:'sphere',target:[-49.5,1.2,15],dist:22,yaw:-1.57,pitch:0.85}`，N10 `{mapMode:'sphere',target:[49.5,1.2,-15],dist:22,yaw:1.57,pitch:0.85}`，N09 把 N10 的 `target.x` 改成 −49.5、`yaw:-1.57`。应看到：城镇边到环路之间、连接道路左右两侧是连续的地面，看不到天空或球对面。
+  2. 同样位置把 pitch 降到约 0.3 并左右转：地面不盖路、没有新台阶。已知：连接段道路止于车行道外 0.1 m，没有路缘立面，路面比相邻地面高 1–5 cm（小巷口约 3–10 cm），极低角度可能看到路边一道细缝，是否加路缘/路肩由用户判断（已记待办池）。
+  3. N04 `{mapMode:'sphere',target:[0,1.2,-49.5],dist:22,yaw:0,pitch:0.85}`、N08 `{mapMode:'sphere',target:[0,1.2,49.5],dist:22,yaw:3.14,pitch:0.85}`：两侧侧带的地面恢复，CR01 内侧草肩照旧，不被草地盖住；N11 `{target:[-49.5,1.2,32.25]}`、N12 `{target:[49.5,1.2,32.25]}`、N13 `{target:[49.5,1.2,-33.5]}`（同样 `dist:22, pitch:0.85`）小巷口两侧细缝消失、路面完整。
+  4. 以上机位改 `mapMode:'flat'`：夜景下地面连续；天气照既定规则；球形与平面切换中没有突然出现的补面。
+- **遗留**：本专项待用户确认；W10c 整体原有待确认项与性能闸门不变。待办池新增 1 条（连接段路边高差/细缝）。未合并、未推送、未启动 W10d。
+
+## W10c 连接段地形空洞专项 阶段细化（2026-10-16）
+
+- 前置：独立工作树 `../rainy-anime-neighborhood-connector-fix`，分支 `world/W10c-connector-fix` 自 `world/W10c` 的 `2e78e1c` 拉出（开工时 `world/W10c` HEAD 即 `2e78e1c`）；开工 `index.html` md5 `957be193…`，3,031,385 bytes，源码重建逐字节一致。主工作树、`world/W10c-merge`、WX1/WX2 工作树不动。
+- 规格：`docs/world/CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md`（本专项，随本分支入库）、`W10_SPEC.md` §5 W10c 与 §6、`AGENT_PROTOCOLS.md` §1/§4。
+- 根因（按源码与 Node 数据复核）：`removeTownPavementDuplicates` 用九个出口两侧矩形把连接段车行道半宽 +0.1 m 之外的道路网格删掉，但 `terrain.js` `cutRoads()` 仍按完整 `footprint` + 0.12 m 裁地。开工数据：N01/N03/N09/N10/N04/N08 六个出口两侧都有“被裁地、无道路”的区域（0.25 × 0.1 m 采样 242–396 点/出口），来源只有该出口自己的路线裁切；N11–N13 小巷出口只有约 0.02 m 的边缘差。
+- 范围：`roads.js` 只在 `connectorCuts` 中保存裁剪多边形副本（道路几何不变）；`terrain.js` `cutRoads()` 生成路线/端帽裁切时扣除本路线的连接段裁剪多边形，扣除后的碎片登记出口修正标记与统计，仍写入唯一 `state.roadPolygons`（地形与 `cutGroundMeshes` 同用）；新增 `tools/connector_ground_check.mjs`（CG1–CG6，`--ref`/`--baseline`/`--report`）。不做：恢复人行道、加宽车行道、补面、改材质透明度、改 `CUT_PAD`/`CUT_CAP`、改 `layout.js`/`world.js`/`bend.js`/路线线形、W10d 及以后。
+- 实施裁决：方案 4.1 第 5 条要求以最终道路三角形校验。开工 Node 量测：连接段车行道边缘内 0.12 m 处 N09/N10 路面低于原地形最多 7 mm，所以地形不能伸进路面下方（不留“负余量”）；地形裁切边与道路裁剪边重合（局部取消余量，即“限制在实际被替代的道路覆盖范围”）。CR01 内侧草肩在部分侧带只由连接路线裁切覆盖，修复后恢复其下地形，与全环其他路段相同（草肩贴地、材质 polygonOffset），量测高差 ≤ 0.05 mm，由 CG3 复核。
+- 退出标准：机器——CG1–CG6 先在开工版本失败、修复后通过；`python3 build.py` → `measure_samples` → `layout_check --png`；回归 `cr01_merge_check`、`unify_check`（U0–U4）、`road_check`、`town_pavement_check`、`c01_s_clearance`、`terrain_structure_check`、`terrain_check`、`seam_check`、`cover_check`、`ocean_check`、`streetlight_check`、`fog_view_check`、`weather_check`、`day_check`，`night_check` 只确认 C2 读数不变；`regress.mjs --baseline-ref 2e78e1c --weather lock:rain` 的差异按位置归因。画面——用户按交付看点验收，状态待确认。
+- 预算与停止：绘制调用增长 > 10% 阻塞（预期不变）；首帧开工即约 4.1 s（超 4.0 s 预算、低于 5.0 s 停止线），本专项不得使其变差；HTML 增量应很小。若需改街道中线/宽度、道路几何或加回退开关则停止报告。
+- 已知矛盾：无规格冲突。道路边缘与恢复地形之间有 0.1–4.7 cm 的高差（路面高），俯视无缝，低角度可能看到细缝，交用户判断，不用补面处理。
+
+## W10c 合并前收尾 阶段细化（2026-10-16）
+
+1. 规格与任务：[W10C_MERGE_HANDOFF](docs/world/W10C_MERGE_HANDOFF.md)（本任务）、[W10_SPEC](docs/world/W10_SPEC.md) §5 W10c 与 §6 性能预算、§7 交付；W10c 各专项计划 [CR01 西北](docs/world/CR01_NW_REPAIR_PLAN.md)、[路灯](docs/world/STREETLIGHT_NORMALIZATION_PLAN.md)、[桥隧](docs/world/BRIDGE_TUNNEL_TERRAIN_FIX_PLAN.md)、[灰屏](docs/world/GRAY_VIEW_FIX_PLAN.md)。
+2. 起点：`world/W10c` = `2e78e1c`（与交接文档核对时相同，领先本地 main 22 个提交，主工作树干净，只有未跟踪的交接文档）。独立工作树 `../rainy-anime-neighborhood-w10c-merge`，分支 `world/W10c-merge`；不在主工作树切分支或清理文件。天气分支 `world/weather-WX2` 不并入本轮。
+3. 范围：补齐最终版本的性能测量；定位并修复本阶段的预算未达与回归（只限 W10c 已有代码的启动与帧性能，先算法提速，再考虑构建时预计算，不恢复旧路径、不提前做 W10g）；最终构建复核机器检查；更新 ROADMAP 的 W10c 摘要与 PROGRESS；看点清单。不做：W10d 及以后、WX2/WX3、街道中线与宽度、地块、建筑、摆放与世界拓扑的任何改动，不下调检查阈值。
+4. 退出标准（机器）：`python3 build.py` → `node tools/measure_samples.mjs` → `node tools/layout_check.mjs --png`；`cr01_merge_check`、`unify_check`（U0–U4）、`road_check`、`town_pavement_check`、`c01_s_clearance`、`terrain_structure_check`、`streetlight_check`、`fog_view_check`、`weather_check`（不带 `--shots`）、`day_check`；按实际修改复跑 terrain / ocean / cover / seam；前几轮已修问题对应的检查全部重跑，不靠旧结论。既有失败（`night_check` C2）附基线证据。
+5. 退出标准（性能，W10_SPEC §6，Metal）：`node tools/perf_baseline.mjs --views-only --quality high --loads 3` 与同窗口 `--ref pre-w10a`，另测低档；默认机位中位 ≤ 17 ms、p95 ≤ 25 ms、调用 ≤ 2,611；首个完整画面 ≤ 4.0 s（> 5 s 停下报告，4–5 s 不能写通过）；球形 d140 / d400 不比 `pre-w10a` 差 10 % 以上；HTML 增量 ≤ 0.6 MB；低档调用不多于高档。摘要写 `docs/world/perf/w10c-merge-ready.json`。
+6. 风险与裁决：本机常处于内存压力下（交换区约 8 GB，用户的其他程序同时占 CPU/GPU），单次测量噪声可达 ±1.5 s；性能只与同窗口基线交替比较并记录机器状态，绝对值不达标时如实写未达项，不把噪声写成通过。启动性能已知热点：CR01 合并（`09d0b67` 起路网模块 735 → 954 ms，合并 318 ms），优化必须保持 `cr01_merge_check` 等全部结果不变。画面由用户判断，状态 `待确认`；用户确认前不合并 main、不推送。
+
+## W10c 合并前收尾 实施与交付（2026-10-16，分支 `world/W10c-merge`，提交 `77ef1f9`，只本地提交，未合并、未推送；W10c 整体待用户确认）
+
+- 起点 `2e78e1c`（`world/W10c`），独立工作树 `../rainy-anime-neighborhood-w10c-merge`。本轮只改启动性能（三处提速，输出逐位不变）与文档；街道、地块、建筑、摆放、路网拓扑都没动，没有恢复旧路径，没有下调阈值。另按交接文档同步了天气计划的归档状态（`73055e6`，与天气分支的计划文件逐字节相同）。
+- **先测后改**：用最终 W10c 代码（`--views-only --quality high --loads 3`，Metal Apple M4，负载均值约 4–5）测得首个完整画面中位 4,041 ms（4,091 / 4,041 / 3,900），超过 4.0 s 预算；默认机位 16.6 / 18.3 ms、2,402 次调用，球形 d140 / d400 33.8 / 32.0 ms（同窗口 `pre-w10a` 41.4 / 41.2 ms），低档调用不多于高档。浏览器 CPU 剖析（CDP，一次冷启动）：脚本启动阶段 `bake`（建筑合批）自身 323 ms、含子调用 613 ms；`mesh()` 生成描边（`EdgesGeometry`）在 three.js 内约 308 ms；生成管线里路网 973 ms（CR01 合并 264 ms）、地表覆盖 668 ms、地形高度 474 ms。
+- **提速（只改算法，输出逐位不变）**：
+  1. `scene.js` `bake`：各对象的顶点先收集为类型化数组，最后一次写入最终大小的 Float32Array，代替 `push(...typedArray)` 展开到普通数组（数值相同；几何对象的创建数量与顺序不变，城镇雨依赖的 `Math.random` 序列不受影响）。
+  2. `scene.js` `mesh()` 的描边：按几何的类型、顶点与索引缓存 `EdgesGeometry` 的结果（散列只分桶，复用前逐元素比较原始数据）；每次调用仍恰好创建一个几何对象。第一版用的散列对只差符号位的镜像盒子会碰撞，被场景指纹比对抓到，已改为分桶 + 精确比较。
+  3. `roads.js` `mergeCr01`：`rebuild` 的 T 形接点处理在附近没有被抬高的顶点时直接保留原三角形；`branchFinal` 先用原始浮点坐标算包围盒，只给通过的三角形分配数组。
+- **输出不变的证据**：Node 里全部路线的最终几何指纹（`pos` / `col` / `index`）提速前后同为 `2d19dfee33e5abf8`；页面里整个场景 10,612 个网格与线、3,345,673 个顶点的几何指纹（含雨滴缓冲）与 `2e78e1c` 同为 `7b0490dc`，启动后取出的随机数也相同；`regress --baseline-ref 2e78e1c --weather lock:rain` 8 个视图逐位相同。
+- **启动收益**（页面内交替对照，4 次 ABBA，导航到首个带场景的帧）：`2e78e1c` 中位 4,069 ms → 3,604 ms（−465 ms）；路网步骤约 −30 ms，地标约 −20 ms，其余来自脚本启动。
+
+- **最终性能**（W10_SPEC §6，Metal Apple M4；`node tools/perf_baseline.mjs --views-only --quality high --loads 3` 与同窗口 `--ref pre-w10a`，另测低档；测量前放锁等机器空闲，开始时 1 分钟负载约 5.9，交换区已用约 9.2 GB；摘要 `docs/world/perf/w10c-merge-ready.json`，原始记录 `w10c-merge-ready-high.json`、`-pre-w10a.json`、`-low.json`）：
+  - 首个完整画面中位 **3,895 ms**（3,931 / 3,846 / 3,895），预算 4,000 ms：**通过**（提速前同一工具 4,041 ms）。
+  - 默认机位 16.7 / 18.1 ms、2,404 次调用（预算 17 / 25 ms、2,611 次）：通过。
+  - 球形 d140 35.2 / 38.7 ms、d400 35.6 / 38.3 ms；同窗口 `pre-w10a` 38.4 / 40.0、39.5 / 60.8 ms：不比基线差（好 8–10 %），通过。17 / 25 ms 的球形目标属于 W10g。
+  - 低档：默认 2,396 次、球形 10,550 / 10,611 次，不多于高档（2,404 / 10,553 / 10,616），通过。低档这一轮测到一半机器又忙起来（球形 70 中位 40.8 ms，高档 23.2 ms），首帧 5,522 ms 不具代表性；上一轮较安静时低档首帧 3,989 ms（4,056 / 3,912 / 3,989）。
+  - HTML 3,034,188 字节，较 `pre-w10a`（2,919,694）+114 KB，预算 0.6 MB：通过。
+  - 本机测量噪声大：同一代码在重负载窗口测过 4,010 ms。结论以放锁、空闲窗口的这一轮为准，并附交替对照（4,069 → 3,604 ms）作为相对收益的证据。
+- **机器检查**（最终源码，按交接文档顺序，日志在本机 scratchpad，不入库）：`python3 build.py` → `measure_samples`（无页面错误）→ `layout_check --png`（C1–C12，已跟踪的布局图未变）；`cr01_merge_check` M1–M7、B-ink、B-ground（B-ground 的 31 个 CUT_CAP 探针为既有项）；`unify_check` U0、U0-W10b、U1（topology / CR01 / town / exits / changes / geometry）、U2（平面、球形各 30,769 点：遮挡 0、无命中 0、其他道路抬高 0）、U3、U4（data / junctions / CR01-junctions，接缝 2,227 顶点最大高差 0.0002 m）；`road_check` 11 项；`town_pavement_check`（leaks / missing / ramp / corner / connector 全为空）；`c01_s_clearance`（448 件、5 段电线、冲突 0）；`terrain_structure_check` TS1–TS5、TS-page；`streetlight_check` SL1–SL6；`fog_view_check` G1–G4；`weather_check` C1–C4（不带 --shots）；`day_check` D1–D4（第一次因机器过载页面加载超时，复跑通过）；`terrain_check` W3-C0–C6；`seam_check`；`ocean_check` 4 项；`cover_check` 9 项；`transition_check` 4 项：全部通过。`night_check` C1、C3、C4 通过，C2 失败且读数与基线相同（光带核心 0、便利店 166、温泉村 170），是路灯专项已记录的既有失败。`regress --baseline-ref 2e78e1c --weather lock:rain` 8 个视图逐位相同。
+- **前几轮已修问题**：CR01 全环合并、人行道重复面与九接口侧带、C01-S 设施净空、统一路灯、桥下海床与隧道覆土、灰屏透射率，各自的检查都在最终构建上重跑通过，没有用旧结论代替。
+- **用户看点**（画面由用户判断；本轮没有改变任何几何或像素，看点沿用各专项，在最终构建上确认）：
+  1. 西北 CR01/RN05：平面 target [−48, 1.2, −54]、dist 15、yaw π/4、pitch 0.8；球形 target [−46, 1.2, −53]、dist 34、pitch 1.1。铺装连续，没有重复碎片与穿路旧描边；再抽看其余九个路口。已知 RN05 端头 cap 空缝、C01-S 折叠在待办池。
+  2. 人行道与九个接口、南口设施：`docs/world/w10c/pavement-review/`、`docs/world/w10c/c01-s-furniture-review/` 的原机位（本地已有图，未入库）。没有抬高侧带、铺砖重复面，设施不侵路。
+  3. 路灯：按 PROGRESS「道路路灯规范化」的城镇、CR01、桥面与球形机位，灯体尺度、落地与光池。
+  4. 桥隧：按 PROGRESS「桥下海床与隧道覆土」的 RN01-03 / 07–09 / 13 桥下与 RN01-05 洞口机位。海床连续，山体盖住隧道，入口不堵。隧道上方无植被带是已记录遗留。
+  5. 灰屏：LM08 锁雾，dist 65，推拉 35–160，目标可读；城镇锁雨默认与远景的光池变化，球形往返能恢复。
+  6. 连接段蓝色空洞（用户新报告，[方案](docs/world/CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md)）：**本分支没有修**，在另一分支 `world/W10c-connector-fix` 修复，合并前需要集成并复检。
+- **遗留**：W10c 累计画面待用户确认；连接段空洞修复待集成；球形 17 / 25 ms 目标属于 W10g；`night_check` C2 既有失败；待办池原有项不变。未合并 main、未推送、未开始 W10d。
+
 ## W10c 西北 CR01/RN05 浅角接入返工 实施（2026-10-15，分支 world/W10c，提交 `09d0b67`）
 
 - 按 `docs/world/CR01_NW_REPAIR_PLAN.md` 实施（第 7 节为实施记录与偏差说明）。布局、节点、R8 中线与宽度不变；未合并、未推送、未启动 W10d；W10c 仍为用户视觉待确认。
@@ -3073,6 +3204,16 @@
 - 本次未改场景代码、布局、阈值或图片；未生成、打开或审查场景截图；未重写已完成阶段的历史视觉记录。`git diff --check` 通过；本轮没有参考包内容变更，未运行 `check_kit`。
 
 
+## 天气完善专项 WX1–WX3 实施与交付（2026-10-16 转记，分支 `world/weather-WX2`，只本地提交，未合并、未推送；画面待用户确认）
+
+- 计划 [WEATHER_COMPLETION_PLAN](docs/world/WEATHER_COMPLETION_PLAN.md)；完整记录（基线、阶段细化、效果登记清单、参数、检查数字、接口、看点）在 [WX_PROGRESS](docs/world/weather/WX_PROGRESS.md)，这里只摘要。
+- WX1（2026-10-15，`764a2b3`，起点 `1381d56`）：`weather.js` 天气场与查询顺序无关、空间连续，城镇一个天气区；`tools/weather_field_check.mjs` 5/5。
+- WX2（2026-10-16，集成起点 `ff72599` = `world/W10c` `96342bc` + WX1）：`weather_fx.js` 格点场与天气图，雨雪落到接收面并按所在地稀疏，海/田/路雨击按所在地，建筑与地标天气效果登记（124 个），灯光与雾显式基值；`tools/weather_integration_check.mjs` R、I1–I9 共 10 项 PASS（WX-0：降水对象 0 绘制，同帧差分 0 像素）；weather_field、weather、day、fog_view、unify、ocean、cover、road、streetlight、transition 与 W10c 的 cr01_merge、terrain_structure、town_pavement、c01_s_clearance 全部通过；`night_check` C2 失败与集成起点读数相同（既有，见本文件「道路路灯规范化」基线复核）。
+- 画面差异：`regress --baseline-ref ff72599 --weather lock:rain` 默认等 6 个近景逐位相同；far（d 140）0.149 %、top（d 150）0.190 %，檐滴改为与雨丝同样按距离淡出。
+- WX2 提交 `e845da5`（只本地，未合并、未推送）。
+- WX3（2026-10-16，提交 `e375e0e`，起点 `e845da5`）：湿润记忆（900 s 窗口、按时间函数解析求得）、`snowCover` / `duneWet` / `poolWet` 着色器响应与水田雨后镜面、目标周围的叶尖滴水 / 贴地雾 / 雪雾 / 熔岩雨汽、BI08 喷气孔 6 处；`tools/weather_wx3_check.mjs` X1–X4 PASS，WX2 的全部检查与 W10c 回归检查重跑通过；`regress --baseline-ref e845da5` 只有 storeCorner 0.382 %（锁雨时雪线以上山坡下雪，薄层增白，已用天气图雪通道清零的对照证实）。
+- 遗留：雨见岳山顶在 `lava-north` 区域内只下雨（设计决定，待用户）；WX2、WX3 画面待用户确认；云、体积雾、涌浪等见 WX_PROGRESS 的待办清单。
+
 ## W10c 道路路灯规范化计划（2026-10-14，仅文档）
 
 - 用户要求制定计划供其他 Agent 实施；新增 `docs/world/STREETLIGHT_NORMALIZATION_PLAN.md`，ROADMAP 增加专项入口。
@@ -3321,10 +3462,3 @@
 - 改用四个固定机位、每版独立页面的一遍同会话测量，`tools/wd3_compare.mjs` 对照 WD3 开工前 `ae045b2`，结果 [`wd3-near.json`](docs/world/perf/wd3-near.json)：LM10 港总览 +36 calls/+5,080 triangles，船机位 0/−216，LM08 岛总览 +22/+2,952，塔身机位 +3/+2,396；四机位纹理变化 0，双方页面错误 0。早先高负载对照中止记录保留，这次有效结果不代表 GPU 用时或视觉质量。
 - Metal/high 单次冷启动 [`wd3-model-current.json`](docs/world/perf/wd3-model-current.json)：首个完整画面 4,589 ms；默认 16.6/18.7 ms、2,406 calls、1,595,576 triangles；球形 d140 38.4/42.3 ms、d400 38.1/40.0 ms，页面错误 0。首帧高于 4 s、球形高于 17/25 ms W10 目标，性能仍未达预算；默认 calls 相对 WD0 未超过 +10% 阻塞线。
 - WD3 独立模型与机器交付就绪，43 张图继续保留 `docs/world/wd3/model-preview/` 等用户以后统一看。W10d 地面与 WX2 天气最终衔接尚未实施，阶段记 `待确认` 而非视觉完成。
-
-## WD4 神社、山顶、石室与石环（2026-10-18，进行中）
-
-- 建立 [`WD4_SACRED_STONE_CARD.md`](docs/world/WD4_SACRED_STONE_CARD.md)，逐项记录 LM01/LM03/LM04/LM05 的结构与场地重点。保留原锚点、道路、地标排列和批准尺寸；LM05 保留十三块立石的半径、间距及中央线索节奏，明确逐块轮廓不再受旧 W7 同形几何描述约束。
-- 当前中间版本为 LM01 火口岩缘、小祠供奉空间与灯笼基础；LM03 石室承重垫、石缝、入口铺地和后门槛；LM04 本殿柱梁、室内祭台、檐部受损支撑、狛犬/石佛轮廓和神木根系/注连绳；LM05 独立石形、石脚与局部风化。LM04 檐滴改用 `userData.weather = 'drip'` 标记以接入共享天气登记。
-- `node --check`（四个地标与专项检查器）、`python3 build.py`、`node tools/landmark_check.mjs LM01/LM03/LM04/LM05 --no-shots` 均通过；各地标 W7-C1/C2/C3/C4 全通过，最大弯曲尺寸差依次为 0.08%、0.32%、0.55%、0.22%，LM05 实测 13 种独立轮廓、圆心间距 4.3077 m。`git diff --check` 通过。
-- 这是合并前的 WD4 进行中提交。合并 `main` 后重跑全套地形、天气、侵路和地标机器检查；截图供用户日后统一看，视觉仍待确认。

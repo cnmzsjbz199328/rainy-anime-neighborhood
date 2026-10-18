@@ -62,7 +62,7 @@
     box(tx, 1.6, tz, 0.34, 0.26, 0.28, '#b9763f', true, gr); cyl(tx, 1.82, tz, 0.07, 0.2, '#2a2a30', gr); }
   // ---- live: snow mist drifting low over the ice (10 pale soft cards, slow, symmetric)
   const lv = group('lm07Live'); L.use(lv);
-  const mist = []; for (let i = 0; i < 10; i++) { const g = L.sub(-6 + rnd() * 12, 0.5 + rnd() * 0.5, -5 + rnd() * 10, rnd() * 3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(3 + rnd() * 2, 0.9), new THREE.MeshBasicMaterial({ map: L.glowTex, color: '#dfeaf2', transparent: true, opacity: 0.0, depthWrite: false, side: THREE.DoubleSide })); g.add(m); mist.push({ g, m, ph: rnd(), x0: g.position.x, z0: g.position.z, y0: g.position.y }); }
+  const mist = []; for (let i = 0; i < 10; i++) { const g = L.sub(-6 + rnd() * 12, 0.5 + rnd() * 0.5, -5 + rnd() * 10, rnd() * 3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(3 + rnd() * 2, 0.9), new THREE.MeshBasicMaterial({ map: L.glowTex, color: '#dfeaf2', transparent: true, opacity: 0.0, depthWrite: false, side: THREE.DoubleSide })); m.userData.weather = 'snow-mist'; g.add(m); mist.push({ g, m, ph: rnd(), x0: g.position.x, z0: g.position.z, y0: g.position.y }); }   // WX2: snow mist follows the snow at the site
   out.parts = { patch, glow, patchTex, fillTex };
   const col = new THREE.Color(CLUE.color);
   const side = 2 * RC * Math.sin(PI / 6);

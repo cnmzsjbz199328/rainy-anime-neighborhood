@@ -2293,20 +2293,34 @@ const polygonAreaXZ = p => { let a = 0; for (let i = 0; i < p.length; i++) { con
 const CUT_EPS = 1e-3; // 1 mm tolerance for Float32 road rows against double-precision cut polygons
 const CUT_PAD = 0.12; // Keep ground a handspan outside the swept right-of-way so Float32 edges cannot leave grass slivers on the pavement.
 const CUT_CAP = 0.30; // The road rows are sampled every 0.5 m; cover their end rows as well as the intervals between them.
-function splitPolygonXZ(poly, a, b, sign) {
+function splitPolygonXZ(poly, a, b, sign, eps = CUT_EPS) {
   const inside = [], outside = [], side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
   for (let i = 0; i < poly.length; i++) {
-    const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -CUT_EPS, iq = sq >= -CUT_EPS;
+    const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -eps, iq = sq >= -eps;
     if (ip) inside.push(p); else outside.push(p);
     if (ip !== iq && sp !== sq) { const t = sp / (sp - sq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; inside.push(x); outside.push(x); }
   }
   const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
   return [clean(inside), clean(outside)];
 }
-function subtractConvexXZ(subject, clip) {
+// A row interval of a swept road as convex pieces for the cuts (subtractConvexXZ takes a convex clip). It is a convex quad [a0, a1, b1, b0] unless its two
+// rows cross, which they do on the inner side of a turn sharper than the half width (the swept cells fold there: C01-S); then it is the two triangles
+// either side of the crossing point. A quad with one reflex corner is split along the diagonal from that corner. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a
+// crossed quad taken as one clip left the ground over M01-south's ditch outside the turn uncut.)
+function convexPartsXZ(q) {
+  const turn = (a, b, c) => (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]), t = q.map((p, i) => turn(q[(i + 3) % 4], p, q[(i + 1) % 4]));
+  if (t.every(v => v >= -1e-12) || t.every(v => v <= 1e-12)) return { parts: [q], kind: null };
+  const meet = (a, b, c, d) => { const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-15) return null;
+    const u = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, v = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den; return u > 0 && u < 1 && v > 0 && v < 1 ? [a[0] + r[0] * u, a[1] + r[1] * u] : null; };
+  let X = meet(q[0], q[1], q[2], q[3]); if (X) return { parts: [[q[0], X, q[3]], [X, q[1], q[2]]], kind: 'crossed' };
+  X = meet(q[1], q[2], q[3], q[0]); if (X) return { parts: [[q[0], q[1], X], [X, q[2], q[3]]], kind: 'crossed' };
+  const sign = Math.sign(polygonAreaXZ(q)), k = t.findIndex(v => Math.abs(v) > 1e-12 && Math.sign(v) !== sign);
+  return { parts: [[q[k], q[(k + 1) % 4], q[(k + 2) % 4]], [q[(k + 2) % 4], q[(k + 3) % 4], q[k]]], kind: 'reflex' };
+}
+function subtractConvexXZ(subject, clip, eps = CUT_EPS) {
   let rest = subject; const outside = [], sign = polygonAreaXZ(clip) >= 0 ? 1 : -1;
   for (let i = 0; i < clip.length && rest.length >= 3; i++) {
-    const [inside, out] = splitPolygonXZ(rest, clip[i], clip[(i + 1) % clip.length], sign);
+    const [inside, out] = splitPolygonXZ(rest, clip[i], clip[(i + 1) % clip.length], sign, eps);
     if (out.length >= 3 && Math.abs(polygonAreaXZ(out)) > 1e-10) outside.push(out);
     rest = inside;
   }
@@ -2638,9 +2652,32 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     // rows along `tangent * cf`; mixing those coordinate paths left narrow wedges of ground at
     // the road centreline, especially at landmark entrances and around the ring.
     const flatLateral = (rt, i, o, along, nearX) => { const f = rt.flatOf[i], t = rt.tangent[i], scale = rt.cf[i] * f.k; let x = f.x + t[0] * along - t[1] * o * scale; x += PERIOD * Math.round((nearX - x) / PERIOD); return [x, f.z + t[1] * along + t[0] * o * scale]; };
+    // W10c town-exit connectors (docs/world/CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md): roads.js removed the side strips of the nine connectors from the road
+    // mesh (rt.connectorCuts, each with its rectangle). Within an exit's corridor (the box of its two rectangles, 0.5 m more for the row that straddles
+    // the town edge) the route's cut is limited to the ground its own strip actually replaces: a row reaches no further than the strip's outer columns
+    // (the alley mouths are narrower there than their footprint and pad), and the row and cap polygons lose the removed rectangles exactly (addRoutePoly,
+    // below). Outside the corridors nothing changes; the other roads keep their own cuts (CR01's paving; its verges lie on the ground as round the ring).
+    const connectorStats = { routes: 0, trimmed: 0, removed: 0, pieces: 0, releasedArea: 0, limitedRows: 0, byExit: {} };
+    const connectorsOf = new Map((data.routes || []).map(rt => [rt, (rt.connectorCuts || []).filter(c => c.polygon && c.polygon.length >= 3).map(c => ({ exit: c.exit, p: c.polygon,
+      x0: Math.min(...c.polygon.map(q => q[0])), x1: Math.max(...c.polygon.map(q => q[0])), z0: Math.min(...c.polygon.map(q => q[1])), z1: Math.max(...c.polygon.map(q => q[1])) }))]));
+    const corridors = new Map(), limited = new Set();
+    for (const [rt, list] of connectorsOf) {
+      if (!list.length) continue; connectorStats.routes++;
+      const boxes = {}; for (const c of list) { const b = boxes[c.exit] || (boxes[c.exit] = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity }); b.x0 = Math.min(b.x0, c.x0 - 0.5); b.x1 = Math.max(b.x1, c.x1 + 0.5); b.z0 = Math.min(b.z0, c.z0 - 0.5); b.z1 = Math.max(b.z1, c.z1 + 0.5); }
+      corridors.set(rt, Object.values(boxes));
+    }
+    // the strip's own outer edge at row i (its first and last columns, true metres in the row frame), inside a corridor; null elsewhere
+    const stripEdge = (rt, i) => {
+      const boxes = corridors.get(rt); if (!boxes) return null;
+      const F = rt.flatOf[i]; if (!boxes.some(b => F.x >= b.x0 && F.x <= b.x1 && F.z >= b.z0 && F.z <= b.z1)) return null;
+      const m = rt.grid.length, t = rt.tangent[i], scale = rt.cf[i] * F.k, st = rt.strip.pos, off = j => { const k = (i * m + j) * 3; return ((st[k] - F.x) * -t[1] + (st[k + 2] - F.z) * t[0]) / scale; };
+      return [off(0), off(m - 1)];
+    };
     const routeRow = (rt, i, along = 0, nearX = rt.flatOf[i].x) => {
-      const f = rt.footprint[i];
-      return [flatLateral(rt, i, f[2] - CUT_PAD, along, nearX), flatLateral(rt, i, f[3] + CUT_PAD, along, nearX)];
+      const f = rt.footprint[i], e = stripEdge(rt, i);
+      let lo = f[2] - CUT_PAD, hi = f[3] + CUT_PAD;
+      if (e && (e[0] > lo || e[1] < hi)) { lo = Math.max(lo, e[0]); hi = Math.min(hi, e[1]); if (!limited.has(rt.def.id + ':' + i)) { limited.add(rt.def.id + ':' + i); connectorStats.limitedRows++; } }
+      return [flatLateral(rt, i, lo, along, nearX), flatLateral(rt, i, hi, along, nearX)];
     };
     // the chainage ranges of a route that stand on structures: its tunnel and bridge spans, and beyond an end that meets an abutment. A tunnel's portals
     // stand on its first and last rows inside the span (roads.js buildTunnel): the strip between the span's end and the portal face is the open approach in
@@ -2669,11 +2706,35 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       return parts.filter(([q0, q1]) => q1 - q0 > 1e-6);
     });
     const lerpRow = (a, b, t) => [0, 1].map(k => [a[k][0] + (b[k][0] - a[k][0]) * t, a[k][1] + (b[k][1] - a[k][1]) * t]);
-    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [];
+    // the connector rectangles leave this route's row and cap polygons, exactly (no tolerance: the ground then ends on the road's cut edge); a trimmed piece
+    // keeps its source and records the exits
+    const addRoutePoly = (rt, p, src) => {
+      const list = connectorsOf.get(rt);
+      if (!list || !list.length) { addPoly(p, src); return; }
+      let parts = [p]; const exits = [];
+      for (const c of list) {
+        const next = [];
+        for (const q of parts) {
+          const x0 = Math.min(...q.map(v => v[0])), x1 = Math.max(...q.map(v => v[0])), z0 = Math.min(...q.map(v => v[1])), z1 = Math.max(...q.map(v => v[1]));
+          if (c.x1 < x0 || c.x0 > x1 || c.z1 < z0 || c.z0 > z1) { next.push(q); continue; }
+          const out = subtractConvexXZ(q, c.p, 1e-9), before = Math.abs(polygonAreaXZ(q)), after = out.reduce((s, r) => s + Math.abs(polygonAreaXZ(r)), 0);
+          if (before - after <= 1e-9) { next.push(q); continue; }
+          next.push(...out); connectorStats.releasedArea += before - after; connectorStats.byExit[c.exit] = (connectorStats.byExit[c.exit] || 0) + (before - after);
+          if (!exits.includes(c.exit)) exits.push(c.exit);
+        }
+        parts = next;
+      }
+      if (!exits.length) { addPoly(p, src); return; }
+      connectorStats.trimmed++; if (!parts.length) connectorStats.removed++; connectorStats.pieces += parts.length;
+      for (const q of parts) addPoly(q, { ...src, connector: exits });
+    };
+    const info = new Map((data.routes || []).map(rt => [rt, structureRanges(rt)])), structurePolys = [], folds = { crossed: 0, reflex: 0, routes: {} };
+    // a row interval as convex pieces (convexPartsXZ), the folded ones counted per route
+    const rowParts = (rt, A, Bq) => { const r = convexPartsXZ([A[0], A[1], Bq[1], Bq[0]]); if (r.kind) { folds[r.kind]++; folds.routes[rt.def.id] = (folds.routes[rt.def.id] || 0) + 1; } return r.parts; };
     for (const rt of data.routes || []) for (let i = 0; i + 1 < rt.samples.length; i++) {
       const x = rt.flatOf[i].x, a = routeRow(rt, i, 0, x), b = routeRow(rt, i + 1, 0, x), sa = rt.samples[i].s, sb = rt.samples[i + 1].s, I = info.get(rt), row = s => (s === sa ? a : s === sb ? b : lerpRow(a, b, (s - sa) / (sb - sa)));
-      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); addPoly([A[0], A[1], Bq[1], Bq[0]], { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}) }); }
-      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push([A[0], A[1], Bq[1], Bq[0]]); }      // the uncut footprint over the structure
+      for (const [p0, p1, tag] of pieces(sa, sb, I)) { const A = row(p0), Bq = row(p1); for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'route', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(tag ? { structure: tag } : {}), ...(limited.has(rt.def.id + ':' + i) || limited.has(rt.def.id + ':' + (i + 1)) ? { stripEdge: true } : {}) }); }
+      for (const [p0, p1] of inside(sa, sb, I.ranges)) { const A = row(p0), Bq = row(p1); structurePolys.push(...rowParts(rt, A, Bq)); }      // the uncut footprint over the structure
     }
     // A tunnel mouth: the ground inside the opening between the portal face and the black void behind it (rt.tunnel.voidDepth) would stand in front of the
     // void, so it is cut within the opening's width (the inner profile, +-innerR). Only this short strip: the hill over the tunnel stays (tools/
@@ -2693,7 +2754,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       const S = rt.samples, last = S.length - 1;
       for (const [i, c0, c1] of [[0, S[0].s - CUT_CAP, S[0].s], [last, S[last].s, S[last].s + CUT_CAP]]) for (const [p0, p1] of outside(c0, c1, info.get(rt).ranges)) {
         const A = routeRow(rt, i, p0 - S[i].s), Bq = routeRow(rt, i, p1 - S[i].s);
-        addPoly([A[0], A[1], Bq[1], Bq[0]], { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3) });
+        for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(limited.has(rt.def.id + ':' + i) ? { stripEdge: true } : {}) });
       }
     }
     for (const br of data.bridges || []) {
@@ -2718,7 +2779,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
 
     state.roadPolygons = polys;
     const bySource = {}; for (const q of polys) bySource[q.src.kind] = (bySource[q.src.kind] || 0) + 1;
-    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped };
+    connectorStats.releasedArea = +connectorStats.releasedArea.toFixed(4); for (const k of Object.keys(connectorStats.byExit)) connectorStats.byExit[k] = +connectorStats.byExit[k].toFixed(4);
+    state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped, connector: connectorStats, rowFolds: folds };
     let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0;
     const meshes = [...state.ring, ...state.rest];
     for (const mesh of meshes) {
@@ -3076,6 +3138,15 @@ else global.FLORA = FLORA;
 (function (global) {
 'use strict';
 const R = 90, D = Math.PI / 180, LON0 = -0.5, SEED = 4004;
+// The plan box of each template that stands on the ground (flora.js, model metres = true metres: x0, x1, z0, z1 of its local x and z; the rails of a fence, a log,
+// a fallen rack or sign reach out to one side of the origin). The CR01 cull below takes the whole box; section.js checks every listed box against the built geometry.
+const FOOTPRINT = { seedling: [-0.03, 0.03, -0.03, 0.08], tuft: [-0.11, 0.13, -0.18, 0.31], flower: [-0.1, 0.11, -0.1, 0.1], weed: [-0.18, 0.19, -0.16, 0.55], shrubLow: [-0.59, 0.55, -0.56, 0.63],
+  shrub: [-0.77, 0.87, -0.8, 0.74], fern: [-0.16, 0.16, -0.1, 0.71], rock: [-0.6, 0.6, -0.43, 0.43], rockBig: [-1.04, 1.17, -0.96, 0.92], mossRock: [-0.6, 0.48, -0.55, 0.59], reefRock: [-0.99, 0.99, -0.84, 0.84],
+  weedShadow: [-0.89, 0.89, -0.57, 0.63], tetra: [-0.59, 0.59, -0.58, 0.59], cairn: [-0.32, 0.36, -0.35, 0.38], stonePost: [-0.11, 0.11, -0.11, 0.11], logMoss: [-4.5, 0.9, -0.22, 0.22], drift: [-3.45, 0.14, -0.13, 1.04],
+  rack: [-3.9, 1.32, -0.12, 0.1], rackFallen: [-3.8, 0.42, -0.04, 1.09], scarecrow: [-1.95, 0.35, -0.35, 0.35], hutFarm: [-1.35, 1.35, -1.05, 1.05], hutRusty: [-1.34, 1.34, -1.05, 1.05], oldMachine: [-1.56, 1.15, -0.91, 0.85],
+  barrier: [-1, 1, -0.03, 0.03], signFallen: [-3.2, 0.13, -0.2, 0.4], guardrail: [-1, 1, -0.04, 0.04], guardrailMetal: [-1, 1, -0.04, 0.04], fenceBamboo: [-3, 0.94, -0.03, 0.06], pole: [-0.95, 0.95, -0.15, 0.15],
+  mirror: [-0.25, 0.44, -0.04, 0.08], signRound: [-0.31, 0.31, -0.04, 0.1], signBus: [-0.25, 0.25, -0.04, 0.04], vending: [-0.53, 0.53, -0.44, 0.44], lantern: [-0.25, 0.25, -0.25, 0.25], torii: [-1.46, 1.46, -0.18, 0.18],
+  mossStep: [-0.75, 0.75, -1.2, 0.18], seaMark: [-0.16, 0.16, -0.05, 0.06] };
 const mulberry = seed => { let s = seed | 0; return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
 
 function plan(W) {
@@ -3241,17 +3312,31 @@ function plan(W) {
 
   // spacing check helper for the trees: reported to the checks
   const trees = ['treeRound', 'cedar', 'pine', 'bamboo'].reduce((s, t) => s + (items[t] || []).length, 0);
-  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches
-  // the ring's full RD03 section or the C01-S turning mouth, including scattered plants.
-  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat);
-  const distanceToRing = it => Math.abs(W.lonLatToTown(it.lon, it.lat).z - center.z);
+  // W4 furniture predates CR01. Cull anything whose complete ground footprint reaches the ring's full RD03 section or the C01-S turning mouth, including
+  // scattered plants. The ring: in true metres in (u, v), the ring's south straight is the parallel of C01-S (CR01 is the square |x|, |z| = 54 of the flat
+  // frame), so it is the line v = v(C01-S) right across the corridor (its corners begin at |x| = 46 m, well east and west of it) and v is true metres along
+  // the meridian; its full section runs 3.55 m outside (south: the ditch side) to 2.75 m inside. The mouth: the clearance box round C01-S and the placement
+  // margin of the roads up to v 24 m as before, and the full sections of those roads (roadkit.js FOOT, RD03 3.55 m on its ditch side taken on both sides;
+  // the RD07 boardwalk its placement half width). The footprint is the template's own plan box (FOOTPRINT, turned by the yaw and scaled) and 0.15 m more
+  // (the ground cut's 0.12 m pad: nothing stands over the cut's edge); a tree, whose crown may overhang, keeps its clearance circle + 0.5 m.
+  // (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: the ring test this replaces took town-frame metres, 0.84 true metres each at the ring, and only |x| <= 12 m of
+  // a corridor that reaches x -15.0 m, and every test a clearance circle that misses the one-sided templates: the farm hut and the westmost seedlings
+  // stood on the ring, a fallen rack reached into the full section of RN06-02.)
+  const c01 = W.roadNetwork.nodeById['C01-S'], center = W.lonLatToTown(c01.lon, c01.lat), vRing = toUV(c01.lon, c01.lat).v, RING_FULL = [3.55, 2.75], MARGIN = 0.15, TREE = 0.5;
+  const fullHalf = { RD03: 3.55, RD04: 2.75, RD05: 1.55, RD07: roadHalf.RD07 };
+  const outline = it => { const e = FOOTPRINT[it.type]; if (!e) return null; const c = Math.cos(it.yaw), s = Math.sin(it.yaw);
+    return [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]].map(([x, z]) => [it.u + x * it.s[0] * c + z * it.s[2] * s, it.v - x * it.s[0] * s + z * it.s[2] * c]); };
+  const polyDist = (P, u, v) => { let inside = false, d = Infinity; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[j], b = P[i], dx = b[0] - a[0], dv = b[1] - a[1], t = Math.max(0, Math.min(1, ((u - a[0]) * dx + (v - a[1]) * dv) / (dx * dx + dv * dv || 1)));
+    d = Math.min(d, Math.hypot(u - a[0] - dx * t, v - a[1] - dv * t)); if ((a[1] > v) !== (b[1] > v) && u < a[0] + (v - a[1]) * dx / dv) inside = !inside; } return inside ? 0 : d; };
+  const fullDist = it => { const P = outline(it), r0 = P ? 0 : it.clearance + TREE - MARGIN; let best = Infinity; for (const r of Object.values(roads)) for (const p of r.pts) best = Math.min(best, (P ? polyDist(P, p.u, p.v) : Math.hypot(p.u - it.u, p.v - it.v)) - r0 - fullHalf[r.class]); return best; };
   const removedAtRing = {};
   for (const [type, list] of Object.entries(items)) {
     items[type] = list.filter(it => {
+      const P = outline(it), r0 = it.clearance + TREE - MARGIN, v0 = P ? Math.min(...P.map(q => q[1])) : it.v - r0, v1 = P ? Math.max(...P.map(q => q[1])) : it.v + r0;
       const p = W.lonLatToTown(it.lon, it.lat), radius = it.clearance + 0.5;
-      const ring = Math.abs(p.x) <= 12 && distanceToRing(it) < 3.55 + radius;
+      const ring = v0 - MARGIN < vRing + RING_FULL[0] && v1 + MARGIN > vRing - RING_FULL[1];
       const mouth = Math.abs(p.z - center.z) <= 7 && Math.abs(p.x - center.x) < 4.4 + radius;
-      const approach = it.v < 24 && roadDist(it.u, it.v).d < radius;
+      const approach = it.v < 24 && (roadDist(it.u, it.v).d < radius || fullDist(it) < MARGIN);
       const conflict = ring || mouth || approach;
       if (conflict) removedAtRing[type] = (removedAtRing[type] || 0) + 1;
       return !conflict;
@@ -3263,7 +3348,7 @@ function plan(W) {
   return { corridor: { LON0, LAT0, uMin: -12, uMax: 12, vMax: 62.2, length: 59.5 }, toLL, toUV, zones, coastV, roads, roadDist, roadHalf, items, lampSites, plots, cellOf, wires: safeWires, removedAtRing, treeCount: trees, forestTrees, seed: SEED };
 }
 
-const PLAN = { plan, SEED };
+const PLAN = { plan, SEED, FOOTPRINT };
 if (typeof module !== 'undefined' && module.exports) module.exports = PLAN;
 else global.SECTION_PLAN = PLAN;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -4138,16 +4223,19 @@ function make(THREE) {
     }`;
   const compile = (foam, cell) => shader => {
     shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain;
+    const WXS = global.WEATHER_FX.surface; shader.uniforms.uWxMap = WXS.uniforms.uWxMap; shader.uniforms.uWxBox = WXS.uniforms.uWxBox; shader.uniforms.uWxK = WXS.uniforms.uWxK;     // WX2: the rain of the place (surface map); WX3: uWxK
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
+      .replace('#include <common>', `#include <common>\n${global.WEATHER_FX.GLSL}\nuniform float uWxK;\nuniform float uTime;\nuniform float uRain;\nvarying vec3 vWP;\nvarying float vShore;\n${RIPPLE2}`)
       .replace('#include <opaque_fragment>', `
         float cph = 1.0 / cosh(vWP.z / 90.0);
         vec2 q = vec2(vWP.x, vWP.z) * cph;
-        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain;
+        vec4 wx = wxAt(vWP);
+        float rg = rippleRings(q, uTime, ${cell.toFixed(2)}, 0.55) * uRain * wx.r;   // WX2: only where it rains
         outgoingLight += vec3(0.50, 0.62, 0.78) * rg * 0.55;
+        outgoingLight += vec3(0.30, 0.37, 0.48) * 0.16 * max(0.0, wx.g - wx.r) * uWxK;   // WX3 (BI05): after the rain the calm wet water is a mirror (wet minus raining)
         diffuseColor.a = max(diffuseColor.a, rg * 0.55);
         ${foam ? `float fz = 0.05 + 0.025 * sin(uTime * 0.9 + vWP.x * cph * 0.6);
         float fo = (1.0 - smoothstep(0.01, fz, vShore)) * (0.75 + 0.25 * sin(uTime * 1.3 + vWP.x * cph));
@@ -4204,6 +4292,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
+    // the plan boxes that the section's CR01 cull and the land cover take (section_plan.js FOOTPRINT) hold the templates they stand for
+    for (const [type, e] of Object.entries(global.SECTION_PLAN.FOOTPRINT)) {
+      const p = K.geometries[type] && K.geometries[type].attributes.position; if (!p) throw new Error(`section: no ${type} template for its plan box`);
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); if (x < e[0] - 1e-6 || x > e[1] + 1e-6 || z < e[2] - 1e-6 || z > e[3] + 1e-6) throw new Error(`section: the ${type} template leaves its plan box (section_plan.js FOOTPRINT)`); }
+    }
     // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
     H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
@@ -4213,6 +4306,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
     const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const groundMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    groundMat.onBeforeCompile = global.WEATHER_FX.snowCover;            // WX3: the ground strips (ice, lava, plots ...) whiten a little where it snows
     const inkW = { value: 0.03 }, T = WATERK.uniforms;
     // canopy sway (one of the three slow motions of the section): the upper part of a tree leans a few centimetres with a slow phase per instance
     const SWAY = `float sw = smoothstep(1.2, 7.0, position.y); transformed.x += sin(uTime * 0.9 + instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.21) * 0.1 * sw; transformed.z += cos(uTime * 0.7 + instanceMatrix[3].z * 0.3) * 0.07 * sw;`;
@@ -4418,14 +4512,16 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       T.counts = { near: ni, far: fi };
     }
   }
+  // the light presets write the explicit bases (ctx.look, WX-G) as well as the lights: the weather multiplies those bases every frame (weather_fx.js)
   function applyLight() {
     const L = S.settings.light, h = ctx.lights.hemi, m = ctx.lights.moon;
     if (L === 'panorama') { h.intensity = light0.hemi * 1.5; m.intensity = light0.moon * 1.5; scene.fog.density = 0; }
     else if (L === 'neutral') { h.intensity = light0.hemi * 2.8; m.intensity = light0.moon * 1.6; scene.fog.density = 0; }   // material and form study (not a daytime state, D9)
     else { h.intensity = light0.hemi; m.intensity = light0.moon; scene.fog.density = light0.fog; }
+    if (ctx.look) { ctx.look.hemi = h.intensity; ctx.look.moon = m.intensity; ctx.look.fog = scene.fog.density; }
   }
   function tick(t, camera) {
-    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = (S.settings.rain ? 1 : 0) * (1 - BEND.get()));   // W8e-c: no ripples on the sphere
+    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = global.WEATHER_FX.live.gains().impact);   // WX2: the switch x (1 - uBend) x w_local; the place's rain is in the shader (wxAt)
     if (!S.root || !S.root.visible) return;
     const d = distance(camera); S.ink.distance = d;
     const mode = S.settings.ink;
@@ -5161,9 +5257,13 @@ function* mergeCr01(W, routes, prep, RK) {
     // moved corner in the middle of a neighbour's edge would open a crack): such a triangle is refanned round its centre with that corner in its outline
     const at = id => (id < nv0 ? vertexOf(st, id) : extra[id - nv0]), xz = id => { const v = at(id); return [v[0], v[2]]; }, final = [];
     const moved = boxGrid([...snapped].map(id => { const p = xz(id); return { id, p, box: [p[0], p[0], p[1], p[1]] }; }));
+    const px = id => (id < nv0 ? P[id * 3] : extra[id - nv0][0]), pz = id => (id < nv0 ? P[id * 3 + 2] : extra[id - nv0][2]);   // (merge-ready speedup: no vertex arrays for the box test)
     for (let t = 0; t < out.length; t += 3) {
-      const ids = [out[t], out[t + 1], out[t + 2]], P = ids.map(xz), box = [Math.min(P[0][0], P[1][0], P[2][0]), Math.max(P[0][0], P[1][0], P[2][0]), Math.min(P[0][1], P[1][1], P[2][1]), Math.max(P[0][1], P[1][1], P[2][1])];
-      const near = snapped.size ? moved.query(box).filter(q => !ids.includes(q.id)) : [];
+      const i0 = out[t], i1 = out[t + 1], i2 = out[t + 2], x0 = px(i0), x1 = px(i1), x2 = px(i2), z0 = pz(i0), z1 = pz(i1), z2 = pz(i2);
+      const box = [Math.min(x0, x1, x2), Math.max(x0, x1, x2), Math.min(z0, z1, z2), Math.max(z0, z1, z2)];
+      if (!snapped.size || !moved.any(box)) { final.push(i0, i1, i2); continue; }                   // no moved corner near it: the triangle stays as it is
+      const ids = [i0, i1, i2], P = ids.map(xz);
+      const near = moved.query(box).filter(q => !ids.includes(q.id));
       const outline = []; let inserted = 0;
       for (let e = 0; e < 3; e++) {
         const a = P[e], b = P[(e + 1) % 3], dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1e-24, on = []; outline.push(ids[e]);
@@ -5212,9 +5312,10 @@ function* mergeCr01(W, routes, prep, RK) {
   // the ring's side bands: the regions a branch owns (its paving, or its verge where its paving is nearer than the ring's). A new corner of the ring on
   // such a region takes the branch's final surface: along the equal-distance line that is the ring's own height again (the branch took it above), and
   // where a narrow branch ends inside the ring's verge (its strip's outer edge) the ring's ditch or verge comes up to that edge instead of a step.
-  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip; for (let t = 0; t < st.index.length; t += 3) {
-    const tri = [0, 1, 2].map(k => { const v = st.index[t + k]; return [st.pos[v * 3], st.pos[v * 3 + 1], st.pos[v * 3 + 2]]; }), box = boxXZ(tri);
-    if (box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box)) branchFinal.push({ tri, box }); } }
+  stats.parts.branches += Date.now() - lap; lap = Date.now(); const branchFinal = []; for (const rt of routes) if (rt !== ring) { const st = rt.strip, SP = st.pos, SI = st.index; for (let t = 0; t < SI.length; t += 3) {
+    const a = SI[t] * 3, b = SI[t + 1] * 3, c = SI[t + 2] * 3, box = [Math.min(SP[a], SP[b], SP[c]), Math.max(SP[a], SP[b], SP[c]), Math.min(SP[a + 2], SP[b + 2], SP[c + 2]), Math.max(SP[a + 2], SP[b + 2], SP[c + 2])];
+    if (!(box[1] >= RB[0] && box[0] <= RB[1] && box[3] >= RB[2] && box[2] <= RB[3] && sideIndex.any(box))) continue;   // (merge-ready speedup: the box from the floats first)
+    branchFinal.push({ tri: [a, b, c].map(k => [SP[k], SP[k + 1], SP[k + 2]]), box }); } }
   const branchFinalIndex = boxGrid(branchFinal), branchY = (x, z) => surfaceY(branchFinalIndex, x, z);
   const pieceIndex = boxGrid(pieces); let ringRemoved = 0;
   const O = rs.clipOffset;
@@ -5365,6 +5466,8 @@ function removeTownPavementDuplicates(routes, W) {
     // carry its raised concrete sides past the ±48 m boundary, leaving blue slabs
     // between the original paving and the ring. Cut both sides down to the actual
     // carriageway; the ring's own continuous sheet supplies the junction surface.
+    // Each cut keeps its polygon (flat x, z): terrain.js takes the same rectangles out of this route's ground
+    // cut, so no ground is removed where the road no longer has a surface (CONNECTOR_TERRAIN_HOLE_FIX_PLAN.md).
     const townEdges = rt.def.segs.map(s => W.roadNetwork.edges.find(e => e.id === s.id)).filter(e => e.class.startsWith('TOWN_'));
     const exits = [...new Set(townEdges.flatMap(e => [e.from, e.to]))].filter(id => {
       const n = W.roadNetwork.nodeById[id], p = W.lonLatToTown(n.lon, n.lat);
@@ -5383,7 +5486,7 @@ function removeTownPavementDuplicates(routes, W) {
           polygon = axis === 'x'
             ? [[along[0], across[0]], [along[1], across[0]], [along[1], across[1]], [along[0], across[1]]]
             : [[across[0], along[0]], [across[1], along[0]], [across[1], along[1]], [across[0], along[1]]];
-        rt.connectorCuts.push({ exit: id, side: direction, ...clipStripOutside(rt.strip, polygon) });
+        rt.connectorCuts.push({ exit: id, side: direction, route: rt.def.id, polygon: polygon.map(q => q.slice()), ...clipStripOutside(rt.strip, polygon) });
       }
     }
     if (!rt.classes.some(c => c === 'TOWN_MAIN' || c === 'TOWN_BRANCH')) continue;
@@ -5629,12 +5732,17 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
     const N = S.night; S.night = null;
     const lampK = N ? N.lamp : (near ? 1 : 0), LAMP = /^road:lampSmall(:glow|:ink)?$/;
     const FAR = /^road:(barrierConcrete|pierCap|pierColumn|pierFooting|pierFoot|pylonTop)(:ink)?$/;       // structures stay visible at the panorama distance, everything small does not
-    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || (SEC.state.settings.rain && S.puddleWeight > 0.001));
+    // WX2: the puddle rings are rain impacts: each spot follows the rain of its own place (weather_fx field, re-read when the weather's stamp changes) times the
+    // impact gain (the rain switch x (1 - uBend) x w_local, applied once); after the rain and in the clear night there are none
+    const WXL = global.WEATHER_FX.live, R0 = S.ripples;
+    if (R0 && R0.stamp !== WXL.stamp()) { const sp = R0.spots, w = R0.w || (R0.w = new Float32Array(sp.length)), o = {}; let any = 0; for (let i = 0; i < sp.length; i++) { w[i] = WXL.field(sp[i].lon, sp[i].lat, o).rain; if (w[i] > 0) any++; } R0.any = any; R0.stamp = WXL.stamp(); }
+    const ripK = R0 && R0.any > 0 ? WXL.gains().impact : 0;
+    for (const m of [...objs.inst, ...objs.glows]) if (!FAR.test(m.name)) m.visible = (LAMP.test(m.name) ? lampK > 0.001 : near) && (!/ripple/.test(m.name) || ripK > 0.001);
     for (const h of objs.hulls) h.visible = g > 0.01 && ((LAMP.test(h.name) ? lampK > 0.001 : near) || FAR.test(h.name));
     for (const l of (objs.lines.near || [])) l.visible = near;
     for (const l of objs.lines.aerial) { l.material.opacity = a; l.visible = a > 0.01; }
     for (const l of objs.lines.bridge) { const o = Math.min(1, g + a); if (l.userData.baseOpacity === undefined) l.userData.baseOpacity = l.material.opacity > 0.95 ? 1 : 0.9; l.material.opacity = Math.min(l.userData.baseOpacity, o); l.visible = o > 0.01; }
-    if (S.ripples && near && SEC.state.settings.rain && S.puddleWeight > 0.001) { const { mesh, mats, spots } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * S.puddleWeight; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
+    if (S.ripples && near && ripK > 0.001) { const { mesh, mats, spots, w } = S.ripples; for (let i = 0; i < spots.length; i++) { const p = (t * 0.6 + spots[i].phase) % 1, sc = (0.02 + p * 0.5) * mats[i].k, M = mats[i]; mM.compose(mP.set(M.x, M.y, M.z), qQ.identity(), mS.set(sc, 1, sc)); mesh.setMatrixAt(i, mM); const v = (1 - p) * 0.3 * ripK * w[i]; mesh.setColorAt(i, tintC.setRGB(v * 0.67, v * 0.85, v * 0.87)); } mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
     if (objs.nav) { const n = S.nav.length; for (let i = 0; i < n; i++) { const v = 0.28 + 0.72 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / NAV_PERIOD + S.nav[i] * 6.283)); objs.nav.setColorAt(i, tintC.setRGB(v, v, v)); } objs.nav.instanceColor.needsUpdate = true; S.navValue = 0; }
     if (!S.bandManual) S.band.set(N ? { opacity: S.band.max * N.band } : { distance: ink.distance });
     S.band.breathe(t);
@@ -5643,7 +5751,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   const api = {
     tick, state: S, job,                 // W8g-a: worldgen.js steps the job ahead of time
     setNight(v) { S.night = v; },                        // W8c: { band, lamp } for the next tick (nightlight.js)
-    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },
+    setPuddleWeight(v) { S.puddleWeight = Math.max(0, Math.min(1, +v || 0)); },   // the wetness at the view (weather_fx); the rings follow the rain of their own spots (tick)
     setLampRipples(spots) { buildRipples(spots); },          // W10c: the ripple spots of the road lamps (streetlights.js), once before the first frame
     setLightBand(v) { S.bandManual = v.distance !== undefined || v.opacity !== undefined; if (v.auto) S.bandManual = false; return S.band.set(v); },
     stats() { return { counts: S.counts, ...S.stats, band: S.band && S.band.stats }; },
@@ -5773,11 +5881,12 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
     m.onBeforeCompile = shader => {
       shader.uniforms.uTime = uniforms.uTime; shader.uniforms.uRain = uniforms.uRain; shader.uniforms.uMoon = uniforms.uMoon; shader.uniforms.uGlint = uniforms.uGlint;
+      const WXS = global.WEATHER_FX.surface; shader.uniforms.uWxMap = WXS.uniforms.uWxMap; shader.uniforms.uWxBox = WXS.uniforms.uWxBox;     // WX2: the rain of the place (surface map)
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aShore;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(position, 1.0)).xyz;\nvShore = aShore;\nvBP = bendPosition(bendWrap(vWP));\nvUp = bendNormal(vWP, vec3(0.0, 1.0, 0.0));\nvEast = bendNormal(vWP, vec3(1.0, 0.0, 0.0));\nvSouth = bendNormal(vWP, vec3(0.0, 0.0, 1.0));');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nuniform vec3 uGlint;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
+        .replace('#include <common>', `#include <common>\n${global.WEATHER_FX.GLSL}\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uMoon;\nuniform vec3 uGlint;\nvarying vec3 vWP;\nvarying float vShore;\nvarying vec3 vBP;\nvarying vec3 vUp;\nvarying vec3 vEast;\nvarying vec3 vSouth;\n${RIPPLE}`)
         .replace('#include <opaque_fragment>', `
           float cph = 1.0 / cosh(vWP.z / 90.0);
           vec2 q = vec2(vWP.x, vWP.z) * cph;
@@ -5785,7 +5894,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
           float sh = vShore + (vn(q * 0.9) * 0.7 + vn(q * 2.6) * 0.3 - 0.5) * 0.05;
           diffuseColor.a *= smoothstep(-0.006, 0.01, sh);
           float cd = length(cameraPosition - vBP);
-          float rg = rippleRings(q, uTime, 0.9, 0.55) * uRain * step(0.0, sh) * (1.0 - smoothstep(18.0, 70.0, cd));   // the rings fade with distance (no bubbles from the air)
+          float rg = rippleRings(q, uTime, 0.9, 0.55) * uRain * wxAt(vWP).r * step(0.0, sh) * (1.0 - smoothstep(18.0, 70.0, cd));   // the rings fade with distance (no bubbles from the air); WX2: only where it rains
           outgoingLight += vec3(0.50, 0.62, 0.78) * rg * 0.55;
           diffuseColor.a = max(diffuseColor.a, rg * 0.55);
           // low swell: slow soft stripes (brightness), and the normal tilted by a slow wave for the glint
@@ -5842,7 +5951,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
 
   function tick(t, camera) {
-    uniforms.uTime.value = t; uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get());     // W8e-c: no ripples in the clear daytime of the sphere
+    uniforms.uTime.value = t; uniforms.uRain.value = global.WEATHER_FX.live.gains().impact;     // WX2: the switch x (1 - uBend) x w_local (none in the clear daytime of the sphere); the place's rain is in the shader (wxAt)
     if (!S.built || !S.root.visible) return;
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial, near = ink.distance < 120;
     objs.coast.material.opacity = a; objs.coast.visible = a > 0.01;
@@ -6052,6 +6161,21 @@ function build(W, H, ctx) {
     // weeds and flowers along the ridges
     for (let e = 0; e < c.outer.length; e++) { if (rnd(s.id * 7 + e, 35) > 0.5) continue; const a = c.outer[e], b = c.outer[(e + 1) % c.outer.length], t = rnd(s.id * 7 + e, 37), ll = llOf(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); put(rnd(s.id * 7 + e, 39) < 0.78 ? 'tuft' : 'flower', ll.lon, ll.lat, c.flatH + SP.ridgeH - 0.02, { s: [1, 0.9 + 0.5 * rnd(s.id, e), 1] }); }
   }
+  // Every thing of a cell keeps its whole plan box (the template's own, ctx.footprint, turned by its yaw and scaled: a rack's or a fallen rack's beam
+  // reaches 3.9 m to one side of its origin) clear of the roads and landmarks by the ground cut's 0.15 m, as the cell's corners keep clear of them: the
+  // box's outline every 0.5 m at most and its centre. (CR01_HOUSE_GRASS_INTRUSION_PLAN.md: a paddy rack on a corner ridge reached 1.5 m onto CR01.)
+  const FP = ctx.footprint, CLEAR = 0.15; if (!FP) throw new Error('landcover build: ctx.footprint (the plan boxes of the templates) is required');
+  const boxClear = it => {
+    const e = FP[it.type]; if (!e) throw new Error(`landcover build: no plan box for ${it.type}`);
+    const sx = it.s[0], sz = it.s[2], c = Math.cos(it.yaw), sn = Math.sin(it.yaw), k = 1 / Math.cos(it.lat * D), x0 = R * it.lon * D, z0 = -R * Math.asinh(Math.tan(it.lat * D));
+    if (!nearAvoid(it.lon, it.lat, Math.hypot(Math.max(-e[0], e[1]) * sx, Math.max(-e[2], e[3]) * sz) + CLEAR)) return true;     // nothing within the box's reach
+    const corners = [[e[0], e[2]], [e[1], e[2]], [e[1], e[3]], [e[0], e[3]]], pts = [[0, 0]];
+    for (let i = 0; i < 4; i++) { const a = corners[i], b = corners[(i + 1) % 4], n = Math.max(1, Math.ceil(Math.hypot((b[0] - a[0]) * sx, (b[1] - a[1]) * sz) / 0.5)); for (let j = 0; j < n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]); }
+    return pts.every(([lx, lz]) => { const wx = lx * sx * c + lz * sz * sn, wz = -lx * sx * sn + lz * sz * c, ll = llOf(x0 + wx * k, z0 + wz * k); return !nearAvoid(ll.lon, ll.lat, CLEAR); });
+  };
+  stats.boxCulled = {};
+  const kept = items.filter(it => { if (boxClear(it)) return true; stats.boxCulled[it.type] = (stats.boxCulled[it.type] || 0) + 1; return false; });
+  items.length = 0; items.push(...kept);
   // The former TR01 gravel/white strip and fence obscured the continuous terrain at the town edge.
   // Keep the empty mesh record until the ground-cover consumers no longer require the field.
   const edge = { pos: [], col: [], idx: [] };
@@ -6402,7 +6526,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (let li = 0; li + 1 < levels.length; li++) for (let a = 0; a < ring; a++) { const i0 = li * (ring + 1) + a, i1 = i0 + 1, i2 = i0 + ring + 1, i3 = i2 + 1; idx.push(i0, i2, i1, i1, i2, i3); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); const nrm = new Float32Array(pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeBoundingSphere();
       const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }); const mesh = new THREE.Mesh(g, mat); mesh.name = 'cover:mist'; mesh.matrixAutoUpdate = false; mesh.renderOrder = 4; root.add(mesh); objs.mist = mesh; }
-    if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, M.groundMat, 'cover:dunes', true); void m; }
+    if (DATA.dunes && DATA.dunes.mesh.idx.length) { const d = DATA.dunes.mesh; for (let i = 0; i < d.idx.length; i += 3) { const a = d.idx[i] * 3, b = d.idx[i + 1] * 3, c = d.idx[i + 2] * 3, ny = (d.pos[b + 2] - d.pos[a + 2]) * (d.pos[c] - d.pos[a]) - (d.pos[b] - d.pos[a]) * (d.pos[c + 2] - d.pos[a + 2]); if (ny < 0) { const tmp = d.idx[i + 1]; d.idx[i + 1] = d.idx[i + 2]; d.idx[i + 2] = tmp; } } const m = stripMesh(d, (() => { const m = M.groundMat.clone(); m.onBeforeCompile = global.WEATHER_FX.duneWet; return m; })(), 'cover:dunes', true); void m; }
     if (DATA.edge && DATA.edge.idx.length) { const e = DATA.edge; for (let i = 0; i < e.idx.length; i += 3) { const a = e.idx[i] * 3, b = e.idx[i + 1] * 3, c = e.idx[i + 2] * 3, ny = (e.pos[b + 2] - e.pos[a + 2]) * (e.pos[c] - e.pos[a]) - (e.pos[b] - e.pos[a]) * (e.pos[c + 2] - e.pos[a + 2]); if (ny < 0) { const tmp = e.idx[i + 1]; e.idx[i + 1] = e.idx[i + 2]; e.idx[i + 2] = tmp; } } stripMesh(e, M.groundMat, 'cover:town-edge'); }
     if (DATA.terrace) { const t = DATA.terrace.tread; for (let i = 0; i < t.idx.length; i += 3) { const a = t.idx[i] * 3, b = t.idx[i + 1] * 3, c = t.idx[i + 2] * 3, ny = (t.pos[b + 2] - t.pos[a + 2]) * (t.pos[c] - t.pos[a]) - (t.pos[b] - t.pos[a]) * (t.pos[c + 2] - t.pos[a + 2]); if (ny < 0) { const tmp = t.idx[i + 1]; t.idx[i + 1] = t.idx[i + 2]; t.idx[i + 2] = tmp; } } stripMesh(DATA.terrace.tread, M.groundMat, 'cover:terrace-treads'); stripMesh(DATA.terrace.wall, M.floraMat, 'cover:terrace-walls', true); }
   }
@@ -6573,7 +6697,7 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
     const avoidIndex = createAvoidIndex(W, avoid);
     const PL = SEC.plan(), corridor = (lon, lat) => { const uv = PL.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
     yield;
-    DATA = build(W, H, { avoid, avoidIndex, corridor });
+    DATA = build(W, H, { avoid, avoidIndex, corridor, footprint: global.SECTION_PLAN.FOOTPRINT });
     yield;
     const reg = W.heightField.features.filter(f => f.id === 'hill-terraces-ameni').map(f => ({ id: f.id, center: [f.lon, f.lat], radiusMeters: f.radiusMeters }));
     DATA.terrace = terraces(W, H, { terraceRegions: reg }); DATA.items.push(...DATA.terrace.items);
@@ -6604,10 +6728,10 @@ LANDCOVER.attach = function (scene, ctx, BEND, TERR, SEC) {
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
   function tick(t, camera) {
-    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = (SEC.state.settings.rain ? 1 : 0) * (1 - BEND.get()); }   // W8e-c: no ripples on the sphere
+    TIMEU.value = t; if (WATERK) { WATERK.uniforms.uTime.value = t; WATERK.uniforms.uRain.value = global.WEATHER_FX.live.gains().impact; }   // WX2: the switch x (1 - uBend) x w_local; the place's rain is in the shader
     if (!S.built || !S.root.visible) return;
     select(camera, false);
-    if (objs.mist) { const dry = 1 - BEND.get(); objs.mist.material.opacity = (0.5 + 0.12 * Math.sin(t * 0.35)) * dry; objs.mist.visible = SEC.state.ink.distance > 8 && dry > 0; }   // W8e-c: the mist belt is weather: none in the daytime of the sphere
+    if (objs.mist) { objs.mist.material.opacity = 0.5 + 0.12 * Math.sin(t * 0.35); objs.mist.visible = SEC.state.ink.distance > 8; }   // the mist belt is weather: weather_fx.js multiplies it by the weather at ameni-dake and by (1 - uBend), none in the daytime of the sphere
     const ink = SEC.state.ink, g = ink.ground, a = ink.aerial; for (const h of objs.hulls) h.visible = g > 0.01 && h.count > 0; for (const l of objs.lines) { l.material.opacity = a; l.visible = a > 0.01; }
     { const LM = objs.lodMaterials, M = SEC.state.materials; if (LM) { LM.hull.opacity = M.hullMat.opacity; LM.treeHull.opacity = M.treeHullMat.opacity; } }     // the copies follow the section's ink weight
   }
@@ -6969,7 +7093,18 @@ function plan(ctx) {
     }
   }
   const byModel = {}; for (const q of lamps) byModel[q.model] = (byModel[q.model] || 0) + 1;
-  return { lamps, removed, mapping, junctions: log, coverage, reflections, ripples, pool: { pos: Float32Array.from(pos), col: Float32Array.from(col), lamp: Float32Array.from(lampIx), index: Uint32Array.from(idx), alleySlot: lamps.length },
+  // WX2: the top of the roads at a flat point (true altitude), the receiving surface of the rain and the snow (weather_fx.js); null away from every road. A bridge deck
+  // within 4.6 m of its axis (the deck its lamps light; under the deck nothing falls); a route's strip within its grid (the ground it replaces: cuttings, fills,
+  // ditches), not inside a tunnel (the hill above is the surface there)
+  const deckLines = lines.filter(l => l.kind === 'bridge'), routeLines = lines.filter(l => l.kind === 'route');
+  const surface = (x, z) => {
+    let y = null;
+    for (const Lb of deckLines) { const q = Lb.project(x, z, 6); if (q && !q.end && Math.abs(q.o) <= 4.6) { const a = deckAlt(Lb.b, q.s); if (y === null || a > y) y = a; } }
+    for (const Lr2 of routeLines) { const q = Lr2.project(x, z, 12); if (!q || q.end || q.o < Lr2.rt.grid[0] || q.o > Lr2.rt.grid[Lr2.rt.grid.length - 1]) continue;
+      if (Lr2.tunnel && q.s > Lr2.tunnel[0] && q.s < Lr2.tunnel[1]) continue; const a = RK.surfS(Lr2.rt, q.s, q.o); if (y === null || a > y) y = a; }
+    return y;
+  };
+  return { surface, lamps, removed, mapping, junctions: log, coverage, reflections, ripples, pool: { pos: Float32Array.from(pos), col: Float32Array.from(col), lamp: Float32Array.from(lampIx), index: Uint32Array.from(idx), alleySlot: lamps.length },
     stats: { lamps: lamps.length, byModel, removed: removed.length, obstacles: OB.count, poolVertices: pos.length / 3, poolTriangles: idx.length / 3, reflections: reflections.length, ripples: ripples.length } };
 }
 
@@ -7041,7 +7176,7 @@ STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
     lens.onBeforeCompile = shader => LC.lodDither(shader); lens.customProgramCacheKey = () => 'bend|lod|sl-lens';
     const N = DATA.lamps.length + 1, winU = { value: Array.from({ length: N }, () => new THREE.Vector2(0, 1)) };
     const poolMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); };
+    poolMat.onBeforeCompile = shader => { shader.uniforms.uLampWin = winU; LC.lodDither(shader, `attribute float aLamp;\nuniform vec2 uLampWin[${N}];`, 'uLampWin[int(aLamp + 0.5)]'); global.WEATHER_FX.poolWet(shader); };   // WX3: brighter on wet ground
     poolMat.customProgramCacheKey = () => 'bend|lod|sl-pool|' + N;
     objs.materials = { body, hull, lens, pool: poolMat, win: winU };
     // per model: the instances in table order (their windows are written by lamp in tick)
@@ -7179,24 +7314,41 @@ global.SPHERE_CAMERA=function(THREE,B,camera){
 })(globalThis);
 
 </script><script>
-// Weather of the planet (W8b, D8 / ST05): a pure, deterministic function of place and time. No THREE, no DOM, no Math.random.
-//   at(lon, lat, t) -> { weights: { rain, after, overcast, clear, snow, fog }, state, category }   (weights sum to 1; state = the heaviest)
+// Weather of the planet (W8b, D8 / ST05; WX1 2026-10-15): a pure, deterministic function of place and time. No THREE, no DOM, no camera, no Math.random.
+//   sample(lon, lat, t) -> { weights: { rain, after, overcast, clear, snow, fog }, state, category, kind, slot, fadeLeft, target }
+//     weights sum to 1; state = the heaviest (a label only: read the weights); fadeLeft = seconds left in a slot cross-fade that changes the weights
+//     (0 otherwise); target = the weights once that fade is over.   at = sample (the W8b name).
+//   effectsAt(lon, lat, t) -> { rain, snow, wetness, drip, mist }: physical effect weights in [0, 1] (EFFECT below). Rain impacts follow rain only; wetness
+//     and drips go on after the rain. Map mode, distance fade and debug switches belong to the presentation (weather_fx.js), applied there once.
+//   wetnessAt(lon, lat, t) (WX3): the wetness the last WET_WINDOW seconds leave behind: max over that window of wetness(tau) x (1 - (t - tau) / WET_WINDOW)^2,
+//     from the time function alone (never from what a page happened to see), so the ground dries slowly after the rain and the same moment is always as wet.
+//     effectsAt reports it as its wetness. Under a lock it is the locked state's own wetness (no memory). samplePlace / wetnessOf take a place object.
+//   t is the weather time (seconds since load, or fixed by setTime in weather_fx.js); particle, ripple and drip animation keep their own clock.
 // Time is cut into slots of SLOT seconds. Each place follows a fixed cyclic pattern of states for its category (the share of rain is the share of R in the
-// pattern, spread evenly so that rain is always the longest state); a smooth value noise on the sphere (spatial scale about 100 m, so the 96 m town is in one
-// weather) shifts the pattern's phase from place to place. At the start of every slot the previous state cross-fades into the new one over FADE seconds
-// (rate 1 / 48 per second, under the 1 / 40 of W8_SPEC 4.3). Slot 0 (the first five minutes after loading) is the category's base state everywhere: rain in the
-// town, so every existing check and review shot sees the town as it always was.
-// Categories (W8_SPEC 4.2, from world.js): ice (snow instead of rain, never rain), desert (rain under 5 %), lava, foggy (forest, coast within 24 m, river
-// valleys within 10 m: rain-after turns into fog), mountain (height >= 18 m, 20 m round ameni-dake: rain turns into snow above the snow line, sleet in a band
-// across it), and the rest (town, farmland, village, ruin, grassland, island: rain, after-rain, overcast, clear; never snow).
+// pattern, spread evenly so that rain is always the longest state). A smooth value noise on the sphere (scale 100 m) gives every place a continuous phase
+// PHASES * noise; inside a phase band a place follows its pattern shifted by that whole phase, and across each phase contour the two neighbouring phases mix
+// their weights over BAND metres or more, so the weather is continuous in space (phase contours are at least 21 m apart: tools/weather_field_check.mjs).
+// The town patch is one weather zone: every place on it takes the weights of one pure phase (the town centre's); over TOWN_BAND metres outside the patch those
+// weights blend linearly into the field's.
+// At the start of every slot the previous state cross-fades into the new one over FADE seconds (rate 1 / 48 per second, under the 1 / 40 of W8_SPEC 4.3).
+// Slot 0 (the first five minutes after loading) is the category's base state everywhere: rain in the town, so every check and review shot sees the town as it
+// always was.
+// Categories (W8_SPEC 4.2, from world.js): ice (snow instead of rain, never rain), desert (rain under 5 %), lava, mountain (height >= 18 m, 20 m round
+// ameni-dake: rain turns into snow above the snow line, sleet in a band across it), foggy (forest, coast within 24 m, river valleys within 10 m: rain-after
+// turns into fog; the fog share eases out over the last FOG_BAND metres inside the coast and river limits and over the last metre of height below the
+// mountains), and the rest (town, farmland, village, ruin, grassland, island: rain, after-rain, overcast, clear; never snow). Region edges of world.js (ice,
+// desert, lava, forest, building zones by the coast) stay hard, so no state leaks across them into a place that does not allow it. The sleet band and the
+// fog share below the mountains follow height (the W8b thresholds), so on steep slopes they are narrow across the ground.
 (function (global) {
 'use strict';
 const SLOT = 300, FADE = 48, SEED = 0x5eed8b, R = 90, D = Math.PI / 180;
+const PHASES = 5, BAND = 15, MIX_MIN = 0.1, FOG_BAND = 10, TOWN_BAND = 15, CACHE = 4096;   // phases per unit of noise; the phase mix width (m) and its least
+// half-width in phase units; the fog share's ramp inside the coast and river limits (m); the town's blend ring (m); places kept in the cache
 const STATES = ['rain', 'after', 'overcast', 'clear', 'snow', 'fog'];
 // patterns: one letter per slot; R rain, A after-rain, O overcast, C clear, S snow, F fog
 const PATTERN = {
   default:  'RARORRCRARRORCRRARCR',             // 12 R of 20 = 60 % (any 12 or more slots in a row: >= 54 %)
-  foggy:    'RFRORRCRFRRARCRRFRAR',             // 12 R, 3 F, 2 A, 2 C, 1 O (R 60 %)
+  foggy:    'RFRORRCRFRRARCRRFRAR',             // 12 R, 3 F, 2 A, 2 C, 1 O (R 60 %); R in the same slots as default, so the two mix without a rain jump
   mountain: 'RARORRCRARRORCRRARCR',             // as default; R above the snow line becomes S
   lava:     'RARORRCRARRORCRRARCR',
   desert:   'CCOCCACCOCCCRCCOCCACCCOCC',        // 1 R of 25 = 4 %
@@ -7204,6 +7356,18 @@ const PATTERN = {
 };
 const LETTER = { R: 'rain', A: 'after', O: 'overcast', C: 'clear', S: 'snow', F: 'fog' };
 const BASE = { default: 'rain', foggy: 'rain', mountain: 'rain', lava: 'rain', desert: 'clear', ice: 'snow' };
+// effect weights of each state (WX1 start values for WX2): rain = rain lines and impacts; snow = snowflakes; wetness = wet surfaces (puddles, reflections:
+// weather_fx PUDDLE); drip = eaves and leaf tips; mist = weather mist near the ground (weather_fx FOG_ADD / 0.03), never steam
+const EFFECT = {
+  rain:     { rain: 1, snow: 0, wetness: 1,   drip: 1,   mist: 0 },
+  after:    { rain: 0, snow: 0, wetness: 1,   drip: 1,   mist: 0.2 },
+  overcast: { rain: 0, snow: 0, wetness: 0.6, drip: 0,   mist: 0 },
+  clear:    { rain: 0, snow: 0, wetness: 0,   drip: 0,   mist: 0 },
+  snow:     { rain: 0, snow: 1, wetness: 0,   drip: 0,   mist: 0.13 },
+  fog:      { rain: 0, snow: 0, wetness: 0.6, drip: 0.5, mist: 1 },
+};
+const EFFECTS = ['rain', 'snow', 'wetness', 'drip', 'mist'];
+const WET_WINDOW = 900;                                  // seconds a wet spell keeps the ground wet; drying (1 - age / WET_WINDOW)^2: half after 264 s, dry at 900 s
 const hash = (i, j, k, s) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 2147483647) ^ Math.imul(s, 1274126177); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
 function vnoise3(x, y, z, s) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), fx = x - xi, fy = y - yi, fz = z - zi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
@@ -7211,127 +7375,458 @@ function vnoise3(x, y, z, s) {
   return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v), L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w);
 }
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const wrapLon = lon => { if (lon <= 180 && lon > -180) return lon; const l = ((lon + 180) % 360 + 360) % 360 - 180; return l === -180 ? 180 : l; };
+const mod = (i, n) => ((i % n) + n) % n;
+const noise = (lon, lat) => { const cl = Math.cos(lat * D); return vnoise3(R * cl * Math.sin(lon * D) / 100, R * cl * Math.cos(lon * D) / 100, R * Math.sin(lat * D) / 100, SEED); };
+// the point h metres from (lon, lat) along the bearing brg (degrees, 0 north, 90 east)
+function offset(lon, lat, brg, h) {
+  const a = h / R, p = lat * D, b = brg * D, sp = Math.max(-1, Math.min(1, Math.sin(p) * Math.cos(a) + Math.cos(p) * Math.sin(a) * Math.cos(b)));
+  return [wrapLon(lon + Math.atan2(Math.sin(b) * Math.sin(a) * Math.cos(p), Math.cos(a) - Math.sin(p) * sp) / D), Math.asin(sp) / D];
+}
+// weights -> effect weights (EFFECT); also for weights a presentation has interpolated from a grid of samples
+function effectsOf(w) { const e = {}; for (const k of EFFECTS) { let v = 0; for (const s of STATES) if (w[s]) v += w[s] * EFFECT[s][k]; e[k] = Math.max(0, Math.min(1, v)); } return e; }
 function make(W) {
+  const PEAK = { lon: -25, lat: 56 }, phaseAt = (lon, lat) => PHASES * noise(lon, lat);
+  // ---- the continuous field. The phase mix: phases lo and lo + 1, weight b on lo + 1. Round the nearest contour (an integer phase m) the two mix over BAND
+  // metres, measured with the phase gradient G (central differences 0.25 m apart), and over at least +-MIX_MIN of phase where G is small (wider than BAND,
+  // and steady where G varies near flat spots); where two contours are closer than BAND the mix spans the whole gap between them (still continuous)
+  function field(lon, lat) {
+    const ph = phaseAt(lon, lat), e = 0.25, E1 = offset(lon, lat, 90, e), E0 = offset(lon, lat, 270, e), N1 = offset(lon, lat, 0, e), N0 = offset(lon, lat, 180, e);
+    const G = Math.hypot(phaseAt(E1[0], E1[1]) - phaseAt(E0[0], E0[1]), phaseAt(N1[0], N1[1]) - phaseAt(N0[0], N0[1])) / (2 * e);
+    const m = Math.round(ph), a = Math.min(0.5, Math.max(MIX_MIN, BAND / 2 * G));
+    return { phase: ph, grad: G, lo: m - 1, b: smooth(-a, a, ph - m) };
+  }
+  // the town zone: one place with the pure phase of the town centre; places within TOWN_BAND of the patch blend towards it (townK = 0 on the patch, 1 outside)
+  const c = W.townToLonLat(0, 0), PH_TOWN = phaseAt(c.lon, c.lat);
+  const TOWN = Object.freeze({ cat: 'default', kind: 'town', snowFrac: 0, fog: 0, pat: PATTERN.default, phase: PH_TOWN, grad: 0, lo: Math.floor(PH_TOWN), b: 0, townK: 1 });
+  // ---- the place's landform (world.js regions and height): category, snow fraction (mountains: 0 below the snow line, 1 above, sleet in between) and the
+  // fog share of foggy places (1 in forests, eased out over the last FOG_BAND metres of the coast and river limits and over the last metre below the mountains)
+  function landform(lon, lat) {
+    const reg = W.regionAt(lon, lat), kind = reg.kind;
+    if (kind === 'ice-north' || kind === 'ice-south') return { cat: 'ice', kind, snowFrac: 0, fog: 0 };
+    if (kind === 'desert' || kind === 'lava') return { cat: kind, kind, snowFrac: 0, fog: 0 };
+    if (kind === 'town') return { cat: 'default', kind, snowFrac: 0, fog: 0 };
+    const h = W.height(lon, lat), line = W.arcDistance({ lon, lat }, PEAK) < 30 ? 20 : 18;
+    if (h >= line - 1.5) return { cat: 'mountain', kind, snowFrac: smooth(line - 0.8, line + 0.8, h), fog: 0 };   // sleet band: +-0.8 m of height (W8b; under 1 m across on the steepest slopes)
+    let fog = Math.max(kind === 'forest' ? 1 : 0, reg.zone !== 'building' ? smooth(24, 24 - FOG_BAND, W.coastDistance(lon, lat)) : 0, smooth(10, 10 - FOG_BAND, W.riverCrossing(lon, lat)));
+    if (fog > 0) fog *= 1 - smooth(line - 2.5, line - 1.5, h);
+    return { cat: fog > 0 ? 'foggy' : 'default', kind, snowFrac: 0, fog };
+  }
+  // exact coordinates (longitude wrapped to (-180, 180]), so the result never depends on which query came first; the cache only saves work
   const cache = new Map();
-  // the place: category, the phase of its pattern, the snow fraction (mountains: 0 below the snow line, 1 above, sleet in between)
   function place(lon, lat) {
-    const key = Math.round(lon * 20) + ',' + Math.round(lat * 20); let p = cache.get(key); if (p) return p;
-    const reg = W.regionAt(lon, lat), h = W.height(lon, lat);
-    let cat = 'default';
-    if (reg.kind === 'ice-north' || reg.kind === 'ice-south') cat = 'ice';
-    else if (reg.kind === 'desert') cat = 'desert';
-    else if (reg.kind === 'lava') cat = 'lava';
-    else if (reg.kind === 'town') cat = 'default';
-    else { const peak = W.arcDistance({ lon, lat }, { lon: -25, lat: 56 }) < 30, line = peak ? 20 : 18;
-      if (h >= line - 1.5) cat = 'mountain';
-      else if (reg.kind === 'forest' || (W.coastDistance(lon, lat) <= 24 && reg.zone !== 'building') || W.riverCrossing(lon, lat) <= 10) cat = 'foggy'; }
-    let snowFrac = 0;
-    if (cat === 'mountain') { const peak = W.arcDistance({ lon, lat }, { lon: -25, lat: 56 }) < 30, line = peak ? 20 : 18; snowFrac = smooth(line - 0.8, line + 0.8, h); }   // sleet band: +-0.8 m of height (about 10 m across on the usual 8-16 % slopes)
-    const cl = Math.cos(lat * D), sx = R * cl * Math.sin(lon * D) / 100, sy = R * cl * Math.cos(lon * D) / 100, sz = R * Math.sin(lat * D) / 100;
-    const pat = PATTERN[cat], phase = Math.floor(vnoise3(sx * 1.0, sy * 1.0, sz * 1.0, SEED) * pat.length * 0.999);
-    p = { cat, pat, phase, snowFrac, kind: reg.kind }; if (cache.size > 20000) cache.clear(); cache.set(key, p); return p;
+    lon = wrapLon(+lon); lat = Math.max(-90, Math.min(90, +lat));
+    const key = lon + ',' + lat; let p = cache.get(key); if (p) return p;
+    const lf = landform(lon, lat), f = field(lon, lat);
+    p = Object.freeze({ ...lf, pat: PATTERN[lf.cat], phase: f.phase, grad: f.grad, lo: f.lo, b: f.b, townK: smooth(0, TOWN_BAND, W.townPatchDistance(lon, lat)) });
+    if (cache.size >= CACHE) cache.clear(); cache.set(key, p); return p;
   }
-  const stateOf = (p, slot) => { if (slot <= 0) return BASE[p.cat]; const s = LETTER[p.pat[(slot - 1 + p.phase) % p.pat.length]]; return s; };
-  // a state at a place as weights (rain on a mountain splits into rain and snow by the snow fraction)
-  const asWeights = (p, s, k, out) => { if (s === 'rain' && p.snowFrac > 0) { out.rain += k * (1 - p.snowFrac); out.snow += k * p.snowFrac; } else out[s] += k; };
-  let locked = null;
-  // nearest allowed state for a locked state at a place (lock('rain') on the ice gives snow; fog only in foggy places; never snow in the town)
-  function allowed(p, s) {
-    if (p.cat === 'ice') return s === 'rain' || s === 'snow' ? 'snow' : 'clear';
-    if (s === 'snow' && p.cat !== 'mountain') return 'rain';
-    if (s === 'fog' && p.cat !== 'foggy') return 'after';
-    return s;
+  // a state at a place, moved to the nearest allowed one (W8_SPEC 4.2, also the lock fallback): on the ice rain is snow and the rest clear; on mountains rain
+  // and snow are one precipitation split by the snow fraction; snow elsewhere is rain (never in the town); fog only where the place is foggy, else after-rain
+  function addState(p, s, k, w) {
+    if (!(k > 0)) return;
+    if (p.cat === 'ice') s = s === 'rain' || s === 'snow' ? 'snow' : 'clear';
+    else if (s === 'rain' || s === 'snow') { if (p.cat === 'mountain' && p.snowFrac > 0) { w.rain += k * (1 - p.snowFrac); w.snow += k * p.snowFrac; return; } s = 'rain'; }
+    else if (s === 'fog' && !(p.fog > 0)) s = 'after';
+    w[s] += k;
   }
-  function at(lon, lat, t) {
-    const p = place(lon, lat), w = { rain: 0, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 };
-    if (locked) { asWeights(p, allowed(p, locked), 1, w); }
-    else {
-      const tt = Math.max(0, t), slot = Math.floor(tt / SLOT), into = tt - slot * SLOT, cur = stateOf(p, slot);
-      if (slot > 0 && into < FADE) { const prev = stateOf(p, slot - 1), k = into / FADE; asWeights(p, prev, 1 - k, w); asWeights(p, cur, k, w); }
-      else asWeights(p, cur, 1, w);
-    }
+  // one slot of the place's pattern shifted by phase j; the foggy pattern mixes with the default one by the fog share
+  function addSlot(p, j, slot, k, w) {
+    if (!(k > 0)) return;
+    if (slot <= 0) return addState(p, BASE[p.cat], k, w);
+    const i = slot - 1 + j;
+    if (p.cat === 'foggy' && p.fog < 1) { addState(p, LETTER[PATTERN.foggy[mod(i, PATTERN.foggy.length)]], k * p.fog, w); addState(p, LETTER[PATTERN.default[mod(i, PATTERN.default.length)]], k * (1 - p.fog), w); }
+    else addState(p, LETTER[p.pat[mod(i, p.pat.length)]], k, w);
+  }
+  const zero = () => ({ rain: 0, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 });
+  const slotWeights = (p, slot) => { const w = zero(); addSlot(p, p.lo, slot, 1 - p.b, w); addSlot(p, p.lo + 1, slot, p.b, w); return w; };
+  const normalise = w => { let sum = 0; for (const s of STATES) sum += w[s]; for (const s of STATES) w[s] /= sum; return w; };
+  let locked = null, lockVersion = 0;
+  // the weights of one place at time t, and the weights once the current fade is over
+  function own(p, slot, into) {
+    if (locked) { const w = zero(); if (locked === 'fog') { addState(p, 'fog', p.fog, w); addState(p, 'after', 1 - p.fog, w); } else addState(p, locked, 1, w); return { w, target: w, fading: false }; }
+    const target = slotWeights(p, slot); if (!(slot > 0 && into < FADE)) return { w: target, target, fading: false };
+    const prev = slotWeights(p, slot - 1), k = into / FADE, w = zero(); for (const s of STATES) w[s] = prev[s] * (1 - k) + target[s] * k;
+    return { w, target, fading: STATES.some(s => prev[s] !== target[s]) };
+  }
+  // the weights of a place object from place() (WX2: a presentation keeps the places of its lattice and asks for their weights each update; same result as sample)
+  function samplePlace(p, t) {
+    const time = Math.max(0, +t || 0), slot = Math.floor(time / SLOT), into = time - slot * SLOT;
+    let q = own(p.townK < 1 ? TOWN : p, slot, into);
+    if (p.townK > 0 && p.townK < 1) { const o = own(p, slot, into), k = p.townK, w = zero(), target = zero(); for (const s of STATES) { w[s] = q.w[s] * (1 - k) + o.w[s] * k; target[s] = q.target[s] * (1 - k) + o.target[s] * k; } q = { w, target, fading: q.fading || o.fading }; }
+    const w = normalise({ ...q.w }), target = normalise({ ...q.target });
     let state = 'rain', best = -1; for (const s of STATES) if (w[s] > best) { best = w[s]; state = s; }
-    return { weights: w, state, category: p.cat };
+    return { weights: w, state, category: p.cat, kind: p.kind, slot, fadeLeft: q.fading ? FADE - into : 0, target };
   }
-  return { at, place, lock(s) { locked = s && STATES.includes(s) ? s : null; return locked; }, locked: () => locked };
+  const sample = (lon, lat, t) => samplePlace(place(lon, lat), t);
+  // WX3: the wetness memory of a place. Within a slot the weights are constant after the fade and linear during it, and the drying factor grows with tau, so the
+  // maximum over the window is taken at t, at every slot start (the end of the previous slot's constant part) and at every fade end inside the window
+  const wetOf = w => { let v = 0; for (const s of STATES) if (w[s]) v += w[s] * EFFECT[s].wetness; return v; };
+  function wetnessOf(p, t) {
+    const time = Math.max(0, +t || 0); let best = wetOf(samplePlace(p, time).weights); if (locked) return best;
+    const t0 = Math.max(0, time - WET_WINDOW);
+    for (let k = Math.floor(time / SLOT); k >= 0 && (k + 1) * SLOT > t0; k--) for (const tau of [k * SLOT, k * SLOT + FADE]) {
+      if (tau >= time || tau < t0) continue; const a = 1 - (time - tau) / WET_WINDOW, v = wetOf(samplePlace(p, tau).weights) * a * a; if (v > best) best = v; }
+    return Math.min(1, best);
+  }
+  return {
+    at: sample, sample, samplePlace, place, wetnessOf,
+    wetnessAt: (lon, lat, t) => wetnessOf(place(lon, lat), t),
+    effectsAt: (lon, lat, t) => { const p = place(lon, lat), e = effectsOf(samplePlace(p, t).weights); e.wetness = Math.max(e.wetness, wetnessOf(p, t)); return e; },
+    lock(s) { locked = s && STATES.includes(s) ? s : null; lockVersion++; return locked; }, locked: () => locked, lockVersion: () => lockVersion,
+    clearCache() { cache.clear(); }, cacheSize: () => cache.size,
+  };
 }
 // distance blend: 1 near (camera height h <= 40 m), 0 at the panorama (h >= 120 m)
 const wLocal = h => 1 - smooth(40, 120, h);
-const WEATHER = { SLOT, FADE, SEED, STATES, PATTERN, make, wLocal, smooth };
+const WEATHER = { SLOT, FADE, SEED, PHASES, BAND, MIX_MIN, FOG_BAND, TOWN_BAND, WET_WINDOW, STATES, PATTERN, EFFECT, EFFECTS, make, effectsOf, wLocal, smooth };
 if (typeof module !== 'undefined' && module.exports) module.exports = WEATHER;
 else global.WEATHER = WEATHER;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
-// What the weather looks like (W8b, ST05), driven by weather.js at the camera's target. Only existing means: the rain lines, the puddle ripples, the two lights,
-// the exponential fog, and one new particle layer for snow. Every effect is a multiplier or an addition that is exactly 1 / 0 for rain, so the town under
-// rain (the default, and weather.lock('rain')) renders as it always did. Effects fade with the camera's height above the ground: w_local(h) = 1 - smoothstep(40, 120, h);
-// at the panorama (h >= 120 m) every weather looks the same (the clear moonlit night of the panorama belongs to the light presets, W8c).
-//   rain      the existing rain, ripples, drips (unchanged)
-//   after     no rain lines; ripples stay (puddles brightest), a thin ground mist (fog density +), drips go on
+// What the weather looks like (W8b, ST05; WX2 2026-10-16), driven by weather.js. One source of truth (weather.js), sampled where each effect is:
+//   the view      the weights at the camera's target drive the sky light, the moon and the fog (the whole picture: these stay a view-level look)
+//   the field     field(lon, lat) gives the effect weights { rain, snow, wetness, drip, mist } anywhere, bilinear over a lattice of NODE degrees (1.57 m, the
+//                 terrain's lattice) whose nodes keep their place() object and are re-evaluated every REFRESH weather seconds or when the lock changes; across a
+//                 hard region edge (the four nodes of a cell in different categories) the nearest node of a lattice FINE times finer is taken (0.39 m), so no
+//                 forbidden state leaks over it by more than that
+//   the map       the surface map: a MAP.N x MAP.N texture of the field on a lattice MAP.STEP degrees apart round the target (R rain impacts, G wetness, B snow,
+//                 A weather mist), for the shaders of the water surfaces (sea, paddies: WEATHER_FX.surface)
+//   particles     the rain lines (scene.js) and the snow (here) are thinned per particle by the field at the particle (a particle shows when its own hash is below
+//                 the local weight) and fall onto the receiving surface below them (surfaceY: the town's ground, the rendered terrain, the sea, road decks, the
+//                 landmarks' roofs and grounds)
+//   effects       registered weather effects of buildings and landmarks (drips, window runs, rain rings, snow mist) and the mist belt of ameni-dake: their
+//                 coefficient comes from the field at their place (register / apply)
+//   WX3          the wetness memory of weather.js (the ground dries slowly after the rain) in the field and the map; surface responses in the shaders (snowCover:
+//                 a thin whitening of the ground where it snows, duneWet: dark wet patches on the dunes that shrink as they dry, poolWet: lamp pools and puddle
+//                 reflections brighter on wet ground, the paddies' mirror after the rain in water.js); local pieces round the target (leaf drips under the
+//                 forest's trees, low ground mist in foggy places, snow mist where it snows, thin steam where rain falls on the lava field, the fumaroles of
+//                 BI08 on ameni-dake's north slope: not weather, always on the flat map, clearer on clear nights)
+// The map mode is applied once, at the end: dry = 1 - uBend multiplies every weather effect (the sphere is a clear day at every distance, D8 / D9 revised). With the
+// camera's height above the ground, w_local(h) = 1 - smoothstep(40, 120, h): looks (lights, fog, mist) blend towards the rain-night look, particles, rain impacts and
+// drips fade out (the rain lines and drips with the camera distance, (110 - d) / 60, as the rain always did); at the panorama (h >= 120 m) every weather looks the same.
+// The lights and the fog have explicit bases (ctx.look: written by the light presets of section.js, the map transition and the walk; WX-G): every frame the weather
+// writes base x multiplier and base fog + added fog, never reading back what someone else might have changed.
+//   rain      rain lines, rain impacts (ripples), drips, wet ground (unchanged look in the town)
+//   after     no rain lines and no impacts; wet ground and drips go on, a thin ground mist (fog density +)
 //   overcast  no rain; moon 0.55, sky light 0.75
-//   clear     no rain, ripples stop; moon 1.25, sky light 1.1
-//   snow      fine snow falling (slower, larger, sparser than rain), sky light 1.1 bluish
+//   clear     no rain, no impacts, no drips; moon 1.25, sky light 1.1
+//   snow      fine snow falling onto the ground below it, sky light 1.1
 //   fog       grey-violet fog (density + 0.03), no rain
 // The weather's fog never hides the view target (docs/world/GRAY_VIEW_FIX_PLAN.md): at the camera-target distance d the whole fog keeps a transmittance of at least
 // FOG_SEE, exp(-(density * d)^2) >= FOG_SEE, so the added density is at most sqrt(-ln FOG_SEE) / d - base (never below 0: the base fog of the rain night stays).
-// Close up the fog is as thick as before; from further away it thins with the distance instead of turning the whole picture into fog colour.
 (function (global) {
 'use strict';
 const MULT = { rain: [1, 1], after: [1.05, 1], overcast: [0.75, 0.55], clear: [1.1, 1.25], snow: [1.1, 1], fog: [0.9, 0.8] };          // [sky light, moon]
 const RAIN = { rain: 1, after: 0, overcast: 0, clear: 0, snow: 0, fog: 0 }, PUDDLE = { rain: 1, after: 1, overcast: 0.6, clear: 0, snow: 0, fog: 0.6 };
 const FOG_ADD = { rain: 0, after: 0.006, overcast: 0, clear: 0, snow: 0.004, fog: 0.03 };
 const FOG_SEE = 0.2, FOG_DEPTH = Math.sqrt(-Math.log(FOG_SEE));   // optical depth (density * d) at which the view target is FOG_SEE visible
+const R = 90, D = Math.PI / 180, BASE = 1.6, TOWN_HALF = 48;
+const NODE = 1, FINE = 4, REFRESH = 0.5, NODES_MAX = 60000;       // field lattice (degrees), its subdivision at hard edges, weather seconds between node updates (<= 1.1 %
+// weight change), node cache cap
+const MAP = { N: 64, STEP: 2, PER_FRAME: 256, REFRESH: 2 };       // surface map: texels, degrees between texels (about 100 m each way at the equator), texels filled per frame
+// (a fixed count, not a time budget, so a replayed frame sequence fills the same texels in the same frames), weather seconds between two time refreshes (<= 4.2 %)
+const SNOW = { N: 900, BOX: 40, H: 8.9, LIFT: 0.1, SIZE: 0.09, OPACITY: 0.85 };   // flakes, box width, column height above the receiving surface + LIFT, size
+const LINE_FADE = d => Math.max(0, Math.min(1, (110 - d) / 60));    // the rain lines' distance fade (scene.js), shared by the drips
+const hash = (a, b) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+const llOf = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D });
+// GLSL for the water shaders: the weather at a flat world position (vWP before bend.js moves it): x rain impacts, y wetness, z snow, w mist; outside the map the edge texel
+const GLSL = `
+uniform sampler2D uWxMap; uniform vec4 uWxBox;
+vec4 wxAt(vec3 wp) {
+  float lon = degrees(wp.x / 90.0), lat = degrees(atan(sinh(-wp.z / 90.0)));
+  float dl = mod(lon - uWxBox.x + 180.0, 360.0) - 180.0;
+  return texture2D(uWxMap, (vec2(dl, lat - uWxBox.y) * uWxBox.z + 0.5) / uWxBox.w);
+}`;
+const EMPTY = Object.freeze({ rain: 0, snow: 0, wetness: 0, drip: 0, mist: 0 });
+const WET_REFRESH = 5;                                              // weather seconds between two evaluations of a node's wetness memory (drying <= 2.2 % per 10 s)
+const GLSL_NOISE = `
+float wxHash(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
+float wxNoise(vec2 p) { vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f); return mix(mix(wxHash(i), wxHash(i + vec2(1.0, 0.0)), u.x), mix(wxHash(i + vec2(0.0, 1.0)), wxHash(i + vec2(1.0, 1.0)), u.x), u.y); }`;
+// WX3 surface responses: shader patches (onBeforeCompile; named functions, so bend.js's program key stays one per patch). The flat position before bend.js moves it is
+// captured in vWxP; uWxK = w_local x (1 - uBend): every response is 0 at the panorama and on the sphere, and exactly nothing where the map says 0
+function wxPrelude(shader) {
+  const U = global.WEATHER_FX.surface.uniforms; shader.uniforms.uWxMap = U.uWxMap; shader.uniforms.uWxBox = U.uWxBox; shader.uniforms.uWxK = U.uWxK;
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWxP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWxP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWxP;\nuniform float uWxK;\n' + GLSL + GLSL_NOISE);
+}
+// snowCover: where it snows (the map's snow is 0 everywhere snow is not allowed) the ground whitens by up to SNOW_COVER (the permanent snow line of terrain.js stays)
+// (each response is inside `if (uWxK > 0.0)`: one branch for the whole draw, so the sphere and the panorama, where the planet's ground fills the screen, skip the lookup)
+function snowCover(shader) { wxPrelude(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tif (uWxK > 0.0) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.94, 0.98), 0.28 * wxAt(vWxP).b * uWxK);'); }
+// duneWet (BI04): after the rare rain the sand shows dark wet patches; the patches are the noise above a threshold that rises as the wetness memory falls
+function duneWet(shader) { wxPrelude(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+	if (uWxK > 0.0) { float w = wxAt(vWxP).g * uWxK; float n = wxNoise(vWxP.xz * 0.55) * 0.7 + wxNoise(vWxP.xz * 1.9) * 0.3; float th = 1.0 - 0.75 * w; diffuseColor.rgb *= 1.0 - 0.3 * smoothstep(th, th + 0.12, n) * step(0.001, w); }`); }
+// poolWet: the light pools and the lamps' reflections in puddles follow the wetness: full on wet ground (rain, after it), POOL_DRY on dry ground; the look rule (1 at
+// the panorama and on the sphere)
+function poolWet(shader) { wxPrelude(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', '\tif (uWxK > 0.0) outgoingLight *= mix(1.0, mix(0.6, 1.0, wxAt(vWxP).g), uWxK);\n#include <opaque_fragment>'); }
+
 function attach(THREE, scene, ctx) {
-  const W = global.WEATHER.make(global.WORLD), st = { t0: null, offset: 0, fixed: null, last: null, snow: null }, fogW = ctx.bend.weatherFogUniform;
-  const own = { hemi: null, moon: null, fog: null, fogColor: null }, base = { hemi: 0, moon: 0, fog: 0, fogColor: new THREE.Color() }, fogTint = new THREE.Color('#5a5870');
-  // the lights and the fog are also written by the light presets (section.js) and the transition: whatever changed them since our last write is the new base
-  const sync = () => { const h = ctx.hemi.intensity, m = ctx.moon.intensity, f = scene.fog.density; if (h !== own.hemi) base.hemi = h; if (m !== own.moon) base.moon = m; if (f !== own.fog) base.fog = f;  };
-  // snow: 900 flakes in a box round the target, own random stream (the page's Math.random is never touched)
-  function snowLayer() {
-    if (st.snow) return st.snow; let s = 0x51f0; const rnd = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-    const N = 900, pos = new Float32Array(N * 3), sp = new Float32Array(N); for (let i = 0; i < N; i++) { pos[i * 3] = (rnd() - 0.5) * 40; pos[i * 3 + 1] = rnd() * 9; pos[i * 3 + 2] = (rnd() - 0.5) * 40; sp[i] = 0.5 + rnd() * 0.4; }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const m = new THREE.PointsMaterial({ color: '#eef4fb', size: 0.09, transparent: true, opacity: 0, depthWrite: false }); m.userData.noWrap = true;   // laid out round the target in the display frame (W8e-b)
-    const o = new THREE.Points(g, m); o.frustumCulled = false; o.visible = false; scene.add(o); return (st.snow = { o, m, pos, sp, N, rnd });
+  const WX = global.WEATHER, W = WX.make(global.WORLD), fogW = ctx.bend.weatherFogUniform, look = ctx.look;
+  const st = { offset: 0, fixed: null, last: null, view: null, snow: null, stamp: 0, bucket: -1, lv: -1, wetStamp: 0, wetBucket: -1, time: 0, gains: { impact: 1, wet: 1, dry: 1, wl: 1, line: 1 } };
+  const fogTint = new THREE.Color('#5a5870'), fogMixed = new THREE.Color();
+  const priv = fn => (global.TERRAIN && global.TERRAIN.withPrivateRandom ? global.TERRAIN.withPrivateRandom(fn) : fn());   // three.js ids draw from Math.random: the town's rain keeps its stream
+
+  // ---- the field: lattice nodes (place objects kept here, weights re-evaluated per stamp)
+  const nodes = new Map();
+  // node (i, j) of the lattice of step NODE / f (f = 1 or FINE); i is the wrapped longitude index
+  function node(i, j, f = 1) {
+    const key = f === 1 ? i * 512 + j + 256 : -1 - (i * 2048 + j + 1024); let n = nodes.get(key);
+    if (!n) { if (nodes.size >= NODES_MAX) nodes.clear(); const p = W.place(i * NODE / f, j * NODE / f); n = { p, s: -1, e: { rain: 0, snow: 0, wetness: 0, drip: 0, mist: 0 }, cat: p.cat }; nodes.set(key, n); }
+    if (n.s !== st.stamp) { const w = W.samplePlace(n.p, st.time).weights, e = n.e; e.rain = e.snow = e.wetness = e.drip = e.mist = 0;
+      for (const s of WX.STATES) { const k = w[s]; if (!k) continue; const E = WX.EFFECT[s]; e.rain += k * E.rain; e.snow += k * E.snow; e.wetness += k * E.wetness; e.drip += k * E.drip; e.mist += k * E.mist; }
+      if (n.ws !== st.wetStamp) { n.wm = W.wetnessOf(n.p, st.time); n.ws = st.wetStamp; } if (n.wm > e.wetness) e.wetness = n.wm;      // WX3: the ground dries slowly
+      n.s = st.stamp; }
+    return n;
   }
+  const lonIndex = i => ((i % (360 / NODE)) + 360 / NODE) % (360 / NODE);
+  // the effect weights at (lon, lat) now, into out (no allocation)
+  function field(lon, lat, out = {}) {
+    const l = ((lon % 360) + 360) % 360 / NODE, la = Math.max(-90 / NODE, Math.min(90 / NODE - 1e-9, lat / NODE)), i0 = Math.floor(l), j0 = Math.floor(la), fx = l - i0, fy = la - j0;
+    const a = node(lonIndex(i0), j0), b = node(lonIndex(i0 + 1), j0), c = node(lonIndex(i0), j0 + 1), d = node(lonIndex(i0 + 1), j0 + 1);
+    if (a.cat === b.cat && a.cat === c.cat && a.cat === d.cat) {
+      const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+      for (const k of WX.EFFECTS) out[k] = a.e[k] * w00 + b.e[k] * w10 + c.e[k] * w01 + d.e[k] * w11;
+    } else { const fl = Math.round(l * FINE), fj = Math.max(-90 * FINE / NODE, Math.min(90 * FINE / NODE, Math.round(la * FINE))), n = node(((fl % (360 * FINE / NODE)) + 360 * FINE / NODE) % (360 * FINE / NODE), fj, FINE); for (const k of WX.EFFECTS) out[k] = n.e[k]; }
+    return out;
+  }
+  const fieldXZ = (x, z, out) => { const ll = llOf(x, z); return field(ll.lon, ll.lat, out); };
+
+  // ---- the receiving surface below a flat point (flat y): the town's ground (LEVELS.plinth: streets, pavements and plots sit 0-0.19 above it), else the highest of the
+  // rendered terrain, the sea, the roads and decks (streetlights.js's line table) and the landmarks' own meshes (roofs, eaves, grounds: a 0.5 m height raster)
+  const surf = { terrain: null, roads: null, landmarks: [] };
+  function surfaceY(x, z) {
+    if (Math.abs(x) <= TOWN_HALF && Math.abs(z) <= TOWN_HALF) return 0;
+    const ll = llOf(x, z), k = 1 / Math.cos(ll.lat * D); let alt = surf.terrain ? surf.terrain(ll.lon, ll.lat) : global.WORLD.height(ll.lon, ll.lat);
+    if (alt == null) alt = global.WORLD.height(ll.lon, ll.lat);
+    alt = Math.max(alt, 0); if (surf.roads) { const r = surf.roads(x, z); if (r != null && r > alt) alt = r; }
+    let y = (alt - BASE) * k;
+    for (const lm of surf.landmarks) if (Math.abs(x - lm.x) < lm.r && Math.abs(z - lm.z) < lm.r) { const c = lm.top(x, z); if (c != null && c > y) y = c; }
+    return y;
+  }
+  // the landmarks' roofs and grounds: every non-animated mesh triangle raises the cells of its box to its top (0.5 m cells, flat frame), built the first time a query
+  // comes near the landmark (a few ms, once)
+  function landmarkCover(lm, groups) {
+    const f = global.WORLD.lonLatToTown(lm.lon, lm.lat), r = (lm.radius || 15) * 1.6 / Math.cos(lm.lat * D) + 4, C = 0.5; let cells = null;
+    const build = () => { cells = new Map(); const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      for (const g of groups) { if (g.userData && g.userData.live) continue; g.updateMatrixWorld(true); g.traverse(o => {
+        if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return; for (let p = o.parent; p; p = p.parent) if (p.userData && p.userData.live) return;
+        if (o.material && (o.material.transparent && o.material.opacity < 0.3)) return;        // glow cards, light pools: not a roof
+        const pos = o.geometry.attributes.position, idx = o.geometry.index, n = idx ? idx.count : pos.count, M = o.matrixWorld;
+        for (let t = 0; t + 2 < n; t += 3) { const i0 = idx ? idx.getX(t) : t, i1 = idx ? idx.getX(t + 1) : t + 1, i2 = idx ? idx.getX(t + 2) : t + 2;
+          a.fromBufferAttribute(pos, i0).applyMatrix4(M); b.fromBufferAttribute(pos, i1).applyMatrix4(M); c.fromBufferAttribute(pos, i2).applyMatrix4(M);
+          const top = Math.max(a.y, b.y, c.y), x0 = Math.floor(Math.min(a.x, b.x, c.x) / C), x1 = Math.floor(Math.max(a.x, b.x, c.x) / C), z0 = Math.floor(Math.min(a.z, b.z, c.z) / C), z1 = Math.floor(Math.max(a.z, b.z, c.z) / C);
+          if ((x1 - x0 + 1) * (z1 - z0 + 1) > 4096) continue;                                // a huge sheet (none expected): skip rather than flood the raster
+          for (let i = x0; i <= x1; i++) for (let j = z0; j <= z1; j++) { const key = i * 1048576 + j; const h = cells.get(key); if (h === undefined || top > h) cells.set(key, top); } }
+      }); } };
+    return { id: lm.id, x: f.x, z: f.z, r, top(x, z) { if (!cells) build(); const h = cells.get(Math.floor(x / C) * 1048576 + Math.floor(z / C)); return h === undefined ? null : h; }, cells: () => (cells ? cells.size : 0) };
+  }
+
+  // ---- the surface map (water shaders)
+  const N = MAP.N, uniforms = { uWxMap: { value: null }, uWxBox: { value: new THREE.Vector4(0, 0, 1 / MAP.STEP, N) }, uWxK: { value: 1 } };
+  const mapSt = { data: new Uint8Array(N * N * 4), next: new Uint8Array(N * N * 4), box: null, nextBox: null, pending: 0, stamp: -1, fills: 0, full: false };
+  priv(() => { const tex = new THREE.DataTexture(mapSt.data, N, N, THREE.RGBAFormat); tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.needsUpdate = true; uniforms.uWxMap.value = tex; });
+  function mapBox(lon, lat) { const s = MAP.STEP; return { lon0: Math.round(lon / s) * s - (N / 2) * s, lat0: Math.max(-90, Math.min(90 - (N - 1) * s, Math.round(lat / s) * s - (N / 2) * s)) }; }
+  function fillTexel(buf, box, q) {
+    const a = q % N, b = (q / N) | 0, s = MAP.STEP, n = node(lonIndex(Math.round((box.lon0 + a * s) / NODE)), Math.round(Math.max(-90, Math.min(90, box.lat0 + b * s)) / NODE)), e = n.e, o = q * 4;
+    buf[o] = Math.round(e.rain * 255); buf[o + 1] = Math.round(e.wetness * 255); buf[o + 2] = Math.round(e.snow * 255); buf[o + 3] = Math.round(Math.min(1, e.mist) * 255);
+  }
+  function mapStep(lon, lat, force) {
+    const want = mapBox(lon, lat), cur = mapSt.box, far = !cur || Math.abs((((want.lon0 - cur.lon0) % 360) + 540) % 360 - 180) > N / 4 * MAP.STEP || Math.abs(want.lat0 - cur.lat0) > N / 4 * MAP.STEP;
+    if (far && (!mapSt.nextBox || mapSt.nextBox.lon0 !== want.lon0 || mapSt.nextBox.lat0 !== want.lat0)) { mapSt.nextBox = want; mapSt.pending = 0; }
+    const mb = Math.floor(st.time / MAP.REFRESH); if (!mapSt.nextBox && (mapSt.bucket !== mb || mapSt.lv !== st.lv)) { mapSt.nextBox = cur; mapSt.pending = 0; mapSt.stamp = st.stamp; mapSt.bucket = mb; mapSt.lv = st.lv; }
+    if (!mapSt.nextBox) return;
+    const box = mapSt.nextBox, buf = mapSt.next, end = force ? N * N : Math.min(N * N, mapSt.pending + MAP.PER_FRAME);
+    while (mapSt.pending < end) fillTexel(buf, box, mapSt.pending++);
+    if (mapSt.pending >= N * N) { mapSt.data.set(buf); mapSt.box = box; mapSt.nextBox = null; mapSt.stamp = st.stamp; mapSt.bucket = Math.floor(st.time / MAP.REFRESH); mapSt.lv = st.lv; mapSt.fills++; uniforms.uWxBox.value.set(box.lon0, box.lat0, 1 / MAP.STEP, N); uniforms.uWxMap.value.needsUpdate = true; }
+  }
+
+  // ---- snow: SNOW.N flakes on addressable paths (seed + flake id + page time, never the frame order): flake i falls at its speed through a column of SNOW.H above the
+  // receiving surface; each fall (cycle c) has its own spot in a SNOW.BOX tile anchored to the world, shown inside the box round the target (wrapped), so panning
+  // never makes them jump; a flake shows when its hash is below the field's snow weight at its spot
+  function snowLayer() {
+    if (st.snow) return st.snow;
+    const n = SNOW.N, pos = new Float32Array(n * 3), sp = new Float32Array(n), ph = new Float32Array(n), dr = new Float32Array(n), hs = new Float32Array(n);
+    const key = new Float64Array(n).fill(NaN), base = new Float32Array(n), weight = new Float32Array(n), stamp = new Int32Array(n).fill(-1);
+    for (let i = 0; i < n; i++) { sp[i] = 0.5 + hash(i, 2) * 0.4; ph[i] = hash(i, 1); dr[i] = hash(i, 5) * 6.283; hs[i] = hash(i, 7); }
+    let o; priv(() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const m = new THREE.PointsMaterial({ color: '#eef4fb', size: SNOW.SIZE, transparent: true, opacity: 0, depthWrite: false }); m.userData.noWrap = true;   // laid out in the display frame (W8e-b)
+      o = new THREE.Points(g, m); o.frustumCulled = false; o.visible = false; scene.add(o); });
+    return (st.snow = { o, m: o.material, pos, sp, ph, dr, hs, key, base, weight, stamp, n, shown: 0 });
+  }
+  const wrapIn = (v, c, w) => c + ((((v - c + w / 2) % w) + w) % w) - w / 2;
+  function snowStep(t, centre, k, out) {
+    const S = snowLayer(), B = SNOW.BOX; let shown = 0;
+    for (let i = 0; i < S.n; i++) {
+      const u = t * S.sp[i] / SNOW.H + S.ph[i], c = Math.floor(u), f = u - c, X = hash(i * 7919 + c, 11) * B, Z = hash(i * 7919 + c, 13) * B;
+      const x = wrapIn(X + Math.cos(t * 0.7 + S.dr[i]) * -0.21, centre[0], B), z = wrapIn(Z, centre[2], B), cell = Math.floor(x / B) * 4096 + Math.floor(z / B), kk = c * 1e7 + cell;
+      if (S.key[i] !== kk) { S.key[i] = kk; S.base[i] = surfaceY(x, z) + SNOW.LIFT; S.stamp[i] = -1; }
+      if (S.stamp[i] !== st.stamp) { S.weight[i] = fieldXZ(x, z, out).snow; S.stamp[i] = st.stamp; }
+      const o = i * 3; if (S.hs[i] < S.weight[i] && k > 0) { S.pos[o] = x; S.pos[o + 1] = S.base[i] + SNOW.H * (1 - f); S.pos[o + 2] = z; shown++; } else { S.pos[o] = x; S.pos[o + 1] = -1e4; S.pos[o + 2] = z; }
+    }
+    S.o.geometry.attributes.position.needsUpdate = true; S.shown = shown; return shown;
+  }
+
+  // ---- registered weather effects (buildings, landmarks, the mist belt): { obj, mat, kind, lon, lat, owner } with kind
+  //   drip    eave drips, window runs, leaf tips: drip x dry x the line fade          impact  rain rings in ponds: rain x switch x dry x w_local
+  //   mist    weather mist (snow mist, the mist belt): look rule 1 + (k - 1) w_local, x dry, k = max(mist, wetness) or snow (snow-mist)
+  // owner = 'reset' when the owner writes the opacity every frame (it is multiplied after), 'fixed' when the opacity is a constant of the material (base x k)
+  const effects = [], effTmp = {};
+  function register(obj, o) {
+    const mat = obj.material; if (!mat || effects.some(e => e.obj === obj)) return null;
+    const e = { obj, mat, kind: o.kind, src: o.src || '', lon: o.lon, lat: o.lat, key: o.kind + '|' + o.lon.toFixed(3) + ',' + o.lat.toFixed(3), owner: o.owner || 'fixed', base: mat.opacity, wrote: null, ownerVal: mat.opacity, k: 1, keepsVisible: !!o.keepsVisible };
+    effects.push(e); return e;
+  }
+  const kOf = (e, cache) => {
+    const key = e.key; let k = cache.get(key); if (k !== undefined) return k;
+    const g = st.gains, f = field(e.lon, e.lat, effTmp);
+    if (e.kind === 'drip') k = f.drip * g.dry * g.line;
+    else if (e.kind === 'impact') k = f.rain * g.impact;
+    else if (e.kind === 'snow-mist') k = (1 + (f.snow - 1) * g.wl) * g.dry;
+    else k = (1 + (Math.max(f.mist, f.wetness) - 1) * g.wl) * g.dry;     // mist
+    cache.set(key, k); return k;
+  };
+  function apply() {
+    const cache = new Map();
+    for (const e of effects) {
+      const k = kOf(e, cache); e.k = k;
+      if (e.owner === 'reset') { if (e.wrote === null || e.mat.opacity !== e.wrote) e.ownerVal = e.mat.opacity; e.mat.opacity = e.wrote = e.ownerVal * k; }
+      else e.mat.opacity = e.base * k;
+      if (e.keepsVisible) { if (!(k > 0.001)) e.obj.visible = false; } else e.obj.visible = k > 0.001;
+    }
+  }
+
   function tick(t, dt, view) {
     const time = st.fixed !== null ? st.fixed : t + st.offset;
     if (st.view) view = st.view;
     if (!(view.d >= 0)) throw new Error('weather_fx: the view needs d, the camera-target distance');
-    // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend)
-    const dry = view.u > 0 ? 1 - view.u : 1;
-    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl = global.WEATHER.wLocal(view.h) * dry, w = r.weights; st.last = { ...r, time, h: view.h, wLocal: wl, dry, lon: ll.lon, lat: ll.lat };
+    // W8e-c (D8 revised, W8_SPEC 11.4): on the sphere the weather is always clear; the mode switch fades every effect linearly with uBend (dry = 1 - uBend), once
+    const dry = view.u > 0 ? 1 - view.u : 1, lv = W.lockVersion(), bucket = Math.floor(time / REFRESH);
+    if (bucket !== st.bucket || lv !== st.lv) { st.stamp++; st.bucket = bucket; st.lv = lv; const wb = Math.floor(time / WET_REFRESH); if (wb !== st.wetBucket || lv !== st.wetLv) { st.wetStamp++; st.wetBucket = wb; st.wetLv = lv; } } st.time = time;
+    const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl0 = WX.wLocal(view.h), wl = wl0 * dry, w = r.weights;
+    const rainOn = !global.SECTION_API || global.SECTION_API.state.settings.rain;
+    st.gains = { dry, wl: wl0, impact: (rainOn ? 1 : 0) * dry * wl0, wet: dry, line: LINE_FADE(view.d), rainOn };
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
-    // blend towards the rain look with height: 1 + (m - 1) * wl
+    // looks blend towards the rain look with height: 1 + (m - 1) * wl
     mh = 1 + (mh - 1) * wl; mm = 1 + (mm - 1) * wl; pud = (1 + (pud - 1) * wl) * dry; rain *= dry; fogAdd *= wl; const fogK = w.fog * wl;
-    sync();
-    fogAdd = Math.min(fogAdd, Math.max(0, FOG_DEPTH / view.d - base.fog));
-    st.last = { ...st.last, d: view.d, puddleWeight: pud, fogAdd };
-    if (mh !== 1 || own.hemi !== null) { ctx.hemi.intensity = own.hemi = base.hemi * mh; }
-    if (mm !== 1 || own.moon !== null) { ctx.moon.intensity = own.moon = base.moon * mm; }
-    if (fogAdd !== 0 || own.fog !== null) { scene.fog.density = own.fog = base.fog + fogAdd; }
+    fogAdd = Math.min(fogAdd, Math.max(0, FOG_DEPTH / view.d - look.fog));
+    const night = ctx.nightGain ? ctx.nightGain() : 1;
+    ctx.hemi.intensity = look.hemi * night * mh; ctx.moon.intensity = look.moon * night * mm; scene.fog.density = look.fog + fogAdd;
     fogW.value = fogAdd;                                                   // ink lines are covered by this part of the fog only (bend.js)
-    if (fogK > 0) { if (own.fogColor === null) base.fogColor.copy(scene.fog.color); scene.fog.color.copy(base.fogColor).lerp(fogTint, Math.min(1, fogK)); if (scene.background && scene.background.isColor) scene.background.copy(scene.fog.color); own.fogColor = scene.fog.color.clone(); }
-    else if (own.fogColor !== null) { scene.fog.color.copy(base.fogColor); if (scene.background && scene.background.isColor) scene.background.copy(base.fogColor); own.fogColor = null; }
-    if (rain !== 1) ctx.rainMat.opacity *= rain;
-    // snow: falls round the target, opacity by the snow weight and the height blend
-    const sw = w.snow * wl;
-    if (sw > 0.001) { const S = snowLayer(), c = view.target; S.o.visible = true; S.m.opacity = 0.85 * sw; S.o.position.set(c[0], 0, c[2]);
-      for (let i = 0; i < S.N; i++) { const k = i * 3; S.pos[k + 1] -= dt * S.sp[i]; S.pos[k] += Math.sin(time * 0.7 + i) * dt * 0.15; if (S.pos[k + 1] < 0.1) { S.pos[k + 1] = 9; S.pos[k] = (S.rnd() - 0.5) * 40; S.pos[k + 2] = (S.rnd() - 0.5) * 40; } }
-      S.o.geometry.attributes.position.needsUpdate = true; }
-    else if (st.snow) st.snow.o.visible = false;
+    fogMixed.copy(look.fogColor); if (fogK > 0) fogMixed.lerp(fogTint, Math.min(1, fogK));
+    scene.fog.color.copy(fogMixed); if (scene.background && scene.background.isColor) scene.background.copy(fogMixed);
+    st.last = { ...r, time, h: view.h, wLocal: wl, dry, lon: ll.lon, lat: ll.lat, d: view.d, puddleWeight: pud, fogAdd, rainAtTarget: rain, stamp: st.stamp };
+    // snow: thinned by the field, opacity by the height blend and the map mode; hidden and not updated when nothing would show
+    const sk = SNOW.OPACITY * wl, tgt = view.target, anySnow = sk > 0.001 && (field(ll.lon, ll.lat, effTmp).snow > 0 || boxHas(tgt, 'snow'));
+    if (anySnow) { const S = snowLayer(); S.m.opacity = sk; const n = snowStep(t, tgt, sk, effTmp); S.o.visible = n > 0; }
+    else if (st.snow) { st.snow.o.visible = false; st.snow.shown = 0; }
+    mapStep(ll.lon, ll.lat, lv !== st.mapLv || !mapSt.box); st.mapLv = lv;
+    uniforms.uWxK.value = wl;                                              // the surface responses (snowCover, duneWet, poolWet, the paddies' mirror): w_local x (1 - uBend)
+    localStep(t, tgt, view);
   }
+  // ---- WX3: local pieces round the target. Each pool is one draw call, hidden (and not updated) when none of its pieces shows; pieces sit on world-anchored spots
+  // wrapped into the box (like the snow) and on the receiving surface; each shows where the field gives its effect (its hash below the local weight). The cards are
+  // additive (fog and the daylight of the sphere dim additive light: bend.js), one soft round texture.
+  const LOCAL = { BOX: 40, DRIPS: 360, TREES: 120, MIST: 28, SNOWMIST: 24, STEAM: 24, VENTS: 6, PUFFS: 5 };
+  const loc = { built: false };
+  function buildLocal() {
+    if (loc.built) return loc; loc.built = true;
+    priv(() => {
+      const c = document.createElement('canvas'); c.width = c.height = 64; const q = c.getContext('2d'), g = q.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.5, 'rgba(255,255,255,0.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); q.fillStyle = g; q.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(c), card = new THREE.PlaneGeometry(1, 1);
+      const pool = (name, n, color) => { const m = new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }); m.userData.noWrap = true;
+        const o = new THREE.InstancedMesh(card, m, n); o.name = 'weather:' + name; o.frustumCulled = false; o.visible = false; o.instanceMatrix.setUsage(THREE.DynamicDrawUsage); for (let i = 0; i < n; i++) o.setColorAt(i, new THREE.Color(0, 0, 0)); scene.add(o); return o; };
+      loc.mist = pool('ground-mist', LOCAL.MIST, '#ffffff'); loc.snowMist = pool('snow-mist', LOCAL.SNOWMIST, '#ffffff'); loc.steam = pool('rain-steam', LOCAL.STEAM, '#ffffff'); loc.vents = pool('fumarole', LOCAL.VENTS * LOCAL.PUFFS, '#ffffff');
+      const dg = new THREE.BufferGeometry(); loc.dripPos = new Float32Array(LOCAL.DRIPS * 6); dg.setAttribute('position', new THREE.BufferAttribute(loc.dripPos, 3));
+      const dm = new THREE.LineBasicMaterial({ color: '#cee7e5', transparent: true, opacity: 0.6, depthWrite: false }); dm.userData.noWrap = true;
+      loc.drips = new THREE.LineSegments(dg, dm); loc.drips.name = 'weather:leaf-drips'; loc.drips.frustumCulled = false; loc.drips.visible = false; scene.add(loc.drips);
+    });
+    loc.m4 = new THREE.Matrix4(); loc.q = new THREE.Quaternion(); loc.e = new THREE.Euler(); loc.v = new THREE.Vector3(); loc.sc = new THREE.Vector3(); loc.col = new THREE.Color();
+    loc.trees = null; loc.treeKey = ''; loc.sel = []; loc.shown = { drips: 0, mist: 0, snowMist: 0, steam: 0, vents: 0 };
+    return loc;
+  }
+  // the trees of the forest (landcover.js) by 8 m flat cells, once
+  function treeIndex() {
+    if (loc.trees) return loc.trees; const C = global.LANDCOVER_API, D0 = C && C.data && C.data(); if (!D0 || !D0.forest) return null;
+    const cells = new Map(), list = [], T = new Set(['treeRound', 'cedar', 'pine', 'bamboo']);
+    for (const it of D0.forest.items) { if (!T.has(it.type)) continue; const f = global.WORLD.lonLatToTown(it.lon, it.lat), k = 1 / Math.cos(it.lat * D), i = list.length;
+      list.push({ x: f.x, z: f.z, y: (it.alt - BASE) * k, h: (it.type === 'bamboo' ? 2.2 : it.type === 'treeRound' ? 2.0 : 2.6) * (it.s[1] || 1) * k, r: 0.9 * (it.s[0] || 1) * k, i });
+      const key = Math.floor(f.x / 8) * 65536 + Math.floor(f.z / 8); let l = cells.get(key); if (!l) cells.set(key, l = []); l.push(i); }
+    return (loc.trees = { cells, list });
+  }
+  // BI08: the fumaroles, VENTS points of the lava field on ameni-dake's north and north-west slope (12-34 m from the summit), at least 6 m apart, off the roads and
+  // outside LM01's summit model; picked once from a fixed scatter
+  function fumaroles() {
+    const W0 = global.WORLD, lm = W0.landmarks.find(q => q.id === 'LM01'), out = []; if (!lm) return out;
+    for (let i = 0; i < 400 && out.length < LOCAL.VENTS; i++) {
+      const brg = 270 + hash(i, 31) * 135, r = 12 + hash(i, 37) * 22, p = W0.destination(lm, brg % 360, r); if (W.place(p.lon, p.lat).cat !== 'lava') continue;
+      const f = W0.lonLatToTown(p.lon, p.lat); if (surf.roads && surf.roads(f.x, f.z) != null) continue;
+      if (out.some(o => Math.hypot(o.x - f.x, o.z - f.z) * Math.cos(p.lat * D) < 6)) continue;
+      out.push({ lon: p.lon, lat: p.lat, x: f.x, z: f.z, ph: hash(i, 41) });
+    }
+    return out;
+  }
+  const vents = () => loc.ventList || (loc.ventList = fumaroles());
+  const hide = (o, i) => { loc.m4.makeScale(0, 0, 0); o.setMatrixAt(i, loc.m4); o.setColorAt(i, loc.col.setRGB(0, 0, 0)); };
+  const putCard = (o, i, x, y, z, sx, sy, yaw, a) => { loc.e.set(0, yaw, 0); loc.q.setFromEuler(loc.e); loc.m4.compose(loc.v.set(x, y, z), loc.q, loc.sc.set(sx, sy, 1)); o.setMatrixAt(i, loc.m4); o.setColorAt(i, loc.col.setRGB(a, a, a)); };
+  function localStep(t, centre, view) {
+    const g = st.gains, kLook = g.wl * g.dry, B = LOCAL.BOX, o = {};
+    // anything to do? the box's field (corners and edges) and the vents' distance; otherwise every pool stays hidden and untouched
+    const any = { drip: boxHas(centre, 'drip'), mist: boxHas(centre, 'mist'), snow: boxHas(centre, 'snow'), rain: boxHas(centre, 'rain') };
+    const ventNear = vents().some(v => Math.abs(v.x - centre[0]) < 60 && Math.abs(v.z - centre[2]) < 60);
+    if (!(kLook > 0.001) && !(g.dry > 0.001 && ventNear) || !(any.drip || any.mist || any.snow || any.rain || ventNear)) { if (loc.built) { loc.drips.visible = loc.mist.visible = loc.snowMist.visible = loc.steam.visible = loc.vents.visible = false; for (const k in loc.shown) loc.shown[k] = 0; } return; }
+    const L = buildLocal(), cam = view.cam || [centre[0] + 1, centre[2] + 1], camYaw = Math.atan2(cam[0] - centre[0], cam[1] - centre[2]);   // the cards face the camera
+    // leaf drips: three per selected tree in the box (trees picked by their own hash, at most TREES), falling from the canopy's underside to the ground
+    let nd = 0; const TI = any.drip && kLook > 0.001 ? treeIndex() : null;
+    if (TI) {
+      const key = Math.round(centre[0] / 2) + ',' + Math.round(centre[2] / 2) + ',' + st.stamp;
+      if (key !== L.treeKey) { L.treeKey = key; L.sel = []; for (let a = Math.floor((centre[0] - B / 2) / 8); a <= Math.floor((centre[0] + B / 2) / 8); a++) for (let b = Math.floor((centre[2] - B / 2) / 8); b <= Math.floor((centre[2] + B / 2) / 8); b++) for (const i of TI.cells.get(a * 65536 + b) || []) { const tr = TI.list[i]; if (Math.abs(tr.x - centre[0]) < B / 2 && Math.abs(tr.z - centre[2]) < B / 2 && hash(i, 3) < 0.6) L.sel.push(tr); }
+        L.sel.sort((p, q) => hash(p.i, 5) - hash(q.i, 5)); L.sel.length = Math.min(L.sel.length, LOCAL.TREES); for (const tr of L.sel) tr.w = fieldXZ(tr.x, tr.z, o).drip; }
+      for (let s = 0; s < L.sel.length; s++) { const tr = L.sel[s]; for (let k = 0; k < 3; k++) { const j = tr.i * 3 + k; if (!(hash(j, 7) < tr.w)) continue;
+        const a = hash(j, 9) * 6.283, rr = tr.r * (0.35 + 0.6 * hash(j, 11)), x = tr.x + Math.cos(a) * rr, z = tr.z + Math.sin(a) * rr, top = tr.y + tr.h, f = (t * (0.55 + 0.25 * hash(j, 13)) + hash(j, 15)) % 1, y = top - f * (top - tr.y), n = nd * 6;
+        L.dripPos[n] = L.dripPos[n + 3] = x; L.dripPos[n + 2] = L.dripPos[n + 5] = z; L.dripPos[n + 1] = y; L.dripPos[n + 4] = y + 0.1; nd++; if (nd >= LOCAL.DRIPS) break; } if (nd >= LOCAL.DRIPS) break; }
+      for (let n = nd * 6; n < LOCAL.DRIPS * 6; n++) L.dripPos[n] = n % 3 === 1 ? -1e4 : 0;
+      L.drips.geometry.attributes.position.needsUpdate = true; L.drips.geometry.setDrawRange(0, Math.max(2, nd * 2));
+    }
+    L.drips.material.opacity = 0.6 * g.dry * g.line; L.drips.visible = nd > 0 && L.drips.material.opacity > 0.001; L.shown.drips = L.drips.visible ? nd : 0;
+    // ground mist, snow mist, rain steam: cards on spots of a BOX tile, slow drift; a card shows where its effect is (mist only in foggy places, steam only on lava)
+    const cards = (o3, n, salt, want, fn) => { let shown = 0; if (!want || !(kLook > 0.001)) { o3.visible = false; return 0; }
+      for (let i = 0; i < n; i++) { const X = hash(i, salt) * B, Z = hash(i, salt + 1) * B, x = wrapIn(X + t * 0.05 * (hash(i, salt + 2) - 0.5), centre[0], B), z = wrapIn(Z, centre[2], B), r = fn(i, x, z, salt);
+        if (r) { putCard(o3, i, x, r.y, z, r.sx, r.sy, camYaw + r.yaw, r.a); shown++; } else hide(o3, i); }
+      o3.instanceMatrix.needsUpdate = true; o3.instanceColor.needsUpdate = true; o3.visible = shown > 0; return shown; };
+    const catAt = (x, z) => { const ll = llOf(x, z); return W.place(Math.round(ll.lon * 8) / 8, Math.round(ll.lat * 8) / 8).cat; };
+    L.shown.mist = cards(L.mist, LOCAL.MIST, 101, any.mist, (i, x, z) => { const e = fieldXZ(x, z, o); if (!(hash(i, 99) < e.mist) || catAt(x, z) !== 'foggy') return null; const a = 0.10 * kLook * (0.75 + 0.25 * Math.sin(t * 0.21 + i)); return { y: surfaceY(x, z) + 0.5 + 0.4 * hash(i, 98), sx: 4 + 2 * hash(i, 97), sy: 1.1, yaw: 0, a }; });
+    L.shown.snowMist = cards(L.snowMist, LOCAL.SNOWMIST, 201, any.snow, (i, x, z) => { const e = fieldXZ(x, z, o); if (!(hash(i, 199) < e.snow)) return null; const a = 0.13 * kLook * (0.7 + 0.3 * Math.sin(t * 0.4 + i * 1.7)); return { y: surfaceY(x, z) + 0.35 + 0.3 * hash(i, 198), sx: 3 + 2 * hash(i, 197), sy: 0.8, yaw: 0, a }; });
+    L.shown.steam = cards(L.steam, LOCAL.STEAM, 301, any.rain, (i, x, z) => { const e = fieldXZ(x, z, o); if (!(hash(i, 299) < e.rain) || catAt(x, z) !== 'lava') return null; const f = (t * 0.12 + hash(i, 298)) % 1, a = 0.09 * kLook * Math.sin(Math.PI * f); return { y: surfaceY(x, z) + 0.2 + 1.4 * f, sx: 0.5 + 0.6 * f, sy: 1.2 + 0.8 * f, yaw: 0, a }; });
+    // the fumaroles: PUFFS puffs per vent rise 3 m, widen and fade (the steam of LM00_lib, one draw call); not weather: on whenever the map is flat, x (0.8 + 0.4 clear)
+    let nv = 0; if (ventNear && g.dry > 0.001) { const ll0 = llOf(centre[0], centre[2]), clear = W.at(ll0.lon, ll0.lat, st.time).weights.clear;
+      vents().forEach((v, vi) => { const k0 = 0.11 * g.dry * (0.8 + 0.4 * clear * g.wl); for (let p = 0; p < LOCAL.PUFFS; p++) { const i = vi * LOCAL.PUFFS + p, f = (t * 0.06 + p / LOCAL.PUFFS + v.ph) % 1;
+        putCard(L.vents, i, v.x + Math.sin(t * 0.3 + p) * 0.25 * f, surfaceY(v.x, v.z) + 0.3 + 3.2 * f, v.z, 0.7 * (1 + 2.2 * f), 0.7 * (1 + 2.2 * f), camYaw, k0 * Math.sin(Math.PI * f)); nv++; } });
+      for (let i = vents().length * LOCAL.PUFFS; i < LOCAL.VENTS * LOCAL.PUFFS; i++) hide(L.vents, i); L.vents.instanceMatrix.needsUpdate = true; L.vents.instanceColor.needsUpdate = true; }
+    L.vents.visible = nv > 0; L.shown.vents = nv;
+  }
+  // any of the given effect in the box round the target (the corners and the middle of the edges: the field is smooth over 15 m, the box is 40 m)
+  function boxHas(c, kind) { const h = SNOW.BOX / 2; for (const [dx, dz] of [[-h, -h], [h, -h], [-h, h], [h, h], [0, -h], [0, h], [-h, 0], [h, 0]]) if (fieldXZ(c[0] + dx, c[2] + dz, effTmp)[kind] > 0) return true; return false; }
+
   const api = {
     at: (lon, lat, t) => W.at(lon, lat, t), lock: s => W.lock(s), locked: () => W.locked(),
     setTime(t) { st.fixed = t === null || t === undefined ? null : +t; return st.fixed; },
     get: () => st.last,
     setView(v) { st.view = v || null; },                                    // tools: weather of a given place { lonLat, h, d, target } instead of the camera's
-    place: (lon, lat) => W.place(lon, lat), tick,
+    place: (lon, lat) => W.place(lon, lat), tick, apply, register,
+    field, fieldXZ, surfaceY, boxHas, stamp: () => st.stamp, bucket: () => st.bucket, lockVersion: () => st.lv, gains: () => st.gains, time: () => st.time,
+    setSurface(o) { if (o.terrain !== undefined) surf.terrain = o.terrain; if (o.roads !== undefined) surf.roads = o.roads; if (o.landmark) surf.landmarks.push(landmarkCover(o.landmark, o.groups)); },
+    surfaces: () => ({ terrain: !!surf.terrain, roads: !!surf.roads, landmarks: surf.landmarks.map(l => ({ id: l.id, cells: l.cells() })) }),
+    effects: () => effects.map(e => ({ kind: e.kind, src: e.src, owner: e.owner, k: e.k, opacity: e.mat.opacity, visible: e.obj.visible, lon: e.lon, lat: e.lat, type: e.obj.type })),
+    effectObjects: () => effects.map(e => e.obj),
+    snow: () => st.snow, local: () => loc, fumaroles: () => vents(), map: () => ({ box: mapSt.box, fills: mapSt.fills, stamp: mapSt.stamp, data: mapSt.data, N, STEP: MAP.STEP }),
+    nodes: () => nodes.size, uniforms, weather: W,
   };
+  global.WEATHER_FX.surface = { uniforms, GLSL, EMPTY };
+  global.WEATHER_FX.live = api;
   return api;
 }
-global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD, FOG_SEE };
+global.WEATHER_FX = { attach, MULT, RAIN, PUDDLE, FOG_ADD, FOG_SEE, NODE, FINE, REFRESH, MAP, SNOW, GLSL, LINE_FADE, snowCover, duneWet, poolWet, surface: null, live: null };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -21369,6 +21864,7 @@ globalThis.LMLIB = function (K) {
   const cr = group('lm01Crater'); L.use(cr);
   L.ground(5.2, '#4a4650', 0.08); const lake = mesh(new THREE.CircleGeometry(3.4, 36), warm('#1e3446', 0.10), -0.4, 0.16, -0.3, false, cr); lake.rotation.x = -PI / 2;
   const lake2 = mesh(new THREE.RingGeometry(3.4, 3.8, 36), mat('#6a7a86'), -0.4, 0.15, -0.3, false, cr); lake2.rotation.x = -PI / 2;
+  for (let i = 0; i < 18; i++) { const a = i / 18 * PI * 2, r = 3.8 + 0.12 * Math.sin(i * 2.1); const m = mesh(new THREE.DodecahedronGeometry(0.22, 0), mat(i % 3 ? '#696575' : '#777483'), -0.4 + Math.sin(a) * r, 0.15, -0.3 + Math.cos(a) * r, true, cr); m.scale.set(1.5, 0.35, 0.8); m.rotation.y = a; }
   // ember: the faint dark-red glow of the crater (WORLD_SPEC: much weaker than any street lamp); a single additive disc under the rim
   const emberMat = L.glowMat('#7a2a1e', 0.10), ember = mesh(new THREE.PlaneGeometry(10, 10), emberMat, 0.2, 0.30, 0.1, false, cr); ember.rotation.x = -PI / 2;
   const ventPos = [[2.6, 1.8], [-3.0, -2.4]];
@@ -21377,14 +21873,24 @@ globalThis.LMLIB = function (K) {
   const vent = group('lm01Vent'); L.use(vent); const plumes = ventPos.map(([x, z]) => { const s = L.steam(x, 0.45, z, { n: 5, h: 3.2, speed: 0.05, s: 0.7, o: 0.17 }); return s; });
   // ---- the little shrine (hokora) on the rim beside the stairs, facing the entrance: base, a 1.3 m box, hip roof, a stone marker
   const sh = group('lm01Shrine'); L.use(sh);
-  box(1.8, 0.2, 6.3, 1.5, 0.4, 1.4, '#8a8a88', true, sh); box(1.8, 0.4 + 0.65, 6.3, 1.1, 1.1, 1.0, '#6a5a4a', true, sh); box(1.8, 0.4 + 0.65, 6.81, 0.5, 0.8, 0.04, '#2c2a30', false, sh);
+  box(1.8, 0.2, 6.3, 1.5, 0.4, 1.4, '#8a8a88', true, sh);
+  box(1.8, 0.47, 6.3, 1.18, 0.12, 1.1, '#715b48', true, sh);
+  for (const x of [1.3, 2.3]) for (const z of [5.86, 6.74]) box(x, 1.0, z, 0.1, 1.08, 0.1, '#4b392d', true, sh);
+  box(1.8, 0.96, 5.84, 1.0, 0.96, 0.1, '#6a5a4a', true, sh);
+  for (const x of [1.32, 2.28]) box(x, 0.94, 6.3, 0.08, 0.82, 0.78, '#6a5a4a', true, sh);
+  box(1.8, 1.53, 6.3, 1.25, 0.12, 1.1, '#4b392d', true, sh);
+  box(1.8, 0.63, 5.98, 0.62, 0.18, 0.32, '#9b8060', true, sh); // offering shelf visible through front
+  box(1.8, 1.08, 5.9, 0.28, 0.38, 0.18, '#8b745c', true, sh);
+  box(1.8, 0.5, 6.84, 0.8, 0.12, 0.35, '#888179', true, sh); // entrance threshold
   const roof = mesh(new THREE.ConeGeometry(1.0, 0.7, 4), mat('#4a5058'), 1.8, 0.4 + 1.1 + 0.35, 6.3, true, sh); roof.rotation.y = PI / 4; cyl(1.8, 2.3, 6.3, 0.05, 0.3, '#5a5a58', sh);
+  for (const z of [5.78, 6.82]) box(1.8, 1.55, z, 1.38, 0.1, 0.1, '#3d4146', true, sh);
   L.torii(1.8, 0, 8.2, { w: 1.5, h: 2.1, rot: 0 });
   // ---- path: the last 9 steps up the rim, a stone marker, lanterns at z = 6.8 ... 10 (5 of them, <= 10), the stairs come from +Z
   const path = group('lm01Path'); L.use(path);
   L.steps(-0.4, 0, 6.0, 6, 1.6, 0.34, 0.17, '#6d7468');
   box(-1.9, 0.6, 8.6, 0.35, 1.2, 0.35, '#8a8a88', true, path); box(-1.9, 1.25, 8.6, 0.45, 0.1, 0.45, '#9a9a96', true, path);
   const lanterns = []; [[-1.7, 7.0], [0.9, 8.0], [-1.7, 9.0], [0.9, 10.0], [-1.7, 5.4]].forEach(([x, z], i) => lanterns.push(L.lantern(x, -0.4 - i * 0.0, z, { k: 1, glowK: 0.22 })));
+  for (const [x, z] of [[-1.7, 7], [0.9, 8], [-1.7, 9], [0.9, 10], [-1.7, 5.4]]) box(x, -0.34, z, 0.62, 0.12, 0.62, '#777677', true, path);
   out.stats = { lanterns: lanterns.length, rimBlocks: N, vents: ventPos.length, rimMax, emberOpacity: 0.10 };
   out.update = (t) => { for (const p of plumes) p.update(t); emberMat.opacity = 0.09 + 0.02 * Math.sin(t * 0.4); };
   return out;
@@ -21624,6 +22130,16 @@ globalThis.LMLIB = function (K) {
   boulder(ch, 0, 0, -3.5, 3.2, 3.0, 1.6, 0.1, GRAN);                                                      // back stone
   const cap = boulder(ch, 0, 2.7, -0.7, 6.0, 1.6, 4.0, 0.12, '#8a8584');                                   // capstone 6 x 1.6 x 4 m
   boulder(ch, 0.2, 3.7, -1.0, 2.4, 0.9, 1.8, 0.7, GRAND);                                                  // a smaller stone on top
+  for (const sx of [-1, 1]) {
+    for (const z of [-2.6, -0.6, 1.2]) box(sx * 1.75, 0.08, z, 1.3, 0.16, 1.4, '#646260', true, ch); // distinct bearing pads
+    for (const z of [-1.55, 0.3]) {
+      box(sx * 1.62, 1.1, z, 0.1, 1.8, 0.12, '#343839', false, ch); // joints between load stones
+      mesh(new THREE.DodecahedronGeometry(0.18, 0), mat('#5b7058'), sx * 1.55, 0.24, z + 0.12, false, ch);
+    }
+    for (const z of [-2.8, 1.15]) mesh(new THREE.DodecahedronGeometry(0.22, 0), mat('#77716d'), sx * 2.5, 2.54, z, true, ch); // chipped support edge
+  }
+  for (let k = 0; k < 5; k++) box(-1.0 + k * 0.5, 0.12, 1.28 - k * 0.06, 0.47, 0.06, 0.64, k % 2 ? '#454445' : '#3b3c3d', true, ch);
+  box(0, 0.32, -3.23, 1.05, 0.48, 0.15, '#5d5a58', true, ch); // rear chamber sill
   L.pool(0, -0.5, 1.8, '#000000', 0.0, 0.05);
   // the floor of the chamber: dark flat stones
   box(0, 0.05, -0.7, 2.6, 0.1, 4.6, '#2c2c30', false, ch);
@@ -21678,22 +22194,50 @@ globalThis.LMLIB = function (K) {
   // ---- the hall: a tilted 4 x 5 m building 5 m tall on a stone base; moss roof, lattice doors, a rope with paper streamers
   const hl = group('lm04Hall'); L.use(hl); const HZ = -11.5;
   const hall = L.sub(0, 0, HZ, 0); hall.rotation.z = 0.045; hall.rotation.x = -0.02; L.use(hall);
-  box(0, 0.4, 0, 4.8, 0.8, 5.8, '#6f7478', true, hall); box(0, 0.8 + 1.4, 0, 3.6, 2.8, 4.6, '#5a4538', true, hall);
-  box(0, 0.8 + 1.4, 2.32, 2.6, 2.4, 0.08, '#2c2420', true, hall); for (let i = 0; i < 6; i++) box(-1.1 + i * 0.44, 0.8 + 1.4, 2.38, 0.05, 2.3, 0.04, '#6a5240', false, hall);
+  box(0, 0.4, 0, 4.8, 0.8, 5.8, '#6f7478', true, hall);
+  box(0, 0.9, 0, 3.6, 0.18, 4.6, '#645141', true, hall);
+  for (const x of [-1.68, 1.68]) for (const z of [-2.18, 2.18]) {
+    box(x, 2.2, z, 0.2, 2.65, 0.2, '#4a392d', true, hall);
+    box(x, 0.88, z, 0.32, 0.15, 0.32, '#77716a', true, hall);
+  }
+  for (const z of [-2.2, 2.2]) box(0, 3.48, z, 3.5, 0.18, 0.19, '#4b382b', true, hall);
+  for (const x of [-1.72, 1.72]) {
+    box(x, 1.55, 0, 0.15, 1.12, 4.45, '#5a4538', true, hall);
+    box(x, 3.1, 0, 0.15, 0.75, 4.45, '#5a4538', true, hall);
+    for (const z of [-1.25, 0, 1.25]) box(x, 2.28, z, 0.18, 1.48, 0.1, '#49372c', true, hall);
+  }
+  for (let k = 0; k < 9; k++) box(-1.5 + k * 0.375, 2.2, -2.22, 0.34, 2.6, 0.1, k % 3 ? '#5a4538' : '#574434', true, hall);
+  for (const x of [-1.15, 1.15]) {
+    box(x, 2.16, 2.28, 0.13, 2.46, 0.13, '#4a382b', true, hall);
+    box(x, 2.03, 2.32, 0.68, 2.0, 0.06, '#6a5240', true, hall);
+    for (let k = 0; k < 4; k++) box(x - 0.27 + k * 0.18, 2.05, 2.37, 0.035, 1.85, 0.04, '#3e332b', false, hall);
+  }
+  box(0, 1.03, 2.43, 1.05, 0.14, 0.42, '#817a70', true, hall); // worn threshold
+  box(0, 1.25, -1.4, 1.15, 0.2, 0.7, '#74563f', true, hall); // inner altar
+  box(0, 1.85, -1.9, 1.5, 1.25, 0.15, '#40342d', true, hall);
+  for (const x of [-0.4, 0.4]) cyl(x, 1.63, -1.53, 0.09, 0.3, '#8a7b5c', hall);
   L.gable(3.6, 4.6, 0.8 + 2.8, 1.9, 0.9, MOSSD, hall); L.gable(3.8, 4.8, 0.8 + 2.75, 1.85, 0.95, '#4a6a50', hall);
   box(0, 0.8 + 2.9, 2.6, 3.4, 0.12, 0.9, '#4a382b', true, hall);                                  // front eave beam
+  box(1.18, 3.32, 1.95, 0.12, 0.16, 1.2, '#514131', true, hall); // slipped support under leaking eave
+  box(1.62, 3.16, 2.18, 0.16, 0.52, 0.14, '#6a5847', true, hall);
   box(0, 1.6, 3.0, 1.4, 0.8, 1.0, '#7a7d80', true, hall);                                         // offering platform
   // ---- rope across the front of the hall with 4 paper streamers (live, sway)
   const rope = mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.0, 6), mat('#d8c9a0'), 0, 3.0, HZ + 3.1, false, hl); rope.rotation.z = PI / 2;
   // ---- the great tree beside the hall: a trunk 1.0 m thick, a canopy of cedar cones, shimenawa ring
   const tr = group('lm04Tree'); L.use(tr);
   L.tree(-4.2, 0, HZ - 0.8, { h: 13, kind: 'cedar' }); cyl(-4.2, 2.0, HZ - 0.8, 0.9, 4.0, '#4a4038', tr);
+  for (let k = 0; k < 7; k++) { const a = k / 7 * PI * 2; const root = mesh(new THREE.ConeGeometry(0.22, 1.4, 5), mat('#4a4038'), -4.2 + Math.sin(a) * 0.72, 0.17, HZ - 0.8 + Math.cos(a) * 0.72, true, tr); root.rotation.z = Math.sin(a) * 0.42; root.rotation.x = Math.cos(a) * 0.42; }
   const ring = mesh(new THREE.TorusGeometry(1.0, 0.07, 6, 18), mat('#d8c9a0'), -4.2, 1.9, HZ - 0.8, false, tr); ring.rotation.x = PI / 2;
+  for (const a of [0, PI / 2, PI, PI * 1.5]) box(-4.2 + Math.sin(a) * 0.9, 1.86, HZ - 0.8 + Math.cos(a) * 0.9, 0.13, 0.16, 0.15, '#a4956c', true, tr);
   for (const [x, z, h, k] of [[5.0, -4.0, 8, 'cedar'], [6.5, -9.5, 9, 'cedar'], [-6.5, -2.5, 6, 'round'], [4.5, -12.5, 7, 'round'], [-7.5, -9, 7, 'cedar'], [7.2, 3.5, 6.5, 'round'], [-7.0, 8.0, 7, 'cedar'], [6.8, 9.5, 8, 'cedar']]) L.tree(x, 0, z, { h, kind: k });
   // ---- stones: komainu pair, three stone Buddhas, the dry basin, lanterns
   const sn = group('lm04Stones'); L.use(sn);
-  for (const sx of [-1, 1]) { box(sx * 1.9, 0.3, -5.0, 0.7, 0.6, 0.9, '#7d8083', true, sn); mesh(new THREE.SphereGeometry(0.28, 8, 6), mat('#868a8c'), sx * 1.9, 0.9, -4.9, true, sn); box(sx * 1.9, 0.78, -5.35, 0.4, 0.35, 0.5, '#868a8c', true, sn); box(sx * 1.9, 0.05, -5.0, 0.9, 0.1, 1.1, MOSS, false, sn); }
-  [[-3.4, -6.5], [-3.9, -4.0], [3.6, -7.0]].forEach(([x, z], i) => { box(x, 0.25, z, 0.5, 0.5, 0.4, '#7d8083', true, sn); mesh(new THREE.SphereGeometry(0.19, 8, 6), mat('#868a8c'), x, 0.7, z, true, sn); box(x, 0.45, z + 0.12, 0.4, 0.5, 0.3, i % 2 ? '#868a8c' : '#7d8083', true, sn); });
+  for (const sx of [-1, 1]) { box(sx * 1.9, 0.3, -5.0, 0.7, 0.6, 0.9, '#7d8083', true, sn); mesh(new THREE.SphereGeometry(0.28, 8, 6), mat('#868a8c'), sx * 1.9, 0.9, -4.9, true, sn); box(sx * 1.9, 0.78, -5.35, 0.4, 0.35, 0.5, '#868a8c', true, sn); box(sx * 1.9, 0.05, -5.0, 0.9, 0.1, 1.1, MOSS, false, sn);
+    box(sx * 1.9, 0.25, -4.68, 0.44, 0.32, 0.2, '#85888a', true, sn);
+    box(sx * 1.9, 0.78, -4.62, 0.24, 0.18, 0.24, '#85888a', true, sn);
+    for (const dx of [-0.24, 0.24]) box(sx * 1.9 + dx, 0.15, -5.22, 0.16, 0.22, 0.25, '#747b7b', true, sn);
+  }
+  [[-3.4, -6.5], [-3.9, -4.0], [3.6, -7.0]].forEach(([x, z], i) => { box(x, 0.25, z, 0.5, 0.5, 0.4, '#7d8083', true, sn); mesh(new THREE.SphereGeometry(0.19, 8, 6), mat('#868a8c'), x, 0.7, z, true, sn); box(x, 0.45, z + 0.12, 0.4, 0.5, 0.3, i % 2 ? '#868a8c' : '#7d8083', true, sn); box(x, 0.49, z + 0.33, 0.22, 0.12, 0.06, '#717779', true, sn); });
   box(3.4, 0.35, -1.0, 1.1, 0.7, 0.9, '#767a7e', true, sn); mesh(new THREE.CylinderGeometry(0.4, 0.35, 0.16, 10), mat('#2a2e32'), 3.4, 0.72, -1.0, false, sn);   // dry temizuya basin
   cyl(3.9, 0.55, -1.0, 0.02, 1.1, '#9aa56e', sn);                                                                                       // a bamboo ladle laid against it
   const lamps = []; [[-1.6, 12.0, 0], [1.6, 10.5, 0], [-1.6, 6.0, 1], [1.6, 3.0, 0], [-1.6, -2.0, 0], [1.7, -6.5, 1]].forEach(([x, z, lit]) => lamps.push({ lb: L.lantern(x, 0, z, { k: 1, glowK: lit ? 0.22 : 0.0 }), lit }));
@@ -21701,7 +22245,7 @@ globalThis.LMLIB = function (K) {
   // ---- live: fireflies (8), drips under the eaves (6), rope streamers (4)
   const lv = group('lm04Live'); L.use(lv);
   const ff = []; for (let i = 0; i < 8; i++) { const g = L.sub((rnd() - 0.5) * 9, 0, HZ + (rnd() - 0.2) * 7 + 3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), L.glowMat('#c8e8a0', 0.0)); g.add(m); ff.push({ g, m, ph: rnd() * 6.28, x0: g.position.x, z0: g.position.z, y0: 0.8 + rnd() * 1.8 }); }
-  const dr = []; for (let i = 0; i < 6; i++) { const x = -1.9 + (i % 3) * 1.9, z = HZ + 2.9 + 0.25 * (i >> 1), g = L.sub(x * 1.0, 0, z); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); g.add(m); dr.push({ g, m, ph: rnd() }); }
+  const dr = []; for (let i = 0; i < 6; i++) { const x = -1.9 + (i % 3) * 1.9, z = HZ + 2.9 + 0.25 * (i >> 1), g = L.sub(x * 1.0, 0, z); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.userData.weather = 'drip'; g.add(m); dr.push({ g, m, ph: rnd() }); } // WX2: the shared weather system registers this tagged effect.
   const st = []; for (let i = 0; i < 4; i++) { const g = L.sub(-1.2 + i * 0.8, 2.9, HZ + 3.12); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.6), new THREE.MeshBasicMaterial({ color: '#e8e4d8', side: THREE.DoubleSide })); m.position.y = -0.3; g.add(m); st.push({ g, m, ph: i * 1.1 }); }
   out.stats = { torii: T.length, toriiH: [Math.min(...T.map(t => t[2])), Math.max(...T.map(t => t[2]))], toriiStates: [...new Set(T.map(t => t[1]))], sandoLength: 17 - -8.0, hallZ: HZ, hallSize: [4, 5, 5], lanterns: lamps.length, litLanterns: lamps.filter(l => l.lit).length, fireflies: ff.length, drips: dr.length };
   out.update = (t) => {
@@ -21727,11 +22271,20 @@ globalThis.LMLIB = function (K) {
   L.use(group('lm05Ring')); const rg = L.parent();
   L.ground(10.4, '#566f52', 0.02);
   const stones = [], caps = [];
-  const stoneGeo = new THREE.BoxGeometry(W0, H0, T0), mossGeo = new THREE.BoxGeometry(W0 + 0.02, H0 * 0.42, T0 + 0.02), capGeo = new THREE.BoxGeometry(W0 - 0.1, 0.12, T0 - 0.08);
+  const mossGeo = new THREE.BoxGeometry(W0 + 0.02, H0 * 0.42, T0 + 0.02), capGeo = new THREE.BoxGeometry(W0 - 0.1, 0.12, T0 - 0.08);
   const stoneM = mat(GRAN), mossM = mat(MOSS);
+  const profiles = [];
+  const stoneGeometry = k => { const shape = new THREE.Shape(), v = 0.045 * Math.sin((k + 1) * 1.7), u = 0.04 * Math.cos((k + 1) * 2.3);
+    const pts = [[-0.55, 0], [-0.59 + v, 0.7], [-0.57 - u, 1.55], [-0.53 + v, 2.5], [-0.55, H0], [0.55, H0], [0.54 + u, 2.52], [0.57 - v, 1.55], [0.58 + u, 0.75], [0.55, 0]];
+    shape.moveTo(...pts[0]); for (const p of pts.slice(1)) shape.lineTo(...p); shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: T0, bevelEnabled: false, curveSegments: 1 }); geo.translate(0, 0, -T0 / 2);
+    profiles.push(pts.map(p => p.map(q => Math.round(q * 1000) / 1000))); return geo; };
   for (let k = 0; k < N; k++) {
     const a = (k + 0.5) * 2 * PI / N, x = Math.sin(a) * R0, z = Math.cos(a) * R0, ry = a;                                   // a = 0 is the +Z axis: the gap is on it
-    const g = L.sub(x, 0, z, ry); mesh(stoneGeo, stoneM, 0, H0 / 2, 0, true, g); mesh(mossGeo, mossM, 0, H0 * 0.21, 0, false, g);
+    const g = L.sub(x, 0, z, ry); g.name = `lm05Stone${k + 1}`;
+    mesh(stoneGeometry(k), stoneM, 0, 0, 0, true, g); mesh(mossGeo, mossM, 0, H0 * 0.21, 0, false, g);
+    box(0, 0.035, 0, 1.45, 0.07, 0.86, k % 3 ? '#6c685c' : '#686659', false, g);
+    for (const sx of [-1, 1]) { const spot = mesh(new THREE.DodecahedronGeometry(0.12, 0), mat(k % 2 ? '#5a7254' : '#596d52'), sx * 0.44, 0.16 + 0.06 * (k % 3), 0.28, false, g); spot.scale.set(1, 0.55, 0.7); }
     stones.push({ k, x, z, ry, w: W0, h: H0, t: T0 });
   }
   const sl = group('lm05Slab'); L.use(sl);
@@ -21748,7 +22301,7 @@ globalThis.LMLIB = function (K) {
   const capMs = [];
   for (const s of stones) { const g = L.sub(s.x, H0 + 0.02, s.z, s.ry); g.userData.live = true; const m = new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 1, depthWrite: false }); const c = new THREE.Mesh(capGeo, m); c.renderOrder = 8; c.visible = false; g.add(c); capMs.push(m); caps.push(c); }
   const col = new THREE.Color(CLUE.color);
-  out.stats = { stones: stones.map(s => ({ ...s })), N, radius: R0, centreDistance: 2 * R0 * Math.sin(PI / N), slab: [3.0, 2.0], period: CLUE.period, peak: CLUE.peak, color: CLUE.color, mossFraction: 0.42, identicalGeometry: true };
+  out.stats = { stones: stones.map(s => ({ ...s })), N, radius: R0, centreDistance: 2 * R0 * Math.sin(PI / N), slab: [3.0, 2.0], period: CLUE.period, peak: CLUE.peak, color: CLUE.color, mossFraction: 0.42, distinctProfiles: new Set(profiles.map(p => JSON.stringify(p))).size };
   out.update = (t) => { for (let k = 0; k < N; k++) { const e = CLUE.stone(k, t) * CLUE.peak; capMs[k].color.setRGB(col.r * e, col.g * e, col.b * e); caps[k].visible = e > 0.002; } };
   return out;
 };
@@ -21880,7 +22433,7 @@ globalThis.LMLIB = function (K) {
     box(tx, 1.6, tz, 0.34, 0.26, 0.28, '#b9763f', true, gr); cyl(tx, 1.82, tz, 0.07, 0.2, '#2a2a30', gr); }
   // ---- live: snow mist drifting low over the ice (10 pale soft cards, slow, symmetric)
   const lv = group('lm07Live'); L.use(lv);
-  const mist = []; for (let i = 0; i < 10; i++) { const g = L.sub(-6 + rnd() * 12, 0.5 + rnd() * 0.5, -5 + rnd() * 10, rnd() * 3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(3 + rnd() * 2, 0.9), new THREE.MeshBasicMaterial({ map: L.glowTex, color: '#dfeaf2', transparent: true, opacity: 0.0, depthWrite: false, side: THREE.DoubleSide })); g.add(m); mist.push({ g, m, ph: rnd(), x0: g.position.x, z0: g.position.z, y0: g.position.y }); }
+  const mist = []; for (let i = 0; i < 10; i++) { const g = L.sub(-6 + rnd() * 12, 0.5 + rnd() * 0.5, -5 + rnd() * 10, rnd() * 3); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(3 + rnd() * 2, 0.9), new THREE.MeshBasicMaterial({ map: L.glowTex, color: '#dfeaf2', transparent: true, opacity: 0.0, depthWrite: false, side: THREE.DoubleSide })); m.userData.weather = 'snow-mist'; g.add(m); mist.push({ g, m, ph: rnd(), x0: g.position.x, z0: g.position.z, y0: g.position.y }); }   // WX2: snow mist follows the snow at the site
   out.parts = { patch, glow, patchTex, fillTex };
   const col = new THREE.Color(CLUE.color);
   const side = 2 * RC * Math.sin(PI / 6);
@@ -22206,15 +22759,13 @@ globalThis.LMLIB = function (K) {
     return [a, b];
   });
   // eave drips (live)
-  const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }
+  const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; m.userData.weather = 'drip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }   // WX2: a weather effect
   out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [-5.5, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
     trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: -5.2, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [8.8, 9.8], lights: 4, lampsOn: 3 };
   out.update = (t) => {
     const p = (t % 6) / 6, a = 0.5 - 0.5 * Math.cos(p * PI * 2), b = 1 - a;                                       // 6 s period, raised cosine: no flashing
     posts.forEach(([l, r]) => { l.material.color.setRGB(0.35 + 0.65 * a, 0.12 + 0.12 * a, 0.12 + 0.12 * a); r.material.color.setRGB(0.35 + 0.65 * b, 0.12 + 0.12 * b, 0.12 + 0.12 * b); });
-    const viewWeather = K.weather?.get(), localWeather = viewWeather && K.weather.at(rec.lon, rec.lat, viewWeather.time);
-    const dripWeight = viewWeather && localWeather ? (localWeather.weights.rain + localWeather.weights.after) * viewWeather.wLocal : 0;
-    dr.forEach(d => { const q = (t * 0.9 + d.ph) % 1; d.g.position.y = 3.2 - q * 2.2; d.m.material.opacity = 0.7 * (q < 0.9 ? 1 : (1 - q) * 10) * dripWeight; });
+    dr.forEach(d => { const q = (t * 0.9 + d.ph) % 1; d.g.position.y = 3.2 - q * 2.2; d.m.material.opacity = 0.7 * (q < 0.9 ? 1 : (1 - q) * 10); });   // the weather's drip coefficient: weather_fx.js (registered by scene.js)
   };
   return out;
 };
@@ -22362,7 +22913,17 @@ function mat(c){return mats[c]||(mats[c]=new THREE.MeshToonMaterial({color:c,gra
 const groups={};let root=scene;
 function group(name,parent=scene){let g=groups[name];if(!g){g=groups[name]=new THREE.Group();g.name=name;parent.add(g);}root=g;return g;}
 const ink=new THREE.LineBasicMaterial({color:0x273647,transparent:true,opacity:.68});
-function mesh(g,m,x,y,z,outline=true,parent=root){const a=new THREE.Mesh(g,typeof m==='string'?mat(m):m);a.position.set(x,y,z);parent.add(a);if(outline){const e=new THREE.LineSegments(new THREE.EdgesGeometry(g,35),ink);a.add(e);if(g.type==='BoxGeometry'){const eg=e.geometry.clone(),at=eg.attributes.position;for(let k=0;k<at.count;k++){at.setXYZ(k,at.getX(k)+(rnd()-.5)*.013,at.getY(k)+(rnd()-.5)*.013,at.getZ(k)+(rnd()-.5)*.013);}a.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x334458,transparent:true,opacity:.15})));}}return a;}
+// W10c merge-ready: the edges of a geometry are computed once per distinct shape (type, vertices and index, a 64-bit fingerprint) and copied; the
+// EdgesGeometry object itself is still made for every outline (three.js draws its id from Math.random: the town's rain keeps its stream)
+const edgeCache=new Map();
+function edgesOf(g){const p=g.attributes.position.array,ix=g.index?g.index.array:null;let h=2166136261|0;
+  const mix=v=>{let k=Math.imul(v,0xcc9e2d51);k=(k<<15)|(k>>>17);k=Math.imul(k,0x1b873593);h^=k;h=(h<<13)|(h>>>19);h=(Math.imul(h,5)+0xe6546b64)|0;};
+  const u=new Uint32Array(p.buffer,p.byteOffset,p.byteLength>>2);for(let i=0;i<u.length;i++)mix(u[i]);if(ix)for(let i=0;i<ix.length;i++)mix(ix[i]);
+  const k=g.type+'|'+p.length+'|'+(ix?ix.length:0)+'|'+(h>>>0),same=(a,b)=>{if(!a||!b)return a===b;if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true;};
+  const list=edgeCache.get(k)||[],c=list.find(q=>same(q.p,p)&&same(q.ix,ix));          // the hash only buckets: a reuse needs the very same vertices and index
+  if(!c){const e=new THREE.EdgesGeometry(g,35);list.push({p:p.slice(),ix:ix?ix.slice():null,out:e.attributes.position.array.slice()});edgeCache.set(k,list);return e;}     // exactly one geometry object per call either way
+  const e=new THREE.EdgesGeometry(null,35);e.setAttribute('position',new THREE.Float32BufferAttribute(c.out.slice(),3));return e;}
+function mesh(g,m,x,y,z,outline=true,parent=root){const a=new THREE.Mesh(g,typeof m==='string'?mat(m):m);a.position.set(x,y,z);parent.add(a);if(outline){const e=new THREE.LineSegments(edgesOf(g),ink);a.add(e);if(g.type==='BoxGeometry'){const eg=e.geometry.clone(),at=eg.attributes.position;for(let k=0;k<at.count;k++){at.setXYZ(k,at.getX(k)+(rnd()-.5)*.013,at.getY(k)+(rnd()-.5)*.013,at.getZ(k)+(rnd()-.5)*.013);}a.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x334458,transparent:true,opacity:.15})));}}return a;}
 function box(x,y,z,w,h,d,c,outline=true,parent=root){return mesh(new THREE.BoxGeometry(w,h,d),c,x,y,z,outline,parent);}
 function cyl(x,y,z,r,h,c,parent=root){return mesh(new THREE.CylinderGeometry(r,r,h,12),c,x,y,z,true,parent);}
 function line(points,c='#34465c',r=.025,parent=root){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));return mesh(new THREE.TubeGeometry(curve,32,r,6,false),mat(c),0,0,0,false,parent);}
@@ -22418,10 +22979,15 @@ function bake(g,tint=false){g.updateMatrixWorld(true);const inv=g.matrixWorld.cl
     let layer='';for(let p=o;p&&p!==g;p=p.parent)if(p.userData.layer){layer=p.userData.layer;break;}
     const tm=tint&&o.isMesh&&plainToon(o.material)?tintMat(o.material):null,m=tm||o.material,lk=o.isLineSegments?'L'+m.color.getHex()+'|'+m.opacity:null;let band=false;if(!tint){bb.setFromObject(o,true);band=bb.max.y>.3&&bb.min.y<1.8;}
     const k=(lk||m.uuid)+'|'+band+'|'+layer;if(!buckets.has(k))buckets.set(k,{line:!!lk,m,layer,tinted:!!tm,list:[]});buckets.get(k).list.push(o);done.push(o);});
-  for(const {line,m,layer,tinted,list} of buckets.values()){const P=[],N=[],U=[],C=[];
+  /* W10c merge-ready: the parts are copied once into typed arrays of the final size (the same float32 values the plain arrays held; the same geometry
+     objects are made in the same order, so the town's Math.random stream for the rain is untouched) */
+  for(const {line,m,layer,tinted,list} of buckets.values()){const parts=[];let pl=0,nl=0,ul=0,cl=0;
     for(const o of list){let q=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();q.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld));
-      const a=q.attributes,n=a.position.count;P.push(...a.position.array);if(!line){N.push(...(a.normal?a.normal.array:new Float32Array(n*3)));U.push(...(a.uv?a.uv.array:new Float32Array(n*2)));}
-      if(tinted){const c=o.material.color;for(let i=0;i<n;i++)C.push(c.r,c.g,c.b);}q.dispose();}
+      const a=q.attributes,n=a.position.count,pt={p:a.position.array,n:line?null:(a.normal?a.normal.array:n*3),u:line?null:(a.uv?a.uv.array:n*2),c:tinted?o.material.color:null,cnt:n};
+      parts.push(pt);pl+=pt.p.length;if(!line){nl+=typeof pt.n==='number'?pt.n:pt.n.length;ul+=typeof pt.u==='number'?pt.u:pt.u.length;}if(tinted)cl+=n*3;q.dispose();}
+    const P=new Float32Array(pl),N=new Float32Array(nl),U=new Float32Array(ul),C=new Float32Array(cl);let po=0,no=0,uo=0,co=0;
+    for(const pt of parts){P.set(pt.p,po);po+=pt.p.length;if(!line){if(typeof pt.n==='number')no+=pt.n;else{N.set(pt.n,no);no+=pt.n.length;}if(typeof pt.u==='number')uo+=pt.u;else{U.set(pt.u,uo);uo+=pt.u.length;}}
+      if(pt.c){const r=pt.c.r,g=pt.c.g,b=pt.c.b;for(let i=0;i<pt.cnt;i++){C[co++]=r;C[co++]=g;C[co++]=b;}}}
     const q=new THREE.BufferGeometry();q.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
     if(!line){q.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));q.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));}
     if(tinted)q.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
@@ -22584,16 +23150,24 @@ for(const f of L.legacyFurniture.filter(f=>f.group!=='streetLamp')){const g=grou
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
 // W8f-a: everything built so far is the town (ground, buildings, furniture, puddles); its large faces get sphere copies the first time uBend > 0 (below).
 const townRoots=scene.children.slice();
-// Rain falls in a box that follows the view target (clamped to the plinth), never under the roofs and
-// awnings of buildings (their registered shelter rects, see layout.js).
+// Rain falls in a box that follows the view target, never under the roofs and awnings of the town's buildings (their registered shelter rects, see layout.js).
+// WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the plinth, so 0.2 as
+// always; the terrain, the sea, road decks and the landmarks' roofs elsewhere); a drop whose eight tries all fell under a shelter is parked for that fall (drawn
+// nowhere); a drop shows only where the weather rains: its own hash below the field's rain weight at its spot. `positions` keeps the drops exactly as before (the
+// town's Math.random stream and its pictures are unchanged); the GPU buffer `rainShow` is a copy with the hidden drops moved out of sight.
 const roofs=L.structures.flatMap(s=>s.shelter?s.shelter.map(r=>worldRect(s,r)):s.parts.filter(p=>p.role==='building').map(p=>{const b=p.localBounds,r=worldRect(s,[b.min[0],b.min[2],b.max[0],b.max[2]]);return[r[0]-.1,r[1]-.1,r[2]+.1,r[3]+.1];}));
-const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6),speeds=[];let rb=[0,0,0,0],roam=null;
+const rainBox=40,rainTop=7,rainCount=2800,positions=new Float32Array(rainCount*6),speeds=[];let rb=[0,0,0,0],roam=null,rainSurface=null,rainStamp=-1,rainShown=0,rainLv=-1,rainBucket=-9,rainRefresh=0,rainPass=0;
+const rainShow=new Float32Array(rainCount*6),rainFloor=new Float64Array(rainCount).fill(.2),rainPark=new Uint8Array(rainCount),rainW=new Float32Array(rainCount),rainHash=new Float32Array(rainCount),rainLL={};
+for(let i=0;i<rainCount;i++){let h=Math.imul(i+1,2654435761);h=Math.imul(h^(h>>>15),2246822519);h^=h>>>13;rainHash[i]=(h>>>0)/4294967296;}
 function rainBounds(){const h=rainBox/2,center=roam?roam.position:target;rb=[center.x-h,center.z-h,center.x+h,center.z+h];}
-function dropAt(i,y){let x,z;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]))break;}positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
-rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop);speeds.push(4+Math.random()*3);}
-const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(positions,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
-const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,rainMat,bend:BEND});
-landmarkKit.weather=weatherFx;
+function dropAt(i,y,floor0){let x,z,free=false;for(let k=0;k<8;k++){x=rb[0]+Math.random()*(rb[2]-rb[0]);z=rb[1]+Math.random()*(rb[3]-rb[1]);if(!roofs.some(r=>x>r[0]&&x<r[2]&&z>r[1]&&z<r[3])){free=true;break;}}
+  const f=rainSurface?rainSurface(x,z)+.2:.2;if(f!==floor0)y=y-floor0+f;rainFloor[i]=f;rainPark[i]=free?0:1;rainW[i]=rainStamp<0?1:weatherFx.fieldXZ(x,z,rainLL).rain;positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
+rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop,.2);speeds.push(4+Math.random()*3);}
+const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(rainShow,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
+// WX-G: the explicit bases of the lights and the fog. The light presets (section.js), the map transition and the walk write them; the weather writes base x its
+// multiplier (and base fog + its added fog) every frame (weather_fx.js), the night gain of nightlight.js between them.
+const look={hemi:hemi.intensity,moon:moon.intensity,fog:scene.fog.density,fogColor:scene.fog.color.clone()};
+const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,look,bend:BEND,nightGain:()=>1+NIGHTLIGHT.GAIN*nightLight.k()});rainSurface=weatherFx.surfaceY;
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // W8e-b: the flat map runs from the seam at -85 deg to one circumference east of it (bend.js shifts what lies west of the seam); flat pans clamp to it, sphere pans wrap into it; latitude +-80 deg.
@@ -22618,7 +23192,7 @@ for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.re
 function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
 let roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=look.fog=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
@@ -22675,7 +23249,7 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
     seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;});
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
-  if(TR.auto&&!section.state.mode){scene.fog.density=TR.fog0*TRANSITION.fogOf(BEND.get());}
+  if(TR.auto&&!section.state.mode){scene.fog.density=look.fog=TR.fog0*TRANSITION.fogOf(BEND.get());}
   const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';if(!available&&section.state.mode)section.setMode(false);
 }
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
@@ -22684,7 +23258,7 @@ function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoo
 // distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
 // (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
 function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,d:camera.position.distanceTo(roam.position),target:[roam.position.x,0,roam.position.z],u:0};}
-  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u};}
+  const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u,cam:[camera.position.x,camera.position.z]};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
@@ -22695,11 +23269,16 @@ if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.hea
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
-rainBounds();for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<.2)dropAt(i,rainTop);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1]);}rg.attributes.position.needsUpdate=true;rainMat.opacity=roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60));{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);if(window.ROADS_API)window.ROADS_API.setPuddleWeight(weatherFx.get()?.puddleWeight??1);}rainObj.visible=(!window.SECTION_API||window.SECTION_API.state.settings.rain)&&!(BEND.get()>0&&rainMat.opacity<=.001)&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of townSignalPhases){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);streetlights.tick(t,camera);renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
+{const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);if(window.ROADS_API)window.ROADS_API.setPuddleWeight(weatherFx.get()?.puddleWeight??1);}
+rainBounds();const rs=weatherFx.stamp();if(rs!==rainStamp){const jump=weatherFx.lockVersion()!==rainLv||Math.abs(weatherFx.bucket()-rainBucket)>1;rainLv=weatherFx.lockVersion();rainBucket=weatherFx.bucket();rainRefresh=jump?rainCount:0;rainPass=jump?0:8;}rainStamp=rs;
+/* the drops' rain weights follow the field: at once when the lock changes or the weather time jumps (so a locked clear is clear at the next frame), else over 8 frames */
+const rfrom=rainPass>0?(8-rainPass)*rainCount/8:0,rto=rainPass>0?(9-rainPass)*rainCount/8:rainRefresh;if(rainPass>0)rainPass--;else rainRefresh=0;for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<rainFloor[i])dropAt(i,rainTop,.2);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1],rainFloor[i]);else if(i>=rfrom&&i<rto)rainW[i]=weatherFx.fieldXZ(x,z,rainLL).rain;}
+rainShown=0;for(let i=0;i<rainCount;i++){const n=i*6;if(!rainPark[i]&&rainHash[i]<rainW[i]){for(let k=0;k<6;k++)rainShow[n+k]=positions[n+k];rainShown++;}else{rainShow[n]=rainShow[n+3]=positions[n];rainShow[n+2]=rainShow[n+5]=positions[n+2];rainShow[n+1]=rainShow[n+4]=-1e4;}}
+rg.attributes.position.needsUpdate=true;rainMat.opacity=(roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60)))*weatherFx.gains().dry;rainObj.visible=weatherFx.gains().rainOn&&rainShown>0&&rainMat.opacity>.001&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of townSignalPhases){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);streetlights.tick(t,camera);weatherFx.apply();renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
-const terrain=TERRAIN.attach(scene,()=>new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp}),BEND);
+const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m plinth top and asphalt sheet sank about 24 m and the sky
 // showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
@@ -22730,7 +23309,19 @@ const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('
   {name:'landmarks',deps:['landcover'],label:'正在安放村落',job:landmarkJob}
 ]});
 worldgen.start().then(()=>{
-window.__scene={scene,renderer,camera,sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+// WX2 (docs/world/WEATHER_COMPLETION_PLAN.md 5.2, 5.3): the weather's receiving surfaces (the rendered terrain, the roads and decks of the lamp table, each landmark's
+// roofs and grounds) and its registered effects: the buildings' animated drips and window runs (their live line batches in the drip colours) and rain rings (live
+// additive rings), the landmarks' tagged parts (userData.weather), the mist belt of ameni-dake. Only their opacity and visibility follow the weather; nothing moves.
+weatherFx.setSurface({terrain:terrain.sampler(),roads:(streetlights.data()&&streetlights.data().surface)||null});
+for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherFx.setSurface({landmark:lm,groups:info.groups});}
+{const v=new THREE.Vector3(),dripHex=new Set(['cee7e5','c1e4df','d4ecea']);for(const r of townRoots)r.traverse(o=>{if(!o.material)return;let live=false;for(let p=o.parent;p;p=p.parent)if(p.userData&&p.userData.live){live=true;break;}if(!live)return;
+  let top=o;while(top.parent&&top.parent!==scene)top=top.parent;o.getWorldPosition(v);const ll=lonLatAt(v.x,v.z),src='building:'+top.name;
+  if(o.isLineSegments&&o.material.isLineBasicMaterial&&dripHex.has(o.material.color.getHexString()))weatherFx.register(o,{kind:'drip',src,lon:ll.lon,lat:ll.lat});   // eave drips, window runs, rain chains and spouts
+  else if(o.isMesh&&o.geometry&&o.geometry.type==='RingGeometry'&&o.material.blending===THREE.AdditiveBlending&&!/Chozu$/.test(top.name))   // the chozu basins' rings come from their spouts: not weather
+    weatherFx.register(o,{kind:/Rain$/.test(top.name)?'drip':'impact',owner:'reset',src,lon:ll.lon,lat:ll.lat});});}   // a rain chain's basin rings follow its flow (drip), a pond's follow the rain
+for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
+if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

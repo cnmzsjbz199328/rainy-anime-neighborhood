@@ -1,0 +1,1013 @@
+{
+ "date": "2026-10-16",
+ "fails": [],
+ "report": {
+  "places": {
+   "town": {
+    "lon": 0,
+    "lat": 0,
+    "xz": [
+     -7,
+     20
+    ]
+   },
+   "repro1": {
+    "lon": -45.837,
+    "lat": 7.617,
+    "xz": [
+     -72,
+     -12
+    ]
+   },
+   "repro2": {
+    "lon": 95.493,
+    "lat": -24.666,
+    "xz": [
+     150,
+     40
+    ]
+   },
+   "forest": {
+    "lon": 84.403,
+    "lat": -47.234,
+    "xz": [
+     132.6,
+     84.4
+    ]
+   },
+   "coast": {
+    "lon": 59.602,
+    "lat": -62.239,
+    "xz": [
+     93.6,
+     125.8
+    ]
+   },
+   "grass": {
+    "lon": 126.831,
+    "lat": 64.033,
+    "xz": [
+     199.2,
+     -132
+    ]
+   },
+   "sleet": {
+    "lon": 161.08,
+    "lat": 61.761,
+    "xz": [
+     253,
+     -124.2
+    ]
+   },
+   "ice": {
+    "lon": 168.541,
+    "lat": -67.784,
+    "xz": [
+     264.7,
+     146.5
+    ]
+   },
+   "desert": {
+    "lon": -124.692,
+    "lat": -43.99,
+    "xz": [
+     -195.9,
+     77.1
+    ]
+   },
+   "lava": {
+    "lon": -49.961,
+    "lat": 60.205,
+    "xz": [
+     -78.5,
+     -119.2
+    ]
+   },
+   "desertEdge": {
+    "lon": -125.948,
+    "lat": -37.945,
+    "xz": [
+     -197.8,
+     64.5
+    ]
+   },
+   "sea": {
+    "lon": 139.653,
+    "lat": -23.24,
+    "xz": [
+     219.4,
+     37.5
+    ]
+   }
+  },
+  "R": {
+   "ok": true,
+   "lines": [
+    "共 124 个：drip building 97，impact building 4，drip LM04 6，snow-mist LM07 10，drip LM09 6，mist cover:mist 1",
+    "未登记的滴水色动画线或雨击环：无（手水舍水盆的环来自竹筒流水，不是天气，不登记）；未登记的地标标记：0"
+   ],
+   "data": {
+    "by": {
+     "drip building": 97,
+     "impact building": 4,
+     "drip LM04": 6,
+     "snow-mist LM07": 10,
+     "drip LM09": 6,
+     "mist cover:mist": 1
+    },
+    "missing": [],
+    "tags": [],
+    "n": 124
+   }
+  },
+  "I1": {
+   "ok": true,
+   "lines": [
+    "town/rain：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2800/2800，雪 0/900",
+    "town/after：雨 0 雪 0 湿 1 滴 1 雾 0.2 → 雨丝 0/2800，雪 0/900",
+    "town/overcast：雨 0 雪 0 湿 0.6 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "town/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "town/fog：雨 0 雪 0 湿 1 滴 1 雾 0.2 → 雨丝 0/2800，雪 0/900",
+    "town/snow：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2800/2800，雪 0/900",
+    "grass/rain：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2452/2800，雪 118/900",
+    "grass/after：雨 0 雪 0 湿 1 滴 1 雾 0.2 → 雨丝 0/2800，雪 0/900",
+    "grass/overcast：雨 0 雪 0 湿 0.6 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "grass/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "forest/rain：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2800/2800，雪 0/900",
+    "forest/after：雨 0 雪 0 湿 1 滴 1 雾 0.2 → 雨丝 0/2800，雪 0/900",
+    "forest/fog：雨 0 雪 0 湿 0.6 滴 0.5 雾 1 → 雨丝 0/2800，雪 0/900",
+    "forest/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "coast/rain：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2180/2800，雪 194/900",
+    "coast/fog：雨 0 雪 0 湿 0.6 滴 0.5 雾 1 → 雨丝 0/2800，雪 0/900",
+    "coast/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "sleet/rain：雨 0.782 雪 0.218 湿 0.782 滴 0.782 雾 0.028 → 雨丝 2512/2800，雪 89/900",
+    "sleet/snow：雨 0.782 雪 0.218 湿 0.782 滴 0.782 雾 0.028 → 雨丝 2508/2800，雪 90/900",
+    "sleet/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "ice/snow：雨 0 雪 1 湿 0 滴 0 雾 0.13 → 雨丝 1273/2800，雪 470/900",
+    "ice/rain：雨 0 雪 1 湿 0 滴 0 雾 0.13 → 雨丝 1281/2800，雪 472/900",
+    "ice/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "desert/rain：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2800/2800，雪 0/900",
+    "desert/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900",
+    "lava/rain：雨 1 雪 0 湿 1 滴 1 雾 0 → 雨丝 2459/2800，雪 121/900",
+    "lava/clear：雨 0 雪 0 湿 0 滴 0 雾 0 → 雨丝 0/2800，雪 0/900"
+   ],
+   "data": [
+    {
+     "place": "town",
+     "lock": "rain",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2800,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "town",
+     "lock": "after",
+     "rain": 0,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0.2,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "town",
+     "lock": "overcast",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0.6,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "town",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "town",
+     "lock": "fog",
+     "rain": 0,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0.2,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "town",
+     "lock": "snow",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2800,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "grass",
+     "lock": "rain",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2452,
+     "snowShown": 118,
+     "effK": []
+    },
+    {
+     "place": "grass",
+     "lock": "after",
+     "rain": 0,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0.2,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "grass",
+     "lock": "overcast",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0.6,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "grass",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "forest",
+     "lock": "rain",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2800,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "forest",
+     "lock": "after",
+     "rain": 0,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0.2,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "forest",
+     "lock": "fog",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0.6,
+     "drip": 0.5,
+     "mist": 1,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "forest",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "coast",
+     "lock": "rain",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2180,
+     "snowShown": 194,
+     "effK": []
+    },
+    {
+     "place": "coast",
+     "lock": "fog",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0.6,
+     "drip": 0.5,
+     "mist": 1,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "coast",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "sleet",
+     "lock": "rain",
+     "rain": 0.782,
+     "snow": 0.218,
+     "wet": 0.782,
+     "drip": 0.782,
+     "mist": 0.028,
+     "rainShown": 2512,
+     "snowShown": 89,
+     "effK": []
+    },
+    {
+     "place": "sleet",
+     "lock": "snow",
+     "rain": 0.782,
+     "snow": 0.218,
+     "wet": 0.782,
+     "drip": 0.782,
+     "mist": 0.028,
+     "rainShown": 2508,
+     "snowShown": 90,
+     "effK": []
+    },
+    {
+     "place": "sleet",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "ice",
+     "lock": "snow",
+     "rain": 0,
+     "snow": 1,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0.13,
+     "rainShown": 1273,
+     "snowShown": 470,
+     "effK": []
+    },
+    {
+     "place": "ice",
+     "lock": "rain",
+     "rain": 0,
+     "snow": 1,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0.13,
+     "rainShown": 1281,
+     "snowShown": 472,
+     "effK": []
+    },
+    {
+     "place": "ice",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "desert",
+     "lock": "rain",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2800,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "desert",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    },
+    {
+     "place": "lava",
+     "lock": "rain",
+     "rain": 1,
+     "snow": 0,
+     "wet": 1,
+     "drip": 1,
+     "mist": 0,
+     "rainShown": 2459,
+     "snowShown": 121,
+     "effK": []
+    },
+    {
+     "place": "lava",
+     "lock": "clear",
+     "rain": 0,
+     "snow": 0,
+     "wet": 0,
+     "drip": 0,
+     "mist": 0,
+     "rainShown": 0,
+     "snowShown": 0,
+     "effK": []
+    }
+   ]
+  },
+  "I2": {
+   "ok": true,
+   "lines": [
+    "晴：雨丝 0，天气图雨击最大 0/255（海面与水田着色器乘它），路面水洼环 隐藏（有雨的点 0），池塘环系数 0 0 0 0，显示中的滴水 0",
+    "雨后：雨丝 0，雨击最大 0，水洼环 隐藏，建筑滴水全部显示且系数 1：true，城镇湿润 1，天气图城镇格湿润 255/255",
+    "雨：雨丝 2800/2800，雨击最大 255，水洼环 显示，滴水 true；海面 uRain（开关 × (1 − uBend) × w_local）1.000"
+   ],
+   "data": {
+    "clear": {
+     "rainShown": 0,
+     "mapRainMax": 0,
+     "mapWetMin": 0,
+     "townWet": 0,
+     "uRain": 1,
+     "ripVis": false,
+     "ripAny": 0,
+     "pond": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "drip": false,
+     "dripAny": 0,
+     "wet": 0
+    },
+    "after": {
+     "rainShown": 0,
+     "mapRainMax": 0,
+     "mapWetMin": 0,
+     "townWet": 255,
+     "uRain": 1,
+     "ripVis": false,
+     "ripAny": 0,
+     "pond": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "drip": true,
+     "dripAny": 109,
+     "wet": 1
+    },
+    "rain": {
+     "rainShown": 2800,
+     "mapRainMax": 255,
+     "mapWetMin": 0,
+     "townWet": 255,
+     "uRain": 1,
+     "ripVis": true,
+     "ripAny": 176,
+     "pond": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "drip": true,
+     "dripAny": 109,
+     "wet": 1
+    }
+   }
+  },
+  "I3": {
+   "ok": true,
+   "lines": [
+    "天气图：雨击 255 的格 2917、0 的格 1179；场：沙漠点雨 0，东 9 m 草原点雨 1",
+    "雨箱跨边界：显示 1225 滴，因所在地无雨而不显示 1575 滴；显示与否不符合“哈希 < 该处雨权重”的 0 滴（允许 2：本帧刚刷新的边界滴）"
+   ],
+   "data": {
+    "wet": 2917,
+    "dry": 1179,
+    "shownRain": 1225,
+    "hiddenRain": 1575,
+    "wrong": 0,
+    "desert": 0,
+    "grass": 1,
+    "place": {
+     "lon": -125.94760358333588,
+     "lat": -37.94514570198953,
+     "xz": [
+      -197.83803307732376,
+      64.5096157735946
+     ]
+    }
+   }
+  },
+  "I4": {
+   "ok": true,
+   "lines": [
+    "高地（雨见岳山顶）（锁snow）：目标接收面 y 46.98；雨丝 2800，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/60；雪 0，在地表以下 0；雨对象提交渲染 1 次",
+    "坡地（雨见岳东南坡）（锁rain）：目标接收面 y 8.5；雨丝 2800，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/60；雪 0，在地表以下 0；雨对象提交渲染 1 次",
+    "桥面 RN01-13（锁rain）：目标接收面 y 2.68（桥面 2.68）；雨丝 2800，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/0；雪 0，在地表以下 0；雨对象提交渲染 1 次",
+    "海面（锁rain）：目标接收面 y -1.74；雨丝 2800，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/0；雪 0，在地表以下 0；雨对象提交渲染 1 次",
+    "LM04 正殿屋顶（锁rain）：目标接收面 y 4.46；雨丝 2800，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/60；雪 0，在地表以下 0；雨对象提交渲染 1 次",
+    "LM07 冰面（锁snow）：目标接收面 y 6.49；雨丝 0，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/0；雪 900，在地表以下 0；雨对象提交渲染 0 次",
+    "旧剔除点 [-72, 1.2, -12]（锁rain）：目标接收面 y 0.35；雨丝 2800，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/0；雪 0，在地表以下 0；雨对象提交渲染 1 次",
+    "旧剔除点 [150, 1.2, 40]（锁rain）：目标接收面 y 1.44；雨丝 2718，在底面以下 0，底面 ≠ 接收面 + 0.2 的 0；自上而下射线在雨滴与底面之间碰到实体 0/0；雪 26，在地表以下 0；雨对象提交渲染 1 次"
+   ],
+   "data": [
+    {
+     "name": "高地（雨见岳山顶）",
+     "lock": "snow",
+     "surf": 46.98,
+     "deck": null,
+     "shown": 2800,
+     "n": 2800,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 60,
+     "hits": 0,
+     "snowShown": 0,
+     "snowUnder": 0,
+     "submitted": 1
+    },
+    {
+     "name": "坡地（雨见岳东南坡）",
+     "lock": "rain",
+     "surf": 8.5,
+     "deck": null,
+     "shown": 2800,
+     "n": 2800,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 60,
+     "hits": 0,
+     "snowShown": 0,
+     "snowUnder": 0,
+     "submitted": 1
+    },
+    {
+     "name": "桥面 RN01-13",
+     "lock": "rain",
+     "surf": 2.68,
+     "deck": 2.68,
+     "shown": 2800,
+     "n": 2800,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 0,
+     "hits": 0,
+     "snowShown": 0,
+     "snowUnder": 0,
+     "submitted": 1
+    },
+    {
+     "name": "海面",
+     "lock": "rain",
+     "surf": -1.74,
+     "deck": null,
+     "shown": 2800,
+     "n": 2800,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 0,
+     "hits": 0,
+     "snowShown": 0,
+     "snowUnder": 0,
+     "submitted": 1
+    },
+    {
+     "name": "LM04 正殿屋顶",
+     "lock": "rain",
+     "surf": 4.46,
+     "deck": null,
+     "shown": 2800,
+     "n": 2800,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 60,
+     "hits": 0,
+     "snowShown": 0,
+     "snowUnder": 0,
+     "submitted": 1
+    },
+    {
+     "name": "LM07 冰面",
+     "lock": "snow",
+     "surf": 6.49,
+     "deck": null,
+     "shown": 0,
+     "n": 0,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 0,
+     "hits": 0,
+     "snowShown": 900,
+     "snowUnder": 0,
+     "submitted": 0
+    },
+    {
+     "name": "旧剔除点 [-72, 1.2, -12]",
+     "lock": "rain",
+     "surf": 0.35,
+     "deck": null,
+     "shown": 2800,
+     "n": 2800,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 0,
+     "hits": 0,
+     "snowShown": 0,
+     "snowUnder": 0,
+     "submitted": 1
+    },
+    {
+     "name": "旧剔除点 [150, 1.2, 40]",
+     "lock": "rain",
+     "surf": 1.44,
+     "deck": null,
+     "shown": 2718,
+     "n": 2718,
+     "under": 0,
+     "floorBad": 0,
+     "rays": 0,
+     "hits": 0,
+     "snowShown": 26,
+     "snowUnder": 0,
+     "submitted": 1
+    }
+   ]
+  },
+  "I5": {
+   "ok": true,
+   "lines": [
+    "6 种锁定 × 4 处 × d = 9/40/140/400 = 96 个画面，违规 0",
+    "球形下仍显示的冰面网格 3、海/水面网格 4",
+    "u = 0：雨丝不透明度 0.2900（0.2900），滴水 1.000，雨击 1.000，雾带 1.000（城镇雨锁、w_local = 1 时都应为 1 − u）",
+    "u = 0.25：雨丝不透明度 0.2175（0.2175），滴水 0.750，雨击 0.750，雾带 0.750（城镇雨锁、w_local = 1 时都应为 1 − u）",
+    "u = 0.5：雨丝不透明度 0.1450（0.1450），滴水 0.500，雨击 0.500，雾带 0.500（城镇雨锁、w_local = 1 时都应为 1 − u）",
+    "u = 0.75：雨丝不透明度 0.0725（0.0725），滴水 0.250，雨击 0.250，雾带 0.250（城镇雨锁、w_local = 1 时都应为 1 − u）",
+    "u = 1：雨丝不透明度 0.0000（0.0000），滴水 0.000，雨击 0.000，雾带 0.000（城镇雨锁、w_local = 1 时都应为 1 − u）"
+   ],
+   "data": {
+    "n": 96,
+    "bad": [],
+    "keep": {
+     "ice": 3,
+     "sea": 4
+    },
+    "rows": [
+     {
+      "u": 0,
+      "rain": 0.29,
+      "drip": 1,
+      "impact": 1,
+      "mist": 1,
+      "gain": 1
+     },
+     {
+      "u": 0.25,
+      "rain": 0.21749999999999997,
+      "drip": 0.75,
+      "impact": 0.75,
+      "mist": 0.75,
+      "gain": 0.75
+     },
+     {
+      "u": 0.5,
+      "rain": 0.145,
+      "drip": 0.5,
+      "impact": 0.5,
+      "mist": 0.5,
+      "gain": 0.5
+     },
+     {
+      "u": 0.75,
+      "rain": 0.0725,
+      "drip": 0.25,
+      "impact": 0.25,
+      "mist": 0.25,
+      "gain": 0.25
+     },
+     {
+      "u": 1,
+      "rain": 0,
+      "drip": 0,
+      "impact": 0,
+      "mist": 0,
+      "gain": 0
+     }
+    ]
+   }
+  },
+  "I6": {
+   "ok": true,
+   "lines": [
+    "城镇 雨→晴→雾→雨→阴→雨后→雨：逐值相同",
+    "森林 同上：逐值相同",
+    "森林锁雾 平面→球形→平面：逐值相同",
+    "t = 1234 s 草原机位，离开到城镇、森林再回来：天气与全部系数相同"
+   ],
+   "data": {
+    "town": {
+     "a": "2|2.3|0.0055|252e43|252e43",
+     "b": "2|2.3|0.0055|252e43|252e43",
+     "same": true
+    },
+    "forest": {
+     "a": "2|2.3|0.0055|252e43|252e43",
+     "b": "2|2.3|0.0055|252e43|252e43",
+     "same": true
+    },
+    "sphere": {
+     "a": "1.8|1.8399999999999999|0.0355|5a5870|5a5870",
+     "b": "1.8|1.8399999999999999|0.0355|5a5870|5a5870",
+     "same": true
+    },
+    "visit": {
+     "same": true
+    }
+   }
+  },
+  "I7": {
+   "ok": true,
+   "lines": [
+    "60 处随机平移（交替锁雨/雪/自然/雾）：格点缓存最多 52986（上限 60000），雨 2800 滴、雪 900 片不变，地标接收面栅格共 145163 格（按需建立），JS 堆变化 0.0 MB",
+    "低档页面（?quality=low，档位 \"low\"）：雨 2800、雪 900、雪粒大小 0.09、冰原锁雪显示 900 片",
+    "城镇雨：weather_fx tick + apply 中位 0.30 ms、p95 0.40 ms",
+    "城外雾：weather_fx tick + apply 中位 0.30 ms、p95 0.50 ms",
+    "冰原雪：weather_fx tick + apply 中位 0.40 ms、p95 0.60 ms"
+   ],
+   "data": {
+    "maxNodes": 52986,
+    "nodesCap": 60000,
+    "snowN": 900,
+    "rainN": 2800,
+    "coverCells": 145163,
+    "heapMB": 0,
+    "cost": [
+     {
+      "name": "城镇雨",
+      "median": 0.2999999523162842,
+      "p95": 0.40000009536743164
+     },
+     {
+      "name": "城外雾",
+      "median": 0.2999999523162842,
+      "p95": 0.5
+     },
+     {
+      "name": "冰原雪",
+      "median": 0.39999985694885254,
+      "p95": 0.6000001430511475
+     }
+    ],
+    "low": {
+     "tier": "low",
+     "rain": 2800,
+     "snow": 900,
+     "size": 0.09,
+     "shown": 900
+    }
+   }
+  },
+  "I8": {
+   "ok": true,
+   "lines": [
+    "24 个情形，绘制了降水对象的 0",
+    "冷启动于自然晴（t = 1570 s，晴权重 1）：绘制降水对象 0",
+    "同帧差分（自然晴，城镇，116 个降水对象：雨丝、雪、建筑与地标滴水、雨击环）：差异像素 0，最大通道差 0",
+    "雨线来源（审查结论）：建筑檐滴、窗上雨流、锁链与落水口流水、地标檐滴原先不受天气控制；路面水洼环原先按湿润在阴天与雾里继续；城镇原先一处同时有几种天气而雨丝跟随目标点。现均按所在地天气"
+   ],
+   "data": {
+    "rows": [
+     {
+      "label": "town d=9 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "town d=40 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "town d=140 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "town d=400 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "repro1 d=9 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "repro1 d=40 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "repro1 d=140 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "repro1 d=400 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "forest d=9 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "forest d=40 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "forest d=140 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "forest d=400 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "coast d=9 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "coast d=40 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "coast d=140 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "coast d=400 雨→晴",
+      "drawn": 0
+     },
+     {
+      "label": "ice d=9 雪→晴",
+      "drawn": 0
+     },
+     {
+      "label": "ice d=40 雪→晴",
+      "drawn": 0
+     },
+     {
+      "label": "ice d=140 雪→晴",
+      "drawn": 0
+     },
+     {
+      "label": "ice d=400 雪→晴",
+      "drawn": 0
+     },
+     {
+      "label": "城镇 雨后→晴",
+      "drawn": 0
+     },
+     {
+      "label": "城镇 解除锁定、自然晴 t = 1570 s",
+      "drawn": 0
+     },
+     {
+      "label": "城镇 自然晴 旧雨开关 关→开",
+      "drawn": 0
+     },
+     {
+      "label": "城镇 自然晴 平面→球形→平面",
+      "drawn": 0
+     }
+    ],
+    "bad": [],
+    "tc": 1570,
+    "diff": {
+     "n": 0,
+     "max": 0
+    },
+    "listed": 116,
+    "cold": {
+     "n": 0,
+     "w": 1
+    }
+   }
+  },
+  "I9": {
+   "ok": true,
+   "lines": [
+    "t = 1500 s：雨 1、晴 0、渐变剩余 48 s → 雨丝 2800/2800",
+    "t = 1512 s：雨 0.75、晴 0.25、渐变剩余 36 s → 雨丝 2144/2800",
+    "t = 1524 s：雨 0.5、晴 0.5、渐变剩余 24 s → 雨丝 1442/2800",
+    "t = 1536 s：雨 0.25、晴 0.75、渐变剩余 12 s → 雨丝 723/2800",
+    "t = 1547 s：雨 0.021、晴 0.979、渐变剩余 1 s → 雨丝 69/2800",
+    "t = 1549 s：雨 0、晴 1、渐变剩余 0 s → 雨丝 0/2800"
+   ],
+   "data": [
+    {
+     "t": 1500,
+     "rain": 1,
+     "clear": 0,
+     "fadeLeft": 48,
+     "shown": 2800
+    },
+    {
+     "t": 1512,
+     "rain": 0.75,
+     "clear": 0.25,
+     "fadeLeft": 36,
+     "shown": 2144
+    },
+    {
+     "t": 1524,
+     "rain": 0.5,
+     "clear": 0.5,
+     "fadeLeft": 24,
+     "shown": 1442
+    },
+    {
+     "t": 1536,
+     "rain": 0.25,
+     "clear": 0.75,
+     "fadeLeft": 12,
+     "shown": 723
+    },
+    {
+     "t": 1547,
+     "rain": 0.021,
+     "clear": 0.979,
+     "fadeLeft": 1,
+     "shown": 69
+    },
+    {
+     "t": 1549,
+     "rain": 0,
+     "clear": 1,
+     "fadeLeft": 0,
+     "shown": 0
+    }
+   ]
+  }
+ }
+}

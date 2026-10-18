@@ -40,7 +40,7 @@ const SP = SECP.plan(W), corridor = (lon, lat) => { const uv = SP.toUV(lon, lat)
 const lms = W.landmarks.filter(l => l.id !== 'TOWN'), avoidRoads = avoid.filter(a => a.poly || !lms.some(l => a.lon === l.lon && a.lat === l.lat));
 const roadIndex = LC.createAvoidIndex(W, avoidRoads), avoidIndex = LC.createAvoidIndex(W, avoid), roadHit = (p, radius = 0.2) => roadIndex.hit(p.lon, p.lat, radius);
 const itemRadius = it => 0.5 * Math.max(it.s?.[0] || 0.4, it.s?.[2] || 0.4);
-const DATA = LC.build(W, H, { avoid, avoidIndex, corridor });
+const DATA = LC.build(W, H, { avoid, avoidIndex, corridor, footprint: SECP.FOOTPRINT });
 const tf = W.heightField.features.find(q => q.id === 'hill-terraces-ameni');
 DATA.forest = LC.forest(W, H, { avoid, avoidIndex, corridor });
 DATA.grass = LC.grassland(W, H, { avoid, avoidIndex, corridor }); DATA.dunes = LC.dunes(W, H, { avoid, avoidIndex });

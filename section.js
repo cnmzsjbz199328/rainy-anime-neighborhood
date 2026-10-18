@@ -36,6 +36,11 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
   // W8g-a: a stepped build (TERRAIN.job): the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
     K = global.FLORA.make(THREE); WATERK = global.WATER.make(THREE); PLAN = global.SECTION_PLAN.plan(W);
+    // the plan boxes that the section's CR01 cull and the land cover take (section_plan.js FOOTPRINT) hold the templates they stand for
+    for (const [type, e] of Object.entries(global.SECTION_PLAN.FOOTPRINT)) {
+      const p = K.geometries[type] && K.geometries[type].attributes.position; if (!p) throw new Error(`section: no ${type} template for its plan box`);
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); if (x < e[0] - 1e-6 || x > e[1] + 1e-6 || z < e[2] - 1e-6 || z > e[3] + 1e-6) throw new Error(`section: the ${type} template leaves its plan box (section_plan.js FOOTPRINT)`); }
+    }
     // W8g-b (B3): the one height of the rendered terrain (terrain.sampler(), the global index once the rest exists) instead of an own window sampler
     H = TERR.sampler(); WS = Object.assign(Object.create(W), { height: H });
     const root = new THREE.Group(); root.name = 'section'; root.visible = false; scene.add(root); S.root = root;
@@ -45,6 +50,7 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
     const floraMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide });
     const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const groundMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    groundMat.onBeforeCompile = global.WEATHER_FX.snowCover;            // WX3: the ground strips (ice, lava, plots ...) whiten a little where it snows
     const inkW = { value: 0.03 }, T = WATERK.uniforms;
     // canopy sway (one of the three slow motions of the section): the upper part of a tree leans a few centimetres with a slow phase per instance
     const SWAY = `float sw = smoothstep(1.2, 7.0, position.y); transformed.x += sin(uTime * 0.9 + instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.21) * 0.1 * sw; transformed.z += cos(uTime * 0.7 + instanceMatrix[3].z * 0.3) * 0.07 * sw;`;
@@ -250,14 +256,16 @@ SECTION.attach = function (scene, ctx, BEND, TERR) {
       T.counts = { near: ni, far: fi };
     }
   }
+  // the light presets write the explicit bases (ctx.look, WX-G) as well as the lights: the weather multiplies those bases every frame (weather_fx.js)
   function applyLight() {
     const L = S.settings.light, h = ctx.lights.hemi, m = ctx.lights.moon;
     if (L === 'panorama') { h.intensity = light0.hemi * 1.5; m.intensity = light0.moon * 1.5; scene.fog.density = 0; }
     else if (L === 'neutral') { h.intensity = light0.hemi * 2.8; m.intensity = light0.moon * 1.6; scene.fog.density = 0; }   // material and form study (not a daytime state, D9)
     else { h.intensity = light0.hemi; m.intensity = light0.moon; scene.fog.density = light0.fog; }
+    if (ctx.look) { ctx.look.hemi = h.intensity; ctx.look.moon = m.intensity; ctx.look.fog = scene.fog.density; }
   }
   function tick(t, camera) {
-    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = (S.settings.rain ? 1 : 0) * (1 - BEND.get()));   // W8e-c: no ripples on the sphere
+    WATERK && (WATERK.uniforms.uTime.value = t, WATERK.uniforms.uRain.value = global.WEATHER_FX.live.gains().impact);   // WX2: the switch x (1 - uBend) x w_local; the place's rain is in the shader (wxAt)
     if (!S.root || !S.root.visible) return;
     const d = distance(camera); S.ink.distance = d;
     const mode = S.settings.ink;

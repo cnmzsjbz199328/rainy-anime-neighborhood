@@ -8,5 +8,10 @@ docs/world/w[0-9]*/
 docs/world/wd1/
 docs/world/wd2/
 docs/world/wd3/
+docs/world/wd4/
 docs/buildings/screenshots/
 docs/world/survey/equirect-road-review-base.png
+# 天气专项（WX）：再生成的截图与复现图不入库；检查摘要 report.json 可入库
+docs/world/weather/wx*/**/*.png
+docs/world/weather/wx*/**/*.webp
+docs/world/weather/wx*/**/*.jpg
