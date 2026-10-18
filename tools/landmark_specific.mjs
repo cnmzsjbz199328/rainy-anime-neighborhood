@@ -145,8 +145,8 @@ async function clueBrightness({ page, info, fail, f, M }) {
 CHECKS.LM05 = async (ctx) => {
   const { info, fail, f, W, lm, M, page } = ctx, st = M.stats;
   const hs = new Set(st.stones.map(s => `${s.w}|${s.h}|${s.t}`)); const d = st.stones.map((s, i) => Math.hypot(s.x - st.stones[(i + 1) % st.N].x, s.z - st.stones[(i + 1) % st.N].z)), dmin = Math.min(...d), dmax = Math.max(...d);
-  info.push(`立石 ${st.N} 块（规格 13）：尺寸种类 ${hs.size} 种（完全相同：高 ${st.stones[0].h} × 宽 ${st.stones[0].w} × 厚 ${st.stones[0].t} m，共享一份几何），相邻圆心距 ${f(dmin, 4)}–${f(dmax, 4)} m（理论 2 × 9 × sin(π/13) = ${f(st.centreDistance, 4)}，容差 0.01），圆半径 ${st.radius} m（直径 18 m）；中央石台 ${st.slab.join(' × ')} m、顶面更光滑更暗、边缘笔直；苔藓只在立石下 ${f(st.mossFraction * 100, 0)}%`);
-  if (st.N !== 13) fail('不是 13 块'); if (hs.size !== 1) fail('立石尺寸不完全相同'); if (dmax - dmin > 0.01 || Math.abs(dmax - st.centreDistance) > 0.01) fail('立石间距不相等');
+  info.push(`立石 ${st.N} 块（规格 13）：外包尺寸种类 ${hs.size} 种、独立轮廓 ${st.distinctProfiles} 种；相邻圆心距 ${f(dmin, 4)}–${f(dmax, 4)} m（理论 2 × 9 × sin(π/13) = ${f(st.centreDistance, 4)}，容差 0.01），圆半径 ${st.radius} m（直径 18 m）；中央石台 ${st.slab.join(' × ')} m、顶面更光滑更暗、边缘笔直；苔藓只在立石下 ${f(st.mossFraction * 100, 0)}%`);
+  if (st.N !== 13) fail('不是 13 块'); if (st.distinctProfiles !== 13) fail('立石轮廓没有逐块独立'); if (dmax - dmin > 0.01 || Math.abs(dmax - st.centreDistance) > 0.01) fail('立石间距不相等');
   const stoneR = Math.hypot(st.stones[0].x, st.stones[0].z) + Math.hypot(st.stones[0].w / 2, st.stones[0].t / 2); info.push(`外沿 ${f(stoneR, 2)} m（规格 < 10 m 的占地半径）；入口 (0, 12) 在两块立石之间的缺口轴线上，石阶（W5b，RD06）从山下通到这里；立石底面落在平台上（竖向 0.00 m，平台海拔与锚点相差 ≤ 0.1 m）`); if (stoneR > 10) fail('石环超出占地');
   let worst = 0; for (let a = 0; a < 360; a += 10) for (let r = 1; r <= 10; r += 1) { const p = W.destination(lm, a, r), q = W.destination(lm, a, r - 1); worst = Math.max(worst, Math.abs(W.height(p.lon, p.lat) - W.height(q.lon, q.lat))); }
   info.push(`占地内最大坡度 ${f(worst * 100, 1)}%（world.js 上限 5%）`); if (worst > 0.05) fail('占地内坡度 > 5%');

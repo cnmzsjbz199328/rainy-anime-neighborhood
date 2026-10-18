@@ -88,7 +88,9 @@ W10c 当前返工（2026-10-15）：用户学校旁红框实际为西北 CR01/RN
 | WD1 | LM09 无人站同档样板 | 候车棚、柴油车、售货机、电话亭与站台，四面/室内/场地/性能；用户确认质量基准 | WD0 完成；结构模型可在既定包络内先做，场地/地面集成须 W10d 确认，天气效果最终验收依赖 WX2 | 待确认（视觉集中验收） | [逐设施设计卡](docs/world/WD1_LM09_CARD.md)已就绪；候车棚、柴油车、售货机、电话亭、站台/道砟及道旁设施已升级；LM09 机器检查通过，19 张平面/球形固定机位图在 `docs/world/wd1/model-preview/` 待用户判断；场地和天气最终验收仍待前置。2026-10-17 用户要求不逐轮询问，继续后续独立模型，WD1 质量基准暂定、保留回改义务 |
 | WD2 | LM02 温泉村 | 六栋独立建筑、温泉、源泉小屋、足汤、竹篱、小溪桥与村口设施，见 [设计卡](docs/world/WD2_LM02_CARD.md) | WD1 结构样板暂定；场地/天气最终验收依赖 W10d/WX2 | 待确认（视觉集中验收） | 2026-10-17 六栋完成四面洞口、透明窗、楼板/楼梯、分层室内与独立功能陈设；源泉小屋、池壁/踏步/导水、竹篱、溪桥、公交/售货机部件已补；LM02/城镇布局/道路机器检查通过；五机位成本 +8,448～9,072 triangles、+1～3 calls、0 texture；37 张固定预览在 `docs/world/wd2/model-preview/`，性能预算遗留见 [设计卡](docs/world/WD2_LM02_CARD.md) |
 | WD3 | 渔港与灯塔岛 | 四栋渔港建筑、五艘船、港口设施；灯塔、小屋、码头及小船，见 [设计卡](docs/world/WD3_COAST_CARD.md) | 依用户 2026-10-17 指示先实施独立模型，视觉集中验收；地面/天气仍依赖 W10d/WX2 | 待确认（视觉集中验收） | 2026-10-17 LM10 船具/渔网/鱼箱/防波堤、四栋建筑、LM08 灯塔/小屋/码头/小船已升级；两地专项通过，LM10 远端实体最大尺寸差 0.42%。`measure_samples`、`layout_check`、`road_check` 11 项通过；43 张固定图在 `docs/world/wd3/model-preview/`；四机位绘制增量和当前性能见 [设计卡](docs/world/WD3_COAST_CARD.md)，首帧/球形仍超 W10 预算；视觉与 W10d/WX2 最终集成待后续 |
-| WD4–WD6 | 神社/山顶/石室/石环；废站与冰原；沿路设施 | 每轮范围与逐栋卡见 [WORLD_DETAIL_PLAN](docs/world/WORLD_DETAIL_PLAN.md) | 独立模型先实施，视觉集中验收；地面和天气依赖见专项计划 | 待办 | |
+| WD4 | 神社/山顶/石室/石环 | [独立设计卡](docs/world/WD4_SACRED_STONE_CARD.md)；范围与共同验收见 [WORLD_DETAIL_PLAN](docs/world/WORLD_DETAIL_PLAN.md) | WD3 后；保留锚点/道路/布局；场地与天气最终集成依赖 W10d/WX2 | 进行中 | LM01/LM03/LM04/LM05 结构细化已开始；当前按中间版本提交，合并 main 后继续机器验收与预览；视觉待用户集中验收 |
+| WD5 | LM06 砂没驿、LM07 冰原观测屋 | 范围与验收见 [WORLD_DETAIL_PLAN](docs/world/WORLD_DETAIL_PLAN.md) | WD4 完成后；保留锚点/道路/布局 | 待办 | |
+| WD6 | 全域沿路设施 | 范围与验收见 [WORLD_DETAIL_PLAN](docs/world/WORLD_DETAIL_PLAN.md) | WD5 完成后；场地净空按 W10 共同口径复核 | 待办 | |
 
 ## 3. 需要用户本人做的事
 

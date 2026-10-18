@@ -3321,3 +3321,10 @@
 - 改用四个固定机位、每版独立页面的一遍同会话测量，`tools/wd3_compare.mjs` 对照 WD3 开工前 `ae045b2`，结果 [`wd3-near.json`](docs/world/perf/wd3-near.json)：LM10 港总览 +36 calls/+5,080 triangles，船机位 0/−216，LM08 岛总览 +22/+2,952，塔身机位 +3/+2,396；四机位纹理变化 0，双方页面错误 0。早先高负载对照中止记录保留，这次有效结果不代表 GPU 用时或视觉质量。
 - Metal/high 单次冷启动 [`wd3-model-current.json`](docs/world/perf/wd3-model-current.json)：首个完整画面 4,589 ms；默认 16.6/18.7 ms、2,406 calls、1,595,576 triangles；球形 d140 38.4/42.3 ms、d400 38.1/40.0 ms，页面错误 0。首帧高于 4 s、球形高于 17/25 ms W10 目标，性能仍未达预算；默认 calls 相对 WD0 未超过 +10% 阻塞线。
 - WD3 独立模型与机器交付就绪，43 张图继续保留 `docs/world/wd3/model-preview/` 等用户以后统一看。W10d 地面与 WX2 天气最终衔接尚未实施，阶段记 `待确认` 而非视觉完成。
+
+## WD4 神社、山顶、石室与石环（2026-10-18，进行中）
+
+- 建立 [`WD4_SACRED_STONE_CARD.md`](docs/world/WD4_SACRED_STONE_CARD.md)，逐项记录 LM01/LM03/LM04/LM05 的结构与场地重点。保留原锚点、道路、地标排列和批准尺寸；LM05 保留十三块立石的半径、间距及中央线索节奏，明确逐块轮廓不再受旧 W7 同形几何描述约束。
+- 当前中间版本为 LM01 火口岩缘、小祠供奉空间与灯笼基础；LM03 石室承重垫、石缝、入口铺地和后门槛；LM04 本殿柱梁、室内祭台、檐部受损支撑、狛犬/石佛轮廓和神木根系/注连绳；LM05 独立石形、石脚与局部风化。LM04 檐滴改用 `userData.weather = 'drip'` 标记以接入共享天气登记。
+- `node --check`（四个地标与专项检查器）、`python3 build.py`、`node tools/landmark_check.mjs LM01/LM03/LM04/LM05 --no-shots` 均通过；各地标 W7-C1/C2/C3/C4 全通过，最大弯曲尺寸差依次为 0.08%、0.32%、0.55%、0.22%，LM05 实测 13 种独立轮廓、圆心间距 4.3077 m。`git diff --check` 通过。
+- 这是合并前的 WD4 进行中提交。合并 `main` 后重跑全套地形、天气、侵路和地标机器检查；截图供用户日后统一看，视觉仍待确认。

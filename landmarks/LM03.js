@@ -23,6 +23,16 @@
   boulder(ch, 0, 0, -3.5, 3.2, 3.0, 1.6, 0.1, GRAN);                                                      // back stone
   const cap = boulder(ch, 0, 2.7, -0.7, 6.0, 1.6, 4.0, 0.12, '#8a8584');                                   // capstone 6 x 1.6 x 4 m
   boulder(ch, 0.2, 3.7, -1.0, 2.4, 0.9, 1.8, 0.7, GRAND);                                                  // a smaller stone on top
+  for (const sx of [-1, 1]) {
+    for (const z of [-2.6, -0.6, 1.2]) box(sx * 1.75, 0.08, z, 1.3, 0.16, 1.4, '#646260', true, ch); // distinct bearing pads
+    for (const z of [-1.55, 0.3]) {
+      box(sx * 1.62, 1.1, z, 0.1, 1.8, 0.12, '#343839', false, ch); // joints between load stones
+      mesh(new THREE.DodecahedronGeometry(0.18, 0), mat('#5b7058'), sx * 1.55, 0.24, z + 0.12, false, ch);
+    }
+    for (const z of [-2.8, 1.15]) mesh(new THREE.DodecahedronGeometry(0.22, 0), mat('#77716d'), sx * 2.5, 2.54, z, true, ch); // chipped support edge
+  }
+  for (let k = 0; k < 5; k++) box(-1.0 + k * 0.5, 0.12, 1.28 - k * 0.06, 0.47, 0.06, 0.64, k % 2 ? '#454445' : '#3b3c3d', true, ch);
+  box(0, 0.32, -3.23, 1.05, 0.48, 0.15, '#5d5a58', true, ch); // rear chamber sill
   L.pool(0, -0.5, 1.8, '#000000', 0.0, 0.05);
   // the floor of the chamber: dark flat stones
   box(0, 0.05, -0.7, 2.6, 0.1, 4.6, '#2c2c30', false, ch);

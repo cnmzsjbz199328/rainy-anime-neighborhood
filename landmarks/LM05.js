@@ -12,11 +12,20 @@
   L.use(group('lm05Ring')); const rg = L.parent();
   L.ground(10.4, '#566f52', 0.02);
   const stones = [], caps = [];
-  const stoneGeo = new THREE.BoxGeometry(W0, H0, T0), mossGeo = new THREE.BoxGeometry(W0 + 0.02, H0 * 0.42, T0 + 0.02), capGeo = new THREE.BoxGeometry(W0 - 0.1, 0.12, T0 - 0.08);
+  const mossGeo = new THREE.BoxGeometry(W0 + 0.02, H0 * 0.42, T0 + 0.02), capGeo = new THREE.BoxGeometry(W0 - 0.1, 0.12, T0 - 0.08);
   const stoneM = mat(GRAN), mossM = mat(MOSS);
+  const profiles = [];
+  const stoneGeometry = k => { const shape = new THREE.Shape(), v = 0.045 * Math.sin((k + 1) * 1.7), u = 0.04 * Math.cos((k + 1) * 2.3);
+    const pts = [[-0.55, 0], [-0.59 + v, 0.7], [-0.57 - u, 1.55], [-0.53 + v, 2.5], [-0.55, H0], [0.55, H0], [0.54 + u, 2.52], [0.57 - v, 1.55], [0.58 + u, 0.75], [0.55, 0]];
+    shape.moveTo(...pts[0]); for (const p of pts.slice(1)) shape.lineTo(...p); shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: T0, bevelEnabled: false, curveSegments: 1 }); geo.translate(0, 0, -T0 / 2);
+    profiles.push(pts.map(p => p.map(q => Math.round(q * 1000) / 1000))); return geo; };
   for (let k = 0; k < N; k++) {
     const a = (k + 0.5) * 2 * PI / N, x = Math.sin(a) * R0, z = Math.cos(a) * R0, ry = a;                                   // a = 0 is the +Z axis: the gap is on it
-    const g = L.sub(x, 0, z, ry); mesh(stoneGeo, stoneM, 0, H0 / 2, 0, true, g); mesh(mossGeo, mossM, 0, H0 * 0.21, 0, false, g);
+    const g = L.sub(x, 0, z, ry); g.name = `lm05Stone${k + 1}`;
+    mesh(stoneGeometry(k), stoneM, 0, 0, 0, true, g); mesh(mossGeo, mossM, 0, H0 * 0.21, 0, false, g);
+    box(0, 0.035, 0, 1.45, 0.07, 0.86, k % 3 ? '#6c685c' : '#686659', false, g);
+    for (const sx of [-1, 1]) { const spot = mesh(new THREE.DodecahedronGeometry(0.12, 0), mat(k % 2 ? '#5a7254' : '#596d52'), sx * 0.44, 0.16 + 0.06 * (k % 3), 0.28, false, g); spot.scale.set(1, 0.55, 0.7); }
     stones.push({ k, x, z, ry, w: W0, h: H0, t: T0 });
   }
   const sl = group('lm05Slab'); L.use(sl);
@@ -33,7 +42,7 @@
   const capMs = [];
   for (const s of stones) { const g = L.sub(s.x, H0 + 0.02, s.z, s.ry); g.userData.live = true; const m = new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 1, depthWrite: false }); const c = new THREE.Mesh(capGeo, m); c.renderOrder = 8; c.visible = false; g.add(c); capMs.push(m); caps.push(c); }
   const col = new THREE.Color(CLUE.color);
-  out.stats = { stones: stones.map(s => ({ ...s })), N, radius: R0, centreDistance: 2 * R0 * Math.sin(PI / N), slab: [3.0, 2.0], period: CLUE.period, peak: CLUE.peak, color: CLUE.color, mossFraction: 0.42, identicalGeometry: true };
+  out.stats = { stones: stones.map(s => ({ ...s })), N, radius: R0, centreDistance: 2 * R0 * Math.sin(PI / N), slab: [3.0, 2.0], period: CLUE.period, peak: CLUE.peak, color: CLUE.color, mossFraction: 0.42, distinctProfiles: new Set(profiles.map(p => JSON.stringify(p))).size };
   out.update = (t) => { for (let k = 0; k < N; k++) { const e = CLUE.stone(k, t) * CLUE.peak; capMs[k].color.setRGB(col.r * e, col.g * e, col.b * e); caps[k].visible = e > 0.002; } };
   return out;
 };

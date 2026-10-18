@@ -15,6 +15,7 @@
   const cr = group('lm01Crater'); L.use(cr);
   L.ground(5.2, '#4a4650', 0.08); const lake = mesh(new THREE.CircleGeometry(3.4, 36), warm('#1e3446', 0.10), -0.4, 0.16, -0.3, false, cr); lake.rotation.x = -PI / 2;
   const lake2 = mesh(new THREE.RingGeometry(3.4, 3.8, 36), mat('#6a7a86'), -0.4, 0.15, -0.3, false, cr); lake2.rotation.x = -PI / 2;
+  for (let i = 0; i < 18; i++) { const a = i / 18 * PI * 2, r = 3.8 + 0.12 * Math.sin(i * 2.1); const m = mesh(new THREE.DodecahedronGeometry(0.22, 0), mat(i % 3 ? '#696575' : '#777483'), -0.4 + Math.sin(a) * r, 0.15, -0.3 + Math.cos(a) * r, true, cr); m.scale.set(1.5, 0.35, 0.8); m.rotation.y = a; }
   // ember: the faint dark-red glow of the crater (WORLD_SPEC: much weaker than any street lamp); a single additive disc under the rim
   const emberMat = L.glowMat('#7a2a1e', 0.10), ember = mesh(new THREE.PlaneGeometry(10, 10), emberMat, 0.2, 0.30, 0.1, false, cr); ember.rotation.x = -PI / 2;
   const ventPos = [[2.6, 1.8], [-3.0, -2.4]];
@@ -23,14 +24,24 @@
   const vent = group('lm01Vent'); L.use(vent); const plumes = ventPos.map(([x, z]) => { const s = L.steam(x, 0.45, z, { n: 5, h: 3.2, speed: 0.05, s: 0.7, o: 0.17 }); return s; });
   // ---- the little shrine (hokora) on the rim beside the stairs, facing the entrance: base, a 1.3 m box, hip roof, a stone marker
   const sh = group('lm01Shrine'); L.use(sh);
-  box(1.8, 0.2, 6.3, 1.5, 0.4, 1.4, '#8a8a88', true, sh); box(1.8, 0.4 + 0.65, 6.3, 1.1, 1.1, 1.0, '#6a5a4a', true, sh); box(1.8, 0.4 + 0.65, 6.81, 0.5, 0.8, 0.04, '#2c2a30', false, sh);
+  box(1.8, 0.2, 6.3, 1.5, 0.4, 1.4, '#8a8a88', true, sh);
+  box(1.8, 0.47, 6.3, 1.18, 0.12, 1.1, '#715b48', true, sh);
+  for (const x of [1.3, 2.3]) for (const z of [5.86, 6.74]) box(x, 1.0, z, 0.1, 1.08, 0.1, '#4b392d', true, sh);
+  box(1.8, 0.96, 5.84, 1.0, 0.96, 0.1, '#6a5a4a', true, sh);
+  for (const x of [1.32, 2.28]) box(x, 0.94, 6.3, 0.08, 0.82, 0.78, '#6a5a4a', true, sh);
+  box(1.8, 1.53, 6.3, 1.25, 0.12, 1.1, '#4b392d', true, sh);
+  box(1.8, 0.63, 5.98, 0.62, 0.18, 0.32, '#9b8060', true, sh); // offering shelf visible through front
+  box(1.8, 1.08, 5.9, 0.28, 0.38, 0.18, '#8b745c', true, sh);
+  box(1.8, 0.5, 6.84, 0.8, 0.12, 0.35, '#888179', true, sh); // entrance threshold
   const roof = mesh(new THREE.ConeGeometry(1.0, 0.7, 4), mat('#4a5058'), 1.8, 0.4 + 1.1 + 0.35, 6.3, true, sh); roof.rotation.y = PI / 4; cyl(1.8, 2.3, 6.3, 0.05, 0.3, '#5a5a58', sh);
+  for (const z of [5.78, 6.82]) box(1.8, 1.55, z, 1.38, 0.1, 0.1, '#3d4146', true, sh);
   L.torii(1.8, 0, 8.2, { w: 1.5, h: 2.1, rot: 0 });
   // ---- path: the last 9 steps up the rim, a stone marker, lanterns at z = 6.8 ... 10 (5 of them, <= 10), the stairs come from +Z
   const path = group('lm01Path'); L.use(path);
   L.steps(-0.4, 0, 6.0, 6, 1.6, 0.34, 0.17, '#6d7468');
   box(-1.9, 0.6, 8.6, 0.35, 1.2, 0.35, '#8a8a88', true, path); box(-1.9, 1.25, 8.6, 0.45, 0.1, 0.45, '#9a9a96', true, path);
   const lanterns = []; [[-1.7, 7.0], [0.9, 8.0], [-1.7, 9.0], [0.9, 10.0], [-1.7, 5.4]].forEach(([x, z], i) => lanterns.push(L.lantern(x, -0.4 - i * 0.0, z, { k: 1, glowK: 0.22 })));
+  for (const [x, z] of [[-1.7, 7], [0.9, 8], [-1.7, 9], [0.9, 10], [-1.7, 5.4]]) box(x, -0.34, z, 0.62, 0.12, 0.62, '#777677', true, path);
   out.stats = { lanterns: lanterns.length, rimBlocks: N, vents: ventPos.length, rimMax, emberOpacity: 0.10 };
   out.update = (t) => { for (const p of plumes) p.update(t); emberMat.opacity = 0.09 + 0.02 * Math.sin(t * 0.4); };
   return out;
