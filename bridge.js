@@ -4,7 +4,7 @@
 // twin-column piers with caps, waterline feet and seabed footings (all along the local radial), navigation lights and, at J-LM08, the low
 // cable-stayed tower with its white stays (the deck's lamps: streetlights.js). Every width and height below comes from the RD02 card and W5_SPEC; the plan comes from world.js.
 // Geometry is stored in flat Mercator coordinates (see docs/world/W3_SPEC.md section 2): positions already carry the 1/cos(lat) factor and
-// instance records give the altitude directly (section.js / roads.js scale them).
+// instance records give the altitude directly (landcover.js / roads.js scale them).
 (function (global) {
 'use strict';
 const R = 90, D = Math.PI / 180, BASE = 1.6;

@@ -1,5 +1,5 @@
 // W10a (W10_SPEC 2.4): one start-up pipeline. The whole world is built before the first frame, behind the loading screen: the modules hand over their
-// stepped builds (TERRAIN.job) with explicit dependencies (the land beyond the ring, the sampler index, the W4 section and its panorama outlines, the
+// stepped builds (TERRAIN.job) with explicit dependencies (the land beyond the ring, the sampler index, the global look outlines, the
 // road network, the ocean, the land cover, the landmarks) and run them in that order, one step at a time. Between steps the pipeline yields to the
 // browser (a MessageChannel message: no timer clamping), so the progress bar moves and input stays alive. The first frame is the complete world.
 // No THREE; the DOM only through the progress callback.

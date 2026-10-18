@@ -133,7 +133,7 @@ const inkRuns = rt => rt.ink || ['edgeL', 'edgeR'].flatMap(k => { const runs = [
 
 // ---- M7: furniture and plants against the ring's carriageway round the whole ring (no window round the junction nodes), and plant heights on the final surface
 {
-  const require2 = createRequire(import.meta.url), SLP = require2(path.join(root, 'streetlights.js')).plan({ W: Object.assign(Object.create(W), { height: H }), L: globalThis.LAYOUT, roads: PLAN, RK: ROADS, section: require2(path.join(root, 'section_plan.js')).plan(W), cover: { cells: [], items: [] }, town: { puddles: [], alleyLamps: [] } });
+  const require2 = createRequire(import.meta.url), SLP = require2(path.join(root, 'streetlights.js')).plan({ W: Object.assign(Object.create(W), { height: H }), L: globalThis.LAYOUT, roads: PLAN, RK: ROADS, cover: { cells: [], items: [] }, town: { puddles: [], alleyLamps: [] } });
   const clearance = { weed: 0.8, tuft: 0.8, shrubLow: 0.8, lamp: 1, lampSmall: 1, pole: 0.8, signBus: 0.8, busBench: 1.2, mirror: 0.7, vending: 1, jizo: 0.8, lantern: 0.6, stonePost: 0.6, bollard: 0.5, barrierConcrete: 0.75, gatePost: 0.5, snowPole: 0.45 };
   const placed = [...PLAN.routes.flatMap(rt => Object.entries(rt.instances || {}).flatMap(([type, list]) => list.map(it => ({ rt: rt.def.id, type, it })))), ...PLAN.markers.map(it => ({ rt: 'marker', type: 'gatePost', it })),
     ...SLP.lamps.filter(q => q.owner !== 'town').map(q => ({ rt: q.line, type: 'lamp', it: { lon: q.lon, lat: q.lat } }))];

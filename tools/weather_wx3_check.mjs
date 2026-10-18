@@ -61,7 +61,7 @@ async function open(w = 800, h = 500) {
     P.ice = find((p, lon, lat) => p.cat === 'ice' && inside(p, lon, lat, 12));
     P.desert = find((p, lon, lat) => p.cat === 'desert' && inside(p, lon, lat, 12));
     P.lava = find((p, lon, lat) => p.cat === 'lava' && inside(p, lon, lat, 6));
-    P.paddy = (() => { const pl = S.section.plan && S.section.plan(); return W.townToLonLat(0, 30); })();
+    P.paddy = W.townToLonLat(0, 30);
     for (const k in P) if (P[k]) { const q = W.lonLatToTown(P[k].lon, P[k].lat); P[k].xz = [q.x, q.z]; }
     const go = (p, dist = 20, o = {}) => { S.view.set({ target: [p.xz[0], 1.2, p.xz[1]], dist, pitch: o.pitch ?? 0.5, yaw: o.yaw ?? 0.6 }); window.__step(o.frames ?? 3); };
     const pixels = () => { S.renderer.render(S.scene, S.camera); const gl = S.renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, a = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, a); return a; };

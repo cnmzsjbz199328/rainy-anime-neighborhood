@@ -13,7 +13,7 @@ const TERR = require(path.join(root, 'terrain.js'));
 globalThis.ROADKIT = require(path.join(root, 'roadkit.js')); globalThis.BRIDGE = require(path.join(root, 'bridge.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
 const ROADS = require(path.join(root, 'roads.js'));
 const LC = require(path.join(root, 'landcover.js'));
-const SECP = require(path.join(root, 'section_plan.js'));
+const OCEAN = require(path.join(root, 'ocean.js'));
 const D = Math.PI / 180, R = 90, BASE = 1.6;
 const results = [];
 const f = (v, n = 3) => (typeof v === 'number' ? v.toFixed(n) : String(v));
@@ -37,24 +37,75 @@ for (const b of PLAN.bridges) addPts(b.samples, 5.2); for (const s of PLAN.stair
 for (const ex of PLAN.extras || []) { addPts(ex.centre, 1.6); if (ex.landing) avoid.push({ lon: ex.landing.lon, lat: ex.landing.lat, r: 2.5 }); }
 for (const lm of W.landmarks) if (lm.id !== 'TOWN') avoid.push({ lon: lm.lon, lat: lm.lat, r: lm.radius });
 { const P = W.TOWN_PATCH; avoid.push({ poly: [[P.lonMin, P.latMin], [P.lonMax, P.latMin], [P.lonMax, P.latMax], [P.lonMin, P.latMax]], occupancy: 'town-ground' }); }
-const SP = SECP.plan(W), corridor = (lon, lat) => { const uv = SP.toUV(lon, lat); return Math.abs(uv.u) < 12.8 && uv.v > 2.4 && uv.v < 24.3; };
 const lms = W.landmarks.filter(l => l.id !== 'TOWN'), avoidRoads = avoid.filter(a => a.poly || !lms.some(l => a.lon === l.lon && a.lat === l.lat));
 const roadIndex = LC.createAvoidIndex(W, avoidRoads), avoidIndex = LC.createAvoidIndex(W, avoid), roadHit = (p, radius = 0.2) => roadIndex.hit(p.lon, p.lat, radius);
 const itemRadius = it => 0.5 * Math.max(it.s?.[0] || 0.4, it.s?.[2] || 0.4);
-const DATA = LC.build(W, H, { avoid, avoidIndex, corridor, footprint: SECP.LANDCOVER_FOOTPRINT });
+const DATA = LC.build(W, H, { avoid, avoidIndex, footprint: LC.LANDCOVER_FOOTPRINT });
 const tf = W.heightField.features.find(q => q.id === 'hill-terraces-ameni');
-DATA.forest = LC.forest(W, H, { avoid, avoidIndex, corridor });
-DATA.grass = LC.grassland(W, H, { avoid, avoidIndex, corridor }); DATA.dunes = LC.dunes(W, H, { avoid, avoidIndex });
-DATA.high = LC.highland(W, H, { avoid, avoidIndex, corridor }); DATA.ice = LC.iceField(W, H, { avoid, avoidIndex }); DATA.lava = LC.lavaField(W, H, { avoid });
+DATA.forest = LC.forest(W, H, { avoid, avoidIndex });
+DATA.grass = LC.grassland(W, H, { avoid, avoidIndex }); DATA.dunes = LC.dunes(W, H, { avoid, avoidIndex });
+DATA.high = LC.highland(W, H, { avoid, avoidIndex }); DATA.ice = LC.iceField(W, H, { avoid, avoidIndex }); DATA.lava = LC.lavaField(W, H, { avoid });
 DATA.terrace = LC.terraces(W, H, { terraceRegions: [{ id: tf.id, center: [tf.lon, tf.lat], radiusMeters: tf.radiusMeters }] }); DATA.items.push(...DATA.terrace.items);
+{ const all = [...DATA.items, ...DATA.forest.items, ...DATA.grass.items, ...DATA.high.items], canPlace = it => LC.avoidFootprints([it], avoidIndex, LC.LANDCOVER_FOOTPRINT).items.length === 1;
+  DATA.w4.biome = LC.appendW4BiomeCover(W, H, avoidIndex, all, canPlace); DATA.items.push(...all.filter(it => it.w4 && !DATA.items.includes(it)));
+  DATA.w4.items = DATA.items.filter(it => it.w4); DATA.w4.placedItems = DATA.w4.items.length;
+  DATA.w4.trees = all.filter(it => LC.w4Contains(W, it.lon, it.lat) && ['treeRound', 'cedar', 'pine', 'bamboo'].includes(it.type)).length;
+  DATA.w4.grass = all.filter(it => LC.w4Contains(W, it.lon, it.lat) && ['tuft', 'flower', 'weed', 'shrubLow', 'shrub', 'fern'].includes(it.type)).length;
+  DATA.w4.typeCounts = {}; for (const it of DATA.w4.items) DATA.w4.typeCounts[it.type] = (DATA.w4.typeCounts[it.type] || 0) + 1;
+}
 console.log(`(地形、道路与田地数据生成 ${Date.now() - t0} ms)`);
 const st = DATA.stats;
+
+// ---- W10e: the former W4 corridor is supplied by global land-cover and ocean generation
+check('W10e-coverage', 'W4 走廊中的全局田块、草带、树与水面至少保留旧样板数量的 80%', ({ info, fail }) => {
+  const base = LC.W4_BASELINE, inW4 = q => LC.w4Contains(W, q.lon, q.lat), treeTypes = new Set(['treeRound', 'cedar', 'pine', 'bamboo']), grassTypes = new Set(['tuft', 'flower', 'weed', 'shrubLow', 'shrub', 'fern']);
+  const sources = { landcover: DATA.items, forest: DATA.forest.items, grassland: DATA.grass.items, highland: DATA.high.items }, regionItems = Object.values(sources).flat().filter(inW4), trees = regionItems.filter(q => treeTypes.has(q.type)).length, grass = regionItems.filter(q => grassTypes.has(q.type)).length;
+  const ocean = OCEAN.build(W, chunks, H, { centre: PLAN.routes.flatMap(r => r.samples.filter((_, i) => i % 2 === 0)).map(p => ({ lon: p.lon, lat: p.lat })), clear: 8 });
+  let seaTriangles = 0, seaArea = 0, expectedSeaArea = 0; const I = ocean.water.index, P = ocean.water.pos;
+  for (let i = 0; i < I.length; i += 3) { const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3, x = (P[a] + P[b] + P[c]) / 3, z = (P[a + 2] + P[b + 2] + P[c + 2]) / 3, ll = llOf(x, z);
+    if (LC.w4Contains(W, ll.lon, ll.lat) && W.regionAt(ll.lon, ll.lat).zone === 'ocean') { seaTriangles++; const xa = P[a], za = P[a + 2], xb = P[b], zb = P[b + 2], xc = P[c], zc = P[c + 2]; seaArea += Math.abs((xb - xa) * (zc - za) - (zb - za) * (xc - xa)) / 2 / Math.pow(1 / Math.cos(ll.lat * D), 2); } }
+  const D4 = LC.W4_DOMAIN;
+  for (let v = D4.v0 + D4.step / 2; v < D4.v1; v += D4.step) for (let u = D4.u0 + D4.step / 2; u < D4.u1; u += D4.step) { const [lon, lat] = LC.w4ToLL(W, u, v); if (W.regionAt(lon, lat).zone === 'ocean') expectedSeaArea += D4.step * D4.step; }
+  const ratio = (n, d) => n / d, plotPct = ratio(DATA.w4.plotCells, base.plotCells), waterPct = ratio(DATA.w4.waterCells, base.waterCells), treePct = ratio(trees, base.trees), grassPct = ratio(grass, base.grass), seaPct = ratio(seaArea, expectedSeaArea);
+  const pass = DATA.w4.plotCells >= Math.ceil(base.plotCells * 0.8) && DATA.w4.waterCells >= Math.ceil(base.waterCells * 0.8) && trees >= Math.ceil(base.trees * 0.8) && grass >= Math.ceil(base.grass * 0.8) && seaArea >= expectedSeaArea * 0.8;
+  info(`全局田块 ${DATA.w4.plotCells}/${base.plotCells} 格 (${f(plotPct * 100, 1)}%)、稻田 ${DATA.w4.waterCells}/${base.waterCells} 格 (${f(waterPct * 100, 1)}%)；几何三角诊断：田块 ${DATA.w4.plotTriangles}、水田面 ${DATA.w4.waterTriangles}`);
+  info(`走廊全局实例：树 ${trees}/${base.trees} (${f(treePct * 100, 1)}%)、草带 ${grass}/${base.grass} (${f(grassPct * 100, 1)}%)；海面面积 ${f(seaArea, 1)}/${f(expectedSeaArea, 1)} m² (${f(seaPct * 100, 1)}%，海面三角 ${seaTriangles})`);
+  info(`全局生成器走廊实例分源：${Object.entries(sources).map(([k, a]) => `${k} ${a.filter(inW4).length}`).join('、')}`);
+  info(`走廊内迁移数据 ${DATA.w4.placedItems} 个（树 ${DATA.w4.trees}、草带 ${DATA.w4.grass}、电杆 ${DATA.w4.typeCounts.pole || 0}），全局地貌生成补充树 ${DATA.w4.biome.trees}、草 ${DATA.w4.biome.grass}；电线段 ${DATA.w4.wires.length * 30}`);
+  if (!pass) fail('走廊有一类田块、树、草带或海面面积低于旧样板/走廊基准的 80%');
+});
+check('W10e-grounding', '迁移的 W4 全局实例贴合统一 terrain height()，偏差 ≤ 0.05 m', ({ info, fail }) => {
+  let worst = 0, at = null; const byType = {}, items = [...DATA.w4.items, ...DATA.forest.items, ...DATA.grass.items, ...DATA.high.items].filter(q => LC.w4Contains(W, q.lon, q.lat));
+  for (const it of items) { const d = Math.abs(it.alt - H(it.lon, it.lat)); byType[it.type] = Math.max(byType[it.type] || 0, d); if (d > worst) { worst = d; at = `${it.type} (${it.lon.toFixed(5)}, ${it.lat.toFixed(5)})`; } }
+  info(`${items.length} 个 W4 全局实例最大底面差 ${f(worst, 4)} m${at ? `，${at}` : ''}；按类型 ${Object.entries(byType).map(([k, v]) => `${k} ${f(v, 3)} m`).join('、')}`);
+  if (worst > 0.05) fail(`迁移实例底面差 ${f(worst, 4)} m > 0.05 m`);
+});
+check('W10e-region-sequence', '原 W4 走廊地貌次序与 world.js 保持一致，边界偏差不超过 0.5 m', ({ info, fail }) => {
+  const expected = [['farmland-main', 0.05], ['forest-south', 20.7], ['default-grassland', 30.9], ['west-sea', 40.85], ['ice-south', 62.2]], lat0 = -W.TOWN_PATCH.latMax;
+  const at = v => W.regionAt(-0.5, lat0 - v / (R * D)).id, measured = [];
+  for (const [id, want] of expected) {
+    let lo = 0, hi = 64, found = false;
+    for (let v = 0; v <= 64; v += 0.05) if (at(v) === id) { hi = v; lo = Math.max(0, v - 0.05); found = true; break; }
+    if (!found) { measured.push([id, null, want]); fail(`沿走廊中线没有到达 ${id}`); continue; }
+    for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (at(mid) === id) hi = mid; else lo = mid; }
+    measured.push([id, hi, want]); if (Math.abs(hi - want) > 0.5) fail(`${id} 起点 ${f(hi, 2)} m 与原 W4 断面 ${want} m 相差超过 0.5 m`);
+  }
+  info(`从城镇补丁南缘沿中心经线（u = 0）检测区域起点：${measured.map(([id, v, want]) => `${id} ${v === null ? '缺失' : f(v, 2) + ' m（基线 ' + want + ' m）'}`).join('；')}`);
+});
+check('W10e-look-source', '墨线与光照参数集中定义在 look.js，场景/道路/海岸/地表消费者通过 LOOK 读取', ({ info, fail }) => {
+  const fs = require('node:fs'), files = Object.fromEntries(['look.js', 'scene.js', 'roads.js', 'ocean.js', 'landcover.js', 'streetlights.js'].map(n => [n, fs.readFileSync(path.join(root, n), 'utf8')]));
+  const source = files['look.js'], needs = ['inkColor', 'utilityWireColor', 'inkPixels', 'groundNear', 'groundFar', 'panoramaNear', 'panoramaFar', 'focusMin', 'focusMax', 'widthMin', 'widthMax', 'light:'];
+  const params = needs.every(q => source.includes(q)), consumers = { scene: /LOOK\.PARAMS\.inkColor/.test(files['scene.js']), roads: /LOOK_API\.params\.(?:inkColor|utilityWireColor)/.test(files['roads.js']), ocean: /LOOK_API\.params\.inkColor/.test(files['ocean.js']), cover: /global\.LOOK_API\.params\.(?:inkColor|utilityWireColor)/.test(files['landcover.js']), lamps: /LOOK_API\.state\.ink/.test(files['streetlights.js']) };
+  const directStyle = ['roads.js', 'ocean.js', 'landcover.js', 'streetlights.js'].filter(n => /(?:0x273647|0x1f2a38)/i.test(files[n]));
+  info(`look.js 外观数值 ${params ? '齐全' : '缺项'}；读取方 ${Object.entries(consumers).map(([k, v]) => `${k}:${v ? 'LOOK' : '缺少'}`).join('、')}；消费者内墨线/电线颜色直写 ${directStyle.length ? directStyle.join('、') : 0}`);
+  if (!params || Object.values(consumers).some(v => !v) || directStyle.length) fail('外观参数未完全由 look.js 提供');
+});
 
 // ---------------------------------------------------------------- W6-C1
 check('W6-C1', '分布一致：田块的角点都在建成带（农田/村落）的旱地上；水田、旱田、弃耕地、梯田、城镇边缘的数量与位置', ({ info, fail }) => {
   let bad = 0, nonFarm = 0; const where = {};
   for (const c of DATA.cells) for (const p of c.outer) { const ll = llOf(p[0], p[1]), r = W.regionAt(ll.lon, ll.lat); if (r.zone !== 'building' || r.kind === 'town' || W.height(ll.lon, ll.lat) <= 0.5) { bad++; if (bad < 4) fail(`田块 ${c.id} 的角点在 ${r.id}（${r.zone}），高 ${f(W.height(ll.lon, ll.lat), 2)} m`); } where[r.id] = (where[r.id] || 0) + 1; if (r.kind !== 'farmland' && r.kind !== 'village') nonFarm++; }
-  info(`田块 ${st.cells} 个（水田 ${st.water}、旱田 ${st.dry}、弃耕地 ${st.fallow}；其中村落背景 ${st.village}），面积 ${f(st.area, 0)} m²（world.js：farmland 14,769 + village 4,823 m²；未铺的部分是道路、地标、城镇边缘、断面、海岸与不规则边界让出的）；角点所在区域：${Object.entries(where).map(([k, v]) => `${k} ${v}`).join('、')}`);
+  info(`田块 ${st.cells} 个（水田 ${st.water}、旱田 ${st.dry}、弃耕地 ${st.fallow}；其中村落背景 ${st.village}），面积 ${f(st.area, 0)} m²（world.js：farmland 14,769 + village 4,823 m²；未铺的部分是道路、地标、城镇边缘、原样板走廊、海岸与不规则边界让出的）；角点所在区域：${Object.entries(where).map(([k, v]) => `${k} ${v}`).join('、')}`);
   // coverage by region: area of cells over the area of the region (rough: the share of all farmland laid)
   const share = st.area / (14769 + 4823); info(`铺设面积占 farmland + village 的 ${f(share * 100, 0)}%（跳过 ${st.skipped} 个贴近道路、地标、海岸或区域边界的种子，${st.steep || 0} 个落差 > 0.8 m 的坡地田块；角点首因 ${JSON.stringify(st.why || {})}）`);
   if (share < 0.12) fail(`铺设面积只占 ${f(share * 100, 0)}% < 12%`);
@@ -63,7 +114,7 @@ check('W6-C1', '分布一致：田块的角点都在建成带（农田/村落）
   const e4 = edges.filter(n => n === 4).length / edges.length;
   info(`田块不是棋盘格：Voronoi 多边形，边数 ${Math.min(...edges)}–${Math.max(...edges)}（四边形仅占 ${f(e4 * 100, 0)}%），边长 ${f(Math.min(...lens), 1)}–${f(Math.max(...lens), 1)} m（规格 6–20 m 的田块尺度，小边来自被邻居切掉的角）`);
   if (e4 > 0.5) fail('四边形占一半以上，像棋盘格');
-  info(`田埂宽 ${f(2 * LC.SP.ridgeHalf, 2)} m（规格 0.3–0.5 m）、高 ${LC.SP.ridgeH} m；TR04 弃耕带宽 ${LC.SP.fallowBand} m（规格 10–20 m 的外圈，断面实际 7.4 m，取 8 m）`);
+  info(`田埂宽 ${f(2 * LC.SP.ridgeHalf, 2)} m（规格 0.3–0.5 m）、高 ${LC.SP.ridgeH} m；TR04 弃耕带宽 ${LC.SP.fallowBand} m（规格 10–20 m 的外圈，原样板走廊内实际 7.4 m，取 8 m）`);
   if (2 * LC.SP.ridgeHalf < 0.3 || 2 * LC.SP.ridgeHalf > 0.5) fail('田埂宽不在 0.3–0.5 m');
   const t = DATA.terrace; info(`BI06 梯田（hill-terraces-ameni，−4°E 50°N，半径 12 m）：${t.cells} 格 0.35 m 见方，${t.bands} 级台阶（每级高 0.9 m，规格 0.6–1.2 m），${t.walls} 面石墙，茶树 ${t.items.length} 块；台阶由地形网格高度按 0.9 m 分带量化（沿等高线，不是直线切）`);
   if (t.bands < 3) fail('梯田少于 3 级');
@@ -74,7 +125,7 @@ check('W6-C1', '分布一致：田块的角点都在建成带（农田/村落）
 });
 
 // ---------------------------------------------------------------- W6-C2
-check('W6-C2', '落地与避让：实例底面与地形/田面相差 ≤ 0.05 m；田块不压路、不进地标占地圆、不进 断面', ({ info, fail }) => {
+check('W6-C2', '落地与避让：实例底面与地形/田面相差 ≤ 0.05 m；田块不压路、不进地标占地圆', ({ info, fail }) => {
   const per = {}; let bad = 0;
   const cellOf = new Map(); for (const c of DATA.cells) cellOf.set(c.id, c);
   const surf = (it) => { const g = H(it.lon, it.lat); return g; };
@@ -87,10 +138,10 @@ check('W6-C2', '落地与避让：实例底面与地形/田面相差 ≤ 0.05 m�
   }
   info(`实例底面相对地形网格（m，最小…最大）：${Object.entries(per).map(([k, v]) => `${k} ${f(v[0], 2)}…${f(v[1], 2)}`).join('、')}（田块按整块拉平到角点最高处（落差 ≤ 0.8 m，下沿有土裙），所以田里的草苗与田埂上的花草相对地形可以有 0.05–0.9 m 的抬升；茶树贴地）`);
   // plots against roads, landmarks and the W4 corridor
-  let onRoad = 0, inLm = 0, inCor = 0; const roadCorners = []; for (const c of DATA.cells) for (let i = 0; i < c.outer.length; i++) { const p = c.outer[i], ll = llOf(p[0], p[1]); if (roadHit(ll, 0)) { onRoad++; if (roadCorners.length < 6) { let nearest = { d: Infinity, road: null }; for (const a of avoidRoads) { const d = LC.avoidClearance(a, ll.lon, ll.lat); if (d < nearest.d) nearest = { d, road: a.edge || a.id || (a.poly ? 'road-footprint' : 'road-centreline') }; } roadCorners.push(`${c.id}[${i}] ${ll.lon.toFixed(5)},${ll.lat.toFixed(5)} clearance ${nearest.d.toFixed(3)} m (${nearest.road})`); } } if (corridor(ll.lon, ll.lat)) inCor++; }
+  let onRoad = 0, inLm = 0; const roadCorners = []; for (const c of DATA.cells) for (let i = 0; i < c.outer.length; i++) { const p = c.outer[i], ll = llOf(p[0], p[1]); if (roadHit(ll, 0)) { onRoad++; if (roadCorners.length < 6) { let nearest = { d: Infinity, road: null }; for (const a of avoidRoads) { const d = LC.avoidClearance(a, ll.lon, ll.lat); if (d < nearest.d) nearest = { d, road: a.edge || a.id || (a.poly ? 'road-footprint' : 'road-centreline') }; } roadCorners.push(`${c.id}[${i}] ${ll.lon.toFixed(5)},${ll.lat.toFixed(5)} clearance ${nearest.d.toFixed(3)} m (${nearest.road})`); } } }
   for (const lm of W.landmarks.filter(l => l.id !== 'TOWN')) for (const c of DATA.cells) for (const p of c.outer) { const ll = llOf(p[0], p[1]); if (arcM(ll, lm) < lm.radius - 0.2) inLm++; }
-  info(`田块角点：压在道路上 ${onRoad}${roadCorners.length ? `（${roadCorners.join('；')}）` : ''}、进入地标占地圆 ${inLm}、进入 断面走廊 ${inCor}`);
-  if (onRoad || inLm || inCor) fail('田块与道路、地标或断面重叠');
+  info(`田块角点：压在道路上 ${onRoad}${roadCorners.length ? `（${roadCorners.join('；')}）` : ''}、进入地标占地圆 ${inLm}`);
+  if (onRoad || inLm) fail('田块与道路或地标重叠');
   if (bad) fail(`${bad} 个实例落地不合格`);
 });
 
@@ -102,7 +153,7 @@ check('W6c-C1', '森林分布一致：树与林下植物都在 forest 区域内�
   let saplingOut = 0; for (const it of FO.items) if (it.type === 'treeRound' && it.s[0] < 0.8 && W.regionAt(it.lon, it.lat).kind !== 'forest') { const d = [0, 90, 180, 270].some(a => { const q = W.destination(it, a, 1); return W.regionAt(q.lon, q.lat).kind === 'forest'; }); if (!d) saplingOut++; }
   const byType = {}; for (const it of FO.items) byType[it.type] = (byType[it.type] || 0) + 1;
   const dens = st.trees / st.area, kinds = ['cedar', 'treeRound', 'pine', 'bamboo'].filter(t => byType[t]);
-  info(`森林格点覆盖 ${f(st.area, 0)} m²（world.js 的 forest 面积 7,208 m²，其余是被道路、地标、断面让出的），树 ${st.trees} 棵（杂木 ${byType.treeRound - st.saplings}、杉 ${byType.cedar}、松 ${byType.pine}、竹丛 ${byType.bamboo}），幼树 ${st.saplings}，林缘灌木 ${st.edgeShrubs}、林下灌木 ${st.shrubs}、蕨 ${st.ferns}、石 ${st.rocks}、倒木 ${st.logs}，林隙 ${st.clearings} 个格点；密度 ${f(dens, 3)} 棵/m²（≤ 0.27）`);
+  info(`森林格点覆盖 ${f(st.area, 0)} m²（world.js 的 forest 面积 7,208 m²，其余是被道路、地标与已登记占地让出的），树 ${st.trees} 棵（杂木 ${byType.treeRound - st.saplings}、杉 ${byType.cedar}、松 ${byType.pine}、竹丛 ${byType.bamboo}），幼树 ${st.saplings}，林缘灌木 ${st.edgeShrubs}、林下灌木 ${st.shrubs}、蕨 ${st.ferns}、石 ${st.rocks}、倒木 ${st.logs}，林隙 ${st.clearings} 个格点；密度 ${f(dens, 3)} 棵/m²（≤ 0.27）`);
   info(`区域内格点：${Object.entries(st.byRegion).map(([k, v]) => `${k} ${v}`).join('、')}；区域外的实例 ${outside}（幼树贴着林缘最多 1 m：${saplingOut} 个越界）；树形 ${kinds.length} 种`);
   if (outside - 0 > 0 && outside > st.saplings) fail(`${outside} 个实例在森林区域之外`); if (saplingOut) fail(`${saplingOut} 个幼树离森林 > 1 m`); if (kinds.length < 4) fail('树形少于 4 种'); if (dens > 0.27) fail(`树密度 ${f(dens, 3)} > 0.27`);
   // the edge: the wander of the forest boundary line (noise 3 +- 2.5 m): standard deviation of the distance from the region polygon boundary along the edge lines
@@ -114,22 +165,22 @@ check('W6c-C1', '森林分布一致：树与林下植物都在 forest 区域内�
   let near = 0; for (const t of FO.items.filter(i => ['cedar', 'pine', 'bamboo'].includes(i.type))) { for (let a = 0; a < 8; a++) { const q = W.destination(t, a * 45, 1.5); if (W.regionAt(q.lon, q.lat).kind !== 'forest') { near++; break; } } }
   info(`杉、松、竹离森林边缘 < 1.5 m 的有 ${near} 棵（占 ${f(near / Math.max(1, byType.cedar + byType.pine + byType.bamboo) * 100, 1)}%）：林缘是灌木与幼树，成树退后`);
 });
-check('W6c-C2', '森林落地与避让：实例底面与地形网格相差 ≤ 0.05 m；不压路、不进地标占地圆、不进 断面', ({ info, fail }) => {
-  let worst = 0, onRoad = 0, inLm = 0, inCor = 0;
+check('W6c-C2', '森林落地与避让：实例底面与地形网格相差 ≤ 0.05 m；不压路、不进地标占地圆', ({ info, fail }) => {
+  let worst = 0, onRoad = 0, inLm = 0;
   const lms = W.landmarks.filter(l => l.id !== 'TOWN');
   for (const it of DATA.forest.items) {
     worst = Math.max(worst, Math.abs(it.alt - H(it.lon, it.lat)));
     if (roadHit(it, itemRadius(it))) onRoad++;
     for (const lm of lms) if (arcM(it, lm) < lm.radius - 0.2) inLm++;
-    if (corridor(it.lon, it.lat)) inCor++;
+
   }
-  info(`${DATA.forest.items.length} 个实例底面与地形网格最大相差 ${f(worst, 4)} m；压路 ${onRoad}、进地标占地圆 ${inLm}、进 断面走廊 ${inCor}`);
-  if (worst > 0.05) fail(`底面偏差 ${f(worst)} > 0.05`); if (onRoad || inLm || inCor) fail('森林实例与道路、地标或断面重叠');
+  info(`${DATA.forest.items.length} 个实例底面与地形网格最大相差 ${f(worst, 4)} m；压路 ${onRoad}、进地标占地圆 ${inLm}`);
+  if (worst > 0.05) fail(`底面偏差 ${f(worst)} > 0.05`); if (onRoad || inLm) fail('森林实例与道路或地标重叠');
 });
 
 // ---------------------------------------------------------------- W6d (grassland, desert, TR07)
 const allItems = () => [...DATA.items, ...DATA.forest.items, ...DATA.grass.items, ...DATA.high.items];
-const rawItems = allItems(), occupancyItems = LC.avoidFootprints(rawItems, avoidIndex, SECP.LANDCOVER_FOOTPRINT), remainingItems = LC.avoidFootprints(occupancyItems.items, avoidIndex, SECP.LANDCOVER_FOOTPRINT);
+const rawItems = allItems(), occupancyItems = LC.avoidFootprints(rawItems, avoidIndex, LC.LANDCOVER_FOOTPRINT), remainingItems = LC.avoidFootprints(occupancyItems.items, avoidIndex, LC.LANDCOVER_FOOTPRINT);
 check('W10d-U5-cover', '田块与实例完整外形对道路、城镇地面及地标占地为零相交', ({ info, fail }) => {
   const plotOverlaps = DATA.cells.filter(c => avoidIndex.overlaps(c.outer)).length;
   const culled = Object.values(occupancyItems.culled).reduce((a, b) => a + b, 0), leftover = Object.values(remainingItems.culled).reduce((a, b) => a + b, 0);
@@ -146,13 +197,13 @@ check('W6d-C1', '草原与沙漠分布一致：草丛在草原、干枯灌木与
   const pil = GR.items.filter(i => i.type === 'rockPillar').map(i => 1.0 * i.s[1]); if (pil.length) { const lo = Math.min(...pil) * 1.0, hi = Math.max(...pil); info(`岩柱高 ${f(lo, 1)}–${f(hi, 1)} m（几何高约 1 m × 缩放）`); }
   info(`TR07：草的密度随离沙漠边缘的距离在 18 m 内降到 20%，并从绿草过渡到干草（${st.dryTufts} 丛）；地形顶点色另外按 ±6 m 软化区域边界（约 12 m 宽，terrain.js）`);
 });
-check('W6d-C2', '草原与沙漠落地与避让：实例底面与地形网格相差 ≤ 0.2 m，不压路、不进地标占地圆、不进 断面；沙丘在边缘与道路处归零', ({ info, fail }) => {
-  let worst = 0, bad = 0, onRoad = 0, inLm = 0, inCor = 0; const lms = W.landmarks.filter(l => l.id !== 'TOWN');
+check('W6d-C2', '草原与沙漠落地与避让：实例底面与地形网格相差 ≤ 0.2 m，不压路、不进地标占地圆；沙丘在边缘与道路处归零', ({ info, fail }) => {
+  let worst = 0, bad = 0, onRoad = 0, inLm = 0; const lms = W.landmarks.filter(l => l.id !== 'TOWN');
   for (const it of DATA.grass.items) { if (['cairn'].includes(it.type)) continue; const dv = it.alt - H(it.lon, it.lat); worst = Math.max(worst, Math.abs(dv)); if (Math.abs(dv) > 0.2) bad++;
     if (roadHit(it, itemRadius(it))) onRoad++;
-    for (const lm of lms) if (arcM(it, lm) < lm.radius - 0.2) inLm++; if (corridor(it.lon, it.lat)) inCor++; }
-  info(`${DATA.grass.items.length} 个实例底面相对地形网格最大 ${f(worst, 3)} m（岩石与岩柱下沉 0.1 m）；压路 ${onRoad}、进地标占地圆 ${inLm}、进 断面 ${inCor}、高度不合格 ${bad}`);
-  if (bad || onRoad || inLm || inCor) fail('草原与沙漠实例落地或避让不合格');
+    for (const lm of lms) if (arcM(it, lm) < lm.radius - 0.2) inLm++; }
+  info(`${DATA.grass.items.length} 个实例底面相对地形网格最大 ${f(worst, 3)} m（岩石与岩柱下沉 0.1 m）；压路 ${onRoad}、进地标占地圆 ${inLm}、高度不合格 ${bad}`);
+  if (bad || onRoad || inLm) fail('草原与沙漠实例落地或避让不合格');
   // the dune overlay is zero where the mask is zero: check the border of the mesh (vertices on the edge cells have dune = 0 within 0.02 m of the terrain)
   const m = DATA.dunes.mesh; let edgeMax = 0, n = 0; for (let i = 0; i < m.pos.length; i += 3) { const lon = m.pos[i] / (R * D), lat = Math.atan(Math.sinh(-m.pos[i + 2] / R)) / D, k = 1 / Math.cos(lat * D), y = m.pos[i + 1] / k + BASE, g = H(lon, lat), dv = y - g - 0.01, ed = LC.edgeDistance(W, lon, lat, r => r.kind === 'desert', 8); if (ed < 1.0) { edgeMax = Math.max(edgeMax, Math.abs(dv)); n++; } }
   info(`沙漠边缘 1 m 内的 ${n} 个沙丘顶点相对地形最大 ${f(edgeMax, 3)} m（边缘处沙丘归零，不与地形互相穿插）`); if (edgeMax > 0.05) fail(`沙丘在边缘与地形相差 ${f(edgeMax, 3)} m`);
@@ -226,7 +277,7 @@ if (!process.argv.includes('--no-browser')) {
     if (small.n) fails.push(`${label} 画了 ${small.n} 个屏幕尺寸小于淡出下限的实例`);
     if (on.info.calls - off.calls > CALLS) fails.push(`${label}田地绘制调用 ${on.info.calls - off.calls} > ${CALLS}`);
   }
-  { // W6c: visible trees at the densest views (ground, aerial) against 3000, and the section's trees not double counted
+  { // W6c: visible trees at the densest views (ground, aerial) against 3000, and the corridor trees are counted in the unified instance table
     let worst = 0, worstName = '', worstCalls = 0;
     for (const name of ['forest-ground', 'forest-aerial', 'forest-edge-ground', 'forest-edge-aerial', 'forest-west-aerial', 'forest-south-aerial']) {
       const on = await renderShot(page, shots[name]), off = (await renderShot(page, shots[name], { noCover: true })).info, trees = await page.evaluate(() => { const c = window.__scene.cover.stats().counts || {}; return ['treeRound', 'treeRound_far', 'cedar', 'cedar_far', 'pine', 'pine_far', 'bamboo', 'bamboo_far'].reduce((s, k) => s + (c[k] || 0), 0); });

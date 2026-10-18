@@ -7,7 +7,7 @@
 //       map, none on the sphere; no doubled lamps while switching
 //   SL6 page: no errors, the first frame is the whole world, capacities do not grow under panning and zooming
 // Independent of streetlights.js: the road network comes from world.js (samplePath), the former lamps from the baseline commit (pre-w10c-streetlights: the old
-// roads.js, bridge.js and section_plan.js run here under Node), distances and clearances are computed here, the page gives the actual instances.
+// roads.js and bridge.js run here under Node); the two former W4 entrance-lamp sites are fixed baseline data. Distances and clearances are computed here.
 // Report: docs/world/w10c/streetlights/report.json (git-ignored, like every review output of docs/world/w*/).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,16 +35,18 @@ const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' });
 const frozenDiff = ['layout.js', 'world.js'].filter(p => { try { execFileSync('git', ['diff', '--quiet', BASE_REF, '--', p], { cwd: root }); return false; } catch { return true; } });
 const old = (() => {
   const dir = path.join(root, 'tools/out/streetlight-baseline'); fs.mkdirSync(dir, { recursive: true });
-  for (const p of ['terrain.js', 'roadkit.js', 'bridge.js', 'steps.js', 'roads.js', 'section_plan.js']) fs.writeFileSync(path.join(dir, p), git('show', `${BASE_REF}:${p}`));
+  for (const p of ['terrain.js', 'roadkit.js', 'bridge.js', 'steps.js', 'roads.js']) fs.writeFileSync(path.join(dir, p), git('show', `${BASE_REF}:${p}`));
   const TERR = require(path.join(dir, 'terrain.js')); globalThis.ROADKIT = require(path.join(dir, 'roadkit.js')); globalThis.BRIDGE = require(path.join(dir, 'bridge.js')); globalThis.STEPS = require(path.join(dir, 'steps.js'));
-  const ROADS = require(path.join(dir, 'roads.js')), SECP = require(path.join(dir, 'section_plan.js'));
+  const ROADS = require(path.join(dir, 'roads.js'));
   const H = TERR.sampler(W, { lonMin: -181, lonMax: 181, latMin: -90, latMax: 90 }), TB = TERR.builder(W), P = ROADS.plan(W, H, (lo, la) => TB.vertex(lo, la).c);
   const routes = P.routes.map(rt => ({ id: rt.def.id, kind: rt.def.furnish && rt.def.furnish.kind, stations: (rt.lamps || []).map(l => l.s), removedAtJunction: (rt.junctionLampRemovals || []).map(q => q.station),
     instances: (rt.instances.lamp || []).map(it => ({ lon: it.lon, lat: it.lat })), pools: (rt.instances.lampPool || []).length }));
   const bridges = P.bridges.map(b => ({ id: b.def.id, stations: b.lamps.map(l => l.s), sides: b.lamps.map(l => l.side), instances: (b.instances.lamp || []).length }));
-  return { routes, bridges, w4: (SECP.plan(W).items.lamp || []).map(it => ({ lon: it.lon, lat: it.lat })) };
+  return { routes, bridges, w4: [
+    { lon: -5.452807402309436, lat: -37.16203486805916 },
+    { lon: 7.937819167847188, lat: -37.60766870871647 },
+  ] };
 })();
-const SECP = require(path.join(root, 'section_plan.js')), PLW4 = SECP.plan(W);
 const arc = (a, b) => W.arcDistance(a, b);
 const flat = (lon, lat) => { const p = W.lonLatToTown(lon, lat); return { x: p.x, z: p.z, k: 1 / Math.cos(lat * D) }; };
 // an edge (or a chain of edges, each possibly reversed) as points every 0.5 m with the station, flat position and the flat right-hand normal
@@ -133,8 +135,8 @@ check('SL2', '登记：稳定 id 唯一；旧灯（基线提交）逐盏迁移�
   let town = 0; for (const fu of L.furniture.filter(q => q.kind === 'lamp' || (q.kind === 'legacy' && q.group === 'streetLamp'))) {
     const src = fu.kind === 'lamp' ? 'layout:' + fu.id : 'scene:streetLamp', m = mapTo[src], q = m && byId[m.to];
     if (!q) { fail(`城镇灯 ${src} 没有迁移`); continue; } const p = flat(q.lon, q.lat); if (Math.hypot(p.x - fu.x, p.z - fu.z) > 1e-6) fail(`${q.id} 离 layout 灯位 ${f(Math.hypot(p.x - fu.x, p.z - fu.z), 6)}`); else town++; }
-  // the W4 entrance lamps of the baseline section plan
-  let w4 = 0; old.w4.forEach((o, k) => { const m = mapTo['section_plan:lamp#' + k], q = m && byId[m.to]; if (!q || Math.abs(q.lon - o.lon) > 1e-9 || Math.abs(q.lat - o.lat) > 1e-9) fail(`W4 入口灯 #${k} 未在原位迁移`); else w4++; });
+  // the two former W4 entrance-lamp sites, retained as baseline coordinates
+  let w4 = 0; old.w4.forEach((o, k) => { const m = mapTo['w4-entrance-lamp#' + k], q = m && byId[m.to]; if (!q || Math.abs(q.lon - o.lon) > 1e-9 || Math.abs(q.lat - o.lat) > 1e-9) fail(`W4 入口灯 #${k} 未在原位迁移`); else w4++; });
   // the routes: every station of the old W5 rule (drawn, cut at a junction or standing on the town street) is a lamp within 5 m along its road or a removal with a reason
   const rows = [], removedBy = src => T.removed.find(r => r.source === src);
   for (const o of old.routes.filter(q => q.kind === 'RD01' || q.kind === 'RD03')) {
@@ -170,9 +172,9 @@ check('SL2', '登记：稳定 id 唯一；旧灯（基线提交）逐盏迁移�
   info(`8 m 内的灯对 ${pairs.length} 对，最近杆距 ${pairs.length ? f(Math.min(...pairs.map(p => p.foot))) : '—'} m、最近光池距 ${pairs.length ? f(Math.min(...pairs.map(p => p.pool))) : '—'} m（限 4 / 3 m）`);
 });
 
-// ---------------------------------------------------------------- SL3 (in the page: the authoritative road strips, the land cover, the W4 plan, computed here)
+// ---------------------------------------------------------------- SL3 (in the page: the authoritative road strips and global land cover)
 const C3 = await page.evaluate(({ lamps }) => {
-  const S = window.__scene, W = window.WORLD, L = window.LAYOUT, RD = S.roads.data(), COV = S.cover.data(), PL = S.section.plan(), R = 90, D = Math.PI / 180;
+  const S = window.__scene, W = window.WORLD, L = window.LAYOUT, RD = S.roads.data(), COV = S.cover.data(), PL = COV.w4, R = 90, D = Math.PI / 180;
   const fl = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) }), P = 2 * Math.PI * R, wx = d => d - P * Math.round(d / P);
   const dist = (a, b) => { const p = fl(a.lon, a.lat), q = fl(b.lon, b.lat); return Math.hypot(wx(p.x - q.x), p.z - q.z) / ((p.k + q.k) / 2); };
   const inPoly = (p, x, z) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && (x < (p[j][0] - p[i][0]) * (z - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0])) c = !c; return c; };
@@ -187,9 +189,9 @@ const C3 = await page.evaluate(({ lamps }) => {
   const TRUNK = { treeRound: 0.16, cedar: 0.2, pine: 0.2, bamboo: 0.51 }, PROPS = { rack: 1.3, rackFallen: 1.3, hutFarm: 1.5, hutRusty: 1.5, oldMachine: 1.1, scarecrow: 0.4, shrub: 0.7, shrubLow: 0.6, rockBig: 1.0, rock: 0.5, mossRock: 0.5, log: 1.7, logMoss: 1.6 };
   const FURN = { barrierConcrete: 1.0, milestone: 0.15, signBus: 0.25, busBench: 0.8, pole: 0.15, mirror: 0.35, vending: 0.55, jizo: 0.25, lantern: 0.25, stonePost: 0.15, gatePost: 0.22, torii: 1.1, stoneStep: 0.7, pierColumn: 0.9, pierFooting: 1.3, signRound: 0.3 };
   const furn = []; for (const src of [...RD.routes.map(x => x.instances), ...RD.bridges.map(b => b.instances), ...RD.stairs.map(s => s.instances), ...(RD.extras || []).map(e => e.instances), { gatePost: RD.markers }]) for (const [t, list] of Object.entries(src || {})) if (FURN[t]) for (const it of list) furn.push({ t, it, r: FURN[t] * Math.max(it.s[0], it.s[2]) });
-  // the W4 furniture by its clearance radius; the bamboo fence by its real extent: posts from -0.9 to +0.9 m and rails to -3 m along its local x (flora.js)
-  const w4 = Object.entries(PL.items).flatMap(([t, list]) => ['tuft', 'weed', 'seedling', 'flower', 'fern', 'weedShadow'].includes(t) ? [] : list.map(it => ({ t, it, r: t === 'fenceBamboo' ? 0.05 : it.clearance, seg: t === 'fenceBamboo' ? [0.95, -3.05] : null })));
-  const w4d = (q, e) => { if (!e.seg) return dist(q, e.it); const g = fl(e.it.lon, e.it.lat), p = fl(q.lon, q.lat), c = Math.cos(e.it.yaw), s = Math.sin(e.it.yaw), A = [g.x + c * e.seg[0] * g.k, g.z - s * e.seg[0] * g.k], B = [g.x + c * e.seg[1] * g.k, g.z - s * e.seg[1] * g.k]; return segD(g.x + wx(p.x - g.x), p.z, A, B) / g.k; };
+  // the migrated corridor's poles; its fields, plants and trees are covered by the same global occupancy checks as every other region
+  const w4 = (PL.items || []).filter(it => it.type === 'pole').map(it => ({ t: it.type, it, r: 0.15 * Math.max(it.s[0], it.s[2]) }));
+  const w4d = (q, e) => dist(q, e.it);
   const trees = COV.items.filter(it => TRUNK[it.type] || PROPS[it.type]);
   const P0 = W.TOWN_PATCH, tX = R * P0.lonMax * D, tZ = R * Math.asinh(Math.tan(P0.latMax * D));
   for (const q of lamps) {
@@ -212,7 +214,7 @@ const C3 = await page.evaluate(({ lamps }) => {
   // all in the flat display frame (the town's wires and lamps in the town's own frame, the planet's at height x 1/cos lat), distances back in metres (/ k)
   const wires = [], top = (it, o, alt) => { const g = fl(it.lon, it.lat), c = Math.cos(it.yaw), s = Math.sin(it.yaw); return [g.x + c * o * g.k, (alt - 1.6 + 7.75) * g.k, g.z - s * o * g.k]; };
   for (const rt of RD.routes) { const ps = rt.poles || []; for (let a = 0; a + 1 < ps.length; a++) for (const o of [-0.8, 0, 0.8]) wires.push([top(ps[a].rec, o, ps[a].rec.alt), top(ps[a + 1].rec, o, ps[a + 1].rec.alt), 0.5 * fl(ps[a].rec.lon, ps[a].rec.lat).k]); }
-  for (const w of PL.wires) for (const o of [-0.8, 0, 0.8]) wires.push([top(w.a, o, W.height(w.a.lon, w.a.lat)), top(w.b, o, W.height(w.b.lon, w.b.lat)), w.sag * fl(w.a.lon, w.a.lat).k]);
+  for (const [alo, ala, blo, bla, sag] of PL.wires || []) { const a = PL.items.find(it => it.type === 'pole' && Math.abs(it.lon - alo) < 1e-6 && Math.abs(it.lat - ala) < 1e-6), b = PL.items.find(it => it.type === 'pole' && Math.abs(it.lon - blo) < 1e-6 && Math.abs(it.lat - bla) < 1e-6); if (!a || !b) continue; for (const o of [-0.8, 0, 0.8]) wires.push([top(a, o, W.height(alo, ala)), top(b, o, W.height(blo, bla)), sag * fl(alo, ala).k]); }
   const byId = Object.fromEntries(L.furniture.map(x => [x.id, x]));
   for (const pl of L.poleLines) for (const [a, b] of pl.spans) { const A = byId[a], B = byId[b]; if (!A || !B || A.kind === 'legacy' || B.kind === 'legacy') continue; for (const o of [-0.5, 0, 0.5]) wires.push([[A.x + A.across[0] * o, L.LEVELS.pavement + 5.34, A.z + A.across[1] * o], [B.x + B.across[0] * o, L.LEVELS.pavement + 5.34, B.z + B.across[1] * o], 0.42]); }
   const wireRows = [];
@@ -238,7 +240,7 @@ check('SL3', '净空：杆基在完整断面外 + 0.5 m，不入田块、田埂�
   info(`电线 ${C3.wires} 段（RD03 杆线、W4 入口杆线、城镇杆线）：非城镇灯最近 ${f(mn(wNew).d)} m（${mn(wNew).id}，限 0.3 m）；城镇灯（layout 原位）最近 ${f(mn(wTown).d)} m（${mn(wTown).id}，不接触：限 0.1 m；与此前同一几何）`);
   if (frozenDiff.length) fail(`冻结文件与 ${BASE_REF} 不同：${frozenDiff.join('、')}`); info(`layout.js、world.js 与 ${BASE_REF} 逐字节相同：${!frozenDiff.length}（街道中线、宽度、地块、建筑、标线、水洼与设施位置均来自这两份数据）`);
   if (C3.entrance > 12) fail(`地块入口到最近路灯 ${f(C3.entrance, 1)} m > 12 m`); info(`38 个地块入口到最近路灯（灯表城镇灯 + layout 巷灯）最远 ${f(C3.entrance, 1)} m（限 12 m）`);
-  const w4 = T.lamps.filter(q => q.owner === 'w4'); info(`W4 入口灯 ${w4.length} 盏原位（${w4.map(q => `${q.id} 朝向 ${q.line}`).join('、')}）；C01-S 专项另跑 tools/c01_s_clearance.mjs`);
+  const w4 = T.lamps.filter(q => q.owner === 'w4'); info(`W4 入口灯 ${w4.length} 盏原位（${w4.map(q => `${q.id} 朝向 ${q.line}`).join('、')}）；走廊实例道路净空由 cover_check 的全局占用检查覆盖`);
 });
 
 // ---------------------------------------------------------------- SL4
@@ -252,7 +254,7 @@ const C4 = await page.evaluate(() => {
   const mats = [], q4 = new THREE.Quaternion(), p4 = new THREE.Vector3(), s4 = new THREE.Vector3(), m4 = new THREE.Matrix4();
   SL.state.slots.forEach((sl, j) => sl.lamps.forEach((li, n) => { m4.fromArray(SL.objects.bodies[j].instanceMatrix.array, n * 16); m4.decompose(p4, q4, s4); const z = new THREE.Vector3(0, 0, 1).applyQuaternion(q4); mats[li] = { p: p4.toArray(), s: s4.toArray(), face: [z.x, z.z], up: new THREE.Vector3(0, 1, 0).applyQuaternion(q4).y }; }));
   const surfaces = []; const keep = o => o.isMesh && !o.isInstancedMesh && o.visible !== false && !(o.material && o.material.transparent);
-  S.scene.traverse(o => { if (!keep(o)) return; let p = o; while (p && !['terrain', 'roads', 'section', 'landcover'].includes(p.name) && p.parent) p = p.parent; if (p && ['terrain', 'roads', 'section', 'landcover'].includes(p.name)) surfaces.push(o); });
+  S.scene.traverse(o => { if (!keep(o)) return; let p = o; while (p && !['terrain', 'roads', 'look', 'landcover'].includes(p.name) && p.parent) p = p.parent; if (p && ['terrain', 'roads', 'look', 'landcover'].includes(p.name)) surfaces.push(o); });
   for (const r of S.town.roots) r.traverse(o => { if (keep(o)) surfaces.push(o); });
   const ray = new THREE.Raycaster(), rows = [];
   Dt.lamps.forEach((q, i) => {

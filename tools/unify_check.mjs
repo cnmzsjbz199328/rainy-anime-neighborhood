@@ -32,14 +32,27 @@ let failures = 0;
 const check = (id, ok, detail) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${id} ${detail}`); if (!ok) failures++; };
 
 // ---- U0 (W10a): town view / explore view, the on-demand builds and the background generation
-const files = ['scene.js', 'terrain.js', 'section.js', 'roads.js', 'ocean.js', 'landcover.js', 'worldgen.js', 'transition.js', 'quality.js'];
+const files = ['scene.js', 'terrain.js', 'roads.js', 'ocean.js', 'landcover.js', 'look.js', 'worldgen.js', 'transition.js', 'quality.js'];
 const removed = /\b(?:setExplore|onExplore|setFade|landmarksVisible|buildLandmarks|buildRest|START_DELAY_MS|SLICE_MS|requestIdleCallback|restMat|fadeMaterials|visibilityOf|terrainOf|capsOf|setHeadCaps)\b|\bfunction\s+(?:visibility|ensure)\s*\(|\.explore\b|fade\.rest|opts\.gate|\bgate\s*:/;
 const hits = files.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => (removed.test(l) && !l.trim().startsWith('//') ? [`${f}:${i + 1}`] : [])));
 check('U0', !hits.length, `W10a 删除项：${hits.join('、') || '无残留'}`);
-const w10dFiles = ['scene.js', 'terrain.js', 'landcover.js', 'section_plan.js'];
+const w10dFiles = ['scene.js', 'terrain.js', 'landcover.js'];
 const w10dRemoved = /group\('base'\)|SHOW_OUTER_DRAIN_OUTLETS|cover:town-edge|townPatchDistance\([^\n]*\)\s*[<]=?\s*24|put\('fenceBamboo'/;
 const w10dHits = w10dFiles.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => w10dRemoved.test(l) && !l.trim().startsWith('//') ? [`${f}:${i + 1}`] : []));
 check('U0-W10d', !w10dHits.length, `底座、TR01 独立网格/竹篱、外排水模型及补丁距离特例已删除：${w10dHits.join('、') || '无残留'}`);
+
+// ---- U0 (W10e): retire the independent W4 section and read appearance values through look.js
+{
+  const core = ['build.py', 'scene.js', 'worldgen.js', 'roads.js', 'ocean.js', 'landcover.js', 'streetlights.js', 'look.js', 'tools/cover_check.mjs', 'tools/road_check.mjs', 'tools/lod_check.mjs'];
+  const removed = /\b(?:SECTION_API|SECTION_PLAN|SECTION\.attach|ctx\.section|S\.section|section_plan\.js|section\.js|section_check\.mjs|section\.state|section\.jobs)\b|\bcorridor\s*:/;
+  const hits = core.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((line, i) => removed.test(line) && !line.trim().startsWith('//') ? [`${f}:${i + 1}`] : []));
+  const retired = ['section.js', 'section_plan.js', 'tools/section_check.mjs', 'tools/section_views.mjs', 'tools/section_shots.mjs', 'tools/section_extrapolate.mjs', 'tools/c01_s_clearance.mjs'].filter(f => fs.existsSync(path.join(root, f)));
+  check('U0-W10e', !hits.length && !retired.length, `W4 独立模块/模式/排除与专用检查已退役：${[...hits, ...retired].join('、') || '无残留'}`);
+}
+if (process.argv.includes('--only') && process.argv[process.argv.indexOf('--only') + 1] === 'U0') {
+  console.log(`${failures ? 'FAIL' : 'PASS'} unify_check --only U0`);
+  process.exit(failures ? 1 : 0);
+}
 
 // ---- U0 (W10b): the retired roads and the old edge ids are gone as identifiers (whole string literals) from the running code and the tools. world.js keeps the
 // old id of an edge only as its source (the second argument of its E( / P( registration line); no table maps old ids to new ones.
@@ -327,7 +340,8 @@ check('U0-W10d', !w10dHits.length, `底座、TR01 独立网格/竹篱、外排�
   if (closure > 1e-6) nodeErrors.push(`CR01 闭环首末行不重合 ${closure.toFixed(6)}`);
   // W10c: the road lamps' feet come from one table (streetlights.js), planned here from the same roads and W4 plan (the land cover only moves a lamp along or across its road;
   // tools/streetlight_check.mjs checks the page's final table); a lamp of the ring itself stands beside the carriageway by construction, the others must keep out of the junctions
-  const SLP = require(path.join(root, 'streetlights.js')).plan({ W: Object.assign(Object.create(W), { height: H }), L, roads: PLAN, RK: ROADS, section: require(path.join(root, 'section_plan.js')).plan(W), cover: { cells: [], items: [] }, town: { puddles: [], alleyLamps: [] } });
+  const LC = require(path.join(root, 'landcover.js')), W4 = LC.build(W, H, { footprint: LC.LANDCOVER_FOOTPRINT }).w4;
+  const SLP = require(path.join(root, 'streetlights.js')).plan({ W: Object.assign(Object.create(W), { height: H }), L, roads: PLAN, RK: ROADS, cover: { cells: [], items: W4.items, w4: W4 }, town: { puddles: [], alleyLamps: [] } });
   const placed = [...PLAN.routes.flatMap(rt => Object.entries(rt.instances || {}).flatMap(([type, list]) => list.map(it => ({ rt: rt.def.id, type, it })))), ...SLP.lamps.filter(q => q.owner !== 'town').map(q => ({ rt: q.line === 'CR01' ? 'CR01' : 'streetlights', type: 'lamp', it: { lon: q.lon, lat: q.lat, station: q.id } }))];
   for (const { rt: routeId, type, it } of placed) {
     const p = flat(it), radius = clearance[type] ?? 0.6;
@@ -364,7 +378,7 @@ try {
     Object.defineProperty(window, '__scene', { get: () => value, set: S => { value = S; const render = S.renderer.render.bind(S.renderer);
       S.renderer.render = (...args) => {
         if (!window.__firstWorld) { const nodes = []; S.scene.traverse(o => { if (o.isMesh || o.isLineSegments) nodes.push([o.uuid, o.instanceMatrix ? o.instanceMatrix.count : 0]); });
-          window.__firstWorld = { nodes, done: S.worldgen.state.done, built: [S.terrain.restBuilt, S.section.state.built, S.roads.state.built, S.ocean.state.built, S.cover.state.built],
+          window.__firstWorld = { nodes, done: S.worldgen.state.done, built: [S.terrain.restBuilt, S.look.state.built, S.roads.state.built, S.ocean.state.built, S.cover.state.built],
             landmarks: Object.keys(S.landmarks.info).filter(k => k.startsWith('LM')).length, probe: S.quality.state.probe.length }; }
         return render(...args); }; } });
   });
@@ -492,7 +506,7 @@ try {
   for (let i = 0; Date.now() - start < 30000; i++) {
     rows.push(await page.evaluate(v => { const S = window.__scene; S.view.set(v); S.transition.step(3);
       const nodes = []; S.scene.traverse(o => { if (o.isMesh || o.isLineSegments) nodes.push([o.uuid, o.instanceMatrix ? o.instanceMatrix.count : 0]); });
-      const roots = [S.terrain.root, S.section.state.root, S.section.state.globalInkGroup, S.roads.state.root, S.ocean.state.root, S.cover.state.root, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])];
+      const roots = [S.terrain.root, S.look.state.root, S.look.state.globalInkGroup, S.roads.state.root, S.ocean.state.root, S.cover.state.root, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])];
       return { mode: v.mapMode, nodes, visible: roots.every(g => g && g.visible), terrain: S.terrain.ring.concat(S.terrain.rest).every(m => m.visible) }; }, STATES[i % 3]));
     await page.waitForTimeout(1000);
   }
@@ -504,7 +518,7 @@ try {
   // world ground layer with a polygon offset may lie within 5 cm below it (an offset lets a layer that is under the street win when it is seen obliquely).
   const town = await page.evaluate(() => {
     const S = window.__scene, T = window.THREE, L = window.LAYOUT, world = new Set();
-    for (const r of [S.section.state.root, S.cover.state.root, S.ocean.state.root, ...S.terrain.ring, ...S.terrain.rest, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])]) r.traverse(o => world.add(o));
+    for (const r of [S.look.state.root, S.cover.state.root, S.ocean.state.root, ...S.terrain.ring, ...S.terrain.rest, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])]) r.traverse(o => world.add(o));
     const patch = new T.Box3(new T.Vector3(-50, -5, -50), new T.Vector3(50, 5, 50)), box = new T.Box3(), CELL = 1, cells = new Map(), broad = [], cellKey = (x, z) => `${x},${z}`;
     const visible = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; }, addTriangle = tri => {
       const x0 = Math.max(-50, Math.floor(Math.min(...tri.v.map(p => p[0])))), x1 = Math.min(50, Math.floor(Math.max(...tri.v.map(p => p[0])))), z0 = Math.max(-50, Math.floor(Math.min(...tri.v.map(p => p[2])))), z1 = Math.min(50, Math.floor(Math.max(...tri.v.map(p => p[2]))));

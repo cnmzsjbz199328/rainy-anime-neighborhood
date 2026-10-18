@@ -86,7 +86,7 @@ function build(W, chunks, H, roads) {
 const OCEAN = { build, SHALLOW, DEEP };
 
 // ---------------------------------------------------------------- scene part
-OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
+OCEAN.attach = function (scene, ctx, BEND, TERR, LOOK_API) {
   const THREE = global.THREE, W = global.WORLD;
   const S = { built: false, stats: {}, root: null };
   const uniforms = { uTime: { value: 0 }, uRain: { value: 1 }, uMoon: { value: new THREE.Vector3(-6, 9, 4).normalize() }, uGlint: { value: new THREE.Vector3(0.78, 0.86, 1.0) } };   // uGlint: the glint colour (daylight.js turns it warm on the sphere)
@@ -151,7 +151,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   let DATA = null;
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build_() {
-    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
+    const K = LOOK_API.kit(), M = LOOK_API.state.materials, H = TERR.sampler();
     const RD = global.ROADS_API && global.ROADS_API.data();
     const centre = []; if (RD) { for (const r of RD.routes) for (const p of r.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const b of RD.bridges) for (const p of b.samples) centre.push({ lon: p.lon, lat: p.lat }); for (const s of RD.stairs) for (const p of s.samples) centre.push({ lon: p.lon, lat: p.lat }); }
     DATA = build(W, [...TERR.ringData, ...TERR.restData], H, { centre: centre.filter((_, i) => i % 2 === 0), clear: 8 }); S.data = DATA;
@@ -162,7 +162,7 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     const nrm = new Float32Array(d.pos.length); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(new THREE.BufferAttribute(d.index, 1)); g.computeBoundingSphere();
     const water = new THREE.Mesh(g, makeMat()); water.name = 'ocean:water'; water.matrixAutoUpdate = false; water.renderOrder = 3; root.add(water); objs.water = water;
     const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(DATA.coast, 3)); cg.computeBoundingSphere();
-    const coast = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x273647, transparent: true, opacity: 0, userData: { inkFog: true } })); coast.name = 'ocean:coast'; coast.matrixAutoUpdate = false; root.add(coast); objs.coast = coast;
+    const coast = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: LOOK_API.params.inkColor, transparent: true, opacity: 0, userData: { inkFog: true } })); coast.name = 'ocean:coast'; coast.matrixAutoUpdate = false; root.add(coast); objs.coast = coast;
     // instances grouped by type
     const by = {}; for (const it of DATA.instances) (by[it.type] = by[it.type] || []).push({ ...it, m: matrixOf(it) });
     S.counts = {};
@@ -175,9 +175,6 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
     }
     if (BEND.seamSplit) BEND.seamSplit(root);                       // W8e-b: the water is cut along the seam
     S.stats = { ...DATA.stats, waterTriangles: d.index.length / 3, coastSegmentsDrawn: DATA.coast.length / 6 };
-    // the section's own corridor sea and its corridor coast line give way to the global water (one layer, one line)
-    for (const m of SEC.objects.water) if (m.name === 'sec:sea') m.visible = false;
-    for (const l of SEC.objects.lines.coast) l.userData.hidden = true;
     root.visible = true; S.built = true; return root;
   }
   const job = global.TERRAIN.job(build_, ms => { S.stats.buildMs = ms; });
@@ -185,9 +182,8 @@ OCEAN.attach = function (scene, ctx, BEND, TERR, SEC) {
   function tick(t, camera) {
     uniforms.uTime.value = t; uniforms.uRain.value = global.WEATHER_FX.live.gains().impact;     // WX2: the switch x (1 - uBend) x w_local (none in the clear daytime of the sphere); the place's rain is in the shader (wxAt)
     if (!S.built || !S.root.visible) return;
-    const ink = SEC.state.ink, g = ink.ground, a = ink.aerial, near = ink.distance < 120;
+    const ink = LOOK_API.state.ink, g = ink.ground, a = ink.aerial, near = ink.distance < 120;
     objs.coast.material.opacity = a; objs.coast.visible = a > 0.01;
-    for (const l of SEC.objects.lines.coast) if (l.userData.hidden) l.visible = false;
     for (const m of objs.inst) m.visible = near; for (const h of objs.hulls) h.visible = near && g > 0.01;
   }
 

@@ -1,6 +1,6 @@
 // The clear daytime of the sphere (W8e-c, W8_SPEC 11.3, D9 revised 2026-10-07). One global uDay = uBend: 0 on the flat map (the night, untouched), 1 on the sphere.
 // Applied at render time only (scene.onBeforeRender, undone in scene.onAfterRender), so the night systems that write the lights and the sky every frame (weather_fx.js,
-// nightlight.js, the light presets of section.js) keep reading their own values, and nothing at all is touched while uDay = 0:
+// nightlight.js and look.js keep reading their own values, and nothing at all is touched while uDay = 0:
 //   sky      the background and the fog colour go from the night blue to a day sky
 //   sun      the moon light becomes the sun: warm white, from a fixed direction in the frame of the view target (SUN_LOCAL: about 50 deg above the horizon, from the
 //            south-west), so wherever the sphere is turned the side in view is in daylight

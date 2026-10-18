@@ -977,7 +977,7 @@ function* planSteps(W, H, tc) {
   for (const rt of routes) { if (!(rt.def.furnish && rt.def.furnish.kind === 'RD01')) continue; let cur = []; rt.samples.forEach((p, i) => { if (p.span === 'tunnel') { if (cur.length > 1) lit.push(cur); cur = []; } else cur.push({ lon: p.lon, lat: p.lat, alt: rt.bed[i] }); }); if (cur.length > 1) lit.push(cur); }
   for (const b of bridges) { lit.push(b.samples.map((p, i) => ({ lon: p.lon, lat: p.lat, alt: b.alt[i] }))); let cur = []; b.samples.forEach((p, i) => { if (p.h < -0.2) cur.push({ lon: p.lon, lat: p.lat, alt: 0.03 }); else { if (cur.length > 1) sea.push(cur); cur = []; } }); if (cur.length > 1) sea.push(cur); }
   const stairs = STAIRS.map(id => global.STEPS.build(WS, id));
-  // RN11-01 is the W4 shore boardwalk. Draw it in the unified network; section.js keeps only its fields and water.
+  // RN11-01 is the W4 shore boardwalk, part of the unified road network.
   const extras = [RK.build(WS, 'RN11-01')];
   // closures at the landmark entrances: two guide posts across the end of the road that reaches the entrance (W5-C7); the entrance of LM04 belongs to the W4 section
   const markers = [], items = [...routes.map(rt => ({ kind: 'route', rt, hw: rt.def.furnish && rt.def.furnish.kind === 'RD05' ? 1.5 : rt.def.furnish && rt.def.furnish.kind === 'RD08' ? 1.0 : rt.def.furnish && rt.def.furnish.kind === 'RD03' ? 2.25 : 4.5 })), ...stairs.map(st => ({ kind: 'stairs', rt: st, hw: 0.8 }))];
@@ -997,7 +997,7 @@ function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = i
 const ROADS = { plan, planSteps, routeContext, routeOpts, furnish, ROUTES, STAIRS, BRIDGES, NAV_PERIOD, JUNCTIONS: [...CR01_JUNCTIONS, ...JUNCTIONS], RING_JUNCTIONS: CR01_JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
 
 // ---------------------------------------------------------------- scene part
-ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
+ROADS.attach = function (scene, ctx, BEND, TERR, LOOK_API) {
   const THREE = global.THREE, W = global.WORLD;
   const S = { built: false, stats: {}, root: null, band: null, nav: [], ink: {}, puddleWeight: 1 };
   const objs = { inst: [], hulls: [], glows: [], strips: [], lines: { aerial: [], bridge: [], near: [] }, nav: null };
@@ -1008,16 +1008,14 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
 
   // W8g-a: a stepped build (TERRAIN.job); the root stays hidden until the last step, which leaves it visible as the single-call build did
   function* build() {
-    const K = SEC.kit(), M = SEC.state.materials, H = TERR.sampler();
+    const K = LOOK_API.kit(), M = LOOK_API.state.materials, H = TERR.sampler();
     const TB = TERR.builder || global.TERRAIN.builder(W); DATA = yield* planSteps(W, H, (lo, la) => TB.vertexColor(lo, la)); S.data = DATA;
     S.terrainCut = TERR.cutRoads ? TERR.cutRoads(DATA) : null;
-    const plotGrounds = []; SEC.state.root.traverse(o => { if (o.isMesh && o.name === 'sec:plots') plotGrounds.push(o); });
-    S.plotCut = TERR.cutGroundMeshes ? TERR.cutGroundMeshes(plotGrounds) : null;
     const root = new THREE.Group(); root.name = 'roads'; root.visible = false; scene.add(root); S.root = root;
     const townDetails = ctx.buildTownRoadDetails ? ctx.buildTownRoadDetails(root) : { puddles: [] };
     const townPuddles = townDetails.puddles || [];
     S.townDetails = townDetails; S.townPuddles = townPuddles;
-    const inkColor = 0x273647;
+    const inkColor = LOOK_API.params.inkColor;
     const bridgeMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp });
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const lineMat = () => new THREE.LineBasicMaterial({ color: inkColor, transparent: true, opacity: 1, userData: { inkFog: true } });
@@ -1089,7 +1087,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
       for (const b of DATA.bridges) for (const line of (b.stairRails || [])) poly(line, rail);
       for (const rt of DATA.routes) { const ps = rt.poles || []; for (let a = 0; a + 1 < ps.length; a++) { const A = ps[a].rec, B = ps[a + 1].rec, MA = matrixOfAlt(A), MB = matrixOfAlt(B), kA = flatOf(A.lon, A.lat).k, sag = 0.5 + 0.5 * hash(a + 1, rt.length); for (let c = 0; c < 3; c++) { const pa = new THREE.Vector3(...local[c]).applyMatrix4(MA), pb = new THREE.Vector3(...local[c]).applyMatrix4(MB); let prev = null; for (let nn = 0; nn <= 10; nn++) { const t = nn / 10, p = [pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t - sag * 4 * t * (1 - t) * kA, pa.z + (pb.z - pa.z) * t]; if (prev) wire.push(...prev, ...p); prev = p; } } } }
       const addNear = (segs, color, op) => { if (!segs.length) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); g.computeBoundingSphere(); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, userData: { inkFog: true } })); l.name = 'road:near-line'; l.matrixAutoUpdate = false; root.add(l); objs.lines.near.push(l); };
-      addNear(rope, 0xb59a74, 0.95); addNear(rail, 0xaeb7c4, 0.95); addNear(wire, 0x1f2a38, 0.9); S.stats.wireSegments = wire.length / 6; }
+      addNear(rope, 0xb59a74, 0.95); addNear(rail, 0xaeb7c4, 0.95); addNear(wire, LOOK_API.params.utilityWireColor, 0.9); S.stats.wireSegments = wire.length / 6; }
     { const segs = []; for (const st of DATA.stairs) { poly(st.lines.edgeL, segs); poly(st.lines.edgeR, segs); } addLines('aerial', segs); }
 
 
@@ -1149,7 +1147,7 @@ ROADS.attach = function (scene, ctx, BEND, TERR, SEC) {
   // ---------------------------------------------------------------- per-frame update, hooks
   function tick(t, camera) {
     if (!S.built || !S.root.visible) return;
-    const ink = SEC.state.ink, g = ink.ground, a = ink.aerial;
+    const ink = LOOK_API.state.ink, g = ink.ground, a = ink.aerial;
     // the small furniture and the navigation lights exist only near the surface (the light band stands for them from far away)
     const near = ink.distance < 120;
     // W8c: the small lamps of the boardwalk and the maintenance stair (lampSmall) hand over to the light band between 40 and 60 m of camera height (NIGHTLIGHT.lampOf);

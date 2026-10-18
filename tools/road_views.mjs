@@ -1,7 +1,7 @@
 // Shared by tools/road_shots.mjs, tools/road_check.mjs and tools/regress.mjs --views roads: the review shots of the W5 road network.
 // A position is a reference into the generated roads: { route | bridge, s (metres along, may be negative or past the end: extended along the tangent), o (metres to the
 // right of travel), dy (metres above the surface there) }, or { lon, lat, dy } over the terrain, or { sphere: [lon, lat], d } for a view from space.
-// Cameras sit on the sphere with the bend basis, like tools/section_views.mjs.
+// Cameras sit on the sphere with the bend basis, like the other global-world cameras.
 export const INIT = `(() => {
   let s = 0x2f6e2b1;
   Math.random = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -12,7 +12,7 @@ export const INIT = `(() => {
 })();`;
 
 const rt = (route, s, o = 0, dy = 1.6) => ({ route, s, o, dy });
-const ch = (s, o = 0, dy = 1.6) => ({ chain: true, s, o, dy });      // the chain of the W4 section from exit N08: M01 south (the former T03)
+const ch = (s, o = 0, dy = 1.6) => ({ chain: true, s, o, dy });      // M01 south, the unified N08–LM04 road
 const br = (bridge, s, o = 0, dy = 1.6) => ({ bridge, s, o, dy });
 const st = (stairs, s, o = 0, dy = 1.6) => ({ stairs, s, o, dy });
 const pr = (bridge, pier, o = 0, dy = 1.6) => ({ bridge, pier, s: 0, o, dy });
@@ -88,15 +88,16 @@ export const SHOTS = [
 // Render one shot on a page that already has INIT and the built scene; returns the canvas as a PNG data URL plus renderer info and the ink weights.
 export async function renderShot(page, v, opts = {}) {
   return await page.evaluate(([v, opts]) => {
-    const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, B = S.bend, cam = S.camera, SEC = S.section, RD = S.roads;
-    B.set(1); SEC.setMode(true); const OC = S.ocean, LC = S.cover;
-    SEC.set({ rain: v.rain !== false, light: v.light || 'rainy', ink: v.ink || 'auto' });
+    const S = window.__scene, T = window.THREE, R = 90, D = Math.PI / 180, B = S.bend, cam = S.camera, LOOK = S.look, RD = S.roads;
+    B.set(1); const OC = S.ocean, LC = S.cover;
+    if (v.rain === false) S.weather.lock('clear'); else S.weather.lock(null);
+    LOOK.set({ light: v.light || 'rainy', ink: v.ink || 'auto' });
     const fog0 = S.scene.fog.density, DATA = RD.data();
     const flat = (lon, lat) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];
     const basis = (x, z) => { const b = B.basis(x, z); return { east: new T.Vector3(...b.east), up: new T.Vector3(...b.up), south: new T.Vector3(...b.south) }; };
     // resolve a reference to { lon, lat, alt }: along a route or bridge by distance s (extended past the ends along the end tangent), lateral offset o to the right
     const resolve = ref => {
-      if (ref.chain) { const CH = SEC.state.chain, Sm = CH.samples; let i = 0, s = Math.max(0, Math.min(CH.length, ref.s)); while (i + 2 < Sm.length && Sm[i + 1].s < s) i++; const t = (s - Sm[i].s) / Math.max(1e-6, Sm[i + 1].s - Sm[i].s), W = window.WORLD, brg = W.bearing(Sm[i], Sm[i + 1]); let p = { lon: Sm[i].lon + (Sm[i + 1].lon - Sm[i].lon) * t, lat: Sm[i].lat + (Sm[i + 1].lat - Sm[i].lat) * t }; if (ref.o) p = W.destination(p, brg + (ref.o > 0 ? 90 : -90), Math.abs(ref.o)); return { lon: p.lon, lat: p.lat, alt: Sm[i].h + 0.03 + (ref.dy || 0) }; }
+      if (ref.chain) { const CH = DATA.routes.find(r => r.def.id === 'M01-south'), Sm = CH.samples; let i = 0, s = Math.max(0, Math.min(CH.length, ref.s)); while (i + 2 < Sm.length && Sm[i + 1].s < s) i++; const t = (s - Sm[i].s) / Math.max(1e-6, Sm[i + 1].s - Sm[i].s), W = window.WORLD, brg = W.bearing(Sm[i], Sm[i + 1]); let p = { lon: Sm[i].lon + (Sm[i + 1].lon - Sm[i].lon) * t, lat: Sm[i].lat + (Sm[i + 1].lat - Sm[i].lat) * t }; if (ref.o) p = W.destination(p, brg + (ref.o > 0 ? 90 : -90), Math.abs(ref.o)); return { lon: p.lon, lat: p.lat, alt: Sm[i].h + 0.03 + (ref.dy || 0) }; }
       if (ref.lm) {                            // a point in a landmark's local frame: { lm: 'LM01', x, y, z } (origin = anchor, +Z towards the first entrance, +X to the left of +Z, y above the anchor altitude)
         const W = window.WORLD, lm = W.landmarks.find(q => q.id === ref.lm), info = S.landmarks.info[ref.lm], x = ref.x || 0, z = ref.z || 0;
         const d = Math.hypot(x, z), brg = info.heading + (d < 1e-9 ? 0 : Math.atan2(-x, z) / D); const p = d < 1e-9 ? { lon: lm.lon, lat: lm.lat } : W.destination({ lon: lm.lon, lat: lm.lat }, brg, d);
@@ -143,7 +144,7 @@ export async function renderShot(page, v, opts = {}) {
       return { lon: p.lon, lat: p.lat, alt: (ref.g ? g : onRoad ? a0 : Math.max(g, a0 - 2)) + (ref.dy || 0) };
     };
     const place = ref => { const r = resolve(ref), [x, z] = flat(r.lon, r.lat), k = 1 / Math.cos(r.lat * D); return { x, z, p: B.point(x, (r.alt - 1.6) * k, z, 1), b: basis(x, z), r }; };
-    if (v.eye && !opts.noStep) { const e0 = place({ ...v.eye, dy: 0 }); S.view.set({ mode: 'section', target: [e0.x, 0.8, e0.z] }); window.__step(3); }
+    if (v.eye && !opts.noStep) { const e0 = place({ ...v.eye, dy: 0 }); S.view.set({ mode: 'free', target: [e0.x, 0.8, e0.z] }); window.__step(3); }
     cam.near = 0.1; cam.far = 700;
     if (v.glintAt) {                          // the camera placed so that the moon's mirror image falls on the planet at [lon, lat]
       const [lon, lat] = v.glintAt, cp = Math.cos(lat * D), n = new T.Vector3(cp * Math.sin(lon * D), cp * Math.cos(lon * D), -Math.sin(lat * D)), L = S.ocean.uniforms.uMoon.value.clone().normalize(), Vd = n.clone().multiplyScalar(2 * n.dot(L)).sub(L).normalize();
@@ -162,7 +163,7 @@ export async function renderShot(page, v, opts = {}) {
     cam.fov = v.fov || 36; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     S.scene.fog.density = ['panorama', 'neutral'].includes(v.light) ? 0 : fog0;
     if (v.band) RD.setLightBand({ distance: 300 }); else RD.setLightBand({ auto: true });
-    const t = opts.t ?? 1.2; SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && LC.tick(t, cam); SEC.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && (LC.tick(t, cam), LC.reload(cam)); SEC.forceLod(cam);
+    const t = opts.t ?? 1.2; LOOK.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && LC.tick(t, cam); LOOK.tick(t, cam); RD.tick(t, cam); OC && OC.tick(t, cam); LC && (LC.tick(t, cam), LC.reload(cam));
     if (v.lmT != null) for (const q of S.landmarks.fx) q.update(v.lmT);                  // freeze the landmark clue light at a phase (W7)
     const hiddenCut = []; if (v.lmCut) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) g.traverse(o => { if (o.userData && v.lmCut.includes(o.userData.layer) && o.visible) { o.visible = false; hiddenCut.push(o); } });
     if (opts.noOcean && OC) OC.state.root.visible = false; if (opts.noCover && LC) LC.state.root.visible = false; if (opts.noLandmarks) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) { g.userData._v = g.visible; g.visible = false; } if (opts.noRoads) RD.state.root.visible = false;     // cost measurement with the same camera
@@ -170,7 +171,7 @@ export async function renderShot(page, v, opts = {}) {
     const url = S.renderer.domElement.toDataURL('image/png'), info = { calls: S.renderer.info.render.calls, triangles: S.renderer.info.render.triangles, ms };
     for (const o of hiddenCut) o.visible = true;
     if (opts.noOcean && OC) OC.state.root.visible = true; if (opts.noCover && LC) LC.state.root.visible = true; if (opts.noLandmarks) for (const g of Object.values(S.landmarks.info).flatMap(q => q.groups || [])) g.visible = g.userData._v; if (opts.noRoads) RD.state.root.visible = true;
-    cam.fov = 36; cam.near = 0.25; cam.far = 400; cam.up.set(0, 1, 0); cam.updateProjectionMatrix(); S.scene.fog.density = fog0; SEC.set({ light: 'rainy', ink: 'auto' });
-    return { url, info, ink: SEC.get().ink };
+    cam.fov = 36; cam.near = 0.25; cam.far = 400; cam.up.set(0, 1, 0); cam.updateProjectionMatrix(); S.scene.fog.density = fog0; LOOK.set({ light: 'rainy', ink: 'auto' }); S.weather.lock(null);
+    return { url, info, ink: LOOK.get().ink };
   }, [v, opts]);
 }

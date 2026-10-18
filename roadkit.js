@@ -1,6 +1,6 @@
 // Road cross-sections swept along world.js edges (W4): RD03 rural road, RD04 abandoned road, RD05 dirt road, RD07 boardwalk.
 // Pure data (no THREE): the builder returns triangle strips in flat Mercator coordinates (see W3_SPEC section 2), instance records for the
-// small parts (planks, piles, rope posts, lamps, weeds) and the edge lines used by the ink layer. section.js turns it into meshes.
+// small parts (planks, piles, rope posts, lamps, weeds) and the edge lines used by the ink layer. roads.js and landcover.js turn it into meshes.
 // Every width and height below comes from the design cards (RD03, RD04, RD05, RD07) and world.js (the centre line is samplePath).
 (function (global) {
 'use strict';

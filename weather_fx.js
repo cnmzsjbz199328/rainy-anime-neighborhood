@@ -19,7 +19,7 @@
 // The map mode is applied once, at the end: dry = 1 - uBend multiplies every weather effect (the sphere is a clear day at every distance, D8 / D9 revised). With the
 // camera's height above the ground, w_local(h) = 1 - smoothstep(40, 120, h): looks (lights, fog, mist) blend towards the rain-night look, particles, rain impacts and
 // drips fade out (the rain lines and drips with the camera distance, (110 - d) / 60, as the rain always did); at the panorama (h >= 120 m) every weather looks the same.
-// The lights and the fog have explicit bases (ctx.look: written by the light presets of section.js, the map transition and the walk; WX-G): every frame the weather
+// The lights and the fog have explicit bases (ctx.look: written by look.js, the map transition and the walk; WX-G): every frame the weather
 // writes base x multiplier and base fog + added fog, never reading back what someone else might have changed.
 //   rain      rain lines, rain impacts (ripples), drips, wet ground (unchanged look in the town)
 //   after     no rain lines and no impacts; wet ground and drips go on, a thin ground mist (fog density +)
@@ -217,7 +217,7 @@ function attach(THREE, scene, ctx) {
     const dry = view.u > 0 ? 1 - view.u : 1, lv = W.lockVersion(), bucket = Math.floor(time / REFRESH);
     if (bucket !== st.bucket || lv !== st.lv) { st.stamp++; st.bucket = bucket; st.lv = lv; const wb = Math.floor(time / WET_REFRESH); if (wb !== st.wetBucket || lv !== st.wetLv) { st.wetStamp++; st.wetBucket = wb; st.wetLv = lv; } } st.time = time;
     const ll = view.lonLat, r = W.at(ll.lon, ll.lat, time), wl0 = WX.wLocal(view.h), wl = wl0 * dry, w = r.weights;
-    const rainOn = !global.SECTION_API || global.SECTION_API.state.settings.rain;
+    const rainOn = true;
     st.gains = { dry, wl: wl0, impact: (rainOn ? 1 : 0) * dry * wl0, wet: dry, line: LINE_FADE(view.d), rainOn };
     let mh = 0, mm = 0, rain = 0, pud = 0, fogAdd = 0; for (const k in w) { if (!w[k]) continue; mh += w[k] * MULT[k][0]; mm += w[k] * MULT[k][1]; rain += w[k] * RAIN[k]; pud += w[k] * PUDDLE[k]; fogAdd += w[k] * FOG_ADD[k]; }
     // looks blend towards the rain look with height: 1 + (m - 1) * wl

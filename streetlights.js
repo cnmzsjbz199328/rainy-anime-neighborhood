@@ -1,7 +1,7 @@
 // Road street lights (W10c streetlight normalization, docs/world/STREETLIGHT_NORMALIZATION_PLAN.md): one lamp table for every ordinary road lamp of the world,
 // one model family, one light rule. The town's alley lamps, the boardwalk and stair lamps, the stone lanterns, the navigation lights and the buildings' own
 // lights are not road lamps and stay with their modules.
-// Pure part: plan(ctx) (no THREE, no DOM) registers the town lamps of layout.js and the W4 entrance sites of section_plan.js at their frozen places, lays out
+// Pure part: plan(ctx) (no THREE, no DOM) registers the town lamps of layout.js and the fixed W4 entrance sites at their frozen places, lays out
 // the lamps of the RD01 routes (16 / 40 m by zone, none in the tunnel), the bridges (16 m), CR01 (a closed loop: a lamp at each junction, then <= 25 m apart,
 // staggered) and the RN05 bus stop, and steps a blocked lamp along its road (<= 5 m), then across to the other side. It runs after the land cover, so a lamp
 // makes way for the fields, ridges and trees, never the reverse. Every lamp keeps a stable id, its source, road and node, the place of its foot, head and
@@ -99,9 +99,9 @@ function obstacles(ctx, lines) {
   const RD = ctx.roads;
   for (const src of [...RD.routes.map(r => r.instances), ...RD.bridges.map(b => b.instances), ...RD.stairs.map(s => s.instances), ...(RD.extras || []).map(e => e.instances), { gatePost: RD.markers }])
     for (const [type, list] of Object.entries(src || {})) { if (PLANTS.has(type)) continue; for (const it of list) circle(it.lon, it.lat, (RAD[type] ?? 0.4) * Math.max(it.s ? it.s[0] : 1, it.s ? it.s[2] : 1), 'furniture:' + type); }
-  // the W4 section: its furniture (the bamboo fence reaches 2 m to one side of its origin) and its paddies and fallow plots
-  const PL = ctx.section;
-  for (const [type, list] of Object.entries(PL.items)) { if (PLANTS.has(type)) continue; for (const it of list) circle(it.lon, it.lat, type === 'fenceBamboo' ? 2.1 : Math.max(it.clearance || 0.3, 0.2), 'w4:' + type); }
+  // the W4 corridor's migrated props and global fields
+  const PL = ctx.cover && ctx.cover.w4;
+  for (const it of PL?.items || []) { if (PLANTS.has(it.type)) continue; circle(it.lon, it.lat, Math.max(it.clearance || 0.3, 0.2), 'w4:' + it.type); }
   // the land cover: the field cells with their ridges, the tree trunks and the larger props
   const COV = ctx.cover;
   for (const c of COV.cells || []) poly(c.outer, 'field');
@@ -135,7 +135,7 @@ function obstacles(ctx, lines) {
 
 // ---- the plan
 function plan(ctx) {
-  const W = ctx.W, L = ctx.L, RD = ctx.roads, RK = ctx.RK, PL = ctx.section, H = (lon, lat) => W.height(lon, lat);
+  const W = ctx.W, L = ctx.L, RD = ctx.roads, RK = ctx.RK, PL = ctx.cover && ctx.cover.w4, H = (lon, lat) => W.height(lon, lat);
   const routes = Object.fromEntries(RD.routes.map(rt => [rt.def.id, rt]));
   const lines = [...RD.routes.map(routeLine), ...RD.bridges.map(bridgeLine), ...RD.stairs.map(st => pathLine(st.id || 'stairs', 'stairs', st.samples, 1.2)), ...(RD.extras || []).map(ex => pathLine('RN11-01', 'boardwalk', ex.centre, 1.4))];
   const lineOf = Object.fromEntries(lines.map(l => [l.id, l]));
@@ -147,7 +147,7 @@ function plan(ctx) {
   { const local = [-0.8, 0, 0.8];
     const poleTop = (rec, o) => { const f = flatOf(rec.lon, rec.lat), c = Math.cos(rec.yaw), sn = Math.sin(rec.yaw); return { x: f.x + c * o * f.k, z: f.z - sn * o * f.k, y: rec.alt - BASE + 7.75 }; };
     for (const rt of RD.routes) { const ps = rt.poles || []; for (let a = 0; a + 1 < ps.length; a++) for (const o of local) wires.push({ a: poleTop(ps[a].rec, o), b: poleTop(ps[a + 1].rec, o), sag: 0.5 + 0.5 * hash(a + 1, rt.length) }); }
-    for (const w of PL.wires || []) for (const o of local) { const top = it => { const f = flatOf(it.lon, it.lat), c = Math.cos(it.yaw), sn = Math.sin(it.yaw); return { x: f.x + c * o * f.k, z: f.z - sn * o * f.k, y: H(it.lon, it.lat) - BASE + 7.75 }; }; wires.push({ a: top(w.a), b: top(w.b), sag: w.sag }); } }
+    for (const w of PL?.wires || []) for (const o of local) { const [alo, ala, blo, bla, sag] = w, top = (lon, lat) => { const f = flatOf(lon, lat), pole = PL.items.find(it => it.type === 'pole' && Math.abs(it.lon - lon) < 1e-6 && Math.abs(it.lat - lat) < 1e-6), c = Math.cos(pole?.yaw || 0), sn = Math.sin(pole?.yaw || 0); return { x: f.x + c * o * f.k, z: f.z - sn * o * f.k, y: H(lon, lat) - BASE + 7.75 }; }; wires.push({ a: top(alo, ala), b: top(blo, bla), sag }); } }
   const wireClash = lamp => {
     const m = MODELS[lamp.model], f = flatOf(lamp.lon, lamp.lat), hx = f.x + lamp.face[0] * m.reach * f.k, hz = f.z + lamp.face[1] * m.reach * f.k, top = lamp.alt - BASE + m.poleH + 0.3;
     for (const w of wires) for (let q = 0; q <= 10; q++) { const t = q / 10, x = w.a.x + wrapDx(w.b.x - w.a.x) * t, z = w.a.z + (w.b.z - w.a.z) * t, y = w.a.y + (w.b.y - w.a.y) * t - w.sag * 4 * t * (1 - t);
@@ -155,7 +155,7 @@ function plan(ctx) {
     return false;
   };
   const near = (lon, lat, r) => { const f = flatOf(lon, lat); return lamps.find(q => { const g = flatOf(q.lon, q.lat); return Math.hypot(wrapDx(g.x - f.x), g.z - f.z) / f.k < r; }); };
-  // the surface a foot stands on: the terrain, or the route's own strip where it is higher (the outer columns of a section, an embankment)
+  // the surface a foot stands on: the terrain, or the route's own strip where it is higher (the outer columns of a road, an embankment)
   // (sunk 8 cm into it: the 25 cm base cover hides the step on a slope or where a crossing road's strip is clipped below the one sampled)
   const footAlt = (lon, lat, line) => { let a = H(lon, lat); if (line && line.kind === 'route') { const f = flatOf(lon, lat), q = line.project(f.x, f.z, 12); if (q && !q.end && q.o >= line.rt.grid[0] && q.o <= line.rt.grid[line.rt.grid.length - 1]) a = Math.max(a, RK.surfS(line.rt, q.s, q.o)); } return a - FOOT_SINK; };
   const edgeOf = (line, s) => { if (line.kind === 'route') { const { i } = RK.atS(line.rt, s); return line.rt.def.segs[line.rt.edgeOf[i]].id; } if (line.kind === 'bridge') { const b = line.b, j = b.joints ? b.joints.filter(q => q <= s).length : 0; return b.ids[Math.min(b.ids.length - 1, j)]; } return line.id; };
@@ -203,11 +203,11 @@ function plan(ctx) {
     else if (f.kind === 'legacy' && f.group === 'streetLamp') { const road = L.roads.find(q => q.id === f.road), face = road.axis === 'x' ? [0, Math.sign(road.at - f.z)] : [Math.sign(road.at - f.x), 0];
       townLamp(f.id, f.x, f.z, face, 'scene:streetLamp'); mapping.push({ from: 'scene:streetLamp', to: 'SL-T-' + f.id, change: 'model, arm turned to the street, point light removed' }); }
   }
-  // 2. the W4 entrance lamps (section_plan.js, at their places after the C01-S clearance fix), facing the nearest road of the junction (M01 south or CR01)
-  { (PL.lampSites || []).forEach((site, k) => { const f = flatOf(site.lon, site.lat), [line, q] = ['M01-south', 'CR01'].map(id => [lineOf[id], lineOf[id].project(f.x, f.z, 14)]).filter(e => e[1]).sort((a, b) => a[1].d - b[1].d)[0];
+  // 2. the fixed W4 entrance lamps, facing the nearest road of the junction (M01 south or CR01)
+  { const lampSites = [{ lon: -5.452807402309436, lat: -37.16203486805916, clearance: 0.6 }, { lon: 7.937819167847188, lat: -37.60766870871647, clearance: 0.6 }]; lampSites.forEach((site, k) => { const f = flatOf(site.lon, site.lat), [line, q] = ['M01-south', 'CR01'].map(id => [lineOf[id], lineOf[id].project(f.x, f.z, 14)]).filter(e => e[1]).sort((a, b) => a[1].d - b[1].d)[0];
       const T = line.T[q.i], face = q.o > 0 ? [T[1], -T[0]] : [-T[1], T[0]], id = 'SL-W4-' + (k + 1);
-      record({ id, model: 'rural', reason: 'fixed', owner: 'w4', source: 'section_plan:lamp#' + k, lon: site.lon, lat: site.lat, alt: footAlt(site.lon, site.lat, line), face, line: line.id, edge: edgeOf(line, q.s), node: 'C01-S', station: q.s, side: Math.sign(q.o), offset: q.o, shift: 0 });
-      mapping.push({ from: 'section_plan:lamp#' + k, to: id, change: 'model rural (was the 6.2 m planet lamp), arm turned to the road' }); }); }
+      record({ id, model: 'rural', reason: 'fixed', owner: 'w4', source: 'w4-entrance-lamp#' + k, lon: site.lon, lat: site.lat, alt: footAlt(site.lon, site.lat, line), face, line: line.id, edge: edgeOf(line, q.s), node: 'C01-S', station: q.s, side: Math.sign(q.o), offset: q.o, shift: 0 });
+      mapping.push({ from: 'w4-entrance-lamp#' + k, to: id, change: 'model rural (was the 6.2 m planet lamp), arm turned to the road' }); }); }
   // 3. the bridges: every 16 m from 8 m, sides alternating, none within 2 m of the pylon; on the deck's hard strip (4.4 m), between the lanes and the parapet
   for (const b of RD.bridges) {
     const line = lineOf[b.def.id], S = b.samples, pylonS = b.pylon ? b.pylon.s : null; let n = 0, k = 0;
@@ -300,8 +300,8 @@ function plan(ctx) {
   // and treads are levelled above or below it), the W4 paddies, the sea, the landmarks' own grounds, the town's plots. Flat frame positions, linear colours,
   // the lamp index per vertex.
   const town = townSurface(L), light = lin(COLOR.light);
-  const fields = polyIndex((ctx.cover.cells || []).map(c => c.outer)), sites = W.landmarks.filter(lm => lm.id !== 'TOWN');
-  const w4Farm = (lon, lat) => { const uv = PL.toUV(lon, lat); if (Math.abs(uv.u) > 12 || uv.v < 3.2 || uv.v > 23.5) return false; const kind = W.regionAt(lon, lat).kind; return (kind === 'farmland' || (kind === 'ruin' && uv.v < 23)) && H(lon, lat) > 0.5 && PL.roadDist(uv.u, uv.v).d > 1.0; };
+  const fields = polyIndex((ctx.cover.cells || []).map(c => c.outer)), w4Fields = polyIndex(PL?.plotPolys || []), sites = W.landmarks.filter(lm => lm.id !== 'TOWN');
+  const w4Farm = (lon, lat) => { const f = flatOf(lon, lat); return w4Fields(f.x, f.z); };
   const pos = [], col = [], lampIx = [], idx = [];
   const surfaceAt = (x, z, lamp) => {
     if (lamp.owner === 'bridge') { const Lb = lineOf[lamp.line], q = Lb.project(x, z, 8); if (q && !q.end && Math.abs(q.o) <= 4.6) return { y: (deckAlt(Lb.b, q.s) + 0.05 - BASE) * Lb.F[q.i].k, lit: true }; const ll = llOf(x, z); return { y: (deckAlt(Lb.b, lamp.station) + 0.05 - BASE) * flatOf(ll.lon, ll.lat).k, lit: false }; }
@@ -399,7 +399,7 @@ function townSurface(L) {
 const STREETLIGHTS = { plan, MODELS, COLOR, COLLAR, SPACING, LIMIT, CLEAR, PIXELS, POOL_RINGS, POOL_SEG, REFLECT, flatOf, llOf };
 
 // ---------------------------------------------------------------- scene part
-STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
+STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, LOOK_API) {
   const THREE = global.THREE, W = global.WORLD;
   const S = { built: false, data: null, stats: {}, root: null, lastKey: '', win: null, px: null };
   const objs = { bodies: [], hulls: [], lenses: [], pool: null, materials: null };
@@ -416,14 +416,14 @@ STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
     return { body: b.build(), lens };
   }
   function* build() {
-    const RDA = global.ROADS_API, COV = global.LANDCOVER_API, K = SEC.kit(), H = TERR.sampler();
+    const RDA = global.ROADS_API, COV = global.LANDCOVER_API, K = LOOK_API.kit(), H = TERR.sampler();
     const WS = Object.assign(Object.create(W), { height: H });
     yield;
-    const DATA = plan({ W: WS, L: global.LAYOUT, roads: RDA.data(), RK: global.ROADS, section: SEC.plan(), cover: COV.data(), town: RDA.state.townDetails });
+    const DATA = plan({ W: WS, L: global.LAYOUT, roads: RDA.data(), RK: global.ROADS, cover: COV.data(), town: RDA.state.townDetails });
     S.data = DATA;
     yield;
     const root = new THREE.Group(); root.name = 'streetlights'; root.visible = false; scene.add(root); S.root = root;
-    // body and ink: the land cover's dithered copies of the section's object and hull materials (the same programs; the hull's opacity follows the ground ink there)
+    // body and ink: the land cover's dithered copies of the shared object and hull materials (the same programs; the hull's opacity follows the ground ink there)
     const LC = global.LANDCOVER, LM = COV.objects.lodMaterials, body = LM.flora, hull = LM.hull;
     const lens = new THREE.MeshToonMaterial({ color: COLOR.lens, emissive: COLOR.light, gradientMap: ctx.ramp });
     lens.onBeforeCompile = shader => LC.lodDither(shader); lens.customProgramCacheKey = () => 'bend|lod|sl-lens';
@@ -482,7 +482,7 @@ STREETLIGHTS.attach = function (scene, ctx, BEND, TERR, SEC) {
   function tick(t, camera) {
     if (!S.built) return;
     select(camera, false);
-    const ink = SEC.state.ink, u = BEND.get();
+    const ink = LOOK_API.state.ink, u = BEND.get();
     for (const sl of S.slots) { sl.meshes[0].visible = sl.visible; sl.meshes[1].visible = sl.visible && ink.ground > 0.01; sl.meshes[2].visible = sl.visible; }
     objs.pool.visible = u < 1 && S.slots.some(sl => sl.visible);               // additive: bend.js fades it with 1 - uBend; at uBend = 1 it adds nothing and is not drawn
   }

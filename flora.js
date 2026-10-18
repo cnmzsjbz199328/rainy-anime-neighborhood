@@ -1,7 +1,7 @@
-// Object kit and instancing for the planet sections (W4): trees, shrubs, rocks, props, road and boardwalk parts.
+// Shared object geometry for planetary ground cover: trees, shrubs, rocks, props, road and boardwalk parts.
 // Every geometry is built once in metres (1 unit = 1 m), flat-shaded with baked vertex colours (night palette of WORLD_SPEC) and a
 // smooth 'hnormal' attribute for the inverted-hull ink outline. All instanced meshes share one toon material, so a type costs one draw
-// call (two with its outline). Placement (section.js) scales every instance by 1/cos(lat) because the terrain is stored in flat
+// call (two with its outline). Placement (landcover.js) scales every instance by 1/cos(lat) because the terrain is stored in flat
 // Mercator coordinates and bend.js shrinks it back; see docs/world/W3_SPEC.md section 2.
 // Pure geometry code: needs THREE only when `make(THREE)` is called.
 (function (global) {

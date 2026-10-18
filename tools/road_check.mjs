@@ -1,4 +1,4 @@
-// Checks W5-C1..C9 for the road network, batches W5a and W5b (RD01, RD02, RD03, RD05, RD06, RD08, tunnel, exits, lamps, light band, entrances). Run after `python3 build.py`:  node tools/road_check.mjs [--no-browser]
+// Checks W5-C1..C9 for the road network, batches W5a and W5b (RD01, RD02, RD03, RD05, RD06, RD08, tunnel, exits, lamps, light band, entrances). Run after `python3 build.py`:  node tools/road_check.mjs [--no-browser] [--only W10e]
 // Data checks run under Node on the generated geometry (world.js, terrain.js mesh heights, roadkit.js, bridge.js, roads.js); the page part measures draw calls.
 // W5-C8 (regression) is tools/regress.mjs --baseline-ref pre-w5 --mask-patch-margin 24 plus the other tools listed in PROGRESS.
 // W8f-a / W8f-c (W8_SPEC 12.1 C / 12.4): C1 and C3 know the abutment and node-turn transitions (centre line within 1.0 m inside a transition, 0.05 m outside it; RD01 grade
@@ -16,11 +16,13 @@ const RK = globalThis.ROADKIT = require(path.join(root, 'roadkit.js'));
 const BR = globalThis.BRIDGE = require(path.join(root, 'bridge.js'));
 require(path.join(root, 'steps.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
 const ROADS = globalThis.ROADS = require(path.join(root, 'roads.js'));
-const STREETLIGHTS = require(path.join(root, 'streetlights.js')), SECP = require(path.join(root, 'section_plan.js'));
+const STREETLIGHTS = require(path.join(root, 'streetlights.js')), LC = require(path.join(root, 'landcover.js'));
 const D = Math.PI / 180, R = 90, BASE = 1.6;
 const results = [];
+const ONLY = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : '';
 const f = (v, n = 3) => (typeof v === 'number' ? v.toFixed(n) : String(v));
 function check(id, title, fn) {
+  if (ONLY && id !== 'W10e-road') return;
   const info = [], fails = [];
   fn({ info: m => info.push(m), fail: m => fails.push(m) });
   results.push({ id, ok: !fails.length });
@@ -43,6 +45,29 @@ const NET = W.roadNetwork;
 const col = (st, m, i, j) => { const a = (i * m + j) * 3; return [st.pos[a], st.pos[a + 1], st.pos[a + 2]]; };
 const colorAt = (st, m, i, j) => { const a = (i * m + j) * 3; return [st.col[a], st.col[a + 1], st.col[a + 2]]; };
 const gridIndex = (grid, o) => { let b = 0; grid.forEach((g, j) => { if (Math.abs(g - o) < Math.abs(grid[b] - o)) b = j; }); return b; };
+
+// W10e carries forward the useful W4-C2 checks on the now-global T03 corridor and shore boardwalk.
+check('W10e-road', 'T03–LM04 全局道路：中线、铺装宽度、坡度与 RN11-01 栈道桩高/灯距', ({ info, fail }) => {
+  const ids = [...NET.m01South, 'RN11-01'], built = {}, limits = { RD03: 0.10, RD04: 0.15, RD05: 0.15 }, widthRange = { RD03: [4, 5], RD04: [2, 3], RD05: [2.5, 3.5], RD07: [1.5, 2.5] };
+  for (const id of ids) {
+    const r = built[id] = RK.build(W, id), edge = NET.edges.find(e => e.id === id), S = NET.samplePath(edge, 0.5);
+    let worstC = 0; for (let i = 0; i < Math.min(S.length, r.centre.length); i++) worstC = Math.max(worstC, arc(r.centre[i], S[i]));
+    const [lo, hi] = widthRange[r.class], w = r.widths.paved; let worstG = 0;
+    for (let i = 0; i + 1 < S.length; i++) worstG = Math.max(worstG, Math.abs(S[i + 1].h - S[i].h) / arc(S[i], S[i + 1]));
+    const lim = limits[r.class];
+    if (worstC > 0.05) fail(`${id} 中线偏差 ${f(worstC)} m > 0.05`);
+    if (w < lo || w > hi) fail(`${id}（${r.class}）铺装宽 ${f(w, 2)} m 不在 ${lo}–${hi} m`);
+    if (lim && worstG > lim) fail(`${id} 最大坡度 ${f(worstG * 100, 1)}% > ${lim * 100}%`);
+    info(`${id} ${r.class}：${f(r.length, 2)} m，中线最大差 ${f(worstC, 4)} m，铺装 ${f(w, 2)} m（${lo}–${hi}），最大坡度 ${f(worstG * 100, 1)}%${lim ? `（上限 ${lim * 100}%）` : '（栈道卡片未设此阈值）'}`);
+  }
+  const bw = built['RN11-01'];
+  if (!bw.widths.pileAboveWater || bw.widths.pileAboveWater[0] < 0.5 || bw.widths.pileAboveWater[1] > 1.5) fail(`RN11-01 木桩高出水面 ${bw.widths.pileAboveWater} 不在 0.5–1.5 m`);
+  else info(`RN11-01 水中木桩高出水面 ${bw.widths.pileAboveWater.map(v => f(v, 2)).join('–')} m（0.5–1.5 m）`);
+  const S = NET.samplePath(NET.edges.find(e => e.id === 'RN11-01'), 0.5), sOf = it => { let b = 0, bd = Infinity; S.forEach((p, i) => { const d = arc(p, it); if (d < bd) { bd = d; b = i; } }); return S[b].s; };
+  const lamps = (bw.instances.lampSmall || []).map(sOf).sort((a, b) => a - b), gaps = lamps.slice(1).map((v, i) => v - lamps[i]);
+  if (lamps.length < 3 || lamps.length > 4 || gaps.some(g => Math.abs(g - 10) > 2)) fail(`RN11-01 小灯柱 ${lamps.length} 盏，间距 ${gaps.map(g => f(g, 1))} 不满足 3–4 盏、10 ± 2 m`);
+  else info(`RN11-01 小灯柱 ${lamps.length} 盏，间距 ${gaps.map(g => f(g, 1)).join('、')} m（10 ± 2 m）`);
+});
 
 // ---------------------------------------------------------------- W5-C1
 check('W5-C1', '中线：生成中线与 samplePath 相差 ≤ 0.05 m（桥台过渡段内 ≤ 1.0 m，W8f-a），端点落在节点上（桥台节点 ≤ 1.0 m），W5a 范围的边都有几何', ({ info, fail }) => {
@@ -178,9 +203,10 @@ check('W5-C4', '桥与隧道：桥面高出海面 4.0–8.0 m、坡度 ≤ 15%�
 
 // ---------------------------------------------------------------- W5-C5
 check('W5-C5', '灯：与规格盏数对账（RD01 约 8、RD02 约 19，±1），RD01 间距人类活动区 16 ± 2 m、荒野 40 ± 4 m，RD03 ≤ 30 m（W10c：CR01 闭环、RN05 公交站），航道灯周期 ≥ 4 s', ({ info, fail }) => {
-  // W10c: every road lamp comes from one table (streetlights.js). Here it is planned from the same roads and W4 plan without the land cover, which can only move a lamp
+  // W10c: every road lamp comes from one table (streetlights.js). Here it is planned from the same roads and migrated W4 items without the global land cover, which can only move a lamp
   // along its road or across it; the page's final table is checked lamp by lamp by tools/streetlight_check.mjs (SL1, SL2)
-  const SL = STREETLIGHTS.plan({ W: Object.assign(Object.create(W), { height: H }), L: globalThis.LAYOUT, roads: PLAN, RK: ROADS, section: SECP.plan(W), cover: { cells: [], items: [] }, town: { puddles: [], alleyLamps: [] } });
+  const W4 = LC.build(W, H, { footprint: LC.LANDCOVER_FOOTPRINT }).w4;
+  const SL = STREETLIGHTS.plan({ W: Object.assign(Object.create(W), { height: H }), L: globalThis.LAYOUT, roads: PLAN, RK: ROADS, cover: { cells: [], items: W4.items, w4: W4 }, town: { puddles: [], alleyLamps: [] } });
   const cov = id => SL.coverage.find(c => c.road === id), rd01 = SL.lamps.filter(q => q.model === 'trunk'), n01 = rd01.length, gaps = { human: [], wild: [] };
   for (const rt of PLAN.routes.filter(r => r.def.furnish && r.def.furnish.kind === 'RD01')) for (const g of cov(rt.def.id).gaps) if (!g.tunnel && g.zone !== 'mixed') gaps[g.zone].push(g.g);
   for (const [z, want, tol] of [['human', 16, 2], ['wild', 40, 4]]) if (gaps[z].some(g => Math.abs(g - want) > tol)) fail(`RD01 ${z} 间距 ${gaps[z].map(g => f(g, 1))} 不在 ${want} ± ${tol}`);
@@ -272,7 +298,7 @@ check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（�
     const marks = PLAN.markers.filter(m => m.node === nd.id).length, tol = nd.id === 'LM09-north' ? 1.0 : 0.05;
     const closed = marks === 2 || nd.id === 'LM04-southeast' || nd.id === 'LM08-south';
     if (best.d > tol) fail(`${nd.id} 最近的道路采样点相差 ${f(best.d)} m > ${tol}（${best.id}）`); if (!closed) fail(`${nd.id} 没有入口收口`);
-    rows.push(`${nd.id} ← ${best.id}（${f(best.d, 3)} m，${nd.id === 'LM04-southeast' ? 'W4 断面的土路终点' : nd.id === 'LM08-south' ? '检修楼梯平台' : marks + ' 根导引柱'}${nd.id === 'LM09-north' ? '；G2 允许 ≤ 1 m 转弯偏移' : ''}）`);
+    rows.push(`${nd.id} ← ${best.id}（${f(best.d, 3)} m，${nd.id === 'LM04-southeast' ? 'W4 走廊土路终点' : nd.id === 'LM08-south' ? '检修楼梯平台' : marks + ' 根导引柱'}${nd.id === 'LM09-north' ? '；G2 允许 ≤ 1 m 转弯偏移' : ''}）`);
   }
   info(rows.join('；'));
   // footprint circles: the centre line of every generated road against the landmark site radius (WC6 tolerance 0.2 m), except within a few metres of its own entrance;
@@ -450,7 +476,7 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
 });
 
 // ---------------------------------------------------------------- browser part
-if (!process.argv.includes('--no-browser')) {
+if (!process.argv.includes('--no-browser') && !ONLY) {
   const { launchChromium } = await import('./browser.mjs');
   const { INIT, SHOTS, renderShot } = await import('./road_views.mjs');
   const browser = await launchChromium();
@@ -489,7 +515,7 @@ if (!process.argv.includes('--no-browser')) {
       info.push(`动态 ${label}（${name}，t = ${t1} 与 ${t2} s）：差异像素 ${n}${moved !== null ? `；涟漪实例在两个时刻之间变化 ${moved} 个（球形白天加法光为 0，按 W8e-c 设计，像素不要求变化）` : ''}`);
       if (n <= 0) fails.push(`${label} 距离下道路没有任何动态`); // sphere daylight suppresses rain ripples by design
     }
-    { const hp = await page.evaluate(() => { const g = window.__scene.section.kit().geometries; const h = k => { g[k].computeBoundingBox(); return +(g[k].boundingBox.max.y - g[k].boundingBox.min.y).toFixed(3); }; return { pole: h('snowPole'), step: window.__scene.roads.data().stairs.map(s => s.id + ':' + s.count).join(' ') }; });
+    { const hp = await page.evaluate(() => { const g = window.__scene.look.kit().geometries; const h = k => { g[k].computeBoundingBox(); return +(g[k].boundingBox.max.y - g[k].boundingBox.min.y).toFixed(3); }; return { pole: h('snowPole'), step: window.__scene.roads.data().stairs.map(s => s.id + ':' + s.count).join(' ') }; });
       info.push(`几何实测：红白标杆高 ${hp.pole} m（要求 2.0 ± 0.05）；石阶 ${hp.step}`); if (Math.abs(hp.pole - 2) > 0.05) fails.push(`标杆高 ${hp.pole}`); }
     const st = await page.evaluate(() => window.__scene.roads.stats());
     info.push(`实例数（W5a）：${Object.entries(st.counts).map(([k, v]) => `${k} ${v}`).join('、')}；光带 ${st.band.drawCalls} 次绘制 / ${st.band.triangles} 三角形（要求 ≤ 20 次）；首次构建 ${st.buildMs} ms`);

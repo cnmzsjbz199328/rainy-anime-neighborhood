@@ -41,9 +41,9 @@ if (want('c2')) {
     T.setMode('sphere');T.step(3);
     T.auto=false;S.bend.set(.37);S.view.set({dist:9});T.step(2);check('手工测试钩子',S.bend.get()===.37);T.auto=true;T.setMode('flat');T.step(2);
     S.view.set({target:[20,1.2,65],dist:25});T.step(2);check('农田 d=25 保留目标',S.view.get().target[0]===20&&S.view.get().target[2]===65&&S.view.get().dist===25&&S.terrain.rest.every(m=>m.visible));
-    S.view.set({mode:'roam'});check('农田禁漫游',S.view.get().mode==='free');S.section.setMode(true);check('农田禁剖视',!S.section.state.mode);
-    S.view.set({target:[0,1.2,0],mode:'roam'});check('城镇可漫游',S.view.get().mode==='roam');T.setMode('sphere');check('切换先退出漫游',S.view.get().mode==='free');T.step(2);S.section.setMode(true);check('球形禁剖视',!S.section.state.mode);
-    T.setMode('flat');T.step(2);S.section.setMode(true);check('城镇可剖视',S.section.state.mode);T.setMode('sphere');check('切换先退出剖视',!S.section.state.mode);
+    S.view.set({mode:'roam'});check('农田禁漫游',S.view.get().mode==='free');check('农田使用统一外观',!!S.look);
+    S.view.set({target:[0,1.2,0],mode:'roam'});check('城镇可漫游',S.view.get().mode==='roam');T.setMode('sphere');check('切换先退出漫游',S.view.get().mode==='free');T.step(2);check('球形保持统一外观',!!S.look);
+    T.setMode('flat');T.step(2);check('城镇与球形共用外观控制器',!!S.look);T.setMode('sphere');check('切换保留统一外观',!!S.look);
     return checks;
   });
   out(r.every(x=>x[1]),'W8e-a C2 模式与交互',r.map(x=>`${x[1]?'PASS':'FAIL'} ${x[0]}`));

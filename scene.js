@@ -16,7 +16,7 @@ function mat(c){return mats[c]||(mats[c]=new THREE.MeshToonMaterial({color:c,gra
 // Named groups let the layout move each building and street fixture as a whole (translate, rotate, uniform scale only).
 const groups={};let root=scene;
 function group(name,parent=scene){let g=groups[name];if(!g){g=groups[name]=new THREE.Group();g.name=name;parent.add(g);}root=g;return g;}
-const ink=new THREE.LineBasicMaterial({color:0x273647,transparent:true,opacity:.68});
+const ink=new THREE.LineBasicMaterial({color:LOOK.PARAMS.inkColor,transparent:true,opacity:.68});
 // W10c merge-ready: the edges of a geometry are computed once per distinct shape (type, vertices and index, a 64-bit fingerprint) and copied; the
 // EdgesGeometry object itself is still made for every outline (three.js draws its id from Math.random: the town's rain keeps its stream)
 const edgeCache=new Map();
@@ -261,10 +261,10 @@ function dropAt(i,y,floor0){let x,z,free=false;for(let k=0;k<8;k++){x=rb[0]+Math
   const f=rainSurface?rainSurface(x,z)+.2:.2;if(f!==floor0)y=y-floor0+f;rainFloor[i]=f;rainPark[i]=free?0:1;rainW[i]=rainStamp<0?1:weatherFx.fieldXZ(x,z,rainLL).rain;positions.set([x,y,z,x-.035,y+.18,z-.014],i*6);}
 rainBounds();for(let i=0;i<rainCount;i++){dropAt(i,Math.random()*rainTop,.2);speeds.push(4+Math.random()*3);}
 const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(rainShow,3));const rainMat=new THREE.LineBasicMaterial({color:0xa9c9df,transparent:true,opacity:.29,depthWrite:false});rainMat.userData.noWrap=true;/* W8e-b: the rain box is laid out in the display frame (bend.js seam) */const rainObj=new THREE.LineSegments(rg,rainMat);rainObj.frustumCulled=false;/* W10a: the box follows the view target over the whole flat map, its first bounds would cull it away from the town */scene.add(rainObj);
-// WX-G: the explicit bases of the lights and the fog. The light presets (section.js), the map transition and the walk write them; the weather writes base x its
+// WX-G: the explicit bases of the lights and the fog. The light presets (look.js), the map transition and the walk write them; the weather writes base x its
 // multiplier (and base fog + its added fog) every frame (weather_fx.js), the night gain of nightlight.js between them.
-const look={hemi:hemi.intensity,moon:moon.intensity,fog:scene.fog.density,fogColor:scene.fog.color.clone()};
-const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,look,bend:BEND,nightGain:()=>1+NIGHTLIGHT.GAIN*nightLight.k()});rainSurface=weatherFx.surfaceY;
+const lightBase={hemi:hemi.intensity,moon:moon.intensity,fog:scene.fog.density,fogColor:scene.fog.color.clone()};
+const weatherFx=WEATHER_FX.attach(THREE,scene,{hemi,moon,look:lightBase,bend:BEND,nightGain:()=>1+NIGHTLIGHT.GAIN*nightLight.k()});rainSurface=weatherFx.surfaceY;
 root=scene;
 // User interaction: one finger or left mouse orbit, wheel/pinch zoom; pan by right mouse, Shift/Ctrl + drag, two-finger drag or WASD/arrows.
 // W8e-b: the flat map runs from the seam at -85 deg to one circumference east of it (bend.js shifts what lies west of the seam); flat pans clamp to it, sphere pans wrap into it; latitude +-80 deg.
@@ -277,7 +277,7 @@ function syncSphereTarget(){const p=sphereCamera.flat();target.x=p[0];target.z=p
 function orbitSphere(dx,dy){yaw-=dx*.006;pitch=Math.max(.16,Math.min(Math.PI/2,pitch+dy*.005));}
 const townDistance=()=>TRANSITION.patchDistance(target.x,target.z,BH);
 const townAvailable=()=>TR.mode==='flat'&&BEND.get()===0&&townDistance()===0;
-function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);section.setMode(false);if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
+function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
 function shiftTarget(wx,wz){target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));const x=target.x+wx;target.x=TR.mode==='sphere'?BEND.wrapX(x):Math.max(TR.xMin,Math.min(TR.xMax,x));}
 
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
@@ -289,7 +289,7 @@ for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.re
 function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
 let roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=look.fog=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=lightBase.fog=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
@@ -347,8 +347,8 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
     seed=s0;root=scene;for(const g of landmarkGroups)BEND.seamSplit(g);},ms=>{landmarkInfo.buildMs=ms;});
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
-  if(TR.auto&&!section.state.mode){scene.fog.density=look.fog=TR.fog0*TRANSITION.fogOf(BEND.get());}
-  const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';if(!available&&section.state.mode)section.setMode(false);
+  if(TR.auto){scene.fog.density=lightBase.fog=TR.fog0*TRANSITION.fogOf(BEND.get());}
+  const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';
 }
 // the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
 function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoothstep(0,24,away));if(!(lift>0))return[target.x,target.y,target.z];const ll=lonLatAt(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);const flatH=Math.max(0,((h??TERRAIN.BASE)-TERRAIN.BASE)/Math.cos(ll.lat*Math.PI/180));return[target.x,target.y+(1-u)*TRANSITION.smoothstep(0,24,away)*flatH+u*Math.max(0,h??0),target.z];}
@@ -372,10 +372,10 @@ rainBounds();const rs=weatherFx.stamp();if(rs!==rainStamp){const jump=weatherFx.
 /* the drops' rain weights follow the field: at once when the lock changes or the weather time jumps (so a locked clear is clear at the next frame), else over 8 frames */
 const rfrom=rainPass>0?(8-rainPass)*rainCount/8:0,rto=rainPass>0?(9-rainPass)*rainCount/8:rainRefresh;if(rainPass>0)rainPass--;else rainRefresh=0;for(let i=0;i<rainCount;i++){let n=i*6;positions[n+1]-=dt*speeds[i];positions[n+4]-=dt*speeds[i];const x=positions[n],z=positions[n+2];if(positions[n+1]<rainFloor[i])dropAt(i,rainTop,.2);else if(x<rb[0]||x>rb[2]||z<rb[1]||z>rb[3])dropAt(i,positions[n+1],rainFloor[i]);else if(i>=rfrom&&i<rto)rainW[i]=weatherFx.fieldXZ(x,z,rainLL).rain;}
 rainShown=0;for(let i=0;i<rainCount;i++){const n=i*6;if(!rainPark[i]&&rainHash[i]<rainW[i]){for(let k=0;k<6;k++)rainShow[n+k]=positions[n+k];rainShown++;}else{rainShow[n]=rainShow[n+3]=positions[n];rainShow[n+2]=rainShow[n+5]=positions[n+2];rainShow[n+1]=rainShow[n+4]=-1e4;}}
-rg.attributes.position.needsUpdate=true;rainMat.opacity=(roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60)))*weatherFx.gains().dry;rainObj.visible=weatherFx.gains().rainOn&&rainShown>0&&rainMat.opacity>.001&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of townSignalPhases){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.SECTION_API)window.SECTION_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);streetlights.tick(t,camera);weatherFx.apply();renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
+rg.attributes.position.needsUpdate=true;rainMat.opacity=(roam?.29:.29*Math.max(0,Math.min(1,(110-dist)/60)))*weatherFx.gains().dry;rainObj.visible=weatherFx.gains().rainOn&&rainShown>0&&rainMat.opacity>.001&&BEND.get()<1;signals[0].material.color.set(t%30<19?'#7cceae':'#43565d');{const c=t%30;for(const p of townSignalPhases){const st=p.ns?(c<19?0:2):(c>=19.5&&c<27.5?0:c>=27.5&&c<29.5?1:2);p.h[0].material.color.set(st===0?'#7cceae':'#43565d');p.h[1].material.color.set(st===1?'#e7c27a':'#43565d');p.h[2].material.color.set(st===2?'#d28d8e':'#43565d');}}signals[2].material.color.set(t%30>=19?'#d28d8e':'#43565d');for(const u of buildingFx)u(t,dt);for(const f of landmarkFx)f.update(t,dt);if(window.LOOK_API)window.LOOK_API.tick(t,camera);if(window.ROADS_API)window.ROADS_API.tick(t,camera);if(window.OCEAN_API)window.OCEAN_API.tick(t,camera);if(window.LANDCOVER_API)window.LANDCOVER_API.tick(t,camera);streetlights.tick(t,camera);weatherFx.apply();renderer.render(scene,camera);quality.frame(ms,camera);if(worldgen.frame()){loading.remove();renderer.domElement.style.visibility='';}}
 // Hooks for browser checks and review shots.
 const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P01'),martL=martB.parts.find(p=>p.role==='building').localBounds,martAt=L.toWorld(martB,(martL.min[0]+martL.max[0])/2,(martL.min[2]+martL.max[2])/2),
-nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.SECTION_API?window.SECTION_API.state.settings.light:'rainy',town:{store:martAt}});
+nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.LOOK_API?window.LOOK_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
 // W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m ground and street meshes sank about 24 m and the sky
@@ -383,12 +383,12 @@ BEND.attach(scene);
 // swapped in while uBend > 0; at uBend = 0 the town draws its own geometry again (the default view is bit for bit the old one, WC12).
 const townSphere={built:null,on:false};
 BEND.onChange(u=>{const on=u>0;if(on===townSphere.on)return;if(on&&!townSphere.built)townSphere.built=BEND.tessellate(townRoots,{maxEdge:4,box:50});townSphere.on=on;townSphere.built.use(on);});
-const section=SECTION.attach(scene,{lights:{hemi,moon},ramp,renderer,rainObj,townAsphalt:matT('#46505b','asphalt')},BEND,terrain);
-const roads=ROADS.attach(scene,{ramp,renderer,townAsphalt:matT('#46505b','asphalt'),buildTownRoadDetails},BEND,terrain,section);
-const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,section);
-const quality=QUALITY.create();const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer,quality},BEND,terrain,section);
+const look=LOOK.attach(scene,{lights:{hemi,moon},ramp,renderer,lightBase},BEND,terrain);
+const roads=ROADS.attach(scene,{ramp,renderer,townAsphalt:matT('#46505b','asphalt'),buildTownRoadDetails},BEND,terrain,look);
+const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,look);
+const quality=QUALITY.create();const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer,quality},BEND,terrain,look);
 // W10c: every ordinary road lamp from one table (streetlights.js), planned once the land cover exists so that a lamp steps aside and the fields never do
-const streetlights=STREETLIGHTS.attach(scene,{ramp,renderer},BEND,terrain,section);
+const streetlights=STREETLIGHTS.attach(scene,{ramp,renderer},BEND,terrain,look);
 // W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
 const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
 // W10a (W10_SPEC 2.4): the whole world is built before the first frame (worldgen.js), behind the loading screen of build.py; the canvas stays hidden
@@ -398,9 +398,8 @@ const loading=document.getElementById('loading');
 const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('progress').value=value;loading.querySelector('p').textContent=label;},steps:[
   {name:'rest',label:'正在铺设地形',job:terrain.restJob},
   {name:'sampler',deps:['rest'],job:terrain.samplerJob},
-  {name:'section',deps:['sampler'],label:'正在绘制田野',job:section.jobs.build},
-  {name:'ink',deps:['section'],job:section.jobs.ink},
-  {name:'roads',deps:['section'],label:'正在连接道路',job:roads.job},
+  {name:'look-ink',deps:['sampler'],label:'正在准备外观',job:look.jobs.ink},
+  {name:'roads',deps:['look-ink'],label:'正在连接道路',job:roads.job},
   {name:'ocean',deps:['roads'],label:'正在绘制海岸',job:ocean.job},
   {name:'landcover',deps:['ocean'],label:'正在种植森林',job:cover.job},
   {name:'streetlights',deps:['landcover'],label:'正在点亮路灯',job:streetlights.job},
@@ -421,7 +420,7 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
     weatherFx.register(o,{kind:/Rain$/.test(top.name)?'drip':'impact',owner:'reset',src,lon:ll.lon,lat:ll.lat});});}   // a rain chain's basin rings follow its flow (drip), a pond's follow the rain
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,section,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':section.state.mode?'section':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');section.setMode(v.mode==='section');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

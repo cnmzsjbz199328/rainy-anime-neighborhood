@@ -222,7 +222,7 @@ if (want('I8')) {
     Wx.lock('after'); go(P.town, 30, { frames: 5 }); Wx.lock('clear'); window.__step(1); check('城镇 雨后→晴');
     const W = Wx.weather; Wx.lock(null); let tc = null; for (let t = 300; t < 21600 && tc === null; t += 30) { const q = W.sample(0, 0, t); if (q.weights.clear === 1 && W.sample(0, 0, t + 20).weights.clear === 1) tc = t + 10; }   // unlocked: a moment of the town's natural clear weather
     Wx.lock(null); Wx.setTime(tc); go(P.town, 30, { frames: 5 }); check(`城镇 解除锁定、自然晴 t = ${tc} s`);
-    S.section.set({ rain: false }); window.__step(2); S.section.set({ rain: true }); window.__step(2); check('城镇 自然晴 旧雨开关 关→开');
+    S.weather.lock('clear'); window.__step(2); S.weather.lock(null); window.__step(2); check('城镇 自然晴 旧雨开关 关→开');
     T.setMode('sphere'); T.step(3); window.__step(2); T.setMode('flat'); T.step(3); window.__step(2); check('城镇 自然晴 平面→球形→平面');
     // the same frame with every registered precipitation object hidden: identical
     const a = pixels(); const list = precip(), vis = list.map(([, o]) => o.visible); list.forEach(([, o]) => { o.visible = false; }); const b = pixels(); list.forEach(([, o], i) => { o.visible = vis[i]; }); const dd = diff(a, b);

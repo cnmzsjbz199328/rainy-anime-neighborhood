@@ -206,7 +206,6 @@ W8g-b 的 B5 只在出口路自己的横断面上打射线，只比较“道路�
 | 城镇街道单独绘制 | `scene.js` 的整张沥青（`group('roads')`）、`markings`、`drainage` 中属于路面的部分、`wetStreet` 水洼；街区岛自带的路缘立面 | W10c | 统一生成器（2.2） |
 | 底座 | `scene.js` 的 `group('base')`、底座立面上的排水出口、外围种植带 | W10d | 地形与城镇边缘（2.3） |
 | 城镇补丁特例 | `terrain.js` 跳过补丁内三角形；`landcover.js` 的 3.4 m 留带、TR01 出口行判断、按补丁矩形生成的边缘带；`section.js` 的 TR01 条 | W10d | 一份占地（2.3） |
-| W4 断面独立一套 | `section.js` 自有的田块、草带、树（26 m 硬切换远模）、断面模式、`corridor` | W10e | 全局生成器与 `look.js`（2.6、2.7） |
 | 球形换副本 | `scene.js` 的 `townSphere`、`BEND.tessellate` 的换用 | W10f | 构建时细分（2.5） |
 | 城镇特例的相机与漫游 | `townAvailable`、`townDistance` 特例、`lookTarget` / `liftCamera` 的城镇分支、漫游固定高度 `LV.carriageway` | W10f | 一个地面采样器、统一可走表面（2.8） |
 | 城镇不参与远近 | 城镇网格始终全细节、逐件绘制 | W10g | 合批与像素交接（2.9） |

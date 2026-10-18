@@ -38,9 +38,9 @@ async function open(file, query = '') {
 }
 // put the camera at a place (flat or sphere, the transition finished), run the modules' ticks at a fixed time, render once
 const placeFn = `(([lo, la, d, mode, pitch]) => { const S = window.__scene, q = WORLD.lonLatToTown(lo, la); S.view.set({ target: [q.x, 1.2, q.z], dist: d, yaw: 0.4, pitch });
-  S.transition.setMode(mode); S.transition.step(3); window.__step(1); const c = S.camera; for (const m of [S.cover, S.section, S.roads, S.ocean]) if (m) m.tick(1.2, c); S.renderer.render(S.scene, c); })`;
+  S.transition.setMode(mode); S.transition.step(3); window.__step(1); const c = S.camera; for (const m of [S.cover, S.look, S.roads, S.ocean]) if (m) m.tick(1.2, c); S.renderer.render(S.scene, c); })`;
 
-const cur = only.some(k => ['L1', 'L2', 'L3'].includes(k)) ? await open(path.join(root, 'index.html')) : null;
+const cur = only.some(k => ['L1', 'L2', 'L3', 'W10e'].includes(k)) ? await open(path.join(root, 'index.html')) : null;
 
 // ---------------------------------------------------------------- L1
 if (only.includes('L1')) {
@@ -79,6 +79,25 @@ if (only.includes('L2')) {
   report('L2', r.every(q => q.same), '路径无关：同一相机从两条路径到达，实例缓冲（数量、矩阵、颜色、淡化窗口、实例表序号）逐位相同', r.map(q => `${q.mode} d = ${q.d}：${q.same ? '相同' : '不同'}（${q.counts} 个实例）`));
 }
 
+// ---------------------------------------------------------------- W10e: the migrated T03–LM04 corridor trees cross the shared 44→36 px hand-over
+if (only.includes('W10e')) {
+  const r = await cur.evaluate(() => {
+    const S = window.__scene, LC = window.LANDCOVER_API, W = window.WORLD, T = LC.lodTable(), types = new Set(['treeRound', 'cedar', 'pine', 'bamboo']), items = LC.data().items;
+    const candidates = items.map((it, i) => ({ it, i })).filter(q => types.has(q.it.type) && LC.w4Contains(q.it.lon, q.it.lat) && T.near[q.i] && T.far[q.i]);
+    if (!candidates.length) return { fail: '走廊内无具备远模的树', trees: 0, trials: [] };
+    const q = candidates[Math.floor(candidates.length / 2)], c = S.camera, H = S.renderer.domElement.height, PPM = H / (2 * Math.tan(c.fov * Math.PI / 360)), fx = T.F[q.i * 3], fy = T.F[q.i * 3 + 1], fz = T.F[q.i * 3 + 2], pxWant = [46, 40, 34], trials = [];
+    S.transition.setMode('flat'); S.transition.step(3); S.bend.set(0);
+    for (const px of pxWant) {
+      const d = T.size[q.i] * T.k[q.i] * PPM / px; c.position.set(fx, fy + d, fz); c.lookAt(fx, fy, fz); c.updateMatrixWorld(); S.look.tick(1.2, c); LC.reload(c);
+      const find = obj => { for (let j = 0; j < obj.n; j++) if (obj.idx[j] === q.i) return [obj.win.array[j * 2], obj.win.array[j * 2 + 1]]; return null; };
+      const n = find(T.near[q.i]), f = find(T.far[q.i]); trials.push({ px, near: n, far: f });
+    }
+    const ok = trials[0].near && !trials[0].far && trials[1].near && trials[1].far && trials[2].far && !trials[2].near && Math.abs(trials[1].near[0] - 0.5) < 0.015 && Math.abs(trials[1].far[1] - 0.5) < 0.015;
+    return { ok, trees: candidates.length, type: q.it.type, trials, thresholds: LC.lod.nearFar };
+  });
+  report('W10e-LOD', r.ok === true, 'T03–LM04 走廊树由全局像素 LOD 在 44–36 px 间连续交接', [`走廊内参与交接的树 ${r.trees}；抽查 ${r.type || '—'}；46 / 40 / 34 px：${JSON.stringify(r.trials)}；阈值 ${JSON.stringify(r.thresholds)}${r.fail ? '；' + r.fail : ''}`]);
+}
+
 // ---------------------------------------------------------------- L3
 if (only.includes('L3')) {
   fs.mkdirSync(outDir, { recursive: true });
@@ -97,7 +116,7 @@ if (only.includes('L3')) {
         const V = new Int16Array(w * h * 3); for (let k = 0, j = 0; k < buf.length; k += 4, j += 3) { V[j] = buf[k] - bufB[k]; V[j + 1] = buf[k + 1] - bufB[k + 1]; V[j + 2] = buf[k + 2] - bufB[k + 2]; }
         if (prevV) { let sum = 0; for (let j = 0; j < V.length; j++) sum += Math.abs(V[j] - prevV[j]); vegDiffs.push(sum / V.length); } prevV = V; }
       // ruling 2: the ink at the near -> far hand-over, where the hulls show (the hull shell is uInkW in model space, scaled like the tree)
-      if (ink) { const LC = window.LANDCOVER_API, T = LC.lodTable && LC.lodTable(), g = S.section.state.ink.ground; if (T && g > 0.01) { inkFrames++; const u = S.bend.get(), wW = S.section.state.ink.width, c = S.camera.position, H = S.renderer.domElement.height, PPM = H / (2 * Math.tan(S.camera.fov * Math.PI / 360)), items = LC.data().items;
+      if (ink) { const LC = window.LANDCOVER_API, T = LC.lodTable && LC.lodTable(), g = S.look.state.ink.ground; if (T && g > 0.01) { inkFrames++; const u = S.bend.get(), wW = S.look.state.ink.width, c = S.camera.position, H = S.renderer.domElement.height, PPM = H / (2 * Math.tan(S.camera.fov * Math.PI / 360)), items = LC.data().items;
         for (let q = 0; q < T.n; q++) { if (!T.far[q]) continue; const fx = T.F[q * 3], sx = fx + S.bend.shift(fx), dx = sx + (T.P[q * 3] - sx) * u - c.x, dy = T.F[q * 3 + 1] + (T.P[q * 3 + 1] - T.F[q * 3 + 1]) * u - c.y, dz = T.F[q * 3 + 2] + (T.P[q * 3 + 2] - T.F[q * 3 + 2]) * u - c.z;
           const kd = T.k[q] + (1 - T.k[q]) * u, r = Math.max(0.01, Math.hypot(dx, dy, dz)), px = T.size[q] * kd * PPM / r; if (px < 36 || px > 44) continue; const s = Math.max(...items[q].s), ipx = wW * s * kd * PPM / r; if (ipx > inkMax) inkMax = ipx; } } }
     }
@@ -147,7 +166,7 @@ if (only.includes('L4')) {
 if (only.includes('D3')) {
   const VIEWS = [['forest-near-flat', -15, -40, 'flat', 12, 0, 0.45], ['farm-flat', FARM[0], FARM[1], 'flat', 30, 2.5, 0.55], ['coast-flat', -15, -54, 'flat', 30, 0, 0.55], ['sphere-70', -15, -40, 'sphere', 70, 0, 1.2], ['sphere-140', -15, -40, 'sphere', 140, 0, 1.2], ['sphere-400', -15, -40, 'sphere', 400, 0, 1.2]];
   const cost = (page, v) => page.evaluate(([lo, la, mode, dist, yaw, pitch]) => { const S = window.__scene, q = WORLD.lonLatToTown(lo, la); S.view.set({ target: [q.x, 1.2, q.z], dist, yaw, pitch }); S.transition.setMode(mode); S.transition.step(3); window.__step(1);
-    const c = S.camera; for (const m of [S.cover, S.section, S.roads, S.ocean]) if (m) m.tick(1.2, c); const R = S.cover.state.root; S.renderer.render(S.scene, c); const on = { ...S.renderer.info.render }; R.visible = false; S.renderer.render(S.scene, c); const off = { ...S.renderer.info.render }; R.visible = true;
+    const c = S.camera; for (const m of [S.cover, S.look, S.roads, S.ocean]) if (m) m.tick(1.2, c); const R = S.cover.state.root; S.renderer.render(S.scene, c); const on = { ...S.renderer.info.render }; R.visible = false; S.renderer.render(S.scene, c); const off = { ...S.renderer.info.render }; R.visible = true;
     return { tier: S.quality.tier(), calls: on.calls - off.calls, triangles: on.triangles - off.triangles, frameCalls: on.calls, instances: S.cover.state.loaded, pos: c.position.toArray() }; }, v.slice(1));
   const hi = await open(path.join(root, 'index.html'), '?quality=high'), lo = await open(path.join(root, 'index.html'), '?quality=low'), lines = []; let ok = true;
   for (const v of VIEWS) { const a = await cost(hi, v), b = await cost(lo, v), same = a.pos.every((x, i) => x === b.pos[i]), good = b.triangles <= 0.6 * a.triangles && b.calls <= a.calls && b.frameCalls <= a.frameCalls && same && a.tier === 'high' && b.tier === 'low'; ok = ok && good;

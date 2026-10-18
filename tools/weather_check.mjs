@@ -98,15 +98,15 @@ if (args.includes('--shots')) {
   for (const d of [22, 60, 110, 150]) await town('overcast', `distance-${d}`, { dist: d, pitch: 0.65, yaw: 2.2, target: [-7, 1.2, 20] });
   // fog: the town never fogs (it falls back to after-rain); a forest place near LM04 (uBend = 1, section mode), camera low
   await ps.evaluate(() => { const S = window.__scene, W = window.WORLD, lm = W.landmarks.find(q => q.id === 'LM04'); let best = null; for (let a = 0; a < 360 && !best; a += 15) for (const r of [22, 28, 34]) { const p = W.destination(lm, a, r); if (S.weather.place(p.lon, p.lat).cat === 'foggy') { best = p; break; } }
-    const q = W.lonLatToTown(best.lon, best.lat); S.bend.set(1); S.section.setMode(true); S.weather.lock('fog'); S.view.set({ target: [q.x, 1.2, q.z], dist: 18, pitch: 0.3, yaw: 0.6 }); window.__step(120); });
+    const q = W.lonLatToTown(best.lon, best.lat); S.bend.set(1); S.weather.lock('fog'); S.view.set({ target: [q.x, 1.2, q.z], dist: 18, pitch: 0.3, yaw: 0.6 }); window.__step(120); });
   fs.writeFileSync(path.join(dir, 'st05-fog-forest.png'), Buffer.from((await shot(ps)).split(',')[1], 'base64')); L.push('st05-fog-forest.png');
   await ps.evaluate(() => { const S = window.__scene; S.weather.lock('rain'); window.__step(2); S.weather.lock('fog'); });
   await ps.evaluate(() => { const S = window.__scene; S.weather.lock('rain'); window.__step(120); });
   fs.writeFileSync(path.join(dir, 'st05-rain-forest.png'), Buffer.from((await shot(ps)).split(',')[1], 'base64')); L.push('st05-rain-forest.png（同一机位、雨，对照）');
   // snow: the ice-edge hut of LM07 (uBend = 1, section mode so the far world is built), camera close to the ground
-  await ps.evaluate(() => { const S = window.__scene, W = window.WORLD, lm = W.landmarks.find(q => q.id === 'LM07'), q = W.lonLatToTown(lm.lon, lm.lat); S.bend.set(1); S.section.setMode(true); S.weather.lock('snow'); S.view.set({ target: [q.x, 1.2, q.z], dist: 16, pitch: 0.28, yaw: 1.2 }); window.__step(120); });
+  await ps.evaluate(() => { const S = window.__scene, W = window.WORLD, lm = W.landmarks.find(q => q.id === 'LM07'), q = W.lonLatToTown(lm.lon, lm.lat); S.bend.set(1); S.weather.lock('snow'); S.view.set({ target: [q.x, 1.2, q.z], dist: 16, pitch: 0.28, yaw: 1.2 }); window.__step(120); });
   fs.writeFileSync(path.join(dir, 'st05-snow-lm07.png'), Buffer.from((await shot(ps)).split(',')[1], 'base64')); L.push('st05-snow-lm07.png');
-  await ps.evaluate(() => { const S = window.__scene; S.section.setMode(false); S.weather.lock('clear'); S.view.set({ target: [0, 1.2, 0], dist: 350, pitch: 0.9, yaw: 2.5 }); S.transition.pending = true; window.__step(60); });
+  await ps.evaluate(() => { const S = window.__scene; S.weather.lock('clear'); S.view.set({ target: [0, 1.2, 0], dist: 350, pitch: 0.9, yaw: 2.5 }); S.transition.pending = true; window.__step(60); });
   fs.writeFileSync(path.join(dir, 'st05-panorama-clear.png'), Buffer.from((await shot(ps)).split(',')[1], 'base64')); L.push('st05-panorama-clear.png');
   await ps.close(); out(true, 'W8b 截图（docs/world/w8/st05-*.png）', [L.join('、')]);
 }

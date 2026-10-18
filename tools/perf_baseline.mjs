@@ -158,7 +158,7 @@ async function measure() {
     result.pregen = await page.evaluate(([gen, w]) => { const P = window.__perf, S = window.__scene, G = gen ? S.worldgen.stats() : null, from = P.firstFrame, to = G && G.doneAt ? performance.now() - (Date.now() - G.doneAt) : performance.now();
       const lts = P.lt.filter(([s]) => s > from + 50 && s <= to + 50);
       return { present: gen, waitedMs: w.waitedMs, worldgen: G, startDelayMs: G ? G.startDelayMs : null, longTasks: lts, longestTaskMs: lts.length ? Math.max(...lts.map(q => q[1])) : 0,
-        moduleMs: { rest: S.terrain.stats.restBuildMs ?? null, section: S.section.state.stats.buildMs ?? null, roads: S.roads.state.stats.buildMs ?? null, ocean: S.ocean.state.stats.buildMs ?? null, cover: S.cover.state.stats.buildMs ?? null, landmarks: S.landmarks.info.buildMs ?? null } }; }, [gen, w]);
+        moduleMs: { rest: S.terrain.stats.restBuildMs ?? null, look: S.look.state.stats.globalInkMs ?? null, roads: S.roads.state.stats.buildMs ?? null, ocean: S.ocean.state.stats.buildMs ?? null, cover: S.cover.state.stats.buildMs ?? null, landmarks: S.landmarks.info.buildMs ?? null } }; }, [gen, w]);
     errors.push(...page.errors); await page.close(); }
   for (let i = 1; i < LOADS; i++) { const page = await open(); result.loads.push(await loadOf(page)); errors.push(...page.errors); await page.close(); }
   { const L0 = result.loads, med = a => { const s = a.filter(v => v !== null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
