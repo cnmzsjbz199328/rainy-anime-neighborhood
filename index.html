@@ -7498,7 +7498,7 @@ else global.RIDE_WORLD = RIDE_WORLD;
 //   camera    R2 (6.7): the follow place (focus 0.92 m over the root, 3.5 m behind and 0.70 m up, look 1.6 m ahead and 0.05 m up), turned by the look yaw and pitch, the
 //             follow distance 2.5-6 m; damped per axis in the rider's frame (along lambda 6, up 4, across 3); a 0.2 m sphere swept from the focus to the camera against the
 //             occluders (ride_world.js I5 boxes, the terrain, the tunnel lining): pulled in at once to the hit - 0.25 m (not under 1.2 m) and raised up to 0.6 m (not in a
-//             tunnel), let out again at lambda 2; then kept within 0.5 m of the rideable surface (0 on a deck, the boardwalk, stairs and in the tunnel), 0.12 m over the ground
+//             tunnel), let out again at lambda 2; then kept within 0.5 m of the rideable surface on the rider's level (0 on a deck, the boardwalk and in the tunnel), 0.12 m over the ground
 //             below it (0.3 m over a deck), 0.3 m from a tunnel's wall and roof
 (function (global) {
 'use strict';
@@ -7661,7 +7661,8 @@ function create(ctx) {
     return 1;
   }
   // the horizontal limit: within `allowed` of the rideable surface (the point that much nearer the focus stands on it)
-  function horizOk(f, x, z, allowed) { if (G.at(x, z, { y: st.y })) return true; if (allowed <= 0) return false; const dx = f[0] - x, dz = f[2] - z, l = Math.hypot(dx, dz) || 1; return !!G.at(x + dx / l * allowed, z + dz / l * allowed, { y: st.y }); }
+  // (a surface on the rider's level: within 3 m x s in height, so a deck overhead or a beach below does not count)
+  function horizOk(f, x, z, allowed) { const lv = (a, b) => { const q = G.at(a, b, { y: st.y }); return !!q && Math.abs(q.y - st.y) < 3 * st.s; }; if (lv(x, z)) return true; if (allowed <= 0) return false; const dx = f[0] - x, dz = f[2] - z, l = Math.hypot(dx, dz) || 1; return lv(x + dx / l * allowed, z + dz / l * allowed); }
   function cameraStep(dt) {
     const s = st.s, I = ideal(), c = st.cam || (st.cam = { pos: I.pos.slice(), d: I.len, raise: 0, init: false });
     // occlusion along the ideal ray: in at once, out at lambda 2
@@ -7678,7 +7679,7 @@ function create(ctx) {
       c.pos[0] += fx * al * ka - fz * ac * kc; c.pos[2] += fz * al * ka + fx * ac * kc; c.pos[1] += ey * ku; }
     c.init = true;
     // the limits in order: nothing between the focus and the camera; the horizontal limit; the height; the tunnel lining
-    const q0 = st.sample || {}, allowed = q0.layer === 'deck' || q0.layer === 'tunnel' || q0.kind === 'boardwalk' || q0.kind === 'stairs' ? 0 : CFG.outside * s;
+    const q0 = st.sample || {}, allowed = q0.layer === 'deck' || q0.layer === 'tunnel' || q0.kind === 'boardwalk' ? 0 : CFG.outside * s;
     const back = t => [I.focus[0] + (c.pos[0] - I.focus[0]) * t, I.focus[1] + (c.pos[1] - I.focus[1]) * t, I.focus[2] + (c.pos[2] - I.focus[2]) * t];
     c.clamped = '';
     const h2 = sweep(I.focus, c.pos, CFG.sweepR * s); if (h2 < 1) { const L2 = Math.hypot(c.pos[0] - I.focus[0], c.pos[1] - I.focus[1], c.pos[2] - I.focus[2]) || 1; c.pos = back(Math.max(0, (h2 * L2 - 0.05 * s) / L2)); c.clamped += 'occluder '; }

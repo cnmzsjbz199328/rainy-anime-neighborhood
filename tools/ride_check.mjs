@@ -372,8 +372,8 @@ if (want('K5')) {
         if (c.pulled) { out.pulled++; if (c.why) { out.why = out.why || {}; out.why[c.why] = (out.why[c.why] || 0) + 1; } } for (const k of (c.clamped || '').trim().split(' ').filter(Boolean)) out.clamped[k] = (out.clamped[k] || 0) + 1;
         const boxes = W.occluders(p[0] - 0.3, p[2] - 0.3, p[0] + 0.3, p[2] + 0.3); if (boxes.some(o => p[1] > o.y0 - 0.15 * s && p[1] < o.y1 + 0.15 * s && boxDist(o.pts, p[0], p[2]) < 0.15 * s - 1e-6)) out.inside++;
         const q0 = G.at(p[0], p[2], { y: g.y }), q = q0 && Math.abs(q0.y - g.y) < 3 * s ? q0 : null, floor = q ? q.y : G.y(p[0], p[2]); if (p[1] < floor + 0.12 * s - 1e-6) out.low++;
-        const allowed = g.layer === 'deck' || g.layer === 'tunnel' || g.kind === 'boardwalk' || g.kind === 'stairs' ? 0 : 0.5 * s;
-        if (!q) { const dx = f[0] - p[0], dz = f[2] - p[2], l = Math.hypot(dx, dz) || 1; if (allowed <= 0 || !G.at(p[0] + dx / l * (allowed + 0.02 * s), p[2] + dz / l * (allowed + 0.02 * s), { y: g.y })) out.horiz++; }
+        const allowed = g.layer === 'deck' || g.layer === 'tunnel' || g.kind === 'boardwalk' ? 0 : 0.5 * s;
+        if (!q) { const dx = f[0] - p[0], dz = f[2] - p[2], l = Math.hypot(dx, dz) || 1, q2 = allowed > 0 ? G.at(p[0] + dx / l * (allowed + 0.02 * s), p[2] + dz / l * (allowed + 0.02 * s), { y: g.y }) : null; if (allowed <= 0 || !q2 || Math.abs(q2.y - g.y) >= 3 * s) out.horiz++; }
         if (c.blocked) { out.blocked++; out.blockRun++; out.maxRun = Math.max(out.maxRun, out.blockRun); } else out.blockRun = 0;
         if (g.kind === 'alley' || g.kind === 'walkway') { const d = Math.hypot(p[0] - f[0], p[1] - f[1], p[2] - f[2]) / s; out.narrowMin = Math.min(out.narrowMin, d); if (d < 1.2 - 1e-6) out.narrow++; }
         if (g.layer === 'tunnel' && q && q.layer === 'tunnel') { const o = Math.abs(q.offset || 0), h = (p[1] - q.y) / s; if (o > CFG.tunnel.r - CFG.tunnelClear + 1e-6 || h > CFG.tunnel.wall + Math.sqrt(Math.max(0, (CFG.tunnel.r - CFG.tunnelClear) ** 2 - o * o)) + 1e-6) out.tunnel++; }

@@ -1,0 +1,310 @@
+{
+ "tool": "tools/ride_perf.mjs",
+ "date": "2026-10-19T12:41:27.151Z",
+ "commit": "8e905bf",
+ "dirty": true,
+ "flags": [
+  "--use-angle=metal",
+  "--ignore-gpu-blocklist"
+ ],
+ "quality": "high",
+ "budget": {
+  "medianMs": 17,
+  "p95Ms": 25,
+  "riderCalls": 24,
+  "riderTriangles": 30000,
+  "logicMs": 0.5
+ },
+ "machineStart": {
+  "freeMemMB": 1346,
+  "totalMemMB": 16384,
+  "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+  "load": [
+   4.42,
+   4.9,
+   4.78
+  ]
+ },
+ "views": {
+  "s0": {
+   "label": "S0 便利店门前（R01 西行）",
+   "p": {
+    "x": -7,
+    "z": 16.75,
+    "heading": -1.5707963267948966
+   },
+   "ok": true,
+   "kind": "carriageway",
+   "layer": "ground",
+   "s": 1,
+   "frames": 360,
+   "medianMs": 16.7,
+   "p95Ms": 18.4,
+   "maxMs": 19.9,
+   "calls": 2303,
+   "triangles": 1511585,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 81,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.96,
+     5,
+     4.81
+    ]
+   }
+  },
+  "a01": {
+   "label": "A01 巷道中段",
+   "p": {
+    "x": -27,
+    "z": 32.25,
+    "heading": -1.5707963267948966
+   },
+   "ok": true,
+   "kind": "alley",
+   "layer": "ground",
+   "s": 1,
+   "frames": 360,
+   "medianMs": 16.6,
+   "p95Ms": 18.4,
+   "maxMs": 19.6,
+   "calls": 1057,
+   "triangles": 1317585,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 468,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.89,
+     4.98,
+     4.81
+    ]
+   }
+  },
+  "w01": {
+   "label": "W01 人行通道",
+   "p": {
+    "x": -18,
+    "z": 27.5,
+    "heading": 3.141592653589793
+   },
+   "ok": true,
+   "kind": "walkway",
+   "layer": "ground",
+   "s": 1,
+   "frames": 360,
+   "medianMs": 16.6,
+   "p95Ms": 18.6,
+   "maxMs": 20.1,
+   "calls": 3688,
+   "triangles": 1562383,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 98,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.83,
+     4.97,
+     4.81
+    ]
+   }
+  },
+  "cr01se": {
+   "label": "CR01 东南",
+   "p": {
+    "x": 46.02412051911851,
+    "z": 55.33343022942894,
+    "heading": -1.5704381832459176
+   },
+   "ok": true,
+   "kind": "carriageway",
+   "layer": "ground",
+   "s": 1.0942660863467986,
+   "frames": 360,
+   "medianMs": 16.6,
+   "p95Ms": 18.6,
+   "maxMs": 22.2,
+   "calls": 3491,
+   "triangles": 1691605,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 69,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.57,
+     4.9,
+     4.79
+    ]
+   }
+  },
+  "rn0103": {
+   "label": "RN01-03 桥跨中",
+   "p": {
+    "x": 96.21127501618741,
+    "z": 14.031154723676227,
+    "heading": 1.5712835450765463,
+    "layer": "deck"
+   },
+   "ok": true,
+   "kind": "deck",
+   "layer": "deck",
+   "s": 1.0121773075450302,
+   "frames": 360,
+   "medianMs": 16.6,
+   "p95Ms": 18.4,
+   "maxMs": 20,
+   "calls": 814,
+   "triangles": 1474102,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 79,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.22,
+     4.81,
+     4.76
+    ]
+   }
+  },
+  "rn0105": {
+   "label": "RN01-05 隧道内",
+   "p": {
+    "x": 145.34374124792336,
+    "z": 13.580545161418875,
+    "heading": 1.5685364865415232,
+    "layer": "tunnel"
+   },
+   "ok": true,
+   "kind": "carriageway",
+   "layer": "tunnel",
+   "s": 1.0114062604823406,
+   "frames": 360,
+   "medianMs": 16.6,
+   "p95Ms": 17.5,
+   "maxMs": 20.4,
+   "calls": 743,
+   "triangles": 1427713,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 81,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.08,
+     4.75,
+     4.74
+    ]
+   }
+  },
+  "lm07w": {
+   "label": "LM07 西口（RN10-01 雪道端）",
+   "p": {
+    "x": 105.10823130210954,
+    "z": -193.21753341904673,
+    "heading": 1.0803999903589931
+   },
+   "ok": true,
+   "kind": "snow",
+   "layer": "ground",
+   "s": 4.337403612715219,
+   "frames": 360,
+   "medianMs": 16.7,
+   "p95Ms": 18.2,
+   "maxMs": 19.4,
+   "calls": 711,
+   "triangles": 1150511,
+   "rider": {
+    "calls": 17,
+    "triangles": 12503
+   },
+   "errors": 0,
+   "machine": {
+    "freeMemMB": 82,
+    "totalMemMB": 16384,
+    "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+    "load": [
+     4.81,
+     4.88,
+     4.78
+    ]
+   }
+  }
+ },
+ "logic": {
+  "town-R01": 0.1785,
+  "CR01": 0.1775,
+  "tunnel": 0.2035,
+  "riderAnimationMs": 0.1327
+ },
+ "free": {
+  "build": {
+   "frames": 360,
+   "medianMs": 16.6,
+   "p95Ms": 19,
+   "maxMs": 25.5,
+   "calls": 2355,
+   "triangles": 1583952,
+   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  },
+  "ref": {
+   "dir": "/private/tmp/claude-501/-Users-tangjiang-My-project-rainy-anime-neighborhood/d3ad7d41-e6f1-40d0-aabd-938afde1afe7/scratchpad/base-preride",
+   "frames": 361,
+   "medianMs": 16.7,
+   "p95Ms": 18.5,
+   "maxMs": 20.6,
+   "calls": 2355,
+   "triangles": 1583952,
+   "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+  }
+ },
+ "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "153.0.8010.12",
+ "machineEnd": {
+  "freeMemMB": 1418,
+  "totalMemMB": 16384,
+  "swap": "total = 9216.00M  used = 7928.12M  free = 1287.88M  (encrypted)",
+  "load": [
+   5.03,
+   4.93,
+   4.81
+  ]
+ },
+ "summary": {
+  "viewsMedianMax": 16.7,
+  "viewsP95Max": 18.6,
+  "riderCalls": 17,
+  "riderTriangles": 12503,
+  "logicMaxMs": 0.2035,
+  "freeCallsSame": true
+ }
+}
