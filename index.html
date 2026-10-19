@@ -7023,6 +7023,8 @@ else global.STREETLIGHTS = STREETLIGHTS;
 //   walk    the walkable surfaces of the one road network (W10_SPEC 2.8: the roads, the pavements, the town's public areas), at(x, z, hint) -> one sample:
 //           every road's paved width and shoulder (roadkit.js), the paved T junctions, the bridge decks, the stone stairs and the boardwalk, and in the town (layout.js) the carriageways,
 //           alleys, pavements and facility bands, the curb ramps and driveways, the walkway W01 and the bus aprons; plots and everything off the network give null.
+//           R1 (THIRD_PERSON_ROAM_PLAN 6.13): also the RN12-01 steel stair (two stair lines from bridge.js's access record: gate, gangway, flights, landing, foot plate),
+//           a 1 m landing on each stone stair's axis beyond its ends, and the I9 public areas of the landmarks (kind 'site': LM02 east entrance <-> north-east entrance).
 // A sample (x, z in the flat display frame, y its flat height): { x, z, y, alt (true metres), s (display scale: flat units per true metre, a function of the place:
 // 1 in the town frame, 1 / cos(lat) from 15 m beyond it, a smoothstep between; the same on every road through a point), k (1 / cos(lat)), kind, layer ('ground' | 'deck' | 'tunnel'), line, route, edge, cls,
 // station (m along the line), offset (true m, + right of travel), slope (rise per true metre along the line), margin (true m to the walkable edge across it) }.
@@ -7032,7 +7034,7 @@ else global.STREETLIGHTS = STREETLIGHTS;
 'use strict';
 const R = 90, D = Math.PI / 180, BASE = 1.6, PERIOD = 2 * Math.PI * R, HALF = Math.PI * R, CELL = 8, PAD = 14;
 const TOWN_BLEND = 15;   // the display scale runs from the town frame's 1 to 1 / cos(lat) over the exits' 15 m width transition (W10_SPEC 2.2)
-const STAIR_HALF = 0.8, BOARD_HALF = 1.0, DECK_WALK = 4.6, PLANK_TOP = 0.08, PLANK_HALF = 0.135;   // steps.js STAIR.width / 2; roadkit.js boardwalk DECK.half; the deck's walk (rails beyond); flora.js plank: 0.08 m thick (its foot at the record's altitude), 0.27 m deep
+const STAIR_HALF = 0.8, STAIR_LANDING = 1.0, BOARD_HALF = 1.0, DECK_WALK = 4.6, PLANK_TOP = 0.08, PLANK_HALF = 0.135;   // steps.js STAIR.width / 2; roadkit.js boardwalk DECK.half; the deck's walk (rails beyond); flora.js plank: 0.08 m thick (its foot at the record's altitude), 0.27 m deep
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
 const llOf = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D });
@@ -7131,11 +7133,67 @@ function attach(ctx) {
     const F = b.samples.map(p => flatOf(p.lon, p.lat)), cf = b.samples.map((p, i) => { const [lo, la] = b.lateral(i, 1), f = flatOf(lo, la); return Math.hypot(wrapDx(f.x - F[i].x), f.z - F[i].z) / F[i].k; });
     lines.push(line('bridge', b.def.id, b.samples, F, b.tangent, cf, b.samples.map(() => [-DECK_WALK, DECK_WALK]), { b }));
   }
-  for (const st of RD.stairs) { const P = pathOf(st.samples); lines.push(line('stairs', st.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-STAIR_HALF, STAIR_HALF]), { st })); }
+  // R1: a stone stair (RD06) has a 1 m landing on its axis before its first tread and beyond its last, at its foot's and its top's height (the steps are pinned to the
+  // ground there): a stair that leaves a road at an angle is entered from its axis, between the legs of its torii
+  for (const st of RD.stairs) { const P = pathOf(st.samples); lines.push(line('stairs', st.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-STAIR_HALF, STAIR_HALF]), { st, landing: STAIR_LANDING })); }
+  // R1 (THIRD_PERSON_ROAM_PLAN 6.13): RN12-01, the steel maintenance stair of the bridge to LM08-south (bridge.js access), is a stair line too: from the deck through the gate in
+  // the north parapet, the gangway, flight A, the landing, flight B, to the foot plate at the node (the plate is the line's last, level part). Its treads are bridge.js's
+  // (riser 0.2 m, tread 0.26 m, the step box 0.05 m thick about its altitude); the lowest steps of flight B lie under the foot plate and the beach, so the plate's top is their floor.
+  for (const b of RD.bridges) { if (!b.access) continue;
+    const bl = lines.find(l => l.kind === 'bridge' && l.b === b), acc = b.access, s0 = acc.s, A = acc.steps.filter(q => q.z > 1), B = acc.steps.filter(q => q.z <= 1), STEP_TOP = 0.025, PLATE_TOP = 0.03;
+    const foot = acc.landing.alt + PLATE_TOP, ff = flatOf(acc.landing.lon, acc.landing.lat), fq = bl.project(ff.x, ff.z, true), fx = fq.s - s0, fo = fq.o, xL = Math.max(...A.map(q => q.x)) + 0.13, aL = Math.min(...A.map(q => q.alt)) - 0.2 + PLATE_TOP;
+    // the path in the bridge's (station - s0, lateral true m) frame with its floor: steps carry their own tops
+    const P = [[0.9, -4.3, acc.top], [0.9, -5.9, acc.top], [1.45, -6.45, acc.top], [xL, -6.45, null], [xL + 0.35, -6.4, aL], [xL + 0.35, -5.5, aL], [xL - 0.05, -5.45, null], [B[B.length - 1].x - 0.13, -5.45, null], [fx, fo, foot]];
+    const pts = []; for (let i = 0; i + 1 < P.length; i++) { const [x0, o0] = P[i], [x1, o1] = P[i + 1], l = Math.hypot(x1 - x0, o1 - o0), n = Math.max(1, Math.ceil(l / 0.25)); for (let k = i ? 1 : 0; k <= n; k++) pts.push([x0 + (x1 - x0) * k / n, o0 + (o1 - o0) * k / n]); }
+    let acc_s = 0; const S = pts.map((p, i) => { if (i) acc_s += Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]); return { s: acc_s }; });
+    const F = pts.map(([x, o]) => { const q = bl.point(s0 + x, o); return { x: q.x, z: q.z, k: Math.cosh(q.z / R) }; }), n = F.length;
+    const T = F.map((f, i) => { const a = F[Math.max(0, i - 1)], c = F[Math.min(n - 1, i + 1)], dx = c.x - a.x, dz = c.z - a.z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; });
+    const along = (x, o) => { let best = 0, bd = Infinity; pts.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - o); if (d < bd) { bd = d; best = S[i].s; } }); return best; };
+    const steps = [...A, ...B].map(q => ({ s: along(q.x, q.z > 1 ? -6.45 : -5.45), tread: 0.26, top: Math.max(foot, q.alt + STEP_TOP) }));
+    const floor = S.map(p => { const st = steps.find(q => Math.abs(q.s - p.s) <= 0.13 + 1e-6); return st ? st.top : null; });
+    for (let i = 0; i < n; i++) if (floor[i] === null) { const ip = P.findIndex(q => Math.abs(along(q[0], q[1]) - S[i].s) < 0.13 && q[2] !== null); floor[i] = ip >= 0 ? P[ip][2] : null; }
+    for (let i = 0; i < n; i++) if (floor[i] === null) { let a = i, c = i; while (a > 0 && floor[a] === null) a--; while (c < n - 1 && floor[c] === null) c++; floor[i] = floor[a] ?? floor[c] ?? acc.top; }
+    // the walk: the treads' width (0.8 m); the landing plate (1.0 x 2.2 m) and the foot plate (1.6 m) wider. Flight B and the foot plate run back under the gangway, so the stair
+    // is two lines (one height per line and point): the upper part to the landing's middle, the lower part from there (stations go on from the upper part's end)
+    const top = pts.findIndex(([x, o]) => x >= 1.45 - 1e-9 && o <= -6.45 + 1e-9);      // the gangway plate (1.8 x 1.8 m) ends where flight A starts
+    const walk = pts.map(([x, o], i) => (i <= top ? [-0.8, 0.8] : (x > xL - 0.1 && o < -5.3 && o > -6.6) || Math.hypot(x - fx, o - fo) < 0.8 ? [-0.6, 0.6] : [-0.42, 0.42]));
+    const cut = pts.findIndex(([x, o]) => x >= xL + 0.3 && o > -5.96), part = (i0, i1, id, extra) => { const sl = a => a.slice(i0, i1 + 1), SS = sl(S), base = SS[0].s;
+      return line('stairs', id, SS.map(q => ({ s: q.s - base })), sl(F), sl(T), SS.map(() => 1), sl(walk), { st: { id, steps: steps.filter(q => q.s >= base - 0.13 && q.s <= SS[SS.length - 1].s + 0.13).map(q => ({ ...q, s: q.s - base })), profile: sl(floor) }, edgeId: 'RN12-01', ...extra }); };
+    lines.push(part(0, cut, 'RN12-01', { gate: { line: bl.id, station: s0 + 0.9 } }), part(cut, n - 1, 'RN12-01:lower', {}));
+  }
   // the boardwalk: its planks are the surface (each at its own altitude; roadkit.js lays them every 0.32 m), so the walk stands on the top of the plank nearest along it
   for (const ex of RD.extras || []) { const P = pathOf(ex.centre), ln = line('boardwalk', ex.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-BOARD_HALF, BOARD_HALF]), { ex });
     ln.planks = (ex.instances.plank || []).map(r => { const f = flatOf(r.lon, r.lat), q = ln.project(f.x, f.z, true); return [q.s, r.alt + PLANK_TOP]; }).sort((a, b) => a[0] - b[0]); lines.push(ln); }
   const town = townWalk(L);
+  // R1 (I9, THIRD_PERSON_ROAM_PLAN 6.13): the public areas of the landmarks, in each landmark's local frame (landmarks/<id>.js: origin the anchor, +Z towards the first
+  // entrance, +X to its left, true metres), mapped like the landmark's own vertices (scene.js: the distance shortened by R / (R + altitude), the height h + y). A polygon's
+  // floor is its local height; outside it the floor runs on down at 10 % (`fall`), so neighbouring polygons meet without a step; `ramp` [z0, z1] runs the floor from the
+  // polygon's height at z0 to the height of the road end it meets at z1.
+  const SITES = [
+    // LM02: the stone street from the east entrance (RN05-01's end, 0.25 m lower than the slabs: a 2.8 m ramp) to the plaza's north edge, then north of house 3
+    // (the slab path from the north-east entrance runs through it) on the grass to a pad just short of the north-east entrance, where RN05-02's stairs start (at local
+    // (14.63, 8.79), running to +z, a small torii over the first tread): the pad stops at the stairs' first edge, so the stairs are entered from their foot only
+    // (LM02.js: slab tops 0.11 m, grass 0.02 m)
+    { lm: 'LM02', road: 'RN05-01', polys: [
+      { id: 'street', pts: [[-1.3, 8.6], [1.3, 8.6], [1.3, 17.4], [-1.3, 17.4]], y: 0.11, fall: 0.1, ramp: [14.6, 17.08] },
+      { id: 'north-of-house-3', pts: [[0.6, 9.15], [11.3, 9.15], [12.1, 6.6], [16.0, 6.6], [16.0, 8.79], [13.4, 8.79], [12.6, 10.85], [0.6, 10.85]], y: 0.02 } ] },
+  ].map(sd => {
+    const lm = W.landmarks.find(q => q.id === sd.lm), h = H(lm.lon, lm.lat), head = lm.entrances[0].heading, kkOf = y => R / (R + Math.max(-1.6, h + y - 1.6));
+    const toFlat = (x, z, y) => { const d0 = Math.hypot(x, z); if (d0 < 1e-9) return flatOf(lm.lon, lm.lat); const q = W.destination({ lon: lm.lon, lat: lm.lat }, head + Math.atan2(-x, z) / D, d0 * kkOf(y)); return flatOf(lm.lon + (((q.lon - lm.lon + 540) % 360) - 180), q.lat); };
+    const road = lines.find(l => l.kind === 'route' && l.rt.def.segs.some(sg => sg.id === sd.road)), yEnd = road ? RK.surfS(road.rt, road.length, 0) - h : 0;
+    const a = toFlat(0, 0, 0), reach = Math.max(...sd.polys.flatMap(p => p.pts.map(q => Math.hypot(q[0], q[1])))) + 2;
+    const distOut = (p, x, z) => { if (inPoly(p.pts, x, z)) return 0; let d = Infinity; for (let i = 0, j = p.pts.length - 1; i < p.pts.length; j = i++) { const [ax, az] = p.pts[j], [bx, bz] = p.pts[i], dx = bx - ax, dz = bz - az, t = clamp01(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)); d = Math.min(d, Math.hypot(x - ax - dx * t, z - az - dz * t)); } return d; };
+    const yOf = (p, z) => p.ramp ? p.y + (yEnd - p.y) * clamp01((z - p.ramp[0]) / (p.ramp[1] - p.ramp[0])) : p.y;
+    // flat (canonical) -> local; null beyond the site
+    const local = (cx, z) => { if (Math.abs(wrapDx(cx - a.x)) > reach * a.k * 1.3 || Math.abs(z - a.z) > reach * a.k * 1.3) return null; const ll = llOf(cx, z), p = { lon: ll.lon, lat: ll.lat }, d = W.arcDistance(lm, p);
+      if (d > reach) return null; const th = (W.bearing(lm, p) - head) * D, d0 = d / kkOf(0.06); return [-d0 * Math.sin(th), d0 * Math.cos(th)]; };
+    const floor = (x, z) => { let y = null; for (const p of sd.polys) { const d = distOut(p, x, z); if (d > 0 && !p.fall) continue; const v = yOf(p, z) - (p.fall || 0) * d; if (y === null || v > y) y = v; } return y; };
+    const inside = (x, z) => sd.polys.some(p => inPoly(p.pts, x, z));
+    // outlines for the boundary pieces (ride_world.js): each polygon edge cut to <= 0.5 m, flat points
+    const outlines = sd.polys.map(p => { const out = []; for (let i = 0; i < p.pts.length; i++) { const [ax, az] = p.pts[i], [bx, bz] = p.pts[(i + 1) % p.pts.length], m = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5)); for (let k = 0; k < m; k++) { const x = ax + (bx - ax) * k / m, z = az + (bz - az) * k / m, f = toFlat(x, z, p.y); out.push([f.x, f.z]); } } return { id: p.id, pts: out }; });
+    return { id: sd.lm, lm, h, head, toFlat, local, floor, inside, outlines };
+  });
+  const siteAt = (cx, z) => { for (const st of SITES) { const q = st.local(cx, z); if (!q || !st.inside(q[0], q[1])) continue; const y = st.floor(q[0], q[1]); if (y === null) continue; return { st, alt: st.h + y }; } return null; };
   // I6: the display scale at a canonical flat point (continuous: no step at the town edge or where two roads meet)
   const scaleAt = (cx, z) => { const H0 = L.BASE.half, d = Math.hypot(Math.max(0, Math.abs(cx) - H0), Math.max(0, Math.abs(z) - H0)); if (d <= 0) return 1;
     const t = clamp01(d / TOWN_BLEND), w = t * t * (3 - 2 * t), k = 1 / Math.cos(llOf(cx, z).lat * D); return 1 + (k - 1) * w; };
@@ -7166,12 +7224,12 @@ function attach(ctx) {
   const edgeAt = (ln, q) => {
     if (ln.kind === 'route') return ln.rt.def.segs[ln.rt.edgeOf[q.i]].id;
     if (ln.kind === 'bridge') { const b = ln.b, j = b.joints ? b.joints.filter(v => v <= q.s).length : 0; return b.ids[Math.min(b.ids.length - 1, j)]; }
-    return ln.id;
+    return ln.edgeId || ln.id;
   };
   const candidates = (x, z) => {
     const cx = canonX(x), ll = llOf(cx, z), k = 1 / Math.cos(ll.lat * D), sc = scaleAt(cx, z), out = [];
     for (const ln of lines) {
-      const q = ln.project(cx, z); if (!q || q.over > (ln.kind === 'boardwalk' ? PLANK_HALF : 0)) continue;     // the end planks overhang the boardwalk's line by half a plank
+      const q = ln.project(cx, z); if (!q || q.over > (ln.kind === 'boardwalk' ? PLANK_HALF : ln.landing || 0)) continue;     // the end planks overhang the boardwalk's line by half a plank; a stone stair's landings
       const w = lerpAt(ln.walk, q); if (q.o < w[0] - 1e-9 || q.o > w[1] + 1e-9) continue;
       const tun = ln.tunnel && q.s > ln.tunnel[0] && q.s < ln.tunnel[1], alt = altOf(ln, q.s, q.o), edge = edgeAt(ln, q), e = edgeOf[edge];
       let kind = ln.kind === 'bridge' ? 'deck' : ln.kind;
@@ -7189,6 +7247,8 @@ function attach(ctx) {
     if (jn) { const near = out.filter(c => c.layer === 'ground').sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))[0];
       out.push({ alt: BASE + jn.y / k, y: jn.y, s: sc, k, kind: 'junction', layer: 'ground', line: near ? near.line : null, route: near ? near.route : null, edge: near ? near.edge : null, cls: near ? near.cls : null,
         station: near ? near.station : null, offset: near ? near.offset : null, slope: 0, margin: null, heading: near ? near.heading : null, junction: jn.node }); }
+    const sa = siteAt(cx, z);
+    if (sa) out.push({ alt: sa.alt, y: (sa.alt - BASE) * k, s: sc, k, kind: 'site', layer: 'ground', line: sa.st.id, route: null, edge: null, cls: 'site', station: null, offset: null, slope: 0, margin: null, heading: null, site: sa.st.id });
     const t = town(cx, z);
     if (t === null) return [];                                                // a plot: nothing on the network stands there
     if (t !== undefined) {
@@ -7212,6 +7272,8 @@ function attach(ctx) {
   };
   const api = {
     lines,
+    // I9: the public areas of the landmarks (outlines for ride_world.js)
+    sites: SITES,
     // I1: the walkable surface under (x, z) on the layer nearest the hint ({ y } of the walker, or { layer }); null off the walkable surfaces
     at(x, z, hint) { const c = pick(candidates(x, z), hint); return c ? { x: show(x), z, ...c } : null; },
     // I3: every walkable layer at (x, z)
@@ -7236,7 +7298,8 @@ function attach(ctx) {
       let p = [0, 0];
       if (ln.kind === 'route') p = lerpAt(ln.rt.paved, c); else if (ln.kind === 'bridge') p = [-3.5, 3.5]; else p = lerpAt(ln.walk, c);
       const w = p[1] - p[0], o = w >= 4.5 ? (p[0] + p[1]) / 2 - sign * w / 4 : (p[0] + p[1]) / 2, at = ln.point(s, o);
-      const sample = api.at(at.x, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
+      // the line's own surface there (an I9 site may overlap a road's end)
+      const own = candidates(at.x, at.z).find(c => c.line === ln.id), sample = own ? { x: show(at.x), z: at.z, ...own } : api.at(at.x, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
       return sample ? { ...sample, heading: Math.atan2(sign * c.T[0], sign * c.T[1]), from: [show(x), z], distance: Math.hypot(wrapDx(show(x) - sample.x), z - sample.z) } : null;
     },
     // I3: the places where the layers meet: the bridges' ends (deck <-> ground), the tunnels' portals (ground <-> tunnel), the stairs' ends
@@ -7245,7 +7308,7 @@ function attach(ctx) {
       for (const ln of lines) {
         const end = (s, kind) => { const p = ln.point(s, 0); out.push({ kind, line: ln.id, station: s, x: show(p.x), z: p.z }); };
         if (ln.kind === 'bridge') { end(0, 'abutment'); end(ln.length, 'abutment'); }
-        if (ln.kind === 'stairs') { end(0, 'stair-end'); end(ln.length, 'stair-end'); }
+        if (ln.kind === 'stairs') { end(0, ln.gate ? 'gate' : 'stair-end'); end(ln.length, 'stair-end'); }
         if (ln.tunnel) { end(ln.tunnel[0], 'portal'); end(ln.tunnel[1], 'portal'); }
       }
       return out;
@@ -7257,6 +7320,364 @@ function attach(ctx) {
 const GROUND = { attach, townWalk, flatOf, llOf, R, BASE, PERIOD };
 if (typeof module !== 'undefined' && module.exports) module.exports = GROUND;
 else global.GROUND = GROUND;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// R1 (docs/world/THIRD_PERSON_ROAM_PLAN.md 6.6, 6.13.2): what the ride runs into, built from the one ground sampler (ground.js) and the data of the modules that place
+// things on the walkable surfaces. Pure: no THREE, no DOM; attach() after the world is generated (the landmark boxes are recorded by scene.js before baking).
+//   I2 boundaries  candidate edges (every walkable line's edges and ends, the paved T junctions' outlines, the town shapes of layout.js, the I9 site outlines) cut into
+//                  <= 0.5 m pieces; each piece is sampled on both sides (+-0.03 flat units) with ground.layers(): a side whose surface finds no surface on the other side
+//                  within 0.05 m x s in height (0.25 m beside a stair: its riser; 0.16 m at the boardwalk: its planks and its raised ends) gets a one-sided record facing it (a curb, 0.13 m, is
+//                  a record on each side). A record: the piece, the unit normal into its free side, the free side's flat height and display scale, its type (rail, rope,
+//                  wall, stair, curb, plot, edge). Built per 8 m cell on first use; the town's cells when the ride first starts.
+//   I4 obstacles   circles, capsule segments and boxes (flat frame, with a flat height range): layout.js furniture and the legacy fixtures' slots, the road lamp table
+//                  (streetlights.js), the instances of the roads, bridges, stairs and boardwalk (radius or box from their flora.js templates), the landmarks' solid meshes.
+//   I5 occluders   (R2)
+// Records and obstacles are kept in the display frame [SEAM, SEAM + PERIOD); a query near the seam also reads the other end, shifted by one turn.
+(function (global) {
+'use strict';
+const CELL = 8, EPS = 0.03, PIECE = 0.5, R = 90, D = Math.PI / 180, BASE = 1.6;
+const STEP = 0.05, STEP_STAIR = 0.25, STEP_BOARD = 0.16;
+// flora.js templates (true metres, before the instance scale): circle radius or box half extents (local x, local z), height
+const TEMPLATE = {
+  barrierConcrete: { box: [0.99, 0.17], h: 0.82 }, milestone: { box: [0.115, 0.085], h: 0.65 }, signBus: { r: 0.04, h: 2.5 }, busBench: { box: [0.75, 0.2], h: 0.5 },
+  shelterOrange: { box: [1.4, 1.1], h: 2.0 }, pole: { r: 0.14, h: 8.5 }, mirror: { r: 0.04, h: 2.6 }, stonePost: { box: [0.1, 0.1], h: 0.8 }, bollard: { r: 0.12, h: 0.55 },
+  snowPole: { r: 0.045, h: 2.0 }, ropePost: { r: 0.035, h: 0.95 }, steelPost: { r: 0.03, h: 0.9 }, lampSmall: { r: 0.05, h: 1.8 }, lifeRing: { box: [0.26, 0.06], y0: 0.52, h: 1.04 },
+  lantern: { box: [0.25, 0.25], h: 1.7 }, jizo: { box: [0.25, 0.25], h: 1.0 }, torii: { legs: [-1.0, 1.0], r: 0.17, h: 2.6 },
+};
+// scene.js street furniture (layout.js kinds; the street lamps are in the road lamp table)
+const FURNITURE = { 'alley-lamp': { r: 0.045, h: 3.2 }, pole: { r: 0.1, h: 5.7 }, signal: { r: 0.05, h: 4.5 }, 'stop-sign': { r: 0.035, h: 2.5 } };
+const LEGACY = { trafficSignal: { pole: [5.1, -4.75], r: 0.05, h: 4.5 }, utilityPole: { pole: [-4.7, -3.85], r: 0.1, h: 5.7 }, guardRail: { rail: [[-2.1, 3.13], [0.4, 3.13]], r: 0.05, h: 0.95 } };
+
+const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
+const inPoly = (p, x, z) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && (x < (p[j][0] - p[i][0]) * (z - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0])) c = !c; return c; };
+
+// ctx = { ground, L: LAYOUT, roads: roads.data(), lamps: streetlights.data().lamps, landmarkBoxes: [{ lm, pts: [[x, z] x 4], y0, y1 }] }
+function attach(ctx) {
+  const G = ctx.ground, L = ctx.L, RD = ctx.roads, PERIOD = G.PERIOD, SEAM = G.SEAM, show = G.wrap, xMax = SEAM + PERIOD;
+  const key = (a, b) => a * 100003 + b, cand = new Map(), built = new Map(), obstacles = new Map(), stats = { candidates: 0, cellsBuilt: 0, records: 0, buildMs: 0, obstacles: 0 };
+  const bucket = (map, x, z, item) => { const k = key(Math.floor(x / CELL), Math.floor(z / CELL)); let l = map.get(k); if (!l) map.set(k, l = []); l.push(item); };
+  // ---- candidate pieces (display frame by their midpoint)
+  const addPiece = (ax, az, bx, bz, src) => { const mx = show((ax + bx) / 2), sh = mx - (ax + bx) / 2; bucket(cand, mx, (az + bz) / 2, { ax: ax + sh, az, bx: bx + sh, bz, src }); stats.candidates++; };
+  const addEdge = (ax, az, bx, bz, src) => { const l = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(l / PIECE)); for (let k = 0; k < n; k++) addPiece(ax + (bx - ax) * k / n, az + (bz - az) * k / n, ax + (bx - ax) * (k + 1) / n, az + (bz - az) * (k + 1) / n, src); };
+  const addRing = (pts, src) => { for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; addEdge(a[0], a[1], b[0], b[1], src); } };
+  for (const ln of G.lines) {
+    const n = ln.n, edge = (i, side) => { const w = ln.walk[i]; return ln.point(ln.S[i].s, side < 0 ? w[0] : w[1]); };
+    for (let i = 0; i + 1 < n; i++) for (const sd of [-1, 1]) { const a = edge(i, sd), b = edge(i + 1, sd); addEdge(a.x, a.z, b.x, b.z, ln.id); }
+    for (const i of [0, n - 1]) { const a = edge(i, -1), b = edge(i, 1); addEdge(a.x, a.z, b.x, b.z, ln.id + ':end'); }
+  }
+  for (const j of RD.junctions || []) { const st = j.strip; if (!st || !st.pos || !st.index) continue; const P = st.pos, I = st.index, cnt = new Map();
+    for (let t = 0; t + 2 < I.length; t += 3) for (let e = 0; e < 3; e++) { const a = I[t + e], b = I[t + (e + 1) % 3], k = a < b ? a + ',' + b : b + ',' + a; cnt.set(k, (cnt.get(k) || 0) + 1); }
+    for (const [k, c] of cnt) if (c === 1) { const [a, b] = k.split(',').map(Number); addEdge(P[a * 3], P[a * 3 + 2], P[b * 3], P[b * 3 + 2], 'junction ' + j.node); } }
+  // the town (scene.js): pavement islands with their curb returns and the notches of the curb cuts, plots, alleys, the walkway, the bus aprons, the cuts, the frame
+  const H0 = L.BASE.half, Rc = L.INTERSECTION.curbRadius, rect = (r, src) => addRing([[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], src);
+  for (const is of L.islands) { const [x0, z0, x1, z1] = is.rect, C = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], names = ['NW', 'NE', 'SE', 'SW'], mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, pts = [];
+    for (let i = 0; i < 4; i++) { const c = C[i], p = C[(i + 3) % 4], q = C[(i + 1) % 4];
+      if (is.round[names[i]]) { const din = [Math.sign(c[0] - p[0]), Math.sign(c[1] - p[1])], dout = [Math.sign(q[0] - c[0]), Math.sign(q[1] - c[1])], o = [c[0] + Math.sign(mx - c[0]) * Rc, c[1] + Math.sign(mz - c[1]) * Rc];
+        const A0 = Math.atan2(c[1] - din[1] * Rc - o[1], c[0] - din[0] * Rc - o[0]); let d = Math.atan2(c[1] + dout[1] * Rc - o[1], c[0] + dout[0] * Rc - o[0]) - A0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+        for (let k = 0; k <= 12; k++) pts.push([o[0] + Rc * Math.cos(A0 + d * k / 12), o[1] + Rc * Math.sin(A0 + d * k / 12)]); }
+      else pts.push(c);
+      const ax = c[1] === q[1] ? 'z' : 'x', v = ax === 'z' ? c[1] : c[0], sg = ax === 'z' ? Math.sign(q[0] - c[0]) : Math.sign(q[1] - c[1]), P = (s, o) => (ax === 'z' ? [s, v + o] : [v + o, s]), j = ax === 'z' ? 0 : 1, lo = Math.min(c[j], q[j]), hi = Math.max(c[j], q[j]);
+      for (const k of L.curbCuts.filter(k => k.line === ax && k.at === v && k.s0 >= lo && k.s1 <= hi).sort((a, b) => sg * (a.s0 - b.s0))) { const [a, b] = sg > 0 ? [k.s0, k.s1] : [k.s1, k.s0]; pts.push(P(a, 0), P(a, k.dir * k.depth), P(b, k.dir * k.depth), P(b, 0)); } }
+    addRing(pts, 'island'); }
+  for (const p of L.plots) rect(p.rect, 'plot ' + p.id);
+  for (const a of L.alleys) rect(a.rect, 'alley ' + a.id);
+  for (const w of L.walkways) addRing(w.poly, 'walkway ' + w.id);
+  for (const a of L.aprons) addRing(a.poly, 'apron ' + a.id);
+  for (const c of L.curbCuts) rect(c.rect, 'cut ' + c.id);
+  rect([-H0, -H0, H0, H0], 'town frame');
+  for (const st of G.sites || []) for (const o of st.outlines) addRing(o.pts, 'site ' + st.id + ' ' + o.id);
+  const inPlot = (x, z) => Math.abs(x) <= H0 && Math.abs(z) <= H0 && L.plots.some(p => x > p.rect[0] && x < p.rect[2] && z > p.rect[1] && z < p.rect[3]);
+  // ---- classify one cell's pieces into records
+  const tolOf = (a, b) => (a.kind === 'stairs' || b.kind === 'stairs' ? STEP_STAIR : a.kind === 'boardwalk' || b.kind === 'boardwalk' ? STEP_BOARD : STEP);
+  const typeOf = (a, others, px, pz) => (a.kind === 'deck' ? 'rail' : a.kind === 'boardwalk' ? 'rope' : a.layer === 'tunnel' ? 'wall' : a.kind === 'stairs' ? 'stair' : others.length ? 'curb' : inPlot(px, pz) ? 'plot' : 'edge');
+  const build = k => {
+    const t0 = Date.now(), list = cand.get(k) || [], out = [];
+    for (const p of list) {
+      const dx = p.bx - p.ax, dz = p.bz - p.az, l = Math.hypot(dx, dz); if (l < 1e-6) continue;
+      const nx = -dz / l, nz = dx / l, mx = (p.ax + p.bx) / 2, mz = (p.az + p.bz) / 2;
+      const A = G.layers(mx - nx * EPS, mz - nz * EPS), B = G.layers(mx + nx * EPS, mz + nz * EPS);
+      for (const [side, own, other, sg] of [['a', A, B, -1], ['b', B, A, 1]]) for (const a of own) {
+        if (other.some(b => Math.abs(b.y - a.y) <= tolOf(a, b) * a.s)) continue;
+        const px = mx - sg * nx * EPS * 2, pz = mz - sg * nz * EPS * 2;      // a point just beyond the piece on the other side
+        out.push({ ax: p.ax, az: p.az, bx: p.bx, bz: p.bz, nx: sg * nx, nz: sg * nz, y: a.y, s: a.s, kind: a.kind, layer: a.layer, type: typeOf(a, other, px, pz), src: p.src });
+        void side;
+      }
+    }
+    built.set(k, out); stats.cellsBuilt++; stats.records += out.length; stats.buildMs += Date.now() - t0; return out;
+  };
+  const cellRecords = k => built.get(k) || build(k);
+  // ---- obstacles
+  const addObstacle = o => { const xs = o.c ? [o.c[0] - o.r, o.c[0] + o.r] : o.seg ? [Math.min(o.seg[0], o.seg[2]) - o.r, Math.max(o.seg[0], o.seg[2]) + o.r] : [Math.min(...o.pts.map(q => q[0])), Math.max(...o.pts.map(q => q[0]))];
+    const zs = o.c ? [o.c[1] - o.r, o.c[1] + o.r] : o.seg ? [Math.min(o.seg[1], o.seg[3]) - o.r, Math.max(o.seg[1], o.seg[3]) + o.r] : [Math.min(...o.pts.map(q => q[1])), Math.max(...o.pts.map(q => q[1]))];
+    const mx = show((xs[0] + xs[1]) / 2), sh = mx - (xs[0] + xs[1]) / 2;
+    if (sh) { if (o.c) o.c = [o.c[0] + sh, o.c[1]]; if (o.seg) o.seg = [o.seg[0] + sh, o.seg[1], o.seg[2] + sh, o.seg[3]]; if (o.pts) o.pts = o.pts.map(q => [q[0] + sh, q[1]]); }
+    if (o.pts) { let a = 0; for (let i = 0, j = o.pts.length - 1; i < o.pts.length; j = i++) a += (o.pts[j][0] - o.pts[i][0]) * (o.pts[j][1] + o.pts[i][1]); if (a < 0) o.pts.reverse(); }     // one winding for the edge normals
+    for (let a = Math.floor((xs[0] + sh) / CELL); a <= Math.floor((xs[1] + sh) / CELL); a++) for (let b = Math.floor(zs[0] / CELL); b <= Math.floor(zs[1] / CELL); b++) { const k = key(a, b); let l = obstacles.get(k); if (!l) obstacles.set(k, l = []); l.push(o); }
+    stats.obstacles++; };
+  const LV = L.LEVELS;
+  for (const f of L.furniture) { const t = FURNITURE[f.kind]; if (!t) continue; addObstacle({ c: [f.x, f.z], r: t.r, y0: LV.pavement, y1: LV.pavement + t.h, src: f.id }); }
+  for (const f of L.legacyFurniture) { const t = LEGACY[f.group]; if (!t) continue; const { x, z, rotY } = f.slot, c = Math.cos(rotY), n = Math.sin(rotY), [ax, az] = f.anchor;
+    const at = ([lx, lz]) => { const u = lx - ax, v = lz - az; return [x + u * c + v * n, z - u * n + v * c]; };
+    if (t.pole) addObstacle({ c: at(t.pole), r: t.r, y0: LV.pavement, y1: LV.pavement + t.h, src: 'legacy ' + f.group });
+    if (t.rail) { const a = at(t.rail[0]), b = at(t.rail[1]); addObstacle({ seg: [a[0], a[1], b[0], b[1]], r: t.r, y0: LV.pavement, y1: LV.pavement + t.h, src: 'legacy ' + f.group }); } }
+  for (const lp of ctx.lamps || []) { const sc = lp.scale || 1, m = { town: 4.4, rural: 4.96, trunk: 6.2, bridge: 5.27 }[lp.model] || 5; addObstacle({ c: [lp.x, lp.z], r: 0.1 * sc, y0: lp.y, y1: lp.y + m * sc, src: lp.id }); }
+  const instances = (owner, inst) => { for (const [type, list] of Object.entries(inst || {})) { const t = TEMPLATE[type]; if (!t || (owner === 'bridge' && type === 'barrierConcrete')) continue;
+    for (const it of list) { const f = flatOf(it.lon, it.lat), s = it.s || [1, 1, 1], k = f.k, y0 = (it.alt - BASE) * k + (t.y0 || 0) * s[1] * k, y1 = (it.alt - BASE) * k + t.h * s[1] * k, cy = Math.cos(it.yaw || 0), sy = Math.sin(it.yaw || 0);
+      const loc = (lx, lz) => [f.x + (lx * cy + lz * sy) * k, f.z + (-lx * sy + lz * cy) * k];
+      if (t.r && !t.legs) addObstacle({ c: [f.x, f.z], r: t.r * s[0] * k, y0, y1, src: type });
+      else if (t.legs) for (const lx of t.legs) addObstacle({ c: loc(lx * s[0], 0), r: t.r * s[0] * k, y0, y1, src: type });
+      else { const [hx, hz] = [t.box[0] * s[0], t.box[1] * s[2]]; addObstacle({ pts: [loc(-hx, -hz), loc(hx, -hz), loc(hx, hz), loc(-hx, hz)], y0, y1, src: type }); } } } };
+  for (const rt of RD.routes) instances('route', rt.instances);
+  for (const b of RD.bridges) instances('bridge', b.instances);
+  for (const st of RD.stairs) instances('stairs', st.instances);
+  for (const ex of RD.extras || []) instances('extra', ex.instances);
+  for (const bx of ctx.landmarkBoxes || []) addObstacle({ pts: bx.pts.map(q => [q[0], q[1]]), y0: bx.y0, y1: bx.y1, src: bx.lm });
+  // ---- queries
+  // the cells under the box [x - r, x + r] x [z - r, z + r]; near the seam the other end too (its items shifted by one turn): visit(item list, shift, cell key)
+  const around = (x, z, r, visit) => {
+    const pass = (x0, x1, sh) => { for (let a = Math.floor(x0 / CELL); a <= Math.floor(x1 / CELL); a++) for (let b = Math.floor((z - r) / CELL); b <= Math.floor((z + r) / CELL); b++) visit(key(a, b), sh); };
+    pass(x - r, x + r, 0); if (x - r < SEAM) pass(x - r + PERIOD, x + r + PERIOD, -PERIOD); if (x + r > xMax) pass(x - r - PERIOD, x + r - PERIOD, PERIOD);
+  };
+  const api = {
+    stats,
+    // the boundary records and obstacles near (x, z) (within r flat units of the point), shifted next to x; the records on the rider's level (|free side - y| <= band)
+    near(x, z, y, r, band) {
+      const rec = [], obs = [], seen = new Set();
+      around(x, z, r, (k, sh) => {
+        for (const q of cellRecords(k)) if (Math.abs(q.y - y) <= band) rec.push(sh ? { ...q, ax: q.ax + sh, bx: q.bx + sh } : q);
+        for (const o of obstacles.get(k) || []) { if (seen.has(o)) continue; seen.add(o); obs.push(sh ? { ...o, c: o.c && [o.c[0] + sh, o.c[1]], seg: o.seg && [o.seg[0] + sh, o.seg[1], o.seg[2] + sh, o.seg[3]], pts: o.pts && o.pts.map(q => [q[0] + sh, q[1]]) } : o); }
+      });
+      return { records: rec, obstacles: obs };
+    },
+    // build the records of the cells within r of (x, z) now; at most `max` cells (the rest on later calls); returns the cells still missing
+    prefetch(x, z, r, max = Infinity) { let n = 0, missing = 0; around(x, z, r, k => { if (built.has(k)) return; if (n < max) { build(k); n++; } else missing++; }); return missing; },
+    built: k => built.has(k), CELL,
+    // the town's cells (the first ride start)
+    prepareTown() { const t0 = Date.now(); this.prefetch(0, 0, H0 + 2); return Date.now() - t0; },
+  };
+  return api;
+}
+
+const RIDE_WORLD = { attach, TEMPLATE, FURNITURE, LEGACY };
+if (typeof module !== 'undefined' && module.exports) module.exports = RIDE_WORLD;
+else global.RIDE_WORLD = RIDE_WORLD;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// R1 (docs/world/THIRD_PERSON_ROAM_PLAN.md 6.2-6.6, 6.13): the ride, the one way to roam the flat map (W10_SPEC 2.8: one roam). Pure: no THREE, no DOM; it reads the
+// one ground sampler (ground.js) and what the ride runs into (ride_world.js). All figures are true metres and m/s, times the display scale s of the surface under the rider.
+//   input     throttle and steer in [-1, 1] (keys and the stick add up, clipped); look yaw/pitch and the follow distance from drags, the wheel and pinches
+//   speed     cruise 4.2 m/s, start 1.5 m/s2, coast 0.8, brake 3.5; stopped and still braking for 0.3 s: reverse up to 0.8; the cap of the surface (6.13.1), reached at
+//             2.0 m/s2, also ahead of a slower surface (two look-ahead samples); stairs and the steep boardwalk: the rider gets off and pushes at 0.8 (U1); on stairs
+//             the bike is carried on the shoulder: the body is the rider's circle (radius 0.32, no axis), so the bike can be turned round on a 1.6 m stair
+//   steering  kinematic bicycle: the command follows the input at lambda 8, yaw rate = command x min(v / 2.2, 3.0 / v); below 0.5 m/s blended with turning the bike in
+//             place at 1.2 rad/s; reversed when backing (A turns left: the heading grows, forward = (sin h, cos h))
+//   body      a horizontal capsule, radius 0.32, axis +-0.5, height 0-1.75; pushed out of the boundary records and obstacles of ride_world.js (at most 4 passes per
+//             substep); the velocity loses its part into the contact: beyond 60 deg from the boundary line the bike stops, else it slides along it (its heading turned
+//             along the boundary, its speed times cos); a substep whose end has no walkable surface, or a height jump no surface allows, is not taken
+//   ground    the front and rear wheel contacts each on their own surface (the walker's level: ground.at with a height hint), the rider's root at their middle
+//   steps     dt <= 1/60 per substep (a substep moves <= 0.07 m x s: the capsule cannot pass a boundary or a 0.1 m post), a frame at most 0.12 s
+//   seam      the display frame wraps: the rider's x moves by one turn, the caller shifts what follows it (onWrap)
+//   camera    R1: the follow place of 6.7 (focus 0.92 m over the root, 3.5 m behind and 0.70 m up, look 1.6 m ahead and 0.05 m up), turned by the look yaw and pitch,
+//             the follow distance 2.5-6 m, never under the ground below it + 0.12 m; R2 adds damping, occlusion and the limits
+(function (global) {
+'use strict';
+const CFG = {
+  cruise: 4.2, accel: 1.5, coast: 0.8, brake: 3.5, reverse: 0.8, reverseDelay: 0.3, capDecel: 2.0, push: 0.8,
+  steerLambda: 8, rMin: 2.2, latMax: 3.0, pivot: 1.2, pivotBelow: 0.5,
+  radius: 0.32, half: 0.5, height: 1.75, wheelbase: 0.94, clearLow: 0.12,
+  focus: 0.92, back: 3.5, up: 0.70, ahead: 1.6, lookUp: 0.05, fov: 46, near: 0.08, dist: [2.5, 6.0], pitch: [-0.10, 1.05], yawPx: 0.005, pitchPx: 0.003, recentre: 0.4, camClear: 0.12,
+  sub: 1 / 60, maxFrame: 0.12, stopAngle: 60 * Math.PI / 180, band: 0.6, passes: 4, pushGrade: [0.15, 0.12],
+};
+CFG.pitch0 = Math.atan2(CFG.up, CFG.back);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v), sgn = v => (v < 0 ? -1 : 1), smooth = t => t * t * (3 - 2 * t);
+// the speed cap of a surface (THIRD_PERSON_ROAM_PLAN 6.13.1), true m/s
+function capOf(q) {
+  if (!q) return CFG.cruise;
+  switch (q.kind) {
+    case 'stairs': return CFG.push;
+    case 'snow': return 3.0;
+    case 'boardwalk': return 2.5;
+    case 'alley': return 3.5;
+    case 'sidewalk': case 'band': case 'ramp': case 'walkway': case 'apron': case 'site': return 2.0;
+    case 'driveway': return /^A0/.test(q.town || '') ? 3.5 : 2.0;
+    default: return q.cls === 'RD05' ? 3.5 : CFG.cruise;       // carriageway, shoulder, deck, junction (RD05 roads 3.5)
+  }
+}
+// closest points of segments p0-p1 and q0-q1 (2D): [s on p, t on q]
+function segSeg(p0x, p0z, p1x, p1z, q0x, q0z, q1x, q1z) {
+  const dx = p1x - p0x, dz = p1z - p0z, ex = q1x - q0x, ez = q1z - q0z, rx = p0x - q0x, rz = p0z - q0z, a = dx * dx + dz * dz, e = ex * ex + ez * ez, f = ex * rx + ez * rz;
+  let s, t;
+  if (a < 1e-12 && e < 1e-12) return [0, 0];
+  if (a < 1e-12) { s = 0; t = clamp(f / e, 0, 1); }
+  else { const c = dx * rx + dz * rz; if (e < 1e-12) { t = 0; s = clamp(-c / a, 0, 1); } else { const b = dx * ex + dz * ez, den = a * e - b * b; s = den > 1e-12 ? clamp((b * f - c * e) / den, 0, 1) : 0; t = (b * s + f) / e; if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); } else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); } } }
+  return [s, t];
+}
+
+// ctx = { ground, world: ride_world }
+function create(ctx) {
+  const G = ctx.ground, Wd = ctx.world, now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const st = { active: false, x: 0, z: 0, y: 0, heading: 0, speed: 0, steerCmd: 0, s: 1, sample: null, yF: 0, yB: 0, root: 0, pitch: 0, mode: 'ride', stopT: 0,
+    lookYaw: 0, lookPitch: CFG.pitch0, dist: CFG.back, recentre: null, contact: null, pen: 0, wraps: 0, rejected: 0, offSurface: 0, ms: 0, spawn: null, onWrap: null, throttle: 0, steer: 0, cap: CFG.cruise };
+  const at = (x, z, y) => G.at(x, z, y == null ? undefined : { y });
+  // a surface on the rider's level only (the sampler gives the nearest in height even when that is a level below, e.g. a stair's foot under its gangway)
+  const atLevel = (x, z, y, s) => { const q = at(x, z, y); return q && Math.abs(q.y - y) <= 0.35 * s ? q : null; };
+  // the stairs' ends and RN12-01's gate (ground.links): within 1.6 m x s of one the rider is already off the bike, room to turn the carried bike to the stairs
+  const stairEnds = G.links().filter(l => l.kind === 'stair-end' || l.kind === 'gate'), PER = G.PERIOD, wdx = d => d - PER * Math.round(d / PER);
+  // the capsule at (x, z), heading f, pushed out of what it overlaps; (px, pz) the centre before the move decides which side of a one-sided record the rider is on
+  function resolve(x, z, fx, fz, s, y, px, pz) {
+    const r = CFG.radius * s, hl = st.carry ? 0 : CFG.half * s, near = Wd.near(x, z, y, hl + r + 0.75 * s, CFG.band * s);
+    const recs = [], obs = [];
+    // a record applies when the axis before the move lies on its free side (the far face of a two-sided curb is never the rider's)
+    const o0x = px - fx * hl, o0z = pz - fz * hl, o1x = px + fx * hl, o1z = pz + fz * hl;
+    for (const q of near.records) { const [a, b] = segSeg(o0x, o0z, o1x, o1z, q.ax, q.az, q.bx, q.bz), wx = o0x + (o1x - o0x) * a - (q.ax + (q.bx - q.ax) * b), wz = o0z + (o1z - o0z) * a - (q.az + (q.bz - q.az) * b);
+      if (wx * q.nx + wz * q.nz > -0.5 * r) recs.push(q); }
+    for (const o of near.obstacles) if (o.y1 > y + CFG.clearLow * s && o.y0 < y + CFG.height * s) obs.push(o);
+    let first = null, pen = 0;
+    const deepest = () => {
+      const p0x = x - fx * hl, p0z = z - fz * hl, p1x = x + fx * hl, p1z = z + fz * hl; let best = null;
+      const take = (p, nx, nz, what) => { if (p > 1e-6 && (!best || p > best.pen)) best = { pen: p, nx, nz, what }; };
+      for (const q of recs) {
+        const [a, b] = segSeg(p0x, p0z, p1x, p1z, q.ax, q.az, q.bx, q.bz), ax = p0x + (p1x - p0x) * a, az = p0z + (p1z - p0z) * a, bx = q.ax + (q.bx - q.ax) * b, bz = q.az + (q.bz - q.az) * b;
+        const wx = ax - bx, wz = az - bz, d = Math.hypot(wx, wz), sd = wx * q.nx + wz * q.nz, end = b <= 1e-6 || b >= 1 - 1e-6;
+        if (end) { if (d < r) take(r - d, d > 1e-9 ? wx / d : q.nx, d > 1e-9 ? wz / d : q.nz, q); }
+        else if (sd >= 0) { if (d < r) take(r - d, q.nx, q.nz, q); }
+        else take(r - sd, q.nx, q.nz, q);
+      }
+      for (const o of obs) {
+        if (o.c || o.seg) { const sx = o.c ? o.c[0] : o.seg[0], sz = o.c ? o.c[1] : o.seg[1], ex = o.c ? o.c[0] : o.seg[2], ez = o.c ? o.c[1] : o.seg[3], [a, b] = segSeg(p0x, p0z, p1x, p1z, sx, sz, ex, ez);
+          const wx = p0x + (p1x - p0x) * a - (sx + (ex - sx) * b), wz = p0z + (p1z - p0z) * a - (sz + (ez - sz) * b), d = Math.hypot(wx, wz), rr = r + o.r * 1;
+          if (d < rr) take(rr - d, d > 1e-9 ? wx / d : -fx, d > 1e-9 ? wz / d : -fz, o); continue; }
+        // a box (convex, counter-clockwise in x/z as stored): outside -> the nearest feature; crossing -> the edge with the least overlap
+        const P = o.pts, n = P.length; let inside = true, dmin = Infinity, best2 = null;
+        for (let i = 0; i < n; i++) { const A = P[i], B = P[(i + 1) % n], [a, b] = segSeg(p0x, p0z, p1x, p1z, A[0], A[1], B[0], B[1]), wx = p0x + (p1x - p0x) * a - (A[0] + (B[0] - A[0]) * b), wz = p0z + (p1z - p0z) * a - (A[1] + (B[1] - A[1]) * b), d = Math.hypot(wx, wz);
+          if (d < dmin) { dmin = d; best2 = [wx, wz]; } const ex = B[0] - A[0], ez = B[1] - A[1], onx = ez, onz = -ex; if ((x - A[0]) * onx + (z - A[1]) * onz > 0) inside = false; }
+        const crossing = dmin < 1e-9 || inside;
+        if (!crossing) { if (dmin < r) take(r - dmin, best2[0] / dmin, best2[1] / dmin, o); continue; }
+        let bo = Infinity, bn = null;
+        for (let i = 0; i < n; i++) { const A = P[i], B = P[(i + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], l = Math.hypot(ex, ez) || 1, nx = ez / l, nz = -ex / l, e = A[0] * nx + A[1] * nz, cmin = Math.min(p0x * nx + p0z * nz, p1x * nx + p1z * nz) - r, ov = e - cmin; if (ov < bo) { bo = ov; bn = [nx, nz]; } }
+        take(bo, bn[0], bn[1], o);
+      }
+      return best;
+    };
+    for (let k = 0; k < CFG.passes; k++) { const b = deepest(); if (!b) break; x += b.nx * (b.pen + 1e-5 * s); z += b.nz * (b.pen + 1e-5 * s); if (!first) first = b; }
+    const left = deepest(); pen = left ? left.pen : 0;
+    return { x, z, contact: first, pen };
+  }
+  const stepTol = (a, b, move, s) => (((a && a.kind === 'stairs') || (b && b.kind === 'stairs') ? 0.26 : (a && a.kind === 'boardwalk') || (b && b.kind === 'boardwalk') ? 0.17 : 0.06) + 0.16 * move) * s;
+  function wheels() {
+    const s = st.s, fx = Math.sin(st.heading), fz = Math.cos(st.heading), h = CFG.wheelbase / 2 * s;
+    const qf = atLevel(st.x + fx * h, st.z + fz * h, st.y, s), qb = atLevel(st.x - fx * h, st.z - fz * h, st.y, s);
+    st.yF = qf ? qf.y : st.y; st.yB = qb ? qb.y : st.y; st.root = (st.yF + st.yB) / 2; st.pitch = Math.atan2(st.yF - st.yB, CFG.wheelbase * s);
+    st.qF = qf; st.qB = qb;
+  }
+  function modeOf(q) {
+    if (!q) return st.mode;
+    // off the bike as soon as its front (or, backing, its rear) reaches the stairs: the bike is then carried and passes a stair's torii
+    if (q.kind === 'stairs' || (st.qF && st.qF.kind === 'stairs') || (st.qB && st.qB.kind === 'stairs')) return 'push';
+    { const s = st.s, fx = Math.sin(st.heading), fz = Math.cos(st.heading), e = (CFG.half + CFG.radius + 0.05) * s, a = atLevel(st.x + fx * e, st.z + fz * e, st.y, s), b = atLevel(st.x - fx * e, st.z - fz * e, st.y, s);
+      const nearEnd = stairEnds.some(l => Math.abs(wdx(l.x - st.x)) < 1.6 * s && Math.abs(l.z - st.z) < 1.6 * s && Math.hypot(wdx(l.x - st.x), l.z - st.z) < 1.6 * s && Math.abs(G.at(l.x, l.z, { y: st.y }) ? G.at(l.x, l.z, { y: st.y }).y - st.y : 1) < 0.5 * s);
+      if ((a && a.kind === 'stairs') || (b && b.kind === 'stairs') || nearEnd) { st.nearStair = true; return 'push'; } st.nearStair = false; }
+    if (q.kind !== 'boardwalk') return 'ride';
+    const s = st.s, fx = Math.sin(st.heading), fz = Math.cos(st.heading), a = atLevel(st.x + fx * s, st.z + fz * s, st.y, s), b = atLevel(st.x - fx * s, st.z - fz * s, st.y, s);
+    const grade = a && b ? Math.abs(a.alt - b.alt) / 2 : 0;
+    return grade > CFG.pushGrade[0] || (st.mode === 'push' && grade > CFG.pushGrade[1]) ? 'push' : 'ride';
+  }
+  function sub(dt, thr, steer) {
+    st.steerCmd += (steer - st.steerCmd) * (1 - Math.exp(-CFG.steerLambda * dt));
+    const s = st.s, cap = st.mode === 'push' ? CFG.push : capOf(st.sample); st.cap = cap;
+    let v = st.speed;
+    if (thr > 1e-3) { st.stopT = 0; if (v < -1e-6) v = Math.min(0, v + CFG.brake * dt); else { const vt = thr * cap; if (v < vt) v = Math.min(vt, v + CFG.accel * dt); else if (v > vt && v <= cap) v = Math.max(vt, v - CFG.coast * dt); } }
+    else if (thr < -1e-3) {
+      if (v > 1e-6) { st.stopT = 0; v = Math.max(0, v - CFG.brake * -thr * dt); }
+      else { st.stopT += dt; const want = -thr > 0.5 && st.stopT >= CFG.reverseDelay ? -CFG.reverse * Math.min(1, (-thr - 0.5) / 0.4) : 0; if (v > want) v = Math.max(want, v - CFG.accel * dt); else if (v < want) v = Math.min(want, v + CFG.brake * dt); }
+    } else { st.stopT = 0; v = v > 0 ? Math.max(0, v - CFG.coast * dt) : Math.min(0, v + CFG.coast * dt); }
+    if (v > cap) v = Math.max(cap, v - CFG.capDecel * dt);
+    if (v < -CFG.reverse) v = -CFG.reverse;
+    // look ahead: a slower surface within the distance the cap deceleration needs is approached at the speed that reaches its cap at its edge
+    if (v > CFG.push + 0.05) { const fx = Math.sin(st.heading), fz = Math.cos(st.heading), lead = (CFG.half + CFG.radius) * s;
+      for (const target of [CFG.push, 2.0]) { if (v <= target) continue; const dd = (v * v - target * target) / (2 * CFG.capDecel), q = atLevel(st.x + fx * (lead / s + dd) * s, st.z + fz * (lead / s + dd) * s, st.y, s); if (!q) continue;
+        const c = capOf(q); if (c < v) { const allow = Math.sqrt(c * c + 2 * CFG.capDecel * dd * 0.5); if (v > allow) v = Math.max(allow, v - CFG.capDecel * dt); } } }
+    // heading
+    const av = Math.abs(v), b = Math.min(1, av / CFG.pivotBelow), wm = Math.min(Math.max(av, 0.5) / CFG.rMin, CFG.latMax / Math.max(av, 0.5));
+    st.heading -= st.steerCmd * ((1 - b) * CFG.pivot + b * wm * sgn(v)) * dt;
+    // the move
+    const fx = Math.sin(st.heading), fz = Math.cos(st.heading), d = v * dt * s, tx = st.x + fx * d, tz = st.z + fz * d;
+    const res = resolve(tx, tz, fx, fz, s, st.y, st.x, st.z);
+    st.contact = res.contact ? { nx: res.contact.nx, nz: res.contact.nz, type: res.contact.what.type || 'obstacle', src: res.contact.what.src } : null; st.pen = res.pen / s;
+    if (res.contact && Math.abs(v) > 1e-6) {
+      const m = sgn(v), dot = (fx * res.contact.nx + fz * res.contact.nz) * m;
+      if (dot < -1e-6) { const th = Math.asin(Math.min(1, -dot));
+        if (th > CFG.stopAngle) v = 0;
+        else { const tX = m * fx - dot * res.contact.nx, tZ = m * fz - dot * res.contact.nz, l = Math.hypot(tX, tZ); if (l > 1e-9) { v *= Math.cos(th); st.heading = Math.atan2(m * tX / l, m * tZ / l); } } }
+    }
+    const q = at(res.x, res.z, st.y), move = Math.hypot(res.x - st.x, res.z - st.z) / s;
+    if (!q || Math.abs(q.y - st.y) > stepTol(st.sample, q, move, s) || res.pen > 0.05 * s) { st.rejected++; if (!q) st.offSurface++; st.speed = 0; return; }
+    const wrap = q.x - res.x;
+    st.x = q.x; st.z = q.z; st.y = q.y; st.s = q.s; st.sample = q; st.speed = v;
+    if (Math.abs(wrap) > 1) { st.wraps++; if (st.onWrap) st.onWrap(wrap); }
+    wheels(); st.mode = modeOf(q); st.carry = st.mode === 'push' && ([q, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair);
+  }
+  const api = {
+    CFG, capOf, state: st,
+    // place the rider at (x, z) (display frame or any), heading h; on the layer nearest y if given
+    place(x, z, heading, opt = {}) {
+      // a given line's own surface first (a spawn at a road's end that an I9 site overlaps stays on the road)
+      const own = opt.line ? G.layers(x, z).find(c => c.line === opt.line && (!opt.layer || c.layer === opt.layer)) : null;
+      const q = own || (opt.y != null ? at(x, z, opt.y) : opt.layer ? G.at(x, z, { layer: opt.layer }) : at(x, z));
+      if (!q) return null;
+      Wd.prefetch(q.x, q.z, 3 * CFG.back * q.s);
+      st.x = q.x; st.z = q.z; st.y = q.y; st.s = q.s; st.sample = q; st.heading = heading ?? st.heading; st.speed = opt.speed || 0; st.steerCmd = 0; st.stopT = 0; st.contact = null;
+      const fx = Math.sin(st.heading), fz = Math.cos(st.heading), res = resolve(st.x, st.z, fx, fz, st.s, st.y, st.x, st.z), q2 = (own && G.layers(res.x, res.z).find(c => c.line === own.line && c.layer === own.layer)) || at(res.x, res.z, st.y);
+      if (q2) { st.x = q2.x; st.z = q2.z; st.y = q2.y; st.s = q2.s; st.sample = q2; }
+      wheels(); st.mode = modeOf(st.sample); st.carry = st.mode === 'push' && ([st.sample, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair); return st.sample;
+    },
+    // start riding for a free view target (I8 spawn, 6.3); returns the spawn
+    enter(tx, tz, dir) {
+      const sp = G.spawn(tx, tz, dir); if (!sp) return null;
+      if (!api.townReady) { api.townMs = Wd.prepareTown(); api.townReady = true; }
+      st.active = true; st.lookYaw = 0; st.lookPitch = CFG.pitch0; st.dist = CFG.back; st.recentre = null; st.wraps = 0; st.rejected = 0; st.offSurface = 0;
+      api.place(sp.x, sp.z, sp.heading, { layer: sp.layer, line: sp.line });
+      st.spawn = { x: sp.x, z: sp.z, heading: sp.heading, distance: sp.distance, line: sp.line, edge: sp.edge, route: sp.route, kind: sp.kind, from: sp.from };
+      return st.spawn;
+    },
+    exit() { st.active = false; st.speed = 0; st.steerCmd = 0; st.throttle = 0; st.steer = 0; st.recentre = null; },
+    // advance by elapsed seconds with { throttle, steer } (the frame is cut to 0.12 s and into substeps of <= 1/60 s)
+    step(elapsed, input = {}) {
+      const t0 = now(), total = Math.min(CFG.maxFrame, Math.max(0, elapsed)), n = Math.max(1, Math.ceil(total / CFG.sub - 1e-9)), dt = total / n;
+      const thr = clamp(input.throttle || 0, -1, 1), steer = clamp(input.steer || 0, -1, 1); st.throttle = thr; st.steer = steer;
+      if (total > 0) for (let i = 0; i < n; i++) sub(dt, thr, steer);
+      if (st.recentre) { st.recentre.t = Math.min(1, st.recentre.t + total / CFG.recentre); const k = smooth(st.recentre.t); st.lookYaw = st.recentre.yaw * (1 - k); st.lookPitch = st.recentre.pitch + (CFG.pitch0 - st.recentre.pitch) * k; if (st.recentre.t >= 1) st.recentre = null; }
+      Wd.prefetch(st.x, st.z, 2.5 * CFG.back * st.s, 2);
+      st.ms = now() - t0; return st;
+    },
+    // look: a drag of (dx, dy) pixels (grab style: dragging right turns the view left, dragging down lifts the view), the wheel / pinch factor, recentre (C, double tap)
+    look(dx, dy) { st.recentre = null; st.lookYaw += dx * CFG.yawPx; st.lookPitch = clamp(st.lookPitch - dy * CFG.pitchPx, CFG.pitch[0], CFG.pitch[1]); },
+    zoom(f) { st.dist = clamp(st.dist * f, CFG.dist[0], CFG.dist[1]); },
+    recentre() { let y = st.lookYaw % (2 * Math.PI); if (y > Math.PI) y -= 2 * Math.PI; if (y < -Math.PI) y += 2 * Math.PI; st.lookYaw = y; st.recentre = { t: 0, yaw: y, pitch: st.lookPitch }; },
+    // the follow camera (R1): position, look point, focus (flat frame)
+    camera() {
+      const s = st.s, yaw = st.heading + st.lookYaw, dx = Math.sin(yaw), dz = Math.cos(yaw), fy = st.root + CFG.focus * s, Rc = st.dist / Math.cos(CFG.pitch0) * s, p = st.lookPitch;
+      const pos = [st.x - dx * Rc * Math.cos(p), fy + Rc * Math.sin(p), st.z - dz * Rc * Math.cos(p)];
+      const q = at(pos[0], pos[2], fy), gy = Math.max(q ? q.y : -Infinity, G.y(pos[0], pos[2]));
+      if (pos[1] < gy + CFG.camClear * s) pos[1] = gy + CFG.camClear * s;
+      return { position: pos, look: [st.x + dx * CFG.ahead * s, fy + CFG.lookUp * s, st.z + dz * CFG.ahead * s], focus: [st.x, fy, st.z], fov: CFG.fov, near: CFG.near };
+    },
+    get() {
+      const q = st.sample || {};
+      return { active: st.active, x: st.x, y: st.y, z: st.z, root: st.root, heading: st.heading, speed: st.speed, steerCmd: st.steerCmd, throttle: st.throttle, steer: st.steer, mode: st.mode, carry: !!st.carry, cap: st.cap, s: st.s,
+        kind: q.kind, layer: q.layer, line: q.line, edge: q.edge, route: q.route, cls: q.cls, town: q.town, slope: q.slope, wheels: [st.yF, st.yB], wheelKinds: [st.qF && st.qF.kind, st.qB && st.qB.kind], pitch: st.pitch,
+        contact: st.contact, pen: st.pen, lookYaw: st.lookYaw, lookPitch: st.lookPitch, dist: st.dist, wraps: st.wraps, rejected: st.rejected, offSurface: st.offSurface, ms: st.ms, spawn: st.spawn };
+    },
+    townReady: false, townMs: 0,
+  };
+  return api;
+}
+
+const RIDE = { create, CFG, capOf };
+if (typeof module !== 'undefined' && module.exports) module.exports = RIDE;
+else global.RIDE = RIDE;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -23194,42 +23615,53 @@ function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)r
 function shiftTarget(wx,wz){target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));const x=target.x+wx;target.x=TR.mode==='sphere'?BEND.wrapX(x):Math.max(TR.xMin,Math.min(TR.xMax,x));}
 
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
-// W10f (W10_SPEC 2.8): one walk on the whole flat map. It stands on the walkable surfaces of the one ground sampler (ground.js: the roads with their shoulders, the
-// bridge decks, stairs and boardwalk, the town's carriageways, alleys, pavements, ramps, the walkway and the bus aprons) with the W9a pace and eye in true metres,
-// times the display scale s of the surface under it (1 in the town frame): 1.5 m/s, the eye 1.62 m above the ground under the camera, 3.1 m behind the walker, the
-// look point 1.28 m up and 4 m ahead. A step goes on to the layer nearest the walker's height (a deck stays a deck, a tunnel a tunnel) and climbs at most 0.25 m (a curb,
-// a stair riser); a blocked step slides along x or z. The camera stays over the walkable surface (pulled in where the surface behind ends). Entering starts at the
-// nearest carriageway to the view target (ground.spawn); the free view's target, yaw, pitch and distance are kept for the way back.
-const WALK={speed:1.5,eye:1.62,look:1.28,back:3.1,ahead:4,climb:.25,sub:.25};
-let ground=null,roamButton=null,joystickValue=[0,0],lookPointer=null;
-const keys=new Set();
+// R1 (docs/world/THIRD_PERSON_ROAM_PLAN.md 6.2-6.6, 6.13): one roam, the ride (W10_SPEC 2.8). ride.js moves the rider on the walkable surfaces of the one ground sampler
+// (ground.js) and against ride_world.js's boundaries and obstacles; here: the keys, the touch stick, the look drags, the wheel and pinch, the follow camera and the state
+// changes. Enter (V, the button, view.set) from the free view's target: the nearest carriageway (ground.spawn), a hint when that is more than 2 m away, a 1 s blend from the
+// free camera (fov 36 -> 46, near 0.25 -> 0.08). Leave by V, Esc, the button or the sphere: the free view's target, yaw, pitch and distance are never changed while riding,
+// so they come back as they were. Blur, a hidden page or a cancelled pointer clears every input. The ride's data (ride_world.js) is made the first time a ride starts.
+let ground=null,ride=null,rideWorld=null,roamButton=null,joystickValue=[0,0],rideBlend=null,hintTimer=0;
+const keys=new Set(),MOVE_KEYS=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'],STICK_DEAD=.12;
 const roamAvailable=()=>!!ground&&TR.mode==='flat'&&BEND.get()===0&&!TR.animating;
+function ensureRide(){if(ride)return ride;rideWorld=RIDE_WORLD.attach({ground,L,roads:roads.data(),lamps:(streetlights.data()||{}).lamps||[],landmarkBoxes:landmarkSolids});
+  ride=RIDE.create({ground,world:rideWorld});ride.state.onWrap=shift=>{if(rideBlend){rideBlend.from.pos[0]+=shift;rideBlend.from.look[0]+=shift;}};return ride;}
+const smooth01=t=>t*t*(3-2*t);
 function setRoaming(enabled){if(enabled&&!roamAvailable())return;if(enabled===!!roam)return;
-  if(enabled){const sp=ground.spawn(target.x,target.z,[target.x-camera.position.x,target.z-camera.position.z]);if(!sp)return;
-    roam={position:new THREE.Vector3(sp.x,sp.y,sp.z),heading:sp.heading,lookPitch:0,sample:sp,spawn:{x:sp.x,z:sp.z,heading:sp.heading,distance:sp.distance,line:sp.line,edge:sp.edge},cameraPosition:new THREE.Vector3(),camSample:null,hasCameraPosition:false};
-    camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}
-  else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}
-  if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
-// one walk step: the surface at (x, z) on the walker's layer, if it is no higher or lower than a curb; x wraps into the flat map (the camera follows the wrap)
-function walkTo(x,z,y){const q=ground.at(x,z,{y});return q&&Math.abs(q.y-y)<=WALK.climb*q.s?q:null;}
-function roamStep(dt,[mx,mz]){const p=roam.position,h=roam.heading,fX=Math.sin(h),fZ=Math.cos(h),rX=-Math.cos(h),rZ=Math.sin(h),v=WALK.speed*roam.sample.s*dt,dx=(fX*mz+rX*mx)*v,dz=(fZ*mz+rZ*mx)*v,n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/(WALK.sub*roam.sample.s)));
-  for(let i=0;i<n;i++){const ax=dx/n,az=dz/n;let tx=p.x+ax,tz=p.z+az,q=walkTo(tx,tz,p.y);if(!q&&ax){tx=p.x+ax;tz=p.z;q=walkTo(tx,tz,p.y);}if(!q&&az){tx=p.x;tz=p.z+az;q=walkTo(tx,tz,p.y);}if(!q)break;
-    if(Math.abs(q.x-tx)>1)roam.cameraPosition.x+=q.x-tx;p.set(q.x,q.y,q.z);roam.sample=q;}}
-function roamCamera(dt){const p=roam.position,s=roam.sample.s,h=roam.heading,fX=Math.sin(h),fZ=Math.cos(h),c=roam.cameraPosition,reach=d=>WALK.climb*s+.15*d;let want=null;
-  for(const f of [1,.8,.6,.45,.3,.2,.1]){const d=WALK.back*s*f,q=ground.at(p.x-fX*d,p.z-fZ*d,{y:p.y});if(q&&Math.abs(q.y-p.y)<=reach(d)){want=q;break;}}
-  if(!want)want=roam.sample;
-  if(!roam.hasCameraPosition){c.x=want.x;c.z=want.z;roam.hasCameraPosition=true;}else{const k=1-Math.exp(-dt*5);c.x+=(want.x-c.x)*k;c.z+=(want.z-c.z)*k;}
-  let cq=ground.at(c.x,c.z,{y:p.y});if(!cq||Math.abs(cq.y-p.y)>reach(WALK.back*s)){c.x=want.x;c.z=want.z;cq=want;}
-  c.y=cq.y+WALK.eye*cq.s;roam.camSample=cq;camera.position.copy(c);const ad=WALK.ahead*s;camera.lookAt(p.x+fX*ad,p.y+WALK.look*s+Math.tan(roam.lookPitch)*ad,p.z+fZ*ad);}
+  if(enabled){ensureRide();const sp=ride.enter(target.x,target.z,[target.x-camera.position.x,target.z-camera.position.z]);if(!sp)return;
+    roam={position:new THREE.Vector3(ride.state.x,ride.state.root,ride.state.z)};rideBlend={t:0,from:{pos:camera.position.toArray(),look:lookTarget(0),fov:camera.fov,near:camera.near}};showHint(sp);}
+  else{ride.exit();roam=null;rideBlend=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();clearInput();}
+  if(roamButton){roamButton.textContent=roam?'自由视角  V':'骑行  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
-const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
-document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
+// 6.3 rule 5: the start is more than 2 m from the view target: say where the ride starts
+function spawnName(sp){const e=WORLD.roadNetwork.edges.find(q=>q.id===sp.edge);if(!e)return sp.line||'道路';const town=L.roads.find(r=>r.id===e.source||r.id===e.id);if(town)return(town.name||town.id)+'（'+e.id+'）';
+  const lm=[e.from,e.to].map(id=>WORLD.roadNetwork.nodeById[id]).find(n=>n&&n.landmark),lmName=lm?(WORLD.landmarks.find(q=>q.id===lm.landmark)||{}).name:null;return e.route+'（'+e.id+(lmName?' · '+lmName:'')+'）';}
+function showHint(sp){const d=sp.distance/(ride.state.s||1);if(d<=2){hint.style.display='none';return;}hint.textContent=`从最近的道路出发：${spawnName(sp)}，${d<10?d.toFixed(1):Math.round(d)} m`;hint.style.display='block';clearTimeout(hintTimer);hintTimer=setTimeout(()=>{hint.style.display='none';},3000);}
+// the ride's input: throttle (W/up, S/down, the stick's vertical) and steer (D/right, A/left, the stick's horizontal; the stick past a 0.12 dead zone, then linear), added and clipped
+const dead=v=>Math.abs(v)<STICK_DEAD?0:Math.sign(v)*(Math.abs(v)-STICK_DEAD)/(1-STICK_DEAD);
+function rideInput(){const c=v=>Math.max(-1,Math.min(1,v));return{throttle:c((keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+dead(joystickValue[1])),steer:c((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+dead(joystickValue[0]))};}
+// the follow camera of the ride (ride.camera()), blended from the free camera for the first second
+function rideCamera(dt){const c=ride.camera(),st=ride.state;roam.position.set(st.x,st.root,st.z);let pos=c.position,look=c.look,fov=c.fov,near=c.near;
+  if(rideBlend){rideBlend.t=Math.min(1,rideBlend.t+dt/1.0);const k=smooth01(rideBlend.t),f=rideBlend.from,mix=(a,b)=>a.map((v,i)=>v+(b[i]-v)*k);pos=mix(f.pos,pos);look=mix(f.look,look);fov=f.fov+(fov-f.fov)*k;near=f.near+(near-f.near)*k;if(rideBlend.t>=1)rideBlend=null;}
+  camera.position.set(pos[0],pos[1],pos[2]);if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(look[0],look[1],look[2]);
+  if(camera.fov!==fov||camera.near!==near||camera.far!==400){camera.fov=fov;camera.near=near;camera.far=400;camera.updateProjectionMatrix();}}
+const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-view-toggle:disabled{opacity:.4;cursor:not-allowed}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}#ride-hint{position:fixed;z-index:5;left:50%;bottom:28px;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:7px 12px;border-radius:14px;background:rgba(23,34,49,.72);color:#e8e5d9;font:12px/1.4 system-ui,sans-serif;pointer-events:none;display:none;text-align:center}@media(pointer:coarse){#town-walk-stick{display:block}#ride-hint{bottom:146px}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
+document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='骑行  V';roamButton.title='切换骑行与自由视角';roamButton.setAttribute('aria-label','切换骑行与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
+const hint=document.createElement('div');hint.id='ride-hint';hint.setAttribute('role','status');document.body.appendChild(hint);
 const mapButton=document.createElement('button');mapButton.id='map-mode-toggle';mapButton.type='button';mapButton.textContent='球形地图';mapButton.setAttribute('aria-label','切换平面地图与球形地图');mapButton.setAttribute('aria-pressed','false');mapButton.style.cssText='position:fixed;z-index:5;top:54px;right:14px;padding:7px 11px;border:1px solid #81939c;border-radius:18px;background:#172231cc;color:#e8e5d9;cursor:pointer;font:12px system-ui';mapButton.addEventListener('click',()=>setMapMode(TR.mode==='flat'?'sphere':'flat'));document.body.appendChild(mapButton);
-const stick=document.createElement('div');stick.id='town-walk-stick';stick.setAttribute('aria-label','街景移动摇杆');const nub=document.createElement('div');nub.id='town-walk-nub';stick.appendChild(nub);document.body.appendChild(stick);let stickPointer=null;
+const stick=document.createElement('div');stick.id='town-walk-stick';stick.setAttribute('aria-label','骑行摇杆：上下前进与刹车，左右转向');const nub=document.createElement('div');nub.id='town-walk-nub';stick.appendChild(nub);document.body.appendChild(stick);let stickPointer=null;
 function updateStick(e){const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=33,k=len>max?max/len:1;joystickValue=[dx*k/max,-dy*k/max];nub.style.transform=`translate(${dx*k}px,${dy*k}px)`;}
-stick.addEventListener('pointerdown',e=>{if(!roam)return;stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);e.preventDefault();});stick.addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)updateStick(e);});for(const ev of ['pointerup','pointercancel'])stick.addEventListener(ev,e=>{if(e.pointerId===stickPointer){stickPointer=null;joystickValue=[0,0];nub.style.transform='';}});
-const pointers=new Map();let last=null,pinch=0,mid=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(TR.mode==='sphere'&&!roam&&pointers.size===1)sphereCamera.begin(e.clientX,e.clientY,canvas.getBoundingClientRect());if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2&&!roam){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};dist=zoomUser(dist*pinch/d);pinch=d;if(TR.mode==='sphere'){sphereCamera.end();orbitSphere(m.x-mid.x,m.y-mid.y);}else pan(m.x-mid.x,m.y-mid.y);mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){roam.heading+=dx*.005;roam.lookPitch=Math.max(-.45,Math.min(.7,roam.lookPitch+dy*.003));}else if(TR.mode==='sphere'){if(e.buttons===2||e.shiftKey||e.ctrlKey){sphereCamera.end();orbitSphere(dx,dy);}else{sphereCamera.drag(e.clientX,e.clientY);syncSphereTarget();}}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);if(TR.mode==='sphere')sphereCamera.end();last=null;if(TR.mode==='sphere'&&pointers.size===1){last={...[...pointers.values()][0]};sphereCamera.begin(last.x,last.y,canvas.getBoundingClientRect());}if(roam)canvas.style.cursor='grab';});canvas.addEventListener('wheel',e=>{if(roam)return;e.preventDefault();dist=zoomUser(dist*Math.exp(e.deltaY*.001));},{passive:false});
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(!e.repeat&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);e.preventDefault();}});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',()=>keys.clear());
+function stickReset(){stickPointer=null;joystickValue=[0,0];nub.style.transform='';}
+stick.addEventListener('pointerdown',e=>{if(!roam)return;stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);e.preventDefault();});stick.addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)updateStick(e);});for(const ev of ['pointerup','pointercancel','lostpointercapture'])stick.addEventListener(ev,e=>{if(e.pointerId===stickPointer)stickReset();});
+// riding: one pointer drags the look (grab style), two pinch the follow distance, the wheel too; a double click or double tap recentres the look
+const pointers=new Map();let last=null,pinch=0,mid=null,tap=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());
+function clearInput(){keys.clear();stickReset();pointers.clear();last=null;tap=null;}
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(roam&&pointers.size===1){const t=performance.now(),dbl=tap&&t-tap.t<320&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<24;tap=dbl?null:{t,x:e.clientX,y:e.clientY,moved:0};if(dbl)ride.recentre();}if(TR.mode==='sphere'&&!roam&&pointers.size===1)sphereCamera.begin(e.clientX,e.clientY,canvas.getBoundingClientRect());if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});
+canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};if(roam){if(d>1)ride.zoom(pinch/d);}else{dist=zoomUser(dist*pinch/d);if(TR.mode==='sphere'){sphereCamera.end();orbitSphere(m.x-mid.x,m.y-mid.y);}else pan(m.x-mid.x,m.y-mid.y);}pinch=d;mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){ride.look(dx,dy);if(tap)tap.moved+=Math.abs(dx)+Math.abs(dy);}else if(TR.mode==='sphere'){if(e.buttons===2||e.shiftKey||e.ctrlKey){sphereCamera.end();orbitSphere(dx,dy);}else{sphereCamera.drag(e.clientX,e.clientY);syncSphereTarget();}}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});
+for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);if(ev==='pointercancel'){tap=null;}if(tap&&tap.moved>24)tap=null;if(TR.mode==='sphere')sphereCamera.end();last=null;if(pointers.size===1){last={...[...pointers.values()][0]};if(TR.mode==='sphere')sphereCamera.begin(last.x,last.y,canvas.getBoundingClientRect());}if(roam)canvas.style.cursor='grab';});
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(roam){ride.zoom(Math.exp(e.deltaY*.001));return;}dist=zoomUser(dist*Math.exp(e.deltaY*.001));},{passive:false});
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(e.metaKey||e.ctrlKey||e.altKey)return;if(!e.repeat&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(roam&&k==='c'){if(!e.repeat)ride.recentre();e.preventDefault();return;}if(MOVE_KEYS.includes(k)){keys.add(k);e.preventDefault();}});
+addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput();});
+// the free view's pan keys and stick (WASD / arrows)
 function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+joystickValue[0],z=(keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+joystickValue[1],m=Math.hypot(x,z);if(m>1){x/=m;z/=m;}return[x,z];}
 // Planet landmarks (W7): landmarks/<id>.js registers LANDMARKS[id](kit, record) and draws in its own local frame (origin = site anchor, +Z towards the first entrance,
 // +X to the left of +Z, 1 unit = 1 m). They are built at start-up (worldgen.js; inside the terrain's private random stream, so the town's rain is untouched) and
@@ -23240,6 +23672,16 @@ function movement(){let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has(
 // W8g-a: a stepped build (TERRAIN.job, one private stream for all of them as before), one step per landmark; between steps the town's own seed and root are back.
 // W10a: each module group is baked with tint (bake above): one batch per texture for the plain colours, so the landmarks cost 172 draw calls instead of 445.
 const landmarkGroups=[],landmarkFx=[],landmarkInfo={};
+// R1 (I4, and the camera's occluders in R2; THIRD_PERSON_ROAM_PLAN 6.13.2): the box of every solid mesh of a landmark (opaque, not the ground groups, not live), taken in the
+// landmark's local frame before baking along the mesh's own horizontal axes, then mapped like the vertices (four corners and the height range); no THREE object is made
+const landmarkSolids=[];
+function solidBoxes(g){const out=[];g.traverse(o=>{if(!o.isMesh||o.isInstancedMesh||!o.geometry||!o.geometry.attributes.position)return;const m=o.material;if(!m||Array.isArray(m)||m.transparent||m.isMeshBasicMaterial)return;
+  for(let p=o;p&&p!==g;p=p.parent)if(p.userData.live)return;
+  const gm=o.geometry;if(!gm.boundingBox)gm.computeBoundingBox();const b=gm.boundingBox,M=o.matrixWorld.elements;let ux=M[0],uz=M[2],ul=Math.hypot(ux,uz);if(ul<1e-6){ux=M[8];uz=M[10];ul=Math.hypot(ux,uz)||1;}ux/=ul;uz/=ul;
+  const q={u:[ux,uz],v:[-uz,ux],u0:Infinity,u1:-Infinity,v0:Infinity,v1:-Infinity,y0:Infinity,y1:-Infinity};
+  for(let i=0;i<8;i++){const x=i&1?b.max.x:b.min.x,y=i&2?b.max.y:b.min.y,z=i&4?b.max.z:b.min.z,wx=M[0]*x+M[4]*y+M[8]*z+M[12],wy=M[1]*x+M[5]*y+M[9]*z+M[13],wz=M[2]*x+M[6]*y+M[10]*z+M[14],u=wx*q.u[0]+wz*q.u[1],v=wx*q.v[0]+wz*q.v[1];
+    if(u<q.u0)q.u0=u;if(u>q.u1)q.u1=u;if(v<q.v0)q.v0=v;if(v>q.v1)q.v1=v;if(wy<q.y0)q.y0=wy;if(wy>q.y1)q.y1=wy;}
+  out.push(q);});return out;}
 const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD=Math.PI/180;let k=0;
     for(const lm of WO.landmarks){if(lm.id==='TOWN')continue;const build=(globalThis.LANDMARKS||{})[lm.id];if(!build)continue;
       const before=new Set(Object.keys(groups));seed=424242+37*(++k);const fx=build(landmarkKit,lm);let roadGroundCut=null;
@@ -23269,6 +23711,8 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
           const w=new THREE.Group();w.name=name+':live';w.position.set(m[0],m[1],m[2]);w.rotation.y=th;w.scale.set(m[3]*m[4],m[3],m[3]*m[4]);
           // keep the object's own orientation and place it at the wrapper origin
           const q=new THREE.Quaternion();o.getWorldQuaternion(q);const sc=new THREE.Vector3();o.getWorldScale(sc);o.parent.remove(o);o.position.set(0,0,0);o.quaternion.copy(q);o.scale.copy(sc);w.add(o);scene.add(w);return w;});
+        if(!/(?:Ground|Platform|Sando|Ice|Island|Land)$/.test(name))for(const q of solidBoxes(g)){const cx=(q.u0+q.u1)/2,cz=(q.v0+q.v1)/2,at=(u,v)=>{const m=map(u*q.u[0]+v*q.v[0],q.y0,u*q.u[1]+v*q.v[1]);return[m[0],m[2]];},c=[cx*q.u[0]+cz*q.v[0],cx*q.u[1]+cz*q.v[1]];
+          landmarkSolids.push({lm:lm.id,group:name,pts:[at(q.u0,q.v0),at(q.u1,q.v0),at(q.u1,q.v1),at(q.u0,q.v1)],y0:map(c[0],q.y0,c[1])[1],y1:map(c[0],q.y1,c[1])[1]});}
         bake(g,true);g.traverse(o=>{if((o.isMesh||o.isLineSegments)&&o.geometry&&o.geometry.attributes.position&&!o.userData.warped){o.userData.warped=true;warp(o);}});
         if(/(?:Ground|Platform|Sando|Ice)$/.test(name))g.traverse(o=>{if(o.isMesh)o.userData.groundOccupancy=true;});
         if(terrain.cutGroundMeshes&&(/^(lm02Ground|lm04Sando|lm09Ground|lm09Platform|lm07Ice)$/.test(name))){const surfaces=[];g.traverse(o=>{if(o.isMesh&&o.geometry?.userData?.local&&(name!=='lm07Ice'||o.userData.layer==='ice-overlay'))surfaces.push(o);});const yr=name==='lm07Ice'?[-1.5,0.2]:name==='lm09Platform'?[0.86,0.95]:[-0.08,0.16];roadGroundCut=terrain.cutGroundMeshes(surfaces,yr);}
@@ -23294,7 +23738,7 @@ function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the shown ground's altitude under it (ground.js; the sphere's radial direction under the camera)
 function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),want=R+ground.alt(lam/(Math.PI/180),phi/(Math.PI/180))+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
-if(roam){roamStep(elapsed,movement());roamCamera(elapsed);
+if(roam){ride.step(elapsed,rideInput());rideCamera(elapsed);
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
@@ -23353,7 +23797,7 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
 const surfaceOf=q=>({y:q.y,s:q.s,kind:q.kind,layer:q.layer,line:q.line,route:q.route,edge:q.edge,station:q.station,offset:q.offset,slope:q.slope});
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,walk:{config:WALK,step(dt,input){if(roam){roamStep(dt,input||[0,0]);roamCamera(dt);}return roam?window.__scene.view.get().roam:null;}},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch,surface:surfaceOf(roam.sample),camera:roam.camSample?surfaceOf(roam.camSample):null,spawn:roam.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){const q=ground.at(v.position[0],v.position[1]);if(q){roam.position.set(q.x,q.y,q.z);roam.sample=q;roam.hasCameraPosition=false;}}if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});rideCamera(dt);return ride.get();},camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:[ride.state.x,ride.state.root,ride.state.z],heading:ride.state.heading,lookYaw:ride.state.lookYaw,lookPitch:ride.state.lookPitch,dist:ride.state.dist,speed:ride.state.speed,mode:ride.state.mode,surface:ride.state.sample?surfaceOf(ride.state.sample):null,contact:ride.state.contact,spawn:ride.state.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){if(ride.place(v.position[0],v.position[1],v.heading??ride.state.heading)){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}}else if(v.heading!=null&&roam)ride.state.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

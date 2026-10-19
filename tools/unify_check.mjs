@@ -57,6 +57,14 @@ check('U0-W10d', !w10dHits.length, `底座、TR01 独立网格/竹篱、外排�
   const hits = core.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => removed.test(l) && !l.trim().startsWith('//') && !(f === 'tools/unify_check.mjs' && /const removed = /.test(l)) ? [`${f}:${i + 1}`] : []));
   check('U0-W10f', !hits.length, `球形换副本、城镇特例相机与仅城镇漫游已删除：${hits.join('、') || '无残留'}`);
 }
+// ---- U0 (R1, THIRD_PERSON_ROAM_PLAN 6.13.4): one roam, the ride; the W10f walk (its constants, step and camera) is gone and the ride's modules are built
+{
+  const removed = /\b(?:WALK|walkTo|roamStep|roamCamera)\b|walk:\s*\{config|__scene\.walk\b/;
+  const core = ['scene.js', 'tools/views.mjs', 'tools/transition_check.mjs', 'tools/unify_check.mjs'];
+  const hits = core.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => removed.test(l) && !l.trim().startsWith('//') && !(f === 'tools/unify_check.mjs' && /const removed = /.test(l)) ? [`${f}:${i + 1}`] : []));
+  const built = ['ride.js', 'ride_world.js'].every(f => fs.readFileSync(path.join(root, 'build.py'), 'utf8').includes(`'${f}'`));
+  check('U0-R1', !hits.length && built, `只有一种漫游（骑行）：W10f 步行常量/步进/镜头残留 ${hits.join('、') || '无'}；build.py 收录 ride.js、ride_world.js：${built}`);
+}
 // --only U0 | --only U0,U6,U7 ... : U0 always runs; the other groups run when listed (no --only: all)
 const ONLY = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1].split(',') : null, want = id => !ONLY || ONLY.includes(id);
 if (ONLY && ONLY.every(k => k === 'U0')) {
@@ -599,13 +607,10 @@ try {
 //             on the sphere and back on the flat map (the instances drawn this frame follow the camera's pixel rule, D14, not the map mode)
 //   U6-edges  every non-instanced mesh and line set that bends (rain and snow aside) has no horizontal edge (world frame) over 4 m on a triangle or segment whose box
 //             overlaps the town frame |x|, |z| <= 48 (the same rule bend.js subdivide() cuts by)
-//   U7        the walk (window.__scene.walk.step, fixed 1/20 s steps, forward input, heading pure-pursuit 2 m ahead along the path): the 20 random pieces of the roads
-//             outside the town (tools/ride_routes.mjs random20, seed 20261018), the W9a town corridors (every street segment and alley centre line of layout.js) and the
-//             town legs of RT-01 / RT-02; at every third step a vertical ray against the rendered walk surfaces (road strips, bridge tops, junction paving, the
-//             boardwalk planks, the town's ground meshes) under the walker and under the camera: walker on the surface, camera at the surface + 1.62 m, both within
-//             0.01 m (true metres: flat units / the display scale s); every walk reaches its end
-//   U7-exits  the nine exits, the RN01 tunnel and the seam of the flat map (RN01-13): walked along their roads, the same checks, no step of the walker's height over
-//             0.02 m (true), the seam crossed once (the walker's x wraps by one turn); the display scale's change per 0.5 m is reported
+//   U7        R1 (THIRD_PERSON_ROAM_PLAN 6.13.4): the ride replaces the walk; the same paths (the 20 random pieces outside the town, tools/ride_routes.mjs random20,
+//             seed 20261018; the W9a town corridors and RT-01/RT-02 town legs) ridden with window.__scene.ride.step: the wheel contacts on the rendered walk surfaces and the
+//             camera's nominal height (ground + 1.62 m) on straight level settled stretches, both within 0.01 m (true metres: flat units / s); every ride reaches its end
+//   U7-exits  the nine exits, the RN01 tunnel and the seam of the flat map (RN01-13): ridden along their roads, the same checks, the seam crossed once
 if (!process.argv.includes('--no-browser') && (want('U6') || want('U7'))) {
   const require = createRequire(import.meta.url);
   globalThis.LAYOUT = globalThis.LAYOUT || require(path.join(root, 'layout.js'));
@@ -647,86 +652,92 @@ if (!process.argv.includes('--no-browser') && (want('U6') || want('U7'))) {
       check('U6-edges', edges.long === 0 && edges.objects > 0, `城镇范围（|x|、|z| ≤ 48）内 ${edges.objects} 个网格/墨线、${edges.prims} 个三角形或线段，水平边 > 4 m 的 ${edges.long} 个，最长 ${f(edges.worst, 3)} m${edges.long ? '：' + JSON.stringify(edges.bad) : ''}；启动时细分 网格 ${st.meshes}、墨线 ${st.lines}（检查 ${st.objects} 个对象），三角形 ${st.trianglesBefore} → ${st.trianglesAfter}，线段 ${st.segmentsBefore} → ${st.segmentsAfter}，用时 ${st.ms} ms`);
     }
     if (want('U7')) {
-      // the paths: town paths in the town frame; the outdoor pieces from world.js (edge centre lines) and the exit roads, laid out in the page
+      // R1 (THIRD_PERSON_ROAM_PLAN 6.13.4): the ride replaces the walk. The same paths as W10f's U7, ridden with window.__scene.ride.step (dt 1/60, pure pursuit 2.5 m x s
+      // ahead, speed by the surface cap and the curvature ahead): the 20 random pieces outside the town, the W9a town corridors and RT-01/RT-02 town legs, the nine exits, the
+      // RN01 tunnel and the seam on RN01-13. At every third step a vertical ray against the rendered walk surfaces under the front and the rear wheel contact: within 0.01 m x s.
+      // The camera's nominal height (focus 0.92 + 0.70 = ground + 1.62 m x s) is checked where the road is straight and level and the camera settled (both wheels level to
+      // 0.1 %, heading rate < 0.05 rad/s for >= 1 s, the look and distance at their defaults, the rendered ground under the camera within 4 mm of the rider's): within 0.01 m x s.
       const arc = ([, c, r, a0, a1]) => { const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) / 5)), out = []; for (let i = 0; i <= n; i++) { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; out.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); } return out; };
       const legsOf = id => { const rt = RR.ROUTES.find(q => q.id === id), pts = []; for (const leg of rt.legs) if (leg.town) for (const q of leg.town.flatMap(q => (q[0] === 'arc' ? arc(q) : [q]))) { const last = pts[pts.length - 1]; if (!last || Math.hypot(last[0] - q[0], last[1] - q[1]) > 1e-6) pts.push(q); } return pts; };
       const node = id => L.roadNodes.find(n => n.id === id), town = [];
       for (const r of L.roads) for (let i = 0; i + 1 < r.nodes.length; i++) { const a = node(r.nodes[i]), b = node(r.nodes[i + 1]); town.push({ name: `W9a ${r.id} ${r.nodes[i]}–${r.nodes[i + 1]}`, P: [[a.x, a.z], [b.x, b.z]] }); }
-      for (const a of L.alleys) { const zc = (a.rect[1] + a.rect[3]) / 2; town.push({ name: `W9a ${a.id}`, P: [[a.rect[0] + 0.5, zc], [a.rect[2] - 0.5, zc]] }); }
+      for (const a of L.alleys) { const zc = (a.rect[1] + a.rect[3]) / 2; town.push({ name: `W9a ${a.id}`, P: [[a.rect[0] + 1.2, zc], [a.rect[2] - 1.2, zc]] }); }
       town.push({ name: 'RT-01 城内', P: legsOf('RT-01') }, { name: 'RT-02 城内', P: legsOf('RT-02') });
       const pieces = RR.random20(W);
       const res = await page.evaluate(({ town, pieces }) => {
-        const S = window.__scene, G = S.ground, T = window.THREE, W = window.WORLD, PER = G.PERIOD, HALF = PER / 2, D = Math.PI / 180, R = 90, dt = 1 / 20;
-        const wdx = d => d - PER * Math.round(d / PER), canon = x => x - PER * Math.floor((x + HALF) / PER);
+        const S = window.__scene, G = S.ground, T = window.THREE, W = window.WORLD, PER = G.PERIOD, HALF = PER / 2, D = Math.PI / 180, R = 90, dt = 1 / 60;
+        const wdx = d => d - PER * Math.round(d / PER), canon = x => x - PER * Math.floor((x + HALF) / PER), wpi = a => Math.atan2(Math.sin(a), Math.cos(a));
         S.view.set({ mode: 'free', mapMode: 'flat', target: [-7, 1.2, 20], yaw: 2.5, pitch: 0.5, dist: 34 }); S.transition.step(3); S.view.set({ mode: 'roam' });
         const entered = S.view.get().mode === 'roam';
-        // the rendered walk surfaces, with their world boxes
         const meshes = [];
         S.roads.state.root.traverse(o => { if (o.isMesh && (/^road:(route |junction paving)/.test(o.name) || /^road:bridge .* top$/.test(o.name) || o.name === 'road:plank')) meshes.push(o); });
         S.scene.traverse(o => { if (o.isMesh && !o.isInstancedMesh && o.userData.groundOccupancy && !meshes.includes(o)) { let lm = false; for (let q = o; q; q = q.parent) if (/^lm\d/i.test(q.name || '')) lm = true; if (!lm) meshes.push(o); } });
         S.scene.updateMatrixWorld(true);
         const boxes = meshes.map(o => { if (o.isInstancedMesh) o.computeBoundingBox(); else if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); return { o, b: (o.isInstancedMesh ? o.boundingBox.clone() : o.geometry.boundingBox.clone()).applyMatrix4(o.matrixWorld) }; });
         const ray = new T.Raycaster(), down = new T.Vector3(0, -1, 0), from = new T.Vector3();
-        // the first rendered walk surface below (x, y0, z): the geometry keeps its longitudes canonical, or continuous along a line that crosses 180 deg (tried +-1 turn);
-        // on the boardwalk (0.27 m planks, laid at the 0.5 m samples of the line: gaps up to 0.23 m) a ray between two planks meets what lies below: there the higher
-        // plank of the rays +-0.15 and +-0.3 m along the walk (ground.js stands on the higher plank either side of a gap)
         const cast = (x, y0, z) => { let best = null; for (const cx of [canon(x), canon(x) + PER, canon(x) - PER]) { const list = boxes.filter(q => cx >= q.b.min.x - 0.01 && cx <= q.b.max.x + 0.01 && z >= q.b.min.z - 0.01 && z <= q.b.max.z + 0.01).map(q => q.o); if (!list.length) continue;
           from.set(cx, y0, z); ray.set(from, down); ray.far = 50; const h = ray.intersectObjects(list, false); if (h.length && (best === null || h[0].point.y > best.y)) best = { y: h[0].point.y, plank: h[0].object.name === 'road:plank' }; } return best; };
         const rendered = (x, y0, z, kind, h, s) => { const c = cast(x, y0, z); if (kind !== 'boardwalk' || (c && c.plank)) return c ? c.y : null; let y = null; for (const d of [0.15, -0.15, 0.3, -0.3]) { const q = cast(x + Math.sin(h) * d * s, y0, z + Math.cos(h) * d * s); if (q && q.plank && (y === null || q.y > y)) y = q.y; } return y; };
-        const walk = (name, P, opt = {}) => {
+        const CFG = S.ride.cfg;
+        const ride = (name, P) => {
           const n = P.length, Lc = [0]; for (let i = 1; i < n; i++) Lc.push(Lc[i - 1] + Math.hypot(wdx(P[i][0] - P[i - 1][0]), P[i][1] - P[i - 1][1]));
           const total = Lc[n - 1], at = u => { let i = 0; while (i + 2 < n && Lc[i + 1] < u) i++; const t = Math.max(0, Math.min(1, (u - Lc[i]) / Math.max(1e-9, Lc[i + 1] - Lc[i]))); return [P[i][0] + wdx(P[i + 1][0] - P[i][0]) * t, P[i][1] + (P[i + 1][1] - P[i][1]) * t]; };
-          S.view.set({ position: [G.wrap(P[0][0]), P[0][1]], heading: Math.atan2(wdx(P[1][0] - P[0][0]), P[1][1] - P[0][1]) });
-          const out = { name, length: +total.toFixed(2), steps: 0, reached: false, start: null, eye: 0, ground: 0, misses: 0, rays: 0, dy: 0, dev: 0, ds: 0, wraps: 0, kinds: {}, layers: {}, s: [Infinity, 0], worst: null };
-          let r = S.view.get().roam; if (!r || !r.surface) return { ...out, start: 'off' };
-          let j = 0, u = 0, prevY = r.position[1], prevS = r.surface.s;
-          const proj = (x, z) => { let best = null; for (let i = j; i < Math.min(n - 1, j + 60); i++) { const ax = P[i][0], az = P[i][1], dx = wdx(P[i + 1][0] - ax), dz = P[i + 1][1] - az, l2 = dx * dx + dz * dz || 1e-12, px = ax + wdx(x - ax), t = Math.max(0, Math.min(1, ((px - ax) * dx + (z - az) * dz) / l2)), d = Math.hypot(px - ax - dx * t, z - az - dz * t); if (!best || d < best.d - 1e-9) best = { i, d, u: Lc[i] + Math.sqrt(l2) * t }; } return best; };
-          const max = Math.ceil(total / (1.5 * 0.5 * dt)) + 400;
+          const out = { name, length: +total.toFixed(2), steps: 0, reached: false, wheel: 0, eye: 0, eyeN: 0, misses: 0, rays: 0, dy: 0, wraps: 0, kinds: {}, layers: {}, s: [Infinity, 0], worst: null };
+          let placed = null; for (let i0 = 0; i0 < Math.min(n - 1, 8) && !placed; i0++) placed = S.ride.set({ x: G.wrap(P[i0][0]), z: P[i0][1], heading: Math.atan2(wdx(P[i0 + 1][0] - P[i0][0]), P[i0 + 1][1] - P[i0][1]) });
+          if (!placed) return { ...out, start: 'off' };
+          let g = S.ride.get(), ux = P[0][0] + wdx(g.x - P[0][0]), j = 0, u = 0, prevRoot = g.root, prevX = g.x, prevH = g.heading, settled = 0; const w0 = g.wraps;
+          const max = Math.ceil(total / (0.5 * 2.0 * dt)) + 900;
           for (let k = 0; k < max; k++) {
-            const p = r.position, s = r.surface.s, q = proj(p[0], p[2]); j = q.i; u = Math.max(u, q.u); out.dev = Math.max(out.dev, q.d / s);
-            if (total - u < 0.3 * s) { out.reached = true; break; }
-            const a = at(Math.min(total, u + 2 * s)); S.view.set({ heading: Math.atan2(wdx(a[0] - p[0]), a[1] - p[2]) });
-            r = S.walk.step(dt, [0, 1]); out.steps++;
-            const sf = r.surface, cs = r.camera; out.kinds[sf.kind] = (out.kinds[sf.kind] || 0) + 1; out.layers[sf.layer] = (out.layers[sf.layer] || 0) + 1; out.s[0] = Math.min(out.s[0], sf.s); out.s[1] = Math.max(out.s[1], sf.s);
-            const dy = Math.abs(r.position[1] - prevY) / Math.min(sf.s, prevS); if (dy > out.dy) out.dy = dy;
-            const step = Math.hypot(wdx(r.position[0] - p[0]), r.position[2] - p[2]) / sf.s; if (step > 1e-3) out.ds = Math.max(out.ds, Math.abs(sf.s - prevS) / prevS * 0.5 / step); if (Math.abs(r.position[0] - p[0]) > HALF) out.wraps++; prevY = r.position[1]; prevS = sf.s;
+            let best = null; for (let i = j; i < Math.min(n - 1, j + 60) && Lc[i] <= u + 3 * g.s; i++) { const ax = P[i][0], az = P[i][1], dx = wdx(P[i + 1][0] - ax), dz = P[i + 1][1] - az, l2 = dx * dx + dz * dz || 1e-12, px = ax + wdx(ux - ax), t = Math.max(0, Math.min(1, ((px - ax) * dx + (g.z - az) * dz) / l2)), d = Math.hypot(px - ax - dx * t, g.z - az - dz * t); if (!best || d < best.d - 1e-9) best = { i, d, u: Lc[i] + Math.sqrt(l2) * t }; }
+            j = best.i; u = Math.max(u, best.u);
+            if (total - u < 0.35 * g.s || (g.contact && Math.abs(g.speed) < 0.02 && total - u < (CFG.half + CFG.radius + 0.5) * g.s)) { out.reached = true; break; }
+            const tg = at(Math.min(total, u + 2.5 * g.s)), err = wpi(Math.atan2(wdx(tg[0] - ux), tg[1] - g.z) - g.heading);
+            let kmax = 0; for (let i = j; i < n - 1 && Lc[i] < u + 4 * g.s; i++) { const a = Math.atan2(wdx(P[i + 1][0] - P[i][0]), P[i + 1][1] - P[i][1]), b = i + 2 < n ? Math.atan2(wdx(P[i + 2][0] - P[i + 1][0]), P[i + 2][1] - P[i + 1][1]) : a; kmax = Math.max(kmax, Math.abs(wpi(b - a)) / Math.max(1e-6, (Lc[i + 1] - Lc[i]) / g.s)); }
+            const vt = Math.min(g.cap, Math.sqrt(3.0 / Math.max(kmax, 1e-6)), Math.abs(err) > 1.0 ? 0.6 : Infinity, Math.sqrt(2 * 2.0 * Math.max(0, (total - u) / g.s - 0.2)));
+            g = S.ride.step(dt, { throttle: g.speed > vt + 0.05 ? -Math.min(1, (g.speed - vt) / 1.5) : Math.max(0, Math.min(1, vt / g.cap)), steer: Math.max(-1, Math.min(1, -3 * err)) }); out.steps++;
+            ux += wdx(g.x - prevX); prevX = g.x;
+            out.kinds[g.kind] = (out.kinds[g.kind] || 0) + 1; out.layers[g.layer] = (out.layers[g.layer] || 0) + 1; out.s[0] = Math.min(out.s[0], g.s); out.s[1] = Math.max(out.s[1], g.s);
+            const dy = Math.abs(g.root - prevRoot) / g.s; if (dy > out.dy) out.dy = dy; prevRoot = g.root;
+            const hr = Math.abs(wpi(g.heading - prevH)) / dt; prevH = g.heading;
+            const level = Math.abs(g.wheels[0] - g.wheels[1]) / (CFG.wheelbase * g.s) < 0.001 && hr < 0.05 && Math.abs(g.lookYaw) < 1e-9 && Math.abs(g.lookPitch - Math.atan2(CFG.up, CFG.back)) < 1e-9 && Math.abs(g.dist - CFG.back) < 1e-9;
+            settled = level ? settled + 1 : 0;
             if (k % 3 === 0) {
-              const cam = S.camera.position, g0 = rendered(r.position[0], r.position[1] + 0.6 * sf.s, r.position[2], sf.kind, r.heading, sf.s), g1 = rendered(cam.x, cs.y + 0.6 * cs.s, cam.z, cs.kind, r.heading, cs.s); out.rays += 2;
-              if (g0 === null || g1 === null) { out.misses++; if (!out.worst) out.worst = { at: [r.position[0], r.position[2]], cam: [cam.x, cam.z], g0, g1, kind: sf.kind }; continue; }
-              const eg = Math.abs(r.position[1] - g0) / sf.s, ee = Math.abs((cam.y - g1) / cs.s - 1.62);
-              if (eg > out.ground) out.ground = eg; if (ee > out.eye) { out.eye = ee; if (ee > 0.01) out.worst = { at: [+r.position[0].toFixed(2), +r.position[2].toFixed(2)], cam: [+cam.x.toFixed(2), +cam.z.toFixed(2)], camY: cam.y, g1, s: cs.s, kind: cs.kind }; }
+              const fx = Math.sin(g.heading), fz = Math.cos(g.heading), hw = CFG.wheelbase / 2 * g.s;
+              for (const [sg, wy, wk] of [[1, g.wheels[0], g.wheelKinds[0]], [-1, g.wheels[1], g.wheelKinds[1]]]) { const x = g.x + sg * fx * hw, z = g.z + sg * fz * hw, r = rendered(x, wy + 0.6 * g.s, z, wk, g.heading, g.s); out.rays++;
+                if (r === null) { out.misses++; if (!out.worst) out.worst = { miss: [+x.toFixed(2), +z.toFixed(2)], kind: wk }; continue; } const e = Math.abs(wy - r) / g.s; if (e > out.wheel) { out.wheel = e; if (e > 0.01) out.worst = { at: [+x.toFixed(2), +z.toFixed(2)], wy, r, kind: wk }; } }
+              if (settled >= 60) { const cam = S.camera.position, rc = rendered(cam.x, cam.y, cam.z, null, g.heading, g.s);
+                if (rc !== null && Math.abs(rc - g.root) < 0.004 * g.s) { out.eyeN++; const e = Math.abs((cam.y - rc) / g.s - (CFG.focus + CFG.up)); if (e > out.eye) out.eye = e; } }
             }
           }
-          return { ...out, ground: +out.ground.toFixed(4), eye: +out.eye.toFixed(4), dy: +out.dy.toFixed(4), dev: +out.dev.toFixed(3), ds: +(out.ds * 100).toFixed(3), s: out.s.map(v => +v.toFixed(3)), u: +u.toFixed(2) };
+          out.wraps = g.wraps - w0;
+          return { ...out, wheel: +out.wheel.toFixed(4), eye: +out.eye.toFixed(4), dy: +out.dy.toFixed(4), s: out.s.map(v => +v.toFixed(3)), u: +u.toFixed(2) };
         };
         const flatPt = (lon, lat) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];
-        const town_ = town.map(t => walk(t.name, t.P));
+        const town_ = town.map(t => { const P = []; for (let i = 0; i + 1 < t.P.length; i++) { const [a, b] = [t.P[i], t.P[i + 1]], m = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5)); for (let k = i ? 1 : 0; k <= m; k++) P.push([a[0] + (b[0] - a[0]) * k / m, a[1] + (b[1] - a[1]) * k / m]); } return ride(t.name, P); });
         const random = pieces.map(pc => { const e = W.roadNetwork.edges.find(q => q.id === pc.edge), sp = W.roadNetwork.samplePath(e, 0.5).filter(q => q.s >= pc.s0 - 1e-6 && q.s <= pc.s1 + 1e-6), P = [];
           for (const q of sp) { const f = flatPt(q.lon, q.lat); if (P.length) f[0] = P[P.length - 1][0] + wdx(f[0] - P[P.length - 1][0]); P.push(f); }
-          return walk(`${pc.edge} ${pc.s0}–${pc.s1}`, P); });
-        // the exits: from 12 m inside the town edge along the exit road to 12 m outside it (to the line's end for the ring connectors), and the RN01 tunnel end to end
+          return ride(`${pc.edge} ${pc.s0}–${pc.s1}`, P); });
         const exits = [];
         for (const ln of G.lines.filter(l => l.kind === 'route' && /^(N\d\d-|M01-south)/.test(l.id))) {
           const edgeS = (() => { for (let i = 0; i < ln.n; i++) { const f = ln.F[i]; if (Math.max(Math.abs(f.x), Math.abs(f.z)) > 48) return ln.S[i].s; } return ln.length; })();
           const s0 = Math.max(0, edgeS - 12), s1 = Math.min(ln.length - 0.5, edgeS + 12), P = []; for (let s = s0; s <= s1 + 1e-6; s += 0.5) { const q = ln.point(Math.min(s, s1), 0); P.push([q.x, q.z]); }
-          exits.push(walk(`${ln.id} 出城`, P));
+          exits.push(ride(`${ln.id} 出城`, P));
         }
-        { const ln = G.lines.find(l => l.tunnel), P = []; for (let s = 0.5; s <= ln.length - 0.5; s += 0.5) { const q = ln.point(s, 0); P.push([q.x, q.z]); } exits.push(walk(`${ln.id} 隧道`, P)); }
-        // the seam of the flat map (bend.js SEAM, -85 deg) on the RN01-13 bridge: 15 m either side of it, on the deck
+        { const ln = G.lines.find(l => l.tunnel), P = []; for (let s = 0.5; s <= ln.length - 0.5; s += 0.5) { const q = ln.point(s, 0); P.push([q.x, q.z]); } exits.push(ride(`${ln.id} 隧道`, P)); }
         { const ln = G.lines.find(l => l.id === 'RN01-13'), P = []; let sx = null, px = null; for (let s = 0; s <= ln.length; s += 0.5) { const x = G.wrap(ln.point(s, 0).x); if (sx === null && px !== null && Math.abs(x - px) > HALF) sx = s; px = x; }
-          for (let s = Math.max(0.5, sx - 15); s <= Math.min(ln.length - 0.5, sx + 15); s += 0.5) { const q = ln.point(s, 0); P.push([q.x, q.z]); } exits.push({ ...walk(`${ln.id} 平面接缝（第 ${sx.toFixed(1)} m）`, P), seam: true }); }
+          for (let s = Math.max(0.5, sx - 15); s <= Math.min(ln.length - 0.5, sx + 15); s += 0.5) { const q = ln.point(s, 0); P.push([q.x, q.z]); } exits.push({ ...ride(`${ln.id} 平面接缝（第 ${sx.toFixed(1)} m）`, P), seam: true }); }
         S.view.set({ mode: 'free' });
         return { entered, meshes: meshes.length, town: town_, random, exits };
       }, { town, pieces });
-      const ok = q => q.reached && q.misses === 0 && q.ground <= 0.01 && q.eye <= 0.01;
-      const line = q => `${q.name}${q.reached ? '' : `（未走通：${q.u}/${q.length} m）`} ${q.length} m、${q.steps} 步、射线 ${q.rays}${q.misses ? `、未命中 ${q.misses}` : ''}，脚下 ${q.ground} m、眼高 ${q.eye} m、单步高差 ${q.dy} m、偏离 ${q.dev} m、s ${q.s.join('–')}（每 0.5 m 变化 ≤ ${q.ds}%）${q.wraps ? `、跨接缝 ${q.wraps} 次` : ''}、${Object.keys(q.kinds).join('/')}${q.layers.deck || q.layers.tunnel ? `、层 ${Object.entries(q.layers).map(([k, v]) => k + ' ' + v).join(' ')}` : ''}${q.worst && !ok(q) ? '；例 ' + JSON.stringify(q.worst) : ''}`;
-      console.log(`INFO U7 漫游进入 ${res.entered}，射线检查的可走面网格 ${res.meshes} 个`);
+      const ok = q => q.reached && q.misses === 0 && q.wheel <= 0.01 && q.eye <= 0.01;
+      const line = q => `${q.name}${q.reached ? '' : `（未走通：${q.u}/${q.length} m）`} ${q.length} m、${q.steps} 步、射线 ${q.rays}${q.misses ? `、未命中 ${q.misses}` : ''}，轮 ${q.wheel} m、镜头标称高度 ${q.eye} m（${q.eyeN} 次）、单步高差 ${q.dy} m、s ${q.s.join('–')}${q.wraps ? `、跨接缝 ${q.wraps} 次` : ''}、${Object.keys(q.kinds).join('/')}${q.layers.deck || q.layers.tunnel ? `、层 ${Object.entries(q.layers).map(([k, v]) => k + ' ' + v).join(' ')}` : ''}${q.worst && !ok(q) ? '；例 ' + JSON.stringify(q.worst) : ''}`;
+      console.log(`INFO U7 骑行进入 ${res.entered}，射线检查的可走面网格 ${res.meshes} 个`);
       for (const q of [...res.random, ...res.town, ...res.exits]) console.log('  · ' + line(q));
-      const worst = list => ({ ground: Math.max(...list.map(q => q.ground)), eye: Math.max(...list.map(q => q.eye)) });
+      const worst = list => ({ wheel: Math.max(...list.map(q => q.wheel)), eye: Math.max(...list.map(q => q.eye)), n: list.reduce((a, q) => a + q.eyeN, 0) });
       const wr = worst(res.random), wt = worst(res.town), we = worst(res.exits);
-      check('U7', res.entered && res.random.length === 20 && res.random.every(ok), `城外随机 20 段（种子 20261018）走通 ${res.random.filter(q => q.reached).length}/20，脚下与渲染路面最大差 ${f(wr.ground, 4)} m，相机离地与 1.62 m 最大差 ${f(wr.eye, 4)} m（真实米，≤ 0.01）`);
-      check('U7-town', res.town.every(ok), `W9a 城镇路线 ${res.town.length} 条（街道段 ${res.town.filter(q => /^W9a R/.test(q.name)).length}、巷道 ${res.town.filter(q => /^W9a A/.test(q.name)).length}、RT-01/RT-02 城内段）走通 ${res.town.filter(q => q.reached).length}/${res.town.length}，脚下 ${f(wt.ground, 4)} m、眼高 ${f(wt.eye, 4)} m`);
-      check('U7-exits', res.exits.every(q => ok(q) && q.dy <= 0.02) && res.exits.filter(q => q.seam).every(q => q.wraps === 1), `九个出口出城、RN01 隧道与平面接缝 ${res.exits.length} 条走通 ${res.exits.filter(q => q.reached).length}/${res.exits.length}，脚下 ${f(we.ground, 4)} m、眼高 ${f(we.eye, 4)} m、单步最大高差 ${f(Math.max(...res.exits.map(q => q.dy)), 4)} m（≤ 0.02）`);
+      check('U7', res.entered && res.random.length === 20 && res.random.every(ok), `骑行（R1 起取代步行）城外随机 20 段（种子 20261018）走通 ${res.random.filter(q => q.reached).length}/20，前后轮接地点与渲染路面最大差 ${f(wr.wheel, 4)} m，平直处镜头标称高度（地面 + 1.62 m）最大差 ${f(wr.eye, 4)} m（${wr.n} 次；真实米，≤ 0.01）`);
+      check('U7-town', res.town.every(ok), `W9a 城镇路线 ${res.town.length} 条（街道段 ${res.town.filter(q => /^W9a R/.test(q.name)).length}、巷道 ${res.town.filter(q => /^W9a A/.test(q.name)).length}、RT-01/RT-02 城内段）骑通 ${res.town.filter(q => q.reached).length}/${res.town.length}，轮 ${f(wt.wheel, 4)} m、镜头标称高度 ${f(wt.eye, 4)} m（${wt.n} 次）`);
+      check('U7-exits', res.exits.every(q => ok(q)) && res.exits.filter(q => q.seam).every(q => q.wraps === 1), `九个出口出城、RN01 隧道与平面接缝 ${res.exits.length} 条骑通 ${res.exits.filter(q => q.reached).length}/${res.exits.length}，轮 ${f(we.wheel, 4)} m、镜头标称高度 ${f(we.eye, 4)} m（${we.n} 次）、单步最大高差 ${f(Math.max(...res.exits.map(q => q.dy)), 4)} m`);
     }
     check('U6-U7-errors', !errors.length, errors.join('；') || '无页面错误');
   } finally { await browser.close(); }

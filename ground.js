@@ -4,6 +4,8 @@
 //   walk    the walkable surfaces of the one road network (W10_SPEC 2.8: the roads, the pavements, the town's public areas), at(x, z, hint) -> one sample:
 //           every road's paved width and shoulder (roadkit.js), the paved T junctions, the bridge decks, the stone stairs and the boardwalk, and in the town (layout.js) the carriageways,
 //           alleys, pavements and facility bands, the curb ramps and driveways, the walkway W01 and the bus aprons; plots and everything off the network give null.
+//           R1 (THIRD_PERSON_ROAM_PLAN 6.13): also the RN12-01 steel stair (two stair lines from bridge.js's access record: gate, gangway, flights, landing, foot plate),
+//           a 1 m landing on each stone stair's axis beyond its ends, and the I9 public areas of the landmarks (kind 'site': LM02 east entrance <-> north-east entrance).
 // A sample (x, z in the flat display frame, y its flat height): { x, z, y, alt (true metres), s (display scale: flat units per true metre, a function of the place:
 // 1 in the town frame, 1 / cos(lat) from 15 m beyond it, a smoothstep between; the same on every road through a point), k (1 / cos(lat)), kind, layer ('ground' | 'deck' | 'tunnel'), line, route, edge, cls,
 // station (m along the line), offset (true m, + right of travel), slope (rise per true metre along the line), margin (true m to the walkable edge across it) }.
@@ -13,7 +15,7 @@
 'use strict';
 const R = 90, D = Math.PI / 180, BASE = 1.6, PERIOD = 2 * Math.PI * R, HALF = Math.PI * R, CELL = 8, PAD = 14;
 const TOWN_BLEND = 15;   // the display scale runs from the town frame's 1 to 1 / cos(lat) over the exits' 15 m width transition (W10_SPEC 2.2)
-const STAIR_HALF = 0.8, BOARD_HALF = 1.0, DECK_WALK = 4.6, PLANK_TOP = 0.08, PLANK_HALF = 0.135;   // steps.js STAIR.width / 2; roadkit.js boardwalk DECK.half; the deck's walk (rails beyond); flora.js plank: 0.08 m thick (its foot at the record's altitude), 0.27 m deep
+const STAIR_HALF = 0.8, STAIR_LANDING = 1.0, BOARD_HALF = 1.0, DECK_WALK = 4.6, PLANK_TOP = 0.08, PLANK_HALF = 0.135;   // steps.js STAIR.width / 2; roadkit.js boardwalk DECK.half; the deck's walk (rails beyond); flora.js plank: 0.08 m thick (its foot at the record's altitude), 0.27 m deep
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
 const llOf = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D });
@@ -112,11 +114,67 @@ function attach(ctx) {
     const F = b.samples.map(p => flatOf(p.lon, p.lat)), cf = b.samples.map((p, i) => { const [lo, la] = b.lateral(i, 1), f = flatOf(lo, la); return Math.hypot(wrapDx(f.x - F[i].x), f.z - F[i].z) / F[i].k; });
     lines.push(line('bridge', b.def.id, b.samples, F, b.tangent, cf, b.samples.map(() => [-DECK_WALK, DECK_WALK]), { b }));
   }
-  for (const st of RD.stairs) { const P = pathOf(st.samples); lines.push(line('stairs', st.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-STAIR_HALF, STAIR_HALF]), { st })); }
+  // R1: a stone stair (RD06) has a 1 m landing on its axis before its first tread and beyond its last, at its foot's and its top's height (the steps are pinned to the
+  // ground there): a stair that leaves a road at an angle is entered from its axis, between the legs of its torii
+  for (const st of RD.stairs) { const P = pathOf(st.samples); lines.push(line('stairs', st.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-STAIR_HALF, STAIR_HALF]), { st, landing: STAIR_LANDING })); }
+  // R1 (THIRD_PERSON_ROAM_PLAN 6.13): RN12-01, the steel maintenance stair of the bridge to LM08-south (bridge.js access), is a stair line too: from the deck through the gate in
+  // the north parapet, the gangway, flight A, the landing, flight B, to the foot plate at the node (the plate is the line's last, level part). Its treads are bridge.js's
+  // (riser 0.2 m, tread 0.26 m, the step box 0.05 m thick about its altitude); the lowest steps of flight B lie under the foot plate and the beach, so the plate's top is their floor.
+  for (const b of RD.bridges) { if (!b.access) continue;
+    const bl = lines.find(l => l.kind === 'bridge' && l.b === b), acc = b.access, s0 = acc.s, A = acc.steps.filter(q => q.z > 1), B = acc.steps.filter(q => q.z <= 1), STEP_TOP = 0.025, PLATE_TOP = 0.03;
+    const foot = acc.landing.alt + PLATE_TOP, ff = flatOf(acc.landing.lon, acc.landing.lat), fq = bl.project(ff.x, ff.z, true), fx = fq.s - s0, fo = fq.o, xL = Math.max(...A.map(q => q.x)) + 0.13, aL = Math.min(...A.map(q => q.alt)) - 0.2 + PLATE_TOP;
+    // the path in the bridge's (station - s0, lateral true m) frame with its floor: steps carry their own tops
+    const P = [[0.9, -4.3, acc.top], [0.9, -5.9, acc.top], [1.45, -6.45, acc.top], [xL, -6.45, null], [xL + 0.35, -6.4, aL], [xL + 0.35, -5.5, aL], [xL - 0.05, -5.45, null], [B[B.length - 1].x - 0.13, -5.45, null], [fx, fo, foot]];
+    const pts = []; for (let i = 0; i + 1 < P.length; i++) { const [x0, o0] = P[i], [x1, o1] = P[i + 1], l = Math.hypot(x1 - x0, o1 - o0), n = Math.max(1, Math.ceil(l / 0.25)); for (let k = i ? 1 : 0; k <= n; k++) pts.push([x0 + (x1 - x0) * k / n, o0 + (o1 - o0) * k / n]); }
+    let acc_s = 0; const S = pts.map((p, i) => { if (i) acc_s += Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]); return { s: acc_s }; });
+    const F = pts.map(([x, o]) => { const q = bl.point(s0 + x, o); return { x: q.x, z: q.z, k: Math.cosh(q.z / R) }; }), n = F.length;
+    const T = F.map((f, i) => { const a = F[Math.max(0, i - 1)], c = F[Math.min(n - 1, i + 1)], dx = c.x - a.x, dz = c.z - a.z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; });
+    const along = (x, o) => { let best = 0, bd = Infinity; pts.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - o); if (d < bd) { bd = d; best = S[i].s; } }); return best; };
+    const steps = [...A, ...B].map(q => ({ s: along(q.x, q.z > 1 ? -6.45 : -5.45), tread: 0.26, top: Math.max(foot, q.alt + STEP_TOP) }));
+    const floor = S.map(p => { const st = steps.find(q => Math.abs(q.s - p.s) <= 0.13 + 1e-6); return st ? st.top : null; });
+    for (let i = 0; i < n; i++) if (floor[i] === null) { const ip = P.findIndex(q => Math.abs(along(q[0], q[1]) - S[i].s) < 0.13 && q[2] !== null); floor[i] = ip >= 0 ? P[ip][2] : null; }
+    for (let i = 0; i < n; i++) if (floor[i] === null) { let a = i, c = i; while (a > 0 && floor[a] === null) a--; while (c < n - 1 && floor[c] === null) c++; floor[i] = floor[a] ?? floor[c] ?? acc.top; }
+    // the walk: the treads' width (0.8 m); the landing plate (1.0 x 2.2 m) and the foot plate (1.6 m) wider. Flight B and the foot plate run back under the gangway, so the stair
+    // is two lines (one height per line and point): the upper part to the landing's middle, the lower part from there (stations go on from the upper part's end)
+    const top = pts.findIndex(([x, o]) => x >= 1.45 - 1e-9 && o <= -6.45 + 1e-9);      // the gangway plate (1.8 x 1.8 m) ends where flight A starts
+    const walk = pts.map(([x, o], i) => (i <= top ? [-0.8, 0.8] : (x > xL - 0.1 && o < -5.3 && o > -6.6) || Math.hypot(x - fx, o - fo) < 0.8 ? [-0.6, 0.6] : [-0.42, 0.42]));
+    const cut = pts.findIndex(([x, o]) => x >= xL + 0.3 && o > -5.96), part = (i0, i1, id, extra) => { const sl = a => a.slice(i0, i1 + 1), SS = sl(S), base = SS[0].s;
+      return line('stairs', id, SS.map(q => ({ s: q.s - base })), sl(F), sl(T), SS.map(() => 1), sl(walk), { st: { id, steps: steps.filter(q => q.s >= base - 0.13 && q.s <= SS[SS.length - 1].s + 0.13).map(q => ({ ...q, s: q.s - base })), profile: sl(floor) }, edgeId: 'RN12-01', ...extra }); };
+    lines.push(part(0, cut, 'RN12-01', { gate: { line: bl.id, station: s0 + 0.9 } }), part(cut, n - 1, 'RN12-01:lower', {}));
+  }
   // the boardwalk: its planks are the surface (each at its own altitude; roadkit.js lays them every 0.32 m), so the walk stands on the top of the plank nearest along it
   for (const ex of RD.extras || []) { const P = pathOf(ex.centre), ln = line('boardwalk', ex.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-BOARD_HALF, BOARD_HALF]), { ex });
     ln.planks = (ex.instances.plank || []).map(r => { const f = flatOf(r.lon, r.lat), q = ln.project(f.x, f.z, true); return [q.s, r.alt + PLANK_TOP]; }).sort((a, b) => a[0] - b[0]); lines.push(ln); }
   const town = townWalk(L);
+  // R1 (I9, THIRD_PERSON_ROAM_PLAN 6.13): the public areas of the landmarks, in each landmark's local frame (landmarks/<id>.js: origin the anchor, +Z towards the first
+  // entrance, +X to its left, true metres), mapped like the landmark's own vertices (scene.js: the distance shortened by R / (R + altitude), the height h + y). A polygon's
+  // floor is its local height; outside it the floor runs on down at 10 % (`fall`), so neighbouring polygons meet without a step; `ramp` [z0, z1] runs the floor from the
+  // polygon's height at z0 to the height of the road end it meets at z1.
+  const SITES = [
+    // LM02: the stone street from the east entrance (RN05-01's end, 0.25 m lower than the slabs: a 2.8 m ramp) to the plaza's north edge, then north of house 3
+    // (the slab path from the north-east entrance runs through it) on the grass to a pad just short of the north-east entrance, where RN05-02's stairs start (at local
+    // (14.63, 8.79), running to +z, a small torii over the first tread): the pad stops at the stairs' first edge, so the stairs are entered from their foot only
+    // (LM02.js: slab tops 0.11 m, grass 0.02 m)
+    { lm: 'LM02', road: 'RN05-01', polys: [
+      { id: 'street', pts: [[-1.3, 8.6], [1.3, 8.6], [1.3, 17.4], [-1.3, 17.4]], y: 0.11, fall: 0.1, ramp: [14.6, 17.08] },
+      { id: 'north-of-house-3', pts: [[0.6, 9.15], [11.3, 9.15], [12.1, 6.6], [16.0, 6.6], [16.0, 8.79], [13.4, 8.79], [12.6, 10.85], [0.6, 10.85]], y: 0.02 } ] },
+  ].map(sd => {
+    const lm = W.landmarks.find(q => q.id === sd.lm), h = H(lm.lon, lm.lat), head = lm.entrances[0].heading, kkOf = y => R / (R + Math.max(-1.6, h + y - 1.6));
+    const toFlat = (x, z, y) => { const d0 = Math.hypot(x, z); if (d0 < 1e-9) return flatOf(lm.lon, lm.lat); const q = W.destination({ lon: lm.lon, lat: lm.lat }, head + Math.atan2(-x, z) / D, d0 * kkOf(y)); return flatOf(lm.lon + (((q.lon - lm.lon + 540) % 360) - 180), q.lat); };
+    const road = lines.find(l => l.kind === 'route' && l.rt.def.segs.some(sg => sg.id === sd.road)), yEnd = road ? RK.surfS(road.rt, road.length, 0) - h : 0;
+    const a = toFlat(0, 0, 0), reach = Math.max(...sd.polys.flatMap(p => p.pts.map(q => Math.hypot(q[0], q[1])))) + 2;
+    const distOut = (p, x, z) => { if (inPoly(p.pts, x, z)) return 0; let d = Infinity; for (let i = 0, j = p.pts.length - 1; i < p.pts.length; j = i++) { const [ax, az] = p.pts[j], [bx, bz] = p.pts[i], dx = bx - ax, dz = bz - az, t = clamp01(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)); d = Math.min(d, Math.hypot(x - ax - dx * t, z - az - dz * t)); } return d; };
+    const yOf = (p, z) => p.ramp ? p.y + (yEnd - p.y) * clamp01((z - p.ramp[0]) / (p.ramp[1] - p.ramp[0])) : p.y;
+    // flat (canonical) -> local; null beyond the site
+    const local = (cx, z) => { if (Math.abs(wrapDx(cx - a.x)) > reach * a.k * 1.3 || Math.abs(z - a.z) > reach * a.k * 1.3) return null; const ll = llOf(cx, z), p = { lon: ll.lon, lat: ll.lat }, d = W.arcDistance(lm, p);
+      if (d > reach) return null; const th = (W.bearing(lm, p) - head) * D, d0 = d / kkOf(0.06); return [-d0 * Math.sin(th), d0 * Math.cos(th)]; };
+    const floor = (x, z) => { let y = null; for (const p of sd.polys) { const d = distOut(p, x, z); if (d > 0 && !p.fall) continue; const v = yOf(p, z) - (p.fall || 0) * d; if (y === null || v > y) y = v; } return y; };
+    const inside = (x, z) => sd.polys.some(p => inPoly(p.pts, x, z));
+    // outlines for the boundary pieces (ride_world.js): each polygon edge cut to <= 0.5 m, flat points
+    const outlines = sd.polys.map(p => { const out = []; for (let i = 0; i < p.pts.length; i++) { const [ax, az] = p.pts[i], [bx, bz] = p.pts[(i + 1) % p.pts.length], m = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5)); for (let k = 0; k < m; k++) { const x = ax + (bx - ax) * k / m, z = az + (bz - az) * k / m, f = toFlat(x, z, p.y); out.push([f.x, f.z]); } } return { id: p.id, pts: out }; });
+    return { id: sd.lm, lm, h, head, toFlat, local, floor, inside, outlines };
+  });
+  const siteAt = (cx, z) => { for (const st of SITES) { const q = st.local(cx, z); if (!q || !st.inside(q[0], q[1])) continue; const y = st.floor(q[0], q[1]); if (y === null) continue; return { st, alt: st.h + y }; } return null; };
   // I6: the display scale at a canonical flat point (continuous: no step at the town edge or where two roads meet)
   const scaleAt = (cx, z) => { const H0 = L.BASE.half, d = Math.hypot(Math.max(0, Math.abs(cx) - H0), Math.max(0, Math.abs(z) - H0)); if (d <= 0) return 1;
     const t = clamp01(d / TOWN_BLEND), w = t * t * (3 - 2 * t), k = 1 / Math.cos(llOf(cx, z).lat * D); return 1 + (k - 1) * w; };
@@ -147,12 +205,12 @@ function attach(ctx) {
   const edgeAt = (ln, q) => {
     if (ln.kind === 'route') return ln.rt.def.segs[ln.rt.edgeOf[q.i]].id;
     if (ln.kind === 'bridge') { const b = ln.b, j = b.joints ? b.joints.filter(v => v <= q.s).length : 0; return b.ids[Math.min(b.ids.length - 1, j)]; }
-    return ln.id;
+    return ln.edgeId || ln.id;
   };
   const candidates = (x, z) => {
     const cx = canonX(x), ll = llOf(cx, z), k = 1 / Math.cos(ll.lat * D), sc = scaleAt(cx, z), out = [];
     for (const ln of lines) {
-      const q = ln.project(cx, z); if (!q || q.over > (ln.kind === 'boardwalk' ? PLANK_HALF : 0)) continue;     // the end planks overhang the boardwalk's line by half a plank
+      const q = ln.project(cx, z); if (!q || q.over > (ln.kind === 'boardwalk' ? PLANK_HALF : ln.landing || 0)) continue;     // the end planks overhang the boardwalk's line by half a plank; a stone stair's landings
       const w = lerpAt(ln.walk, q); if (q.o < w[0] - 1e-9 || q.o > w[1] + 1e-9) continue;
       const tun = ln.tunnel && q.s > ln.tunnel[0] && q.s < ln.tunnel[1], alt = altOf(ln, q.s, q.o), edge = edgeAt(ln, q), e = edgeOf[edge];
       let kind = ln.kind === 'bridge' ? 'deck' : ln.kind;
@@ -170,6 +228,8 @@ function attach(ctx) {
     if (jn) { const near = out.filter(c => c.layer === 'ground').sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))[0];
       out.push({ alt: BASE + jn.y / k, y: jn.y, s: sc, k, kind: 'junction', layer: 'ground', line: near ? near.line : null, route: near ? near.route : null, edge: near ? near.edge : null, cls: near ? near.cls : null,
         station: near ? near.station : null, offset: near ? near.offset : null, slope: 0, margin: null, heading: near ? near.heading : null, junction: jn.node }); }
+    const sa = siteAt(cx, z);
+    if (sa) out.push({ alt: sa.alt, y: (sa.alt - BASE) * k, s: sc, k, kind: 'site', layer: 'ground', line: sa.st.id, route: null, edge: null, cls: 'site', station: null, offset: null, slope: 0, margin: null, heading: null, site: sa.st.id });
     const t = town(cx, z);
     if (t === null) return [];                                                // a plot: nothing on the network stands there
     if (t !== undefined) {
@@ -193,6 +253,8 @@ function attach(ctx) {
   };
   const api = {
     lines,
+    // I9: the public areas of the landmarks (outlines for ride_world.js)
+    sites: SITES,
     // I1: the walkable surface under (x, z) on the layer nearest the hint ({ y } of the walker, or { layer }); null off the walkable surfaces
     at(x, z, hint) { const c = pick(candidates(x, z), hint); return c ? { x: show(x), z, ...c } : null; },
     // I3: every walkable layer at (x, z)
@@ -217,7 +279,8 @@ function attach(ctx) {
       let p = [0, 0];
       if (ln.kind === 'route') p = lerpAt(ln.rt.paved, c); else if (ln.kind === 'bridge') p = [-3.5, 3.5]; else p = lerpAt(ln.walk, c);
       const w = p[1] - p[0], o = w >= 4.5 ? (p[0] + p[1]) / 2 - sign * w / 4 : (p[0] + p[1]) / 2, at = ln.point(s, o);
-      const sample = api.at(at.x, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
+      // the line's own surface there (an I9 site may overlap a road's end)
+      const own = candidates(at.x, at.z).find(c => c.line === ln.id), sample = own ? { x: show(at.x), z: at.z, ...own } : api.at(at.x, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
       return sample ? { ...sample, heading: Math.atan2(sign * c.T[0], sign * c.T[1]), from: [show(x), z], distance: Math.hypot(wrapDx(show(x) - sample.x), z - sample.z) } : null;
     },
     // I3: the places where the layers meet: the bridges' ends (deck <-> ground), the tunnels' portals (ground <-> tunnel), the stairs' ends
@@ -226,7 +289,7 @@ function attach(ctx) {
       for (const ln of lines) {
         const end = (s, kind) => { const p = ln.point(s, 0); out.push({ kind, line: ln.id, station: s, x: show(p.x), z: p.z }); };
         if (ln.kind === 'bridge') { end(0, 'abutment'); end(ln.length, 'abutment'); }
-        if (ln.kind === 'stairs') { end(0, 'stair-end'); end(ln.length, 'stair-end'); }
+        if (ln.kind === 'stairs') { end(0, ln.gate ? 'gate' : 'stair-end'); end(ln.length, 'stair-end'); }
         if (ln.tunnel) { end(ln.tunnel[0], 'portal'); end(ln.tunnel[1], 'portal'); }
       }
       return out;

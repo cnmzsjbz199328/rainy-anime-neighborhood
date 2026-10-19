@@ -27,7 +27,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
-await page.waitForFunction(() => window.__scene && window.__scene.view);
+await page.waitForFunction(() => window.__scene && window.__scene.view, null, { timeout: 180000 });   // W10a: the world is generated before the first frame (SwiftShader: slow)
 await page.waitForTimeout(1500);
 
 const results = [];
@@ -74,46 +74,42 @@ const kw = await keyPan('w'), kd = await keyPan('d'), ka = await keyPan('ArrowLe
 results.push([`自由视角 W 向前、D/A 向屏幕右/左平移（${kw.fwd.toFixed(1)} / ${kd.right.toFixed(1)} / ${ka.right.toFixed(1)}）`, kw.fwd > .5 && kd.right > .5 && ka.right < -.5]);
 await page.evaluate(() => window.__scene.view.set({ yaw: 2.5, pitch: .5, dist: 34, target: [-7, 1.2, 20] }));
 
-// W9a / W10f: keyboard toggle and forward movement on the walkable surfaces of ground.js.
+// R1 (THIRD_PERSON_ROAM_PLAN 6.11): the ride. Kept: V enters, W moves, on the walkable surface, the follow camera above the ground, the look drag (over 90 deg, no snap
+// back, the heading unchanged), the grab direction, V leaves and restores the free view, the three touch items. Retired with the walk: the layout.js rectangles, the town's
+// west road limit and the A/D strafe (the walkable surface, the collision probes and the steering sign of tools/ride_check.mjs replace them).
 const freeBefore = await view();
 await page.keyboard.press('v');
 const r0 = await view();
 await page.keyboard.down('w'); await page.waitForTimeout(180); const rm = await view();
 let r1 = await view(); const moved = v => Math.hypot(v.roam.position[0] - r0.roam.position[0], v.roam.position[2] - r0.roam.position[2]);
-const moveDeadline = Date.now() + 3000;
+const moveDeadline = Date.now() + 15000;   // the bike accelerates from rest; software WebGL renders few frames (each at most 0.12 s of ride)
 while (moved(r1) <= .1 && Date.now() < moveDeadline) { await page.waitForTimeout(250); r1 = await view(); }
 await page.keyboard.up('w');
-results.push(['V 键进入漫游', r0.mode === 'roam']);
-results.push([`W 键沿道路移动（输入 ${rm.input.join(',')}，位置 ${r0.roam.position[0].toFixed(2)},${r0.roam.position[2].toFixed(2)} → ${r1.roam.position[0].toFixed(2)},${r1.roam.position[2].toFixed(2)}）`, moved(r1) > .1]);
-results.push(['漫游位置在统一可走面上（W10f ground.js）', await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
+results.push(['V 键进入骑行', r0.mode === 'roam']);
+results.push([`W 键沿道路骑行（输入 ${JSON.stringify(await page.evaluate(() => window.__scene.ride.input()))}，位置 ${r0.roam.position[0].toFixed(2)},${r0.roam.position[2].toFixed(2)} → ${r1.roam.position[0].toFixed(2)},${r1.roam.position[2].toFixed(2)}）`, moved(r1) > .1]);
+void rm;
+results.push(['骑行位置在统一可走面上（ground.js）', await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
 results.push(['跟随镜头离地', r1.cameraPosition[1] > .9]);
-// Camera-relative strafing: D / right arrow must move along the camera's screen-right.
-const side = async key => {
-  await page.evaluate(() => window.__scene.view.set({ position: [-8, 15], heading: -Math.PI / 2 })); await page.waitForTimeout(150);
-  const s0 = await page.evaluate(() => { const s = window.__scene, r = new s.camera.position.constructor(1, 0, 0).applyQuaternion(s.camera.quaternion); return { p: s.view.get().roam.position, r: [r.x, r.z] }; });
-  await page.keyboard.down(key);
-  // Wait for movement to be rendered: software WebGL may not produce a frame within a 300 ms tap.
-  await page.waitForFunction(p=>{const q=window.__scene.view.get().roam.position;return Math.hypot(q[0]-p[0],q[2]-p[2])>.12;},s0.p,{timeout:10000});
-  await page.keyboard.up(key);
-  const p1 = (await view()).roam.position; return (p1[0] - s0.p[0]) * s0.r[0] + (p1[2] - s0.p[2]) * s0.r[1];
+// steering: moving forward, A turns left (the heading grows), D right
+const steerTurn = async key => {
+  await page.evaluate(() => window.__scene.ride.set({ x: -10, z: 16.75, heading: -Math.PI / 2, speed: 2 })); await page.keyboard.down('w'); await page.waitForTimeout(120);
+  const h0 = (await view()).roam.heading; await page.keyboard.down(key);
+  await page.waitForFunction(h => Math.abs(window.__scene.view.get().roam.heading - h) > .05, h0, { timeout: 10000 }).catch(() => {});
+  await page.keyboard.up(key); const h1 = (await view()).roam.heading; await page.keyboard.up('w'); return h1 - h0;
 };
-const dRight = await side('d'), aLeft = await side('a'), arrowRight = await side('ArrowRight');
-results.push([`漫游 D/→ 向屏幕右侧移动，A 向左（${dRight.toFixed(2)} / ${aLeft.toFixed(2)} / ${arrowRight.toFixed(2)}）`, dRight > .1 && aLeft < -.1 && arrowRight > .1]);
-// Free look: dragging is grab-style like the free view, covers a full turn range, and does not snap back.
+const aTurn = await steerTurn('a'), dTurn = await steerTurn('d'), rTurn = await steerTurn('ArrowRight');
+results.push([`A 左转、D/→ 右转（航向变化 ${aTurn.toFixed(2)} / ${dTurn.toFixed(2)} / ${rTurn.toFixed(2)} rad）`, aTurn > .05 && dTurn < -.05 && rTurn < -.05]);
+await page.waitForFunction(() => Math.abs(window.__scene.ride.get().speed) < .01, null, { timeout: 8000 }).catch(() => {});
+// Free look: dragging is grab-style like the free view, covers a full turn range, does not snap back, and does not turn the bike.
 await page.evaluate(() => window.__scene.view.set({ position: [-8, 15], heading: -Math.PI / 2 }));
-const h0 = (await view()).roam.heading;
+const l0 = (await view()).roam;
 await page.mouse.move(640, 400); await page.mouse.down(); await page.mouse.move(1000, 380, { steps: 6 }); await page.mouse.up();
-const looked = await view(); await page.waitForTimeout(2500); const kept = await view();
-results.push([`漫游拖动环视可超过 90° 且不自动回正（${(looked.roam.heading - h0).toFixed(2)} rad）`, looked.roam.heading - h0 > 1.57 && Math.abs(kept.roam.heading - looked.roam.heading) < 1e-3]);
-await page.evaluate(() => window.__scene.view.set({ position: [-8, 15], heading: -Math.PI / 2 })); await page.waitForTimeout(200);
+const looked = (await view()).roam; await page.waitForTimeout(2500); const kept = (await view()).roam;
+results.push([`骑行拖动环视可超过 90° 且不自动回正、不改航向（环视 ${(looked.lookYaw - l0.lookYaw).toFixed(2)} rad，航向变化 ${Math.abs(looked.heading - l0.heading).toFixed(4)}）`, looked.lookYaw - l0.lookYaw > 1.57 && Math.abs(kept.lookYaw - looked.lookYaw) < 1e-3 && Math.abs(looked.heading - l0.heading) < 1e-3]);
+await page.keyboard.press('c'); await page.waitForTimeout(500);
 await page.mouse.move(640, 400); await page.mouse.down(); await page.mouse.move(700, 400, { steps: 4 }); await page.mouse.up();
-const grab = await view();
-results.push(['漫游向右拖动与自由视角同向（抓取式：画面右移，视线左转）', grab.roam.heading > -Math.PI / 2]);
-await page.evaluate(() => window.__scene.view.set({ position: [-47.5, 15], heading: -Math.PI / 2 }));
-await page.keyboard.down('w'); await page.waitForTimeout(500); await page.keyboard.up('w');
-const edge = await view();
-// W10f: the walk is no longer kept inside the town: west from the town edge it goes on along N01's road (RN01), still on the walkable surface
-results.push(['向西越过城镇边界继续走上 N01 出城道路（W10f）', edge.roam.position[0] < -47.5 && edge.roam.surface.line === 'N01-west' && await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
+const grab = (await view()).roam;
+results.push(['骑行向右拖动与自由视角同向（抓取式：画面右移，视线左转）', grab.lookYaw > 0]);
 await page.keyboard.press('v');
 const freeAfter = await view();
 results.push(['V 键退出并恢复原自由视角', freeAfter.mode === 'free' && freeAfter.yaw === freeBefore.yaw && freeAfter.pitch === freeBefore.pitch && freeAfter.dist === freeBefore.dist && freeAfter.target.every((v, i) => v === freeBefore.target[i])]);
@@ -142,22 +138,22 @@ for (const [name, v] of Object.entries(VIEWS)) {
 await page.close();
 const touchPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
 await touchPage.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
-await touchPage.waitForFunction(() => window.__scene && window.__scene.view, null, { timeout: 60000 });
+await touchPage.waitForFunction(() => window.__scene && window.__scene.view, null, { timeout: 180000 });
 await touchPage.waitForTimeout(500);
 const toggleBox = await touchPage.locator('#town-view-toggle').boundingBox();
 await touchPage.touchscreen.tap(toggleBox.x + toggleBox.width / 2, toggleBox.y + toggleBox.height / 2);
 const touchMode = await touchPage.evaluate(() => window.__scene.view.get().mode);
 const stickBox = await touchPage.locator('#town-walk-stick').boundingBox();
-results.push(['触屏按钮切换视角', touchMode === 'roam']);
+results.push(['触屏按钮进入骑行', touchMode === 'roam']);
 results.push(['触屏移动摇杆可见', !!stickBox]);
 if (stickBox) {
   const x = stickBox.x + stickBox.width / 2, y = stickBox.y + stickBox.height / 2;
   const cdp = await touchPage.context().newCDPSession(touchPage);
   const touch = (type, px, py) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 1, x: px, y: py, radiusX: 8, radiusY: 8, force: 1 }] });
   const p0 = await touchPage.evaluate(() => window.__scene.view.get().roam.position);
-  await touch('touchStart', x, y); await touch('touchMove', x + 25, y); await touchPage.waitForTimeout(500); await touch('touchEnd', x + 25, y);
+  await touch('touchStart', x, y); await touch('touchMove', x, y - 30); await touchPage.waitForTimeout(900); await touch('touchEnd', x, y - 30);   // the stick's vertical: throttle
   const p1 = await touchPage.evaluate(() => window.__scene.view.get().roam.position);
-  results.push(['触屏摇杆可移动', Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > .1]);
+  results.push(['触屏摇杆可骑行', Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > .1]);
 }
 {
   // Two-finger drag in the free view pans the target (pinch alone only zooms).
