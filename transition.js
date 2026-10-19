@@ -10,7 +10,6 @@ const TR = {
   ZOOM: [9, 400], FAR_NEAR: 400, FAR_FAR: 600, DURATION: 2, TERRAIN: [60, 150], CAPS: 0.98,
   smoothstep: sm,
   bendOf: phase => sm(0, 1, phase),
-  patchDistance: (x, z, half) => Math.hypot(Math.max(0, Math.abs(x)-half), Math.max(0, Math.abs(z)-half)),
   fogOf: u => 1 - u,
   // camera far plane: the old 400 m while the view is the old one, 600 m for the planet (the far side of the sphere is behind the horizon, the target is up to 400 m away)
   farOf: mode => mode === 'sphere' ? 600 : 400,

@@ -19,6 +19,7 @@
 //   U4 (W10c): frozen town alignment, width, level and layout-driven road details; U4-CR01-junctions rebuilds the CR01 paving from the ring's final
 //              indexed triangles round the whole closed ring and tests every other road's whole cross-section against it (CR01_NW_REPAIR_PLAN.md).
 //   U5 (W10d): one ground occupancy, no terrain below its marked surfaces, no base wall, no outlet model, plots and instance bounds clear.
+//   U6, U7 (W10f): one geometry for both maps; the walk on the one ground sampler (see their block below). --only U0,U6,U7 runs U0 and the listed groups only.
 // Real GPU (ANGLE Metal, as the timing tools): the checks are structural, the renderer does not change them.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,7 +50,16 @@ check('U0-W10d', !w10dHits.length, `底座、TR01 独立网格/竹篱、外排�
   const retired = ['section.js', 'section_plan.js', 'tools/section_check.mjs', 'tools/section_views.mjs', 'tools/section_shots.mjs', 'tools/section_extrapolate.mjs', 'tools/c01_s_clearance.mjs'].filter(f => fs.existsSync(path.join(root, f)));
   check('U0-W10e', !hits.length && !retired.length, `W4 独立模块/模式/排除与专用检查已退役：${[...hits, ...retired].join('、') || '无残留'}`);
 }
-if (process.argv.includes('--only') && process.argv[process.argv.indexOf('--only') + 1] === 'U0') {
+// ---- U0 (W10f): the sphere copy of the town, the town camera and the town-only walk are gone (W10_SPEC section 3: one geometry, one ground sampler, one walk)
+{
+  const core = ['scene.js', 'bend.js', 'transition.js', 'ground.js', 'sphere_camera.js', 'tools/transition_check.mjs', 'tools/views.mjs', 'tools/w8f_check.mjs', 'tools/unify_check.mjs'];
+  const removed = /\b(?:townSphere|townAvailable|townDistance|tessellate|tessellateGeometry|walkRects|constrainWalk|patchDistance)\b|\.town\.sphere\b|LV\.carriageway\s*\+\s*1\.(?:28|62)/;
+  const hits = core.flatMap(f => fs.readFileSync(path.join(root, f), 'utf8').split('\n').flatMap((l, i) => removed.test(l) && !l.trim().startsWith('//') && !(f === 'tools/unify_check.mjs' && /const removed = /.test(l)) ? [`${f}:${i + 1}`] : []));
+  check('U0-W10f', !hits.length, `球形换副本、城镇特例相机与仅城镇漫游已删除：${hits.join('、') || '无残留'}`);
+}
+// --only U0 | --only U0,U6,U7 ... : U0 always runs; the other groups run when listed (no --only: all)
+const ONLY = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1].split(',') : null, want = id => !ONLY || ONLY.includes(id);
+if (ONLY && ONLY.every(k => k === 'U0')) {
   console.log(`${failures ? 'FAIL' : 'PASS'} unify_check --only U0`);
   process.exit(failures ? 1 : 0);
 }
@@ -70,7 +80,7 @@ if (process.argv.includes('--only') && process.argv[process.argv.indexOf('--only
 // ---- U1-data (W10b, W10_SPEC section 5): the network of world.js against the approved design (docs/world/ROAD_NETWORK_DESIGN_DRAFT.md: the exit table of 2.3, the
 // node, edge and retirement tables of section 4 and the numbers of section 5, read from the document itself), the town streets against layout.js, the exits'
 // first metres, and every changed edge against the network of the baseline `pre-w10b`
-{
+if (want('U1')) {
   const require = createRequire(import.meta.url);
   globalThis.LAYOUT = require(path.join(root, 'layout.js'));
   const L = globalThis.LAYOUT, W = require(path.join(root, 'world.js')), NET = W.roadNetwork, D = Math.PI / 180, f = (v, n = 3) => v.toFixed(n);
@@ -208,7 +218,7 @@ if (process.argv.includes('--only') && process.argv[process.argv.indexOf('--only
 }
 
 // ---- U1-geometry (W10c): every town edge and its outdoor continuation share one swept route row at the frozen layout boundary
-{
+if (want('U1')) {
   const require = createRequire(import.meta.url), W = require(path.join(root, 'world.js')), L = require(path.join(root, 'layout.js'));
   const TERR = require(path.join(root, 'terrain.js'));
   globalThis.LAYOUT = L; globalThis.ROADKIT = require(path.join(root, 'roadkit.js')); globalThis.BRIDGE = require(path.join(root, 'bridge.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
@@ -239,7 +249,7 @@ if (process.argv.includes('--only') && process.argv[process.argv.indexOf('--only
 }
 
 // ---- U4 (W10c): the frozen town layout still drives every town street and street detail
-{
+if (want('U4')) {
   const { execFileSync } = await import('node:child_process');
   const require = createRequire(import.meta.url), W = require(path.join(root, 'world.js')), L = require(path.join(root, 'layout.js'));
   globalThis.LAYOUT = L; globalThis.ROADKIT = require(path.join(root, 'roadkit.js')); globalThis.BRIDGE = require(path.join(root, 'bridge.js')); globalThis.STEPS = require(path.join(root, 'steps.js'));
@@ -367,7 +377,7 @@ if (process.argv.includes('--only') && process.argv[process.argv.indexOf('--only
 
 // ---- U3 (W10a)
 if (process.argv.includes('--no-browser')) console.log('（--no-browser：U3 不跑）');
-else {
+else if (want('U2') || want('U3') || want('U5')) {
 const browser = await chromium.launch({ args: ['--use-angle=metal', '--ignore-gpu-blocklist'] });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [];
@@ -584,5 +594,142 @@ try {
   check('U3-errors', !errors.length, errors.join('；') || '无页面错误');
 } finally { await browser.close(); }
 }
-console.log('U6–U7 留给 W10f–W10g。');
+// ---- U6 / U7 (W10f, W10_SPEC 2.5, 2.8): one geometry for the flat map and the sphere, one ground sampler for the camera and the walk
+//   U6-same   the scene graph (every mesh, line set, point set and sprite: object, geometry, vertex and index counts, instance capacity) is identical in the flat map,
+//             on the sphere and back on the flat map (the instances drawn this frame follow the camera's pixel rule, D14, not the map mode)
+//   U6-edges  every non-instanced mesh and line set that bends (rain and snow aside) has no horizontal edge (world frame) over 4 m on a triangle or segment whose box
+//             overlaps the town frame |x|, |z| <= 48 (the same rule bend.js subdivide() cuts by)
+//   U7        the walk (window.__scene.walk.step, fixed 1/20 s steps, forward input, heading pure-pursuit 2 m ahead along the path): the 20 random pieces of the roads
+//             outside the town (tools/ride_routes.mjs random20, seed 20261018), the W9a town corridors (every street segment and alley centre line of layout.js) and the
+//             town legs of RT-01 / RT-02; at every third step a vertical ray against the rendered walk surfaces (road strips, bridge tops, junction paving, the
+//             boardwalk planks, the town's ground meshes) under the walker and under the camera: walker on the surface, camera at the surface + 1.62 m, both within
+//             0.01 m (true metres: flat units / the display scale s); every walk reaches its end
+//   U7-exits  the nine exits, the RN01 tunnel and the seam of the flat map (RN01-13): walked along their roads, the same checks, no step of the walker's height over
+//             0.02 m (true), the seam crossed once (the walker's x wraps by one turn); the display scale's change per 0.5 m is reported
+if (!process.argv.includes('--no-browser') && (want('U6') || want('U7'))) {
+  const require = createRequire(import.meta.url);
+  globalThis.LAYOUT = globalThis.LAYOUT || require(path.join(root, 'layout.js'));
+  const L = globalThis.LAYOUT, W = require(path.join(root, 'world.js')), RR = await import(pathToFileURL(path.join(root, 'tools/ride_routes.mjs')).href);
+  const f = (v, n = 3) => (+v).toFixed(n);
+  const browser = await chromium.launch({ args: ['--use-angle=metal', '--ignore-gpu-blocklist'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }), errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(pathToFileURL(path.join(root, 'index.html')).href + '?quality=high');
+    await page.waitForFunction(() => window.__scene && window.__scene.ground, null, { timeout: 120000 });
+    if (want('U6')) {
+      const snap = () => page.evaluate(() => { const S = window.__scene, a = []; S.scene.traverse(o => { if (o.isMesh || o.isLine || o.isPoints || o.isSprite) { const g = o.geometry, p = g && g.attributes.position; a.push([o.uuid, g ? g.uuid : '', p ? p.count : 0, g && g.index ? g.index.count : 0, o.isInstancedMesh ? o.instanceMatrix.count : -1]); } }); return a; });
+      const setMode = m => page.evaluate(m => { const S = window.__scene; S.view.set({ mode: 'free', mapMode: m, target: [0, 1.2, 0], dist: m === 'sphere' ? 140 : 60 }); S.transition.step(3); }, m);
+      await setMode('flat'); await page.waitForTimeout(1500); const flat = await snap();
+      await setMode('sphere'); await page.waitForTimeout(1500); const sphere = await snap();
+      const edges = await page.evaluate(() => {
+        const S = window.__scene, B = 48, M2 = 16 + 1e-6; let objects = 0, prims = 0, long = 0, worst = 0; const bad = {};
+        S.scene.updateMatrixWorld(true);
+        S.scene.traverse(o => {
+          if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position) return;
+          const m = o.material; if (m && m.userData && (m.userData.noBend || m.userData.noWrap)) return;
+          const g = o.geometry, p = g.attributes.position, ix = g.index, n = Math.min(ix ? ix.count : p.count, g.drawRange.start + g.drawRange.count), e = o.matrixWorld.elements, per = o.isLineSegments ? 2 : 3;
+          let touched = false;
+          for (let t = 0; t + per <= n; t += per) {
+            const v = []; for (let k = 0; k < per; k++) { const i = ix ? ix.getX(t + k) : t + k, x = p.getX(i), y = p.getY(i), z = p.getZ(i); v.push([e[0] * x + e[4] * y + e[8] * z + e[12], e[2] * x + e[6] * y + e[10] * z + e[14]]); }
+            if (Math.max(...v.map(q => q[0])) < -B || Math.min(...v.map(q => q[0])) > B || Math.max(...v.map(q => q[1])) < -B || Math.min(...v.map(q => q[1])) > B) continue;
+            touched = true; prims++;
+            for (let k = 0; k < per; k++) { const a = v[k], b = v[(k + 1) % per], d2 = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2; if (d2 > worst) worst = d2; if (d2 > M2) { long++; let top = o; while (top.parent && top.parent !== S.scene) top = top.parent; const key = top.name || o.name || o.type; bad[key] = (bad[key] || 0) + 1; break; } }
+          }
+          if (touched) objects++;
+        });
+        return { objects, prims, long, worst: Math.sqrt(worst), bad, stats: S.town.geometry };
+      });
+      await setMode('flat'); await page.waitForTimeout(1500); const back = await snap();
+      const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      check('U6-same', flat.length > 0 && same(flat, sphere) && same(flat, back), `平面 ${flat.length}、球形 ${sphere.length}、回到平面 ${back.length} 个绘制对象；对象、几何、顶点/索引数与实例数${same(flat, sphere) && same(flat, back) ? '逐项相同' : '有差异'}`);
+      const st = edges.stats;
+      check('U6-edges', edges.long === 0 && edges.objects > 0, `城镇范围（|x|、|z| ≤ 48）内 ${edges.objects} 个网格/墨线、${edges.prims} 个三角形或线段，水平边 > 4 m 的 ${edges.long} 个，最长 ${f(edges.worst, 3)} m${edges.long ? '：' + JSON.stringify(edges.bad) : ''}；启动时细分 网格 ${st.meshes}、墨线 ${st.lines}（检查 ${st.objects} 个对象），三角形 ${st.trianglesBefore} → ${st.trianglesAfter}，线段 ${st.segmentsBefore} → ${st.segmentsAfter}，用时 ${st.ms} ms`);
+    }
+    if (want('U7')) {
+      // the paths: town paths in the town frame; the outdoor pieces from world.js (edge centre lines) and the exit roads, laid out in the page
+      const arc = ([, c, r, a0, a1]) => { const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) / 5)), out = []; for (let i = 0; i <= n; i++) { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; out.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); } return out; };
+      const legsOf = id => { const rt = RR.ROUTES.find(q => q.id === id), pts = []; for (const leg of rt.legs) if (leg.town) for (const q of leg.town.flatMap(q => (q[0] === 'arc' ? arc(q) : [q]))) { const last = pts[pts.length - 1]; if (!last || Math.hypot(last[0] - q[0], last[1] - q[1]) > 1e-6) pts.push(q); } return pts; };
+      const node = id => L.roadNodes.find(n => n.id === id), town = [];
+      for (const r of L.roads) for (let i = 0; i + 1 < r.nodes.length; i++) { const a = node(r.nodes[i]), b = node(r.nodes[i + 1]); town.push({ name: `W9a ${r.id} ${r.nodes[i]}–${r.nodes[i + 1]}`, P: [[a.x, a.z], [b.x, b.z]] }); }
+      for (const a of L.alleys) { const zc = (a.rect[1] + a.rect[3]) / 2; town.push({ name: `W9a ${a.id}`, P: [[a.rect[0] + 0.5, zc], [a.rect[2] - 0.5, zc]] }); }
+      town.push({ name: 'RT-01 城内', P: legsOf('RT-01') }, { name: 'RT-02 城内', P: legsOf('RT-02') });
+      const pieces = RR.random20(W);
+      const res = await page.evaluate(({ town, pieces }) => {
+        const S = window.__scene, G = S.ground, T = window.THREE, W = window.WORLD, PER = G.PERIOD, HALF = PER / 2, D = Math.PI / 180, R = 90, dt = 1 / 20;
+        const wdx = d => d - PER * Math.round(d / PER), canon = x => x - PER * Math.floor((x + HALF) / PER);
+        S.view.set({ mode: 'free', mapMode: 'flat', target: [-7, 1.2, 20], yaw: 2.5, pitch: 0.5, dist: 34 }); S.transition.step(3); S.view.set({ mode: 'roam' });
+        const entered = S.view.get().mode === 'roam';
+        // the rendered walk surfaces, with their world boxes
+        const meshes = [];
+        S.roads.state.root.traverse(o => { if (o.isMesh && (/^road:(route |junction paving)/.test(o.name) || /^road:bridge .* top$/.test(o.name) || o.name === 'road:plank')) meshes.push(o); });
+        S.scene.traverse(o => { if (o.isMesh && !o.isInstancedMesh && o.userData.groundOccupancy && !meshes.includes(o)) { let lm = false; for (let q = o; q; q = q.parent) if (/^lm\d/i.test(q.name || '')) lm = true; if (!lm) meshes.push(o); } });
+        S.scene.updateMatrixWorld(true);
+        const boxes = meshes.map(o => { if (o.isInstancedMesh) o.computeBoundingBox(); else if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); return { o, b: (o.isInstancedMesh ? o.boundingBox.clone() : o.geometry.boundingBox.clone()).applyMatrix4(o.matrixWorld) }; });
+        const ray = new T.Raycaster(), down = new T.Vector3(0, -1, 0), from = new T.Vector3();
+        // the first rendered walk surface below (x, y0, z): the geometry keeps its longitudes canonical, or continuous along a line that crosses 180 deg (tried +-1 turn);
+        // on the boardwalk (0.27 m planks, laid at the 0.5 m samples of the line: gaps up to 0.23 m) a ray between two planks meets what lies below: there the higher
+        // plank of the rays +-0.15 and +-0.3 m along the walk (ground.js stands on the higher plank either side of a gap)
+        const cast = (x, y0, z) => { let best = null; for (const cx of [canon(x), canon(x) + PER, canon(x) - PER]) { const list = boxes.filter(q => cx >= q.b.min.x - 0.01 && cx <= q.b.max.x + 0.01 && z >= q.b.min.z - 0.01 && z <= q.b.max.z + 0.01).map(q => q.o); if (!list.length) continue;
+          from.set(cx, y0, z); ray.set(from, down); ray.far = 50; const h = ray.intersectObjects(list, false); if (h.length && (best === null || h[0].point.y > best.y)) best = { y: h[0].point.y, plank: h[0].object.name === 'road:plank' }; } return best; };
+        const rendered = (x, y0, z, kind, h, s) => { const c = cast(x, y0, z); if (kind !== 'boardwalk' || (c && c.plank)) return c ? c.y : null; let y = null; for (const d of [0.15, -0.15, 0.3, -0.3]) { const q = cast(x + Math.sin(h) * d * s, y0, z + Math.cos(h) * d * s); if (q && q.plank && (y === null || q.y > y)) y = q.y; } return y; };
+        const walk = (name, P, opt = {}) => {
+          const n = P.length, Lc = [0]; for (let i = 1; i < n; i++) Lc.push(Lc[i - 1] + Math.hypot(wdx(P[i][0] - P[i - 1][0]), P[i][1] - P[i - 1][1]));
+          const total = Lc[n - 1], at = u => { let i = 0; while (i + 2 < n && Lc[i + 1] < u) i++; const t = Math.max(0, Math.min(1, (u - Lc[i]) / Math.max(1e-9, Lc[i + 1] - Lc[i]))); return [P[i][0] + wdx(P[i + 1][0] - P[i][0]) * t, P[i][1] + (P[i + 1][1] - P[i][1]) * t]; };
+          S.view.set({ position: [G.wrap(P[0][0]), P[0][1]], heading: Math.atan2(wdx(P[1][0] - P[0][0]), P[1][1] - P[0][1]) });
+          const out = { name, length: +total.toFixed(2), steps: 0, reached: false, start: null, eye: 0, ground: 0, misses: 0, rays: 0, dy: 0, dev: 0, ds: 0, wraps: 0, kinds: {}, layers: {}, s: [Infinity, 0], worst: null };
+          let r = S.view.get().roam; if (!r || !r.surface) return { ...out, start: 'off' };
+          let j = 0, u = 0, prevY = r.position[1], prevS = r.surface.s;
+          const proj = (x, z) => { let best = null; for (let i = j; i < Math.min(n - 1, j + 60); i++) { const ax = P[i][0], az = P[i][1], dx = wdx(P[i + 1][0] - ax), dz = P[i + 1][1] - az, l2 = dx * dx + dz * dz || 1e-12, px = ax + wdx(x - ax), t = Math.max(0, Math.min(1, ((px - ax) * dx + (z - az) * dz) / l2)), d = Math.hypot(px - ax - dx * t, z - az - dz * t); if (!best || d < best.d - 1e-9) best = { i, d, u: Lc[i] + Math.sqrt(l2) * t }; } return best; };
+          const max = Math.ceil(total / (1.5 * 0.5 * dt)) + 400;
+          for (let k = 0; k < max; k++) {
+            const p = r.position, s = r.surface.s, q = proj(p[0], p[2]); j = q.i; u = Math.max(u, q.u); out.dev = Math.max(out.dev, q.d / s);
+            if (total - u < 0.3 * s) { out.reached = true; break; }
+            const a = at(Math.min(total, u + 2 * s)); S.view.set({ heading: Math.atan2(wdx(a[0] - p[0]), a[1] - p[2]) });
+            r = S.walk.step(dt, [0, 1]); out.steps++;
+            const sf = r.surface, cs = r.camera; out.kinds[sf.kind] = (out.kinds[sf.kind] || 0) + 1; out.layers[sf.layer] = (out.layers[sf.layer] || 0) + 1; out.s[0] = Math.min(out.s[0], sf.s); out.s[1] = Math.max(out.s[1], sf.s);
+            const dy = Math.abs(r.position[1] - prevY) / Math.min(sf.s, prevS); if (dy > out.dy) out.dy = dy;
+            const step = Math.hypot(wdx(r.position[0] - p[0]), r.position[2] - p[2]) / sf.s; if (step > 1e-3) out.ds = Math.max(out.ds, Math.abs(sf.s - prevS) / prevS * 0.5 / step); if (Math.abs(r.position[0] - p[0]) > HALF) out.wraps++; prevY = r.position[1]; prevS = sf.s;
+            if (k % 3 === 0) {
+              const cam = S.camera.position, g0 = rendered(r.position[0], r.position[1] + 0.6 * sf.s, r.position[2], sf.kind, r.heading, sf.s), g1 = rendered(cam.x, cs.y + 0.6 * cs.s, cam.z, cs.kind, r.heading, cs.s); out.rays += 2;
+              if (g0 === null || g1 === null) { out.misses++; if (!out.worst) out.worst = { at: [r.position[0], r.position[2]], cam: [cam.x, cam.z], g0, g1, kind: sf.kind }; continue; }
+              const eg = Math.abs(r.position[1] - g0) / sf.s, ee = Math.abs((cam.y - g1) / cs.s - 1.62);
+              if (eg > out.ground) out.ground = eg; if (ee > out.eye) { out.eye = ee; if (ee > 0.01) out.worst = { at: [+r.position[0].toFixed(2), +r.position[2].toFixed(2)], cam: [+cam.x.toFixed(2), +cam.z.toFixed(2)], camY: cam.y, g1, s: cs.s, kind: cs.kind }; }
+            }
+          }
+          return { ...out, ground: +out.ground.toFixed(4), eye: +out.eye.toFixed(4), dy: +out.dy.toFixed(4), dev: +out.dev.toFixed(3), ds: +(out.ds * 100).toFixed(3), s: out.s.map(v => +v.toFixed(3)), u: +u.toFixed(2) };
+        };
+        const flatPt = (lon, lat) => [R * lon * D, -R * Math.asinh(Math.tan(lat * D))];
+        const town_ = town.map(t => walk(t.name, t.P));
+        const random = pieces.map(pc => { const e = W.roadNetwork.edges.find(q => q.id === pc.edge), sp = W.roadNetwork.samplePath(e, 0.5).filter(q => q.s >= pc.s0 - 1e-6 && q.s <= pc.s1 + 1e-6), P = [];
+          for (const q of sp) { const f = flatPt(q.lon, q.lat); if (P.length) f[0] = P[P.length - 1][0] + wdx(f[0] - P[P.length - 1][0]); P.push(f); }
+          return walk(`${pc.edge} ${pc.s0}–${pc.s1}`, P); });
+        // the exits: from 12 m inside the town edge along the exit road to 12 m outside it (to the line's end for the ring connectors), and the RN01 tunnel end to end
+        const exits = [];
+        for (const ln of G.lines.filter(l => l.kind === 'route' && /^(N\d\d-|M01-south)/.test(l.id))) {
+          const edgeS = (() => { for (let i = 0; i < ln.n; i++) { const f = ln.F[i]; if (Math.max(Math.abs(f.x), Math.abs(f.z)) > 48) return ln.S[i].s; } return ln.length; })();
+          const s0 = Math.max(0, edgeS - 12), s1 = Math.min(ln.length - 0.5, edgeS + 12), P = []; for (let s = s0; s <= s1 + 1e-6; s += 0.5) { const q = ln.point(Math.min(s, s1), 0); P.push([q.x, q.z]); }
+          exits.push(walk(`${ln.id} 出城`, P));
+        }
+        { const ln = G.lines.find(l => l.tunnel), P = []; for (let s = 0.5; s <= ln.length - 0.5; s += 0.5) { const q = ln.point(s, 0); P.push([q.x, q.z]); } exits.push(walk(`${ln.id} 隧道`, P)); }
+        // the seam of the flat map (bend.js SEAM, -85 deg) on the RN01-13 bridge: 15 m either side of it, on the deck
+        { const ln = G.lines.find(l => l.id === 'RN01-13'), P = []; let sx = null, px = null; for (let s = 0; s <= ln.length; s += 0.5) { const x = G.wrap(ln.point(s, 0).x); if (sx === null && px !== null && Math.abs(x - px) > HALF) sx = s; px = x; }
+          for (let s = Math.max(0.5, sx - 15); s <= Math.min(ln.length - 0.5, sx + 15); s += 0.5) { const q = ln.point(s, 0); P.push([q.x, q.z]); } exits.push({ ...walk(`${ln.id} 平面接缝（第 ${sx.toFixed(1)} m）`, P), seam: true }); }
+        S.view.set({ mode: 'free' });
+        return { entered, meshes: meshes.length, town: town_, random, exits };
+      }, { town, pieces });
+      const ok = q => q.reached && q.misses === 0 && q.ground <= 0.01 && q.eye <= 0.01;
+      const line = q => `${q.name}${q.reached ? '' : `（未走通：${q.u}/${q.length} m）`} ${q.length} m、${q.steps} 步、射线 ${q.rays}${q.misses ? `、未命中 ${q.misses}` : ''}，脚下 ${q.ground} m、眼高 ${q.eye} m、单步高差 ${q.dy} m、偏离 ${q.dev} m、s ${q.s.join('–')}（每 0.5 m 变化 ≤ ${q.ds}%）${q.wraps ? `、跨接缝 ${q.wraps} 次` : ''}、${Object.keys(q.kinds).join('/')}${q.layers.deck || q.layers.tunnel ? `、层 ${Object.entries(q.layers).map(([k, v]) => k + ' ' + v).join(' ')}` : ''}${q.worst && !ok(q) ? '；例 ' + JSON.stringify(q.worst) : ''}`;
+      console.log(`INFO U7 漫游进入 ${res.entered}，射线检查的可走面网格 ${res.meshes} 个`);
+      for (const q of [...res.random, ...res.town, ...res.exits]) console.log('  · ' + line(q));
+      const worst = list => ({ ground: Math.max(...list.map(q => q.ground)), eye: Math.max(...list.map(q => q.eye)) });
+      const wr = worst(res.random), wt = worst(res.town), we = worst(res.exits);
+      check('U7', res.entered && res.random.length === 20 && res.random.every(ok), `城外随机 20 段（种子 20261018）走通 ${res.random.filter(q => q.reached).length}/20，脚下与渲染路面最大差 ${f(wr.ground, 4)} m，相机离地与 1.62 m 最大差 ${f(wr.eye, 4)} m（真实米，≤ 0.01）`);
+      check('U7-town', res.town.every(ok), `W9a 城镇路线 ${res.town.length} 条（街道段 ${res.town.filter(q => /^W9a R/.test(q.name)).length}、巷道 ${res.town.filter(q => /^W9a A/.test(q.name)).length}、RT-01/RT-02 城内段）走通 ${res.town.filter(q => q.reached).length}/${res.town.length}，脚下 ${f(wt.ground, 4)} m、眼高 ${f(wt.eye, 4)} m`);
+      check('U7-exits', res.exits.every(q => ok(q) && q.dy <= 0.02) && res.exits.filter(q => q.seam).every(q => q.wraps === 1), `九个出口出城、RN01 隧道与平面接缝 ${res.exits.length} 条走通 ${res.exits.filter(q => q.reached).length}/${res.exits.length}，脚下 ${f(we.ground, 4)} m、眼高 ${f(we.eye, 4)} m、单步最大高差 ${f(Math.max(...res.exits.map(q => q.dy)), 4)} m（≤ 0.02）`);
+    }
+    check('U6-U7-errors', !errors.length, errors.join('；') || '无页面错误');
+  } finally { await browser.close(); }
+}
+console.log(`${failures ? 'FAIL' : 'PASS'} unify_check${ONLY ? ' --only ' + ONLY.join(',') : ''}`);
 process.exitCode = failures ? 1 : 0;

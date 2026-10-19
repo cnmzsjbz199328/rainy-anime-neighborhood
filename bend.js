@@ -282,14 +282,14 @@ function seamSplit(root) {
 }
 const IDENTITY = new THREE.Matrix4(), tmpBox = new THREE.Box3();
 
-// ---- W8f-a sphere copies of large faces (W8_SPEC 12.1 B). The shader only moves vertices, so a face bends as its flat chord: the town's 96 m plinth top and asphalt
-// sheet (12-triangle boxes) sink about 24 m below the sphere in the middle and the sky shows through the streets. tessellate() gives every mesh and line set under the
-// roots whose horizontal edges (in the world frame) exceed maxEdge a subdivided copy: an edge longer than maxEdge is split at its midpoint, the triangle is re-cut by the
-// edges that were split (1, 2 or 3: two, three or four children, winding kept) and the children are cut again until no edge is longer. The decision and the new point
-// depend on the edge alone (its two end positions), so two triangles that share an edge split it the same way: no T-junctions, no cracks, also in non-indexed meshes.
-// Every attribute is the mean of the two ends (normals re-normalised); the groups (BoxGeometry has six) are kept. A chord of 4 m sags 4^2 / (8 R) = 2.2 cm at R = 90.
-// The flat geometry is kept untouched: use(true) swaps the copies in (uBend > 0), use(false) puts the originals back (the flat town is bit for bit the old one).
-function tessellateGeometry(g, mw, maxEdge, lines) {
+// ---- W10f (W10_SPEC 2.5): one geometry for the flat map and the sphere. The shader only moves vertices, so a face bends as its flat chord (a 96 m town face would sink
+// about 24 m below the sphere and show the sky through the streets). subdivide() cuts, once while the world is built, every mesh and line set that has a primitive in the
+// region and a horizontal edge (world frame) longer than maxEdge: an edge longer than maxEdge is split at its midpoint, the triangle is re-cut by the edges that were split
+// (1, 2 or 3: two, three or four children, winding kept) and the children are cut again until no edge is longer. The decision and the new point depend on the edge alone
+// (its two end positions), so two triangles that share an edge split it the same way: no T-junctions, no cracks, also in non-indexed meshes. Every attribute is the mean
+// of the two ends (normals re-normalised): on the flat map the cut faces show what they showed before. The groups (BoxGeometry has six) are kept. A chord of 4 m sags
+// 4^2 / (8 R) = 2.2 cm at R = 90. The cut geometry replaces the old one for good: the flat map and the sphere draw the same objects (no copies, nothing to swap).
+function subdivideGeometry(g, mw, maxEdge, lines) {
   const pos = g.attributes.position;
   if (!pos || Object.keys(g.morphAttributes || {}).length) return null;
   const names = Object.keys(g.attributes), attrs = names.map(k => g.attributes[k]);
@@ -332,31 +332,43 @@ function tessellateGeometry(g, mw, maxEdge, lines) {
   names.forEach((k, j) => { const a = attrs[j]; G.setAttribute(k, new THREE.BufferAttribute(new a.array.constructor(data[j]), a.itemSize, a.normalized)); });
   G.setIndex(new THREE.BufferAttribute(count > 65535 ? new Uint32Array(out) : new Uint16Array(out), 1));
   if (g.groups && g.groups.length) for (const q of ng) G.addGroup(q.start, q.count, q.materialIndex);
-  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = (g.name || g.type) + ':sphere';
+  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = g.name; G.userData = g.userData;
   return { G, before: total / per, after: out.length / per };
 }
-// roots: objects to walk; opts.maxEdge (4 m), opts.box (only objects whose bounding-sphere centre lies within |x|, |z| <= box). Instanced meshes, points, sprites,
-// objects under a userData.live node (animated) and materials flagged noBend / noWrap (rain, snow) are left alone.
-function tessellate(roots, opts = {}) {
-  const maxEdge = opts.maxEdge || 4, box = opts.box === undefined ? Infinity : opts.box, t0 = Date.now(), list = [];
-  const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge };
-  const c = new THREE.Vector3();
+// roots: objects to walk; opts.maxEdge (4 m), opts.region [x0, z0, x1, z1] (world frame): an object is cut when the box of one of its triangles or segments overlaps the
+// region and one of its edges is longer than maxEdge (then all its long edges are cut, also outside the region: one geometry, no seam between cut and uncut faces).
+// Instanced meshes (small parts placed by matrices), points, sprites, line sets under a userData.live node (drips and runs whose vertices the animation rewrites; they are
+// vertical) and materials flagged noBend / noWrap (rain, snow) are left alone. A geometry shared by several objects gets one cut copy per object (its own world matrix).
+function subdivide(roots, opts = {}) {
+  const maxEdge = opts.maxEdge || 4, rg = opts.region || [-Infinity, -Infinity, Infinity, Infinity], t0 = Date.now(), list = [];
+  const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge, region: rg.slice() };
+  // a triangle or segment whose box (world x, z) overlaps the region
+  const touches = (g, mw, per) => {
+    const pos = g.attributes.position, e = mw.elements, idx = g.index ? g.index.array : null, total = Math.min(idx ? idx.length : pos.count, g.drawRange.start + g.drawRange.count);
+    for (let t = 0; t + per <= total; t += per) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let k = 0; k < per; k++) { const i = idx ? idx[t + k] : t + k, x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), wx = e[0] * x + e[4] * y + e[8] * z + e[12], wz = e[2] * x + e[6] * y + e[10] * z + e[14];
+        if (wx < x0) x0 = wx; if (wx > x1) x1 = wx; if (wz < z0) z0 = wz; if (wz > z1) z1 = wz; }
+      if (x1 >= rg[0] && x0 <= rg[2] && z1 >= rg[1] && z0 <= rg[3]) return true;
+    }
+    return false;
+  };
   for (const r of roots) {
     r.updateMatrixWorld(true);
     r.traverse(o => {
-      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || noBend(o) || noWrap(o)) return;
-      for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
-      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
-      c.copy(g.boundingSphere.center).applyMatrix4(o.matrixWorld); if (Math.abs(c.x) > box || Math.abs(c.z) > box) return;
+      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position || noBend(o) || noWrap(o)) return;
+      if (o.isLineSegments) for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
+      const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      const bb = tmpBox.copy(g.boundingBox).applyMatrix4(o.matrixWorld); if (bb.max.x < rg[0] || bb.min.x > rg[2] || bb.max.z < rg[1] || bb.min.z > rg[3] || !touches(g, o.matrixWorld, o.isLineSegments ? 2 : 3)) return;
       stats.objects++;
-      const res = tessellateGeometry(g, o.matrixWorld, maxEdge, o.isLineSegments); if (!res) return;
-      list.push({ o, flat: g, sphere: res.G });
+      const res = subdivideGeometry(g, o.matrixWorld, maxEdge, o.isLineSegments); if (!res) return;
+      o.geometry = res.G; list.push(o);
       if (o.isLineSegments) { stats.lines++; stats.segmentsBefore += res.before; stats.segmentsAfter += res.after; }
       else { stats.meshes++; stats.trianglesBefore += res.before; stats.trianglesAfter += res.after; }
     });
   }
   stats.ms = Date.now() - t0;
-  return { list, stats, use(on) { for (const q of list) q.o.geometry = on ? q.sphere : q.flat; } };
+  return { list, stats };
 }
 
 let scene = null;
@@ -412,7 +424,7 @@ const BEND = {
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
   SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU, weatherFogUniform: weatherFogU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
-  seamSplit, seamStats, tessellate,
+  seamSplit, seamStats, subdivide,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },
   setEdgeFog(on) { edgeU.value.x = on ? 1 : 0; return edgeU.value.x; },
   // CPU mirror of the edge fog (before the 1 - uBend factor) at a point of the flat display frame

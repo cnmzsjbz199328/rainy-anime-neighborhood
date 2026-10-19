@@ -292,14 +292,14 @@ function seamSplit(root) {
 }
 const IDENTITY = new THREE.Matrix4(), tmpBox = new THREE.Box3();
 
-// ---- W8f-a sphere copies of large faces (W8_SPEC 12.1 B). The shader only moves vertices, so a face bends as its flat chord: the town's 96 m plinth top and asphalt
-// sheet (12-triangle boxes) sink about 24 m below the sphere in the middle and the sky shows through the streets. tessellate() gives every mesh and line set under the
-// roots whose horizontal edges (in the world frame) exceed maxEdge a subdivided copy: an edge longer than maxEdge is split at its midpoint, the triangle is re-cut by the
-// edges that were split (1, 2 or 3: two, three or four children, winding kept) and the children are cut again until no edge is longer. The decision and the new point
-// depend on the edge alone (its two end positions), so two triangles that share an edge split it the same way: no T-junctions, no cracks, also in non-indexed meshes.
-// Every attribute is the mean of the two ends (normals re-normalised); the groups (BoxGeometry has six) are kept. A chord of 4 m sags 4^2 / (8 R) = 2.2 cm at R = 90.
-// The flat geometry is kept untouched: use(true) swaps the copies in (uBend > 0), use(false) puts the originals back (the flat town is bit for bit the old one).
-function tessellateGeometry(g, mw, maxEdge, lines) {
+// ---- W10f (W10_SPEC 2.5): one geometry for the flat map and the sphere. The shader only moves vertices, so a face bends as its flat chord (a 96 m town face would sink
+// about 24 m below the sphere and show the sky through the streets). subdivide() cuts, once while the world is built, every mesh and line set that has a primitive in the
+// region and a horizontal edge (world frame) longer than maxEdge: an edge longer than maxEdge is split at its midpoint, the triangle is re-cut by the edges that were split
+// (1, 2 or 3: two, three or four children, winding kept) and the children are cut again until no edge is longer. The decision and the new point depend on the edge alone
+// (its two end positions), so two triangles that share an edge split it the same way: no T-junctions, no cracks, also in non-indexed meshes. Every attribute is the mean
+// of the two ends (normals re-normalised): on the flat map the cut faces show what they showed before. The groups (BoxGeometry has six) are kept. A chord of 4 m sags
+// 4^2 / (8 R) = 2.2 cm at R = 90. The cut geometry replaces the old one for good: the flat map and the sphere draw the same objects (no copies, nothing to swap).
+function subdivideGeometry(g, mw, maxEdge, lines) {
   const pos = g.attributes.position;
   if (!pos || Object.keys(g.morphAttributes || {}).length) return null;
   const names = Object.keys(g.attributes), attrs = names.map(k => g.attributes[k]);
@@ -342,31 +342,43 @@ function tessellateGeometry(g, mw, maxEdge, lines) {
   names.forEach((k, j) => { const a = attrs[j]; G.setAttribute(k, new THREE.BufferAttribute(new a.array.constructor(data[j]), a.itemSize, a.normalized)); });
   G.setIndex(new THREE.BufferAttribute(count > 65535 ? new Uint32Array(out) : new Uint16Array(out), 1));
   if (g.groups && g.groups.length) for (const q of ng) G.addGroup(q.start, q.count, q.materialIndex);
-  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = (g.name || g.type) + ':sphere';
+  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = g.name; G.userData = g.userData;
   return { G, before: total / per, after: out.length / per };
 }
-// roots: objects to walk; opts.maxEdge (4 m), opts.box (only objects whose bounding-sphere centre lies within |x|, |z| <= box). Instanced meshes, points, sprites,
-// objects under a userData.live node (animated) and materials flagged noBend / noWrap (rain, snow) are left alone.
-function tessellate(roots, opts = {}) {
-  const maxEdge = opts.maxEdge || 4, box = opts.box === undefined ? Infinity : opts.box, t0 = Date.now(), list = [];
-  const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge };
-  const c = new THREE.Vector3();
+// roots: objects to walk; opts.maxEdge (4 m), opts.region [x0, z0, x1, z1] (world frame): an object is cut when the box of one of its triangles or segments overlaps the
+// region and one of its edges is longer than maxEdge (then all its long edges are cut, also outside the region: one geometry, no seam between cut and uncut faces).
+// Instanced meshes (small parts placed by matrices), points, sprites, line sets under a userData.live node (drips and runs whose vertices the animation rewrites; they are
+// vertical) and materials flagged noBend / noWrap (rain, snow) are left alone. A geometry shared by several objects gets one cut copy per object (its own world matrix).
+function subdivide(roots, opts = {}) {
+  const maxEdge = opts.maxEdge || 4, rg = opts.region || [-Infinity, -Infinity, Infinity, Infinity], t0 = Date.now(), list = [];
+  const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge, region: rg.slice() };
+  // a triangle or segment whose box (world x, z) overlaps the region
+  const touches = (g, mw, per) => {
+    const pos = g.attributes.position, e = mw.elements, idx = g.index ? g.index.array : null, total = Math.min(idx ? idx.length : pos.count, g.drawRange.start + g.drawRange.count);
+    for (let t = 0; t + per <= total; t += per) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let k = 0; k < per; k++) { const i = idx ? idx[t + k] : t + k, x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), wx = e[0] * x + e[4] * y + e[8] * z + e[12], wz = e[2] * x + e[6] * y + e[10] * z + e[14];
+        if (wx < x0) x0 = wx; if (wx > x1) x1 = wx; if (wz < z0) z0 = wz; if (wz > z1) z1 = wz; }
+      if (x1 >= rg[0] && x0 <= rg[2] && z1 >= rg[1] && z0 <= rg[3]) return true;
+    }
+    return false;
+  };
   for (const r of roots) {
     r.updateMatrixWorld(true);
     r.traverse(o => {
-      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || noBend(o) || noWrap(o)) return;
-      for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
-      const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
-      c.copy(g.boundingSphere.center).applyMatrix4(o.matrixWorld); if (Math.abs(c.x) > box || Math.abs(c.z) > box) return;
+      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position || noBend(o) || noWrap(o)) return;
+      if (o.isLineSegments) for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
+      const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      const bb = tmpBox.copy(g.boundingBox).applyMatrix4(o.matrixWorld); if (bb.max.x < rg[0] || bb.min.x > rg[2] || bb.max.z < rg[1] || bb.min.z > rg[3] || !touches(g, o.matrixWorld, o.isLineSegments ? 2 : 3)) return;
       stats.objects++;
-      const res = tessellateGeometry(g, o.matrixWorld, maxEdge, o.isLineSegments); if (!res) return;
-      list.push({ o, flat: g, sphere: res.G });
+      const res = subdivideGeometry(g, o.matrixWorld, maxEdge, o.isLineSegments); if (!res) return;
+      o.geometry = res.G; list.push(o);
       if (o.isLineSegments) { stats.lines++; stats.segmentsBefore += res.before; stats.segmentsAfter += res.after; }
       else { stats.meshes++; stats.trianglesBefore += res.before; stats.trianglesAfter += res.after; }
     });
   }
   stats.ms = Date.now() - t0;
-  return { list, stats, use(on) { for (const q of list) q.o.geometry = on ? q.sphere : q.flat; } };
+  return { list, stats };
 }
 
 let scene = null;
@@ -422,7 +434,7 @@ const BEND = {
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
   SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU, weatherFogUniform: weatherFogU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
-  seamSplit, seamStats, tessellate,
+  seamSplit, seamStats, subdivide,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },
   setEdgeFog(on) { edgeU.value.x = on ? 1 : 0; return edgeU.value.x; },
   // CPU mirror of the edge fog (before the 1 - uBend factor) at a point of the flat display frame
@@ -3861,7 +3873,7 @@ function tunnel(W, edgeId, bed) {
   return { edge: edgeId, from: sp.fromMeters, to: sp.toMeters, length: sp.toMeters - sp.fromMeters, idx, samples: S, flatOf: F, tangent: T, bed: i => bed[i], innerR: 4.7, wallH: 1.0, shell: 0.7 };
 }
 
-const BRIDGE = { build, tunnel, DECK, COL, TOPCOLS: TOPCOLS.map(q => q[0]) };
+const BRIDGE = { build, tunnel, DECK, COL, TOPCOLS: TOPCOLS.map(q => q[0]), topLift: o => topAt(o)[1] };   // topLift: the deck top above the girder at an offset (ground.js)
 if (typeof module !== 'undefined' && module.exports) module.exports = BRIDGE;
 else global.BRIDGE = BRIDGE;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -7005,6 +7017,249 @@ else global.STREETLIGHTS = STREETLIGHTS;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
+// W10f (docs/world/W10_SPEC.md 2.8): the one ground sampler of the world. The camera (its look target and the lift on the sphere) and the walk read the ground only here.
+// Two layers of answers from one place:
+//   ground  the shown ground under a point: the rendered terrain (the sea at altitude 0; the town's plain is the terrain at 1.6 m): y(x, z), alt(lon, lat)
+//   walk    the walkable surfaces of the one road network (W10_SPEC 2.8: the roads, the pavements, the town's public areas), at(x, z, hint) -> one sample:
+//           every road's paved width and shoulder (roadkit.js), the paved T junctions, the bridge decks, the stone stairs and the boardwalk, and in the town (layout.js) the carriageways,
+//           alleys, pavements and facility bands, the curb ramps and driveways, the walkway W01 and the bus aprons; plots and everything off the network give null.
+// A sample (x, z in the flat display frame, y its flat height): { x, z, y, alt (true metres), s (display scale: flat units per true metre, a function of the place:
+// 1 in the town frame, 1 / cos(lat) from 15 m beyond it, a smoothstep between; the same on every road through a point), k (1 / cos(lat)), kind, layer ('ground' | 'deck' | 'tunnel'), line, route, edge, cls,
+// station (m along the line), offset (true m, + right of travel), slope (rise per true metre along the line), margin (true m to the walkable edge across it) }.
+// The flat display frame runs from the seam (bend.js SEAM) one circumference east; a query anywhere is wrapped into it, a sample's x lies in it.
+// Pure: no THREE, no DOM; attach() reads the built roads (roads.data()) and the terrain sampler once, after the world is generated.
+(function (global) {
+'use strict';
+const R = 90, D = Math.PI / 180, BASE = 1.6, PERIOD = 2 * Math.PI * R, HALF = Math.PI * R, CELL = 8, PAD = 14;
+const TOWN_BLEND = 15;   // the display scale runs from the town frame's 1 to 1 / cos(lat) over the exits' 15 m width transition (W10_SPEC 2.2)
+const STAIR_HALF = 0.8, BOARD_HALF = 1.0, DECK_WALK = 4.6, PLANK_TOP = 0.08, PLANK_HALF = 0.135;   // steps.js STAIR.width / 2; roadkit.js boardwalk DECK.half; the deck's walk (rails beyond); flora.js plank: 0.08 m thick (its foot at the record's altitude), 0.27 m deep
+const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+const flatOf = (lon, lat) => ({ x: R * lon * D, z: -R * Math.asinh(Math.tan(lat * D)), k: 1 / Math.cos(lat * D) });
+const llOf = (x, z) => ({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D });
+const canonX = x => x - PERIOD * Math.floor((x + HALF) / PERIOD);                 // the data's longitudes: [-pi R, pi R)
+const wrapDx = d => d - PERIOD * Math.round(d / PERIOD);
+const inRect = (r, x, z) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3];
+const inPoly = (p, x, z) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (((p[i][1] > z) !== (p[j][1] > z)) && (x < (p[j][0] - p[i][0]) * (z - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0])) c = !c; return c; };
+
+// ---- a sampled line (route, bridge, stairs, boardwalk): flat samples, stations, tangents, the lateral factor, the walkable half widths, a grid of its segments
+function line(kind, id, S, F, T, cf, walk, extra) {
+  const n = S.length, cells = new Map(), X = new Float64Array(n), key = (a, b) => a * 1000003 + b;
+  for (let i = 0; i < n; i++) X[i] = i ? X[i - 1] + wrapDx(F[i].x - F[i - 1].x) : F[0].x;     // longitudes kept continuous along the line
+  for (let i = 0; i + 1 < n; i++) {
+    const a0 = Math.floor((Math.min(X[i], X[i + 1]) - PAD) / CELL), a1 = Math.floor((Math.max(X[i], X[i + 1]) + PAD) / CELL), b0 = Math.floor((Math.min(F[i].z, F[i + 1].z) - PAD) / CELL), b1 = Math.floor((Math.max(F[i].z, F[i + 1].z) + PAD) / CELL);
+    for (let a = a0; a <= a1; a++) for (let b = b0; b <= b1; b++) { const k = key(a, b); let l = cells.get(k); if (!l) cells.set(k, l = []); l.push(i); }
+  }
+  // the nearest point of the line to a canonical flat point within the cells: segment i, fraction t, station s, offset o (true m, + right of travel), true distance d,
+  // how far beyond the first or last sample (true m); all = every segment (the spawn search) instead of the cells
+  const project = (x, z, all) => {
+    let best = null;
+    for (const shift of [0, PERIOD, -PERIOD]) {
+      const px = x + shift, l = all ? null : cells.get(key(Math.floor(px / CELL), Math.floor(z / CELL))); if (!all && !l) continue;
+      const m = all ? n - 1 : l.length;
+      for (let q = 0; q < m; q++) {
+        const i = all ? q : l[q], ax = X[i], az = F[i].z, dx = X[i + 1] - ax, dz = F[i + 1].z - az, l2 = dx * dx + dz * dz || 1e-12, raw = ((px - ax) * dx + (z - az) * dz) / l2, t = clamp01(raw);
+        const qx = ax + dx * t, qz = az + dz * t, d2 = (px - qx) ** 2 + (z - qz) ** 2;
+        if (best && d2 >= best.d2) continue;
+        const k = F[i].k + (F[i + 1].k - F[i].k) * t, c = cf[i] + (cf[i + 1] - cf[i]) * t, Tx = T[i][0] + (T[i + 1][0] - T[i][0]) * t, Tz = T[i][1] + (T[i + 1][1] - T[i][1]) * t;
+        const side = (px - qx) * -Tz + (z - qz) * Tx >= 0 ? 1 : -1, d = Math.sqrt(d2) / k;
+        const over = (i === 0 && raw < 0 ? -raw : i === n - 2 && raw > 1 ? raw - 1 : 0) * Math.sqrt(l2) / k;
+        best = { d2, i, t, s: S[i].s + (S[i + 1].s - S[i].s) * t, o: side * d / c, d, over, k, c, T: [Tx, Tz], px: qx, pz: qz };
+      }
+    }
+    return best;
+  };
+  // the flat point at station s, offset o (true m)
+  const point = (s, o) => {
+    let i = 0; while (i + 2 < n && S[i + 1].s < s) i++;
+    const t = clamp01((s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s)), x = X[i] + (X[i + 1] - X[i]) * t, z = F[i].z + (F[i + 1].z - F[i].z) * t, k = F[i].k + (F[i + 1].k - F[i].k) * t, c = cf[i] + (cf[i + 1] - cf[i]) * t;
+    const Tx = T[i][0] + (T[i + 1][0] - T[i][0]) * t, Tz = T[i][1] + (T[i + 1][1] - T[i][1]) * t, tl = Math.hypot(Tx, Tz) || 1;
+    return { x: x - Tz / tl * o * c * k, z: z + Tx / tl * o * c * k, T: [Tx / tl, Tz / tl], i, t };
+  };
+  return { kind, id, S, F, T, cf, walk, n, project, point, length: S[n - 1].s, ...extra };
+}
+const pathOf = pts => {
+  const S = pts.map((p, i) => ({ ...p, s: p.s ?? i * 0.5 })), F = S.map(p => flatOf(p.lon, p.lat)), n = S.length;
+  const T = F.map((f, i) => { const a = F[Math.max(0, i - 1)], b = F[Math.min(n - 1, i + 1)], dx = wrapDx(b.x - a.x), dz = b.z - a.z, l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; });
+  return { S, F, T };
+};
+const lerpAt = (arr, q) => { const a = arr[q.i], b = arr[Math.min(arr.length - 1, q.i + 1)]; return Array.isArray(a) ? a.map((v, j) => v + (b[j] - v) * q.t) : a + (b - a) * q.t; };
+
+// ---- the town frame (layout.js): which surface a point lies on, and its flat height (the shapes scene.js and the road strips build)
+function townWalk(L) {
+  const LV = L.LEVELS, H0 = L.BASE.half, Rc = L.INTERSECTION.curbRadius;
+  const islands = L.islands.map(is => {
+    const [x0, z0, x1, z1] = is.rect, C = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], names = ['NW', 'NE', 'SE', 'SW'], mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, pts = [];
+    for (let i = 0; i < 4; i++) {
+      const c = C[i], p = C[(i + 3) % 4], q = C[(i + 1) % 4];
+      if (!is.round[names[i]]) { pts.push(c); continue; }
+      const din = [Math.sign(c[0] - p[0]), Math.sign(c[1] - p[1])], dout = [Math.sign(q[0] - c[0]), Math.sign(q[1] - c[1])], o = [c[0] + Math.sign(mx - c[0]) * Rc, c[1] + Math.sign(mz - c[1]) * Rc];
+      const A0 = Math.atan2(c[1] - din[1] * Rc - o[1], c[0] - din[0] * Rc - o[0]); let d = Math.atan2(c[1] + dout[1] * Rc - o[1], c[0] + dout[0] * Rc - o[0]) - A0;
+      while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+      for (let k = 0; k <= 12; k++) pts.push([o[0] + Rc * Math.cos(A0 + d * k / 12), o[1] + Rc * Math.sin(A0 + d * k / 12)]);
+    }
+    return pts;
+  });
+  const box = p => { const xs = p.map(v => v[0]), zs = p.map(v => v[1]); return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; };
+  const cuts = L.curbCuts.map(k => ({ k, rect: k.rect }));
+  const ways = L.walkways.map(w => ({ id: w.id, rect: box(w.poly) })), aprons = L.aprons.map(a => ({ id: a.id, rect: box(a.poly) }));
+  const bands = L.surfaces.filter(s => s.kind === 'band' || s.kind === 'sidewalk');
+  // { kind, y, id } or null (a plot); y is null where the road strip gives the height (carriageways and alleys)
+  return (x, z) => {
+    if (Math.abs(x) > H0 || Math.abs(z) > H0) return undefined;
+    const lift = Math.cosh(z / R);
+    for (const p of L.plots) if (x > p.rect[0] && x < p.rect[2] && z > p.rect[1] && z < p.rect[3]) return null;
+    for (const c of cuts) if (inRect(c.rect, x, z)) {
+      const k = c.k, v = k.line === 'x' ? x : z, t = clamp01((v - k.at) / (k.dir * k.depth)), y = LV.carriageway * lift + (LV.pavement - LV.carriageway * lift) * t;
+      // the alleys' mouths are part of their road strips (scene.js draws no ramp there): the strip gives the height
+      return k.kind === 'driveway' && /^A0/.test(k.id) ? { kind: 'driveway', id: k.id, y: null, fallback: y } : { kind: k.kind === 'ramp' ? 'ramp' : 'driveway', id: k.id, y };
+    }
+    for (const w of ways) if (inRect(w.rect, x, z)) return { kind: 'walkway', id: w.id, y: LV.pavement };
+    for (const a of aprons) if (inRect(a.rect, x, z)) return { kind: 'apron', id: a.id, y: LV.pavement };
+    for (const a of L.alleys) if (inRect(a.rect, x, z)) return { kind: 'alley', id: a.id, y: null, fallback: LV.pavement * lift };
+    for (const p of islands) if (inPoly(p, x, z)) { const b = bands.find(s => inRect(s.rect, x, z)); return { kind: b ? b.kind : 'sidewalk', id: b ? b.id : null, y: LV.pavement }; }
+    return { kind: 'carriageway', id: null, y: null, fallback: LV.carriageway * lift };
+  };
+}
+
+// ctx = { W: WORLD, L: LAYOUT, terrain: (lon, lat) -> rendered terrain altitude, roads: roads.data(), ROADS: global.ROADS, BRIDGE: global.BRIDGE, SEAM }
+function attach(ctx) {
+  const W = ctx.W, L = ctx.L, H = ctx.terrain, RD = ctx.roads, RK = ctx.ROADS, BR = ctx.BRIDGE, SEAM = ctx.SEAM, NET = W.roadNetwork, edgeOf = Object.fromEntries(NET.edges.map(e => [e.id, e]));
+  const show = x => SEAM + ((x - SEAM) % PERIOD + PERIOD) % PERIOD;           // into the flat display frame [SEAM, SEAM + PERIOD)
+  const lines = [];
+  for (const rt of RD.routes) lines.push(line('route', rt.def.id, rt.samples, rt.flatOf, rt.tangent, rt.cf, rt.footprint.map(f => [f[0], f[1]]), { rt, tunnel: rt.tunnel ? [rt.tunnel.s0, rt.tunnel.s1] : null }));
+  for (const b of RD.bridges) {
+    const F = b.samples.map(p => flatOf(p.lon, p.lat)), cf = b.samples.map((p, i) => { const [lo, la] = b.lateral(i, 1), f = flatOf(lo, la); return Math.hypot(wrapDx(f.x - F[i].x), f.z - F[i].z) / F[i].k; });
+    lines.push(line('bridge', b.def.id, b.samples, F, b.tangent, cf, b.samples.map(() => [-DECK_WALK, DECK_WALK]), { b }));
+  }
+  for (const st of RD.stairs) { const P = pathOf(st.samples); lines.push(line('stairs', st.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-STAIR_HALF, STAIR_HALF]), { st })); }
+  // the boardwalk: its planks are the surface (each at its own altitude; roadkit.js lays them every 0.32 m), so the walk stands on the top of the plank nearest along it
+  for (const ex of RD.extras || []) { const P = pathOf(ex.centre), ln = line('boardwalk', ex.id, P.S, P.F, P.T, P.S.map(() => 1), P.S.map(() => [-BOARD_HALF, BOARD_HALF]), { ex });
+    ln.planks = (ex.instances.plank || []).map(r => { const f = flatOf(r.lon, r.lat), q = ln.project(f.x, f.z, true); return [q.s, r.alt + PLANK_TOP]; }).sort((a, b) => a[0] - b[0]); lines.push(ln); }
+  const town = townWalk(L);
+  // I6: the display scale at a canonical flat point (continuous: no step at the town edge or where two roads meet)
+  const scaleAt = (cx, z) => { const H0 = L.BASE.half, d = Math.hypot(Math.max(0, Math.abs(cx) - H0), Math.max(0, Math.abs(z) - H0)); if (d <= 0) return 1;
+    const t = clamp01(d / TOWN_BLEND), w = t * t * (3 - 2 * t), k = 1 / Math.cos(llOf(cx, z).lat * D); return 1 + (k - 1) * w; };
+  // the paved T junctions of the trunk (roads.js junction strips: their own triangles, flat frame) are walkable; the ring's junctions are its own continuous paving
+  const junctions = (RD.junctions || []).filter(j => j.strip && j.strip.pos && j.strip.index && j.strip.index.length).map(j => {
+    const P = j.strip.pos, I = j.strip.index, tris = [];
+    for (let t = 0; t + 2 < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]].map(i => [P[i * 3], P[i * 3 + 1], P[i * 3 + 2]]); tris.push({ v, b: [Math.min(v[0][0], v[1][0], v[2][0]), Math.min(v[0][2], v[1][2], v[2][2]), Math.max(v[0][0], v[1][0], v[2][0]), Math.max(v[0][2], v[1][2], v[2][2])] }); }
+    return { node: j.node, tris, b: [Math.min(...tris.map(q => q.b[0])), Math.min(...tris.map(q => q.b[1])), Math.max(...tris.map(q => q.b[2])), Math.max(...tris.map(q => q.b[3]))] };
+  });
+  const junctionY = (x, z) => {
+    let y = null, node = null;
+    for (const j of junctions) for (const sh of [0, PERIOD, -PERIOD]) { const px = x + sh; if (!inRect(j.b, px, z)) continue;
+      for (const q of j.tris) { if (!inRect(q.b, px, z)) continue; const [a, b, c] = q.v, d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]); if (Math.abs(d) < 1e-12) continue;
+        const u = ((b[2] - c[2]) * (px - c[0]) + (c[0] - b[0]) * (z - c[2])) / d, v = ((c[2] - a[2]) * (px - c[0]) + (a[0] - c[0]) * (z - c[2])) / d, w = 1 - u - v;
+        if (u >= -1e-9 && v >= -1e-9 && w >= -1e-9) { const h = u * a[1] + v * b[1] + w * c[1]; if (y === null || h > y) { y = h; node = j.node; } } } }
+    return y === null ? null : { y, node };
+  };
+  const atS = (ln, s) => { const S = ln.S, n = S.length; let i = 0; while (i + 2 < n && S[i + 1].s < s) i++; return { i, t: clamp01((s - S[i].s) / Math.max(1e-9, S[i + 1].s - S[i].s)) }; };
+  // true altitude of a line's walking surface at station s, offset o
+  const altOf = (ln, s, o) => {
+    if (ln.kind === 'route') return RK.surfS(ln.rt, s, o);
+    if (ln.kind === 'bridge') { const q = atS(ln, s), A = ln.b.alt; return A[q.i] + (A[Math.min(A.length - 1, q.i + 1)] - A[q.i]) * q.t + BR.topLift(o); }
+    if (ln.kind === 'stairs') { const st = ln.st; for (const p of st.steps) if (Math.abs(s - p.s) <= p.tread / 2 + 1e-6) return p.top; const q = atS(ln, s); return st.profile[q.i] + (st.profile[Math.min(st.profile.length - 1, q.i + 1)] - st.profile[q.i]) * q.t; }
+    // the plank under the point (0.27 m deep along the walk), else in a gap the higher of the two planks either side
+    let under = null, before = null, after = null; for (const pk of ln.planks) { if (Math.abs(pk[0] - s) <= PLANK_HALF && (!under || pk[1] > under[1])) under = pk; if (pk[0] <= s && (!before || pk[0] >= before[0])) before = pk; if (pk[0] >= s && (!after || pk[0] < after[0])) after = pk; }
+    return under ? under[1] : Math.max(before ? before[1] : -Infinity, after ? after[1] : -Infinity);
+  };
+  const edgeAt = (ln, q) => {
+    if (ln.kind === 'route') return ln.rt.def.segs[ln.rt.edgeOf[q.i]].id;
+    if (ln.kind === 'bridge') { const b = ln.b, j = b.joints ? b.joints.filter(v => v <= q.s).length : 0; return b.ids[Math.min(b.ids.length - 1, j)]; }
+    return ln.id;
+  };
+  const candidates = (x, z) => {
+    const cx = canonX(x), ll = llOf(cx, z), k = 1 / Math.cos(ll.lat * D), sc = scaleAt(cx, z), out = [];
+    for (const ln of lines) {
+      const q = ln.project(cx, z); if (!q || q.over > (ln.kind === 'boardwalk' ? PLANK_HALF : 0)) continue;     // the end planks overhang the boardwalk's line by half a plank
+      const w = lerpAt(ln.walk, q); if (q.o < w[0] - 1e-9 || q.o > w[1] + 1e-9) continue;
+      const tun = ln.tunnel && q.s > ln.tunnel[0] && q.s < ln.tunnel[1], alt = altOf(ln, q.s, q.o), edge = edgeAt(ln, q), e = edgeOf[edge];
+      let kind = ln.kind === 'bridge' ? 'deck' : ln.kind;
+      if (ln.kind === 'route') { const p = lerpAt(ln.rt.paved, q); kind = q.o >= p[0] - 1e-9 && q.o <= p[1] + 1e-9 ? (e && e.class === 'RD08' ? 'snow' : e && e.class === 'TOWN_ALLEY' ? 'alley' : 'carriageway') : 'shoulder'; }
+      const a0 = altOf(ln, Math.max(0, q.s - 0.25), q.o), a1 = altOf(ln, Math.min(ln.length, q.s + 0.25), q.o), span = Math.min(ln.length, q.s + 0.25) - Math.max(0, q.s - 0.25);
+      out.push({ alt, y: (alt - BASE) * k, s: sc, k, kind, layer: ln.kind === 'bridge' ? 'deck' : tun ? 'tunnel' : 'ground', line: ln.id, route: e ? e.route : null, edge, cls: e ? e.class : null,
+        station: q.s, offset: q.o, slope: span > 0 ? (a1 - a0) / span : 0, margin: Math.min(q.o - w[0], w[1] - q.o), heading: Math.atan2(q.T[0], q.T[1]) });
+    }
+    // CR01 (W10c): the ring's swept asphalt runs on through its ten junctions and the branches are cut at its paving, so on the ring's paving and its inner shoulder the
+    // ring is the surface; its outer shoulder and ditch make way at a branch mouth, so there a branch is
+    const ring = out.find(c => c.line === 'CR01'), ringLine = ring && lines.find(l => l.id === 'CR01');
+    if (ring) { const q = ringLine.project(cx, z), p = lerpAt(ringLine.rt.paved, q); if (ring.offset >= p[0] - 1e-9) { for (let i = out.length - 1; i >= 0; i--) if (out[i] !== ring && out[i].layer === 'ground') out.splice(i, 1); }
+      else if (out.some(c => c !== ring && c.layer === 'ground')) out.splice(out.indexOf(ring), 1); }
+    const jn = junctionY(cx, z);
+    if (jn) { const near = out.filter(c => c.layer === 'ground').sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))[0];
+      out.push({ alt: BASE + jn.y / k, y: jn.y, s: sc, k, kind: 'junction', layer: 'ground', line: near ? near.line : null, route: near ? near.route : null, edge: near ? near.edge : null, cls: near ? near.cls : null,
+        station: near ? near.station : null, offset: near ? near.offset : null, slope: 0, margin: null, heading: near ? near.heading : null, junction: jn.node }); }
+    const t = town(cx, z);
+    if (t === null) return [];                                                // a plot: nothing on the network stands there
+    if (t !== undefined) {
+      // the town frame: layout.js decides the surface; a carriageway or an alley takes its height (and its road) from the road strip under it
+      const road = out.filter(c => c.layer === 'ground' && c.kind !== 'shoulder').sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))[0] || out.find(c => c.layer === 'ground') || null;
+      // where an alley's strip runs over the pavement (its mouth), the strip is the top surface
+      const alley = out.filter(c => c.cls === 'TOWN_ALLEY' && c.kind === 'alley').reduce((a, c) => (a && a.y >= c.y ? a : c), null);
+      const y = Math.max(t.y !== null ? t.y : road ? road.y : t.fallback, alley ? alley.y : -Infinity);
+      return [{ alt: BASE + y / k, y, s: sc, k, kind: t.kind, layer: 'ground', line: road ? road.line : null, route: road ? road.route : null, edge: road ? road.edge : null, cls: road ? road.cls : null,
+        station: road ? road.station : null, offset: road ? road.offset : null, slope: 0, margin: null, heading: road ? road.heading : null, town: t.id }];
+    }
+    return out;
+  };
+  // with a height hint: the top surface within the hint's band (0.3 true m; two surfaces on one level: the one that shows), else the nearest in height
+  const pick = (list, hint) => {
+    if (!list.length) return null;
+    if (hint && hint.y != null) { const band = (hint.band ?? 0.3) * list[0].s, near = list.filter(c => Math.abs(c.y - hint.y) <= band); if (near.length) return near.reduce((a, b) => (b.y > a.y ? b : a)); return list.reduce((a, b) => (Math.abs(b.y - hint.y) < Math.abs(a.y - hint.y) ? b : a)); }
+    if (hint && hint.layer) { const l = list.filter(c => c.layer === hint.layer); if (l.length) return l[0]; }
+    const order = { ground: 0, deck: 1, tunnel: 2 };
+    return list.slice().sort((a, b) => order[a.layer] - order[b.layer] || b.y - a.y)[0];
+  };
+  const api = {
+    lines,
+    // I1: the walkable surface under (x, z) on the layer nearest the hint ({ y } of the walker, or { layer }); null off the walkable surfaces
+    at(x, z, hint) { const c = pick(candidates(x, z), hint); return c ? { x: show(x), z, ...c } : null; },
+    // I3: every walkable layer at (x, z)
+    layers(x, z) { return candidates(x, z).map(c => ({ x: show(x), z, ...c })); },
+    // the shown ground under (x, z): the rendered terrain, never below the sea (flat y); alt(lon, lat) its true altitude
+    alt(lon, lat) { const h = H(lon, lat); return Math.max(0, h == null ? W.height(lon, lat) : h); },
+    y(x, z) { const ll = llOf(canonX(x), z); return (api.alt(ll.lon, ll.lat) - BASE) / Math.cos(ll.lat * D); },
+    // I6: the display scale s(x, z) (on and off the walkable surfaces)
+    scale(x, z) { return scaleAt(canonX(x), z); },
+    // I7: the display frame of the flat map
+    wrap: show, SEAM, PERIOD,
+    // I8: where a walk starts for a view target: the nearest point of a carriageway (roads, decks, the boardwalk, the snow road; not the stairs, not inside a tunnel:
+    // there the nearer portal + 5 m), facing along the road the way the view looks (dir = [dx, dz]; across the road: the line's own direction), in the left lane of a
+    // carriageway 4.5 m wide or more (a quarter of its width), else on the paved centre
+    spawn(x, z, dir) {
+      const cx = canonX(x); let best = null;
+      for (const ln of lines) { if (ln.kind === 'stairs') continue; const q = ln.project(cx, z, true); if (q && (!best || q.d2 < best.q.d2)) best = { ln, q }; }
+      if (!best) return null;
+      const { ln } = best; let s = best.q.s;
+      if (ln.tunnel && s > ln.tunnel[0] && s < ln.tunnel[1]) s = s - ln.tunnel[0] < ln.tunnel[1] - s ? Math.max(0, ln.tunnel[0] - 5) : Math.min(ln.length, ln.tunnel[1] + 5);
+      const c = ln.point(s, 0), dl = Math.hypot(dir[0], dir[1]) || 1, dot = (c.T[0] * dir[0] + c.T[1] * dir[1]) / dl, sign = Math.abs(dot) < 0.2 ? 1 : Math.sign(dot);
+      let p = [0, 0];
+      if (ln.kind === 'route') p = lerpAt(ln.rt.paved, c); else if (ln.kind === 'bridge') p = [-3.5, 3.5]; else p = lerpAt(ln.walk, c);
+      const w = p[1] - p[0], o = w >= 4.5 ? (p[0] + p[1]) / 2 - sign * w / 4 : (p[0] + p[1]) / 2, at = ln.point(s, o);
+      const sample = api.at(at.x, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
+      return sample ? { ...sample, heading: Math.atan2(sign * c.T[0], sign * c.T[1]), from: [show(x), z], distance: Math.hypot(wrapDx(show(x) - sample.x), z - sample.z) } : null;
+    },
+    // I3: the places where the layers meet: the bridges' ends (deck <-> ground), the tunnels' portals (ground <-> tunnel), the stairs' ends
+    links() {
+      const out = [];
+      for (const ln of lines) {
+        const end = (s, kind) => { const p = ln.point(s, 0); out.push({ kind, line: ln.id, station: s, x: show(p.x), z: p.z }); };
+        if (ln.kind === 'bridge') { end(0, 'abutment'); end(ln.length, 'abutment'); }
+        if (ln.kind === 'stairs') { end(0, 'stair-end'); end(ln.length, 'stair-end'); }
+        if (ln.tunnel) { end(ln.tunnel[0], 'portal'); end(ln.tunnel[1], 'portal'); }
+      }
+      return out;
+    },
+  };
+  return api;
+}
+
+const GROUND = { attach, townWalk, flatOf, llOf, R, BASE, PERIOD };
+if (typeof module !== 'undefined' && module.exports) module.exports = GROUND;
+else global.GROUND = GROUND;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
 // W8e-a: mode animation is independent of zoom; camera frames remain shared.
 (function (global) {
 'use strict';
@@ -7017,7 +7272,6 @@ const TR = {
   ZOOM: [9, 400], FAR_NEAR: 400, FAR_FAR: 600, DURATION: 2, TERRAIN: [60, 150], CAPS: 0.98,
   smoothstep: sm,
   bendOf: phase => sm(0, 1, phase),
-  patchDistance: (x, z, half) => Math.hypot(Math.max(0, Math.abs(x)-half), Math.max(0, Math.abs(z)-half)),
   fogOf: u => 1 - u,
   // camera far plane: the old 400 m while the view is the old one, 600 m for the planet (the far side of the sphere is behind the horizon, the target is up to 400 m away)
   farOf: mode => mode === 'sphere' ? 600 : 400,
@@ -22906,7 +23160,7 @@ for(const f of L.legacyFurniture.filter(f=>f.group!=='streetLamp')){const g=grou
   g.rotation.y=rotY;g.position.set(x-(ax*c+az*n),LV.pavement-y0,z-(-ax*n+az*c));}
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
-// W8f-a: everything built so far is the town (ground, buildings, furniture, puddles); its large faces get sphere copies the first time uBend > 0 (below).
+// Everything built so far is the town (ground, buildings, furniture); the weather registers its animated drips below.
 const townRoots=scene.children.slice();
 // Rain falls in a box that follows the view target, never under the roofs and awnings of the town's buildings (their registered shelter rects, see layout.js).
 // WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the street ground, so 0.2 as
@@ -22936,21 +23190,37 @@ const zoomUser=zoomTo;
 const sphereCamera=SPHERE_CAMERA(THREE,BEND,camera);
 function syncSphereTarget(){const p=sphereCamera.flat();target.x=p[0];target.z=p[1];}
 function orbitSphere(dx,dy){yaw-=dx*.006;pitch=Math.max(.16,Math.min(Math.PI/2,pitch+dy*.005));}
-const townDistance=()=>TRANSITION.patchDistance(target.x,target.z,BH);
-const townAvailable=()=>TR.mode==='flat'&&BEND.get()===0&&townDistance()===0;
 function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
 function shiftTarget(wx,wz){target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));const x=target.x+wx;target.x=TR.mode==='sphere'?BEND.wrapX(x):Math.max(TR.xMin,Math.min(TR.xMax,x));}
 
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
-// Town walking camera (W9a) uses only the frozen roads and alleys in layout.js.
-// Walkable rectangles are narrower than the carriageways, keeping the camera away from plots.
-const nodeById=Object.fromEntries(L.roadNodes.map(n=>[n.id,n])),walkRects=[];
-for(const r of L.roads){const half=L.ROAD_TYPES[r.type].carriageway/2-.4;for(let i=0;i<r.nodes.length-1;i++){const a=nodeById[r.nodes[i]],b=nodeById[r.nodes[i+1]];walkRects.push(a.z===b.z?[Math.min(a.x,b.x),a.z-half,Math.max(a.x,b.x),a.z+half]:[a.x-half,Math.min(a.z,b.z),a.x+half,Math.max(a.z,b.z)]);}}
-for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.rect[2]-m,a.rect[3]-m]);}
-function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
-let roamButton=null,joystickValue=[0,0],lookPointer=null;
+// W10f (W10_SPEC 2.8): one walk on the whole flat map. It stands on the walkable surfaces of the one ground sampler (ground.js: the roads with their shoulders, the
+// bridge decks, stairs and boardwalk, the town's carriageways, alleys, pavements, ramps, the walkway and the bus aprons) with the W9a pace and eye in true metres,
+// times the display scale s of the surface under it (1 in the town frame): 1.5 m/s, the eye 1.62 m above the ground under the camera, 3.1 m behind the walker, the
+// look point 1.28 m up and 4 m ahead. A step goes on to the layer nearest the walker's height (a deck stays a deck, a tunnel a tunnel) and climbs at most 0.25 m (a curb,
+// a stair riser); a blocked step slides along x or z. The camera stays over the walkable surface (pulled in where the surface behind ends). Entering starts at the
+// nearest carriageway to the view target (ground.spawn); the free view's target, yaw, pitch and distance are kept for the way back.
+const WALK={speed:1.5,eye:1.62,look:1.28,back:3.1,ahead:4,climb:.25,sub:.25};
+let ground=null,roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=lightBase.fog=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+const roamAvailable=()=>!!ground&&TR.mode==='flat'&&BEND.get()===0&&!TR.animating;
+function setRoaming(enabled){if(enabled&&!roamAvailable())return;if(enabled===!!roam)return;
+  if(enabled){const sp=ground.spawn(target.x,target.z,[target.x-camera.position.x,target.z-camera.position.z]);if(!sp)return;
+    roam={position:new THREE.Vector3(sp.x,sp.y,sp.z),heading:sp.heading,lookPitch:0,sample:sp,spawn:{x:sp.x,z:sp.z,heading:sp.heading,distance:sp.distance,line:sp.line,edge:sp.edge},cameraPosition:new THREE.Vector3(),camSample:null,hasCameraPosition:false};
+    camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}
+  else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}
+  if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+// one walk step: the surface at (x, z) on the walker's layer, if it is no higher or lower than a curb; x wraps into the flat map (the camera follows the wrap)
+function walkTo(x,z,y){const q=ground.at(x,z,{y});return q&&Math.abs(q.y-y)<=WALK.climb*q.s?q:null;}
+function roamStep(dt,[mx,mz]){const p=roam.position,h=roam.heading,fX=Math.sin(h),fZ=Math.cos(h),rX=-Math.cos(h),rZ=Math.sin(h),v=WALK.speed*roam.sample.s*dt,dx=(fX*mz+rX*mx)*v,dz=(fZ*mz+rZ*mx)*v,n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/(WALK.sub*roam.sample.s)));
+  for(let i=0;i<n;i++){const ax=dx/n,az=dz/n;let tx=p.x+ax,tz=p.z+az,q=walkTo(tx,tz,p.y);if(!q&&ax){tx=p.x+ax;tz=p.z;q=walkTo(tx,tz,p.y);}if(!q&&az){tx=p.x;tz=p.z+az;q=walkTo(tx,tz,p.y);}if(!q)break;
+    if(Math.abs(q.x-tx)>1)roam.cameraPosition.x+=q.x-tx;p.set(q.x,q.y,q.z);roam.sample=q;}}
+function roamCamera(dt){const p=roam.position,s=roam.sample.s,h=roam.heading,fX=Math.sin(h),fZ=Math.cos(h),c=roam.cameraPosition,reach=d=>WALK.climb*s+.15*d;let want=null;
+  for(const f of [1,.8,.6,.45,.3,.2,.1]){const d=WALK.back*s*f,q=ground.at(p.x-fX*d,p.z-fZ*d,{y:p.y});if(q&&Math.abs(q.y-p.y)<=reach(d)){want=q;break;}}
+  if(!want)want=roam.sample;
+  if(!roam.hasCameraPosition){c.x=want.x;c.z=want.z;roam.hasCameraPosition=true;}else{const k=1-Math.exp(-dt*5);c.x+=(want.x-c.x)*k;c.z+=(want.z-c.z)*k;}
+  let cq=ground.at(c.x,c.z,{y:p.y});if(!cq||Math.abs(cq.y-p.y)>reach(WALK.back*s)){c.x=want.x;c.z=want.z;cq=want;}
+  c.y=cq.y+WALK.eye*cq.s;roam.camSample=cq;camera.position.copy(c);const ad=WALK.ahead*s;camera.lookAt(p.x+fX*ad,p.y+WALK.look*s+Math.tan(roam.lookPitch)*ad,p.z+fZ*ad);}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
@@ -23009,22 +23279,22 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
   if(TR.auto){scene.fog.density=lightBase.fog=TR.fog0*TRANSITION.fogOf(BEND.get());}
-  const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';
+  const available=roamAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'球形地图与切换动画中不可漫游';
 }
-// the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
-function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoothstep(0,24,away));if(!(lift>0))return[target.x,target.y,target.z];const ll=lonLatAt(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);const flatH=Math.max(0,((h??TERRAIN.BASE)-TERRAIN.BASE)/Math.cos(ll.lat*Math.PI/180));return[target.x,target.y+(1-u)*TRANSITION.smoothstep(0,24,away)*flatH+u*Math.max(0,h??0),target.z];}
+// the point the camera looks at: the target, target.y above the shown ground under it (ground.js, the same in the town and outside it); a point of the flat frame,
+// so the bend carries it onto the sphere with everything else (a pure function of the target: no hysteresis; u is kept for the callers)
+function lookTarget(u){void u;return[target.x,target.y+ground.y(target.x,target.z),target.z];}
 // W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height), and the camera-target
 // distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
 // (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
-function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,d:camera.position.distanceTo(roam.position),target:[roam.position.x,0,roam.position.z],u:0};}
+function weatherView(){if(roam){const p=roam.position,ll=lonLatAt(p.x,p.z);return{lonLat:ll,h:camera.position.y-p.y,d:camera.position.distanceTo(p),target:[p.x,p.y,p.z],u:0};}
   const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u,cam:[camera.position.x,camera.position.z]};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
-// keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
-function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),h=terrain.sampler()(lam/(Math.PI/180),phi/(Math.PI/180));if(h==null)return;const want=R+Math.max(0,h)+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
+// keep the camera 0.5 m above the shown ground's altitude under it (ground.js; the sphere's radial direction under the camera)
+function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),want=R+ground.alt(lam/(Math.PI/180),phi/(Math.PI/180))+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
-if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.heading),rX=-Math.cos(roam.heading),rZ=Math.sin(roam.heading),moveX=fX*mz+rX*mx,moveZ=fZ*mz+rZ*mx,speed=1.5,[wx,wz]=constrainWalk(roam.position.x+moveX*speed*elapsed,roam.position.z+moveZ*speed*elapsed);roam.position.x=wx;roam.position.z=wz;
-  const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
+if(roam){roamStep(elapsed,movement());roamCamera(elapsed);
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
@@ -23039,11 +23309,6 @@ const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P0
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.LOOK_API?window.LOOK_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
-// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m ground and street meshes sank about 24 m and the sky
-// showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
-// swapped in while uBend > 0; at uBend = 0 the town draws its own geometry again (the default view is bit for bit the old one, WC12).
-const townSphere={built:null,on:false};
-BEND.onChange(u=>{const on=u>0;if(on===townSphere.on)return;if(on&&!townSphere.built)townSphere.built=BEND.tessellate(townRoots,{maxEdge:4,box:50});townSphere.on=on;townSphere.built.use(on);});
 const look=LOOK.attach(scene,{lights:{hemi,moon},ramp,renderer,lightBase},BEND,terrain);
 const roads=ROADS.attach(scene,{ramp,renderer,townAsphalt:matT('#46505b','asphalt'),buildTownRoadDetails},BEND,terrain,look);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,look);
@@ -23069,6 +23334,12 @@ const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('
 worldgen.start().then(()=>{
 const groundOccupancy=[];scene.traverse(o=>{if(o.isMesh&&o.userData.groundOccupancy)groundOccupancy.push(o);});
 terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.stats.occupancyCut.meshesTagged=groundOccupancy.length;
+// W10f (W10_SPEC 2.5, 2.8): the one ground sampler of the camera and the walk; then one geometry for the flat map and the sphere: every mesh and line set with a part in
+// the town and a horizontal edge over 4 m is cut to <= 4 m now, while the world is built (bend.js subdivide; the chord of a 4 m edge sags 2.2 cm on the sphere). The far
+// lights of the night panorama are made first (night step, else at the first frame) so that they are cut too.
+ground=GROUND.attach({W:WORLD,L,terrain:terrain.sampler(),roads:roads.data(),ROADS,BRIDGE,SEAM:BEND.SEAM});
+nightStep(weatherView());
+const townGeometry=BEND.subdivide([scene],{maxEdge:4,region:[-BH,-BH,BH,BH]});
 // WX2 (docs/world/WEATHER_COMPLETION_PLAN.md 5.2, 5.3): the weather's receiving surfaces (the rendered terrain, the roads and decks of the lamp table, each landmark's
 // roofs and grounds) and its registered effects: the buildings' animated drips and window runs (their live line batches in the drip colours) and rain rings (live
 // additive rings), the landmarks' tagged parts (userData.weather), the mist belt of ameni-dake. Only their opacity and visibility follow the weather; nothing moves.
@@ -23081,7 +23352,8 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
     weatherFx.register(o,{kind:/Rain$/.test(top.name)?'drip':'impact',owner:'reset',src,lon:ll.lon,lat:ll.lat});});}   // a rain chain's basin rings follow its flow (drip), a pond's follow the rain
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+const surfaceOf=q=>({y:q.y,s:q.s,kind:q.kind,layer:q.layer,line:q.line,route:q.route,edge:q.edge,station:q.station,offset:q.offset,slope:q.slope});
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,walk:{config:WALK,step(dt,input){if(roam){roamStep(dt,input||[0,0]);roamCamera(dt);}return roam?window.__scene.view.get().roam:null;}},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch,surface:surfaceOf(roam.sample),camera:roam.camSample?surfaceOf(roam.camSample):null,spawn:roam.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){const q=ground.at(v.position[0],v.position[1]);if(q){roam.position.set(q.x,q.y,q.z);roam.sample=q;roam.hasCameraPosition=false;}}if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

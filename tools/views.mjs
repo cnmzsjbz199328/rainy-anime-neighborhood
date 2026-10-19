@@ -74,7 +74,7 @@ const kw = await keyPan('w'), kd = await keyPan('d'), ka = await keyPan('ArrowLe
 results.push([`自由视角 W 向前、D/A 向屏幕右/左平移（${kw.fwd.toFixed(1)} / ${kd.right.toFixed(1)} / ${ka.right.toFixed(1)}）`, kw.fwd > .5 && kd.right > .5 && ka.right < -.5]);
 await page.evaluate(() => window.__scene.view.set({ yaw: 2.5, pitch: .5, dist: 34, target: [-7, 1.2, 20] }));
 
-// W9a: keyboard toggle and forward movement stay inside layout-derived street corridors.
+// W9a / W10f: keyboard toggle and forward movement on the walkable surfaces of ground.js.
 const freeBefore = await view();
 await page.keyboard.press('v');
 const r0 = await view();
@@ -85,7 +85,7 @@ while (moved(r1) <= .1 && Date.now() < moveDeadline) { await page.waitForTimeout
 await page.keyboard.up('w');
 results.push(['V 键进入漫游', r0.mode === 'roam']);
 results.push([`W 键沿道路移动（输入 ${rm.input.join(',')}，位置 ${r0.roam.position[0].toFixed(2)},${r0.roam.position[2].toFixed(2)} → ${r1.roam.position[0].toFixed(2)},${r1.roam.position[2].toFixed(2)}）`, moved(r1) > .1]);
-results.push(['漫游位置留在 layout.js 道路/巷道范围', await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
+results.push(['漫游位置在统一可走面上（W10f ground.js）', await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
 results.push(['跟随镜头离地', r1.cameraPosition[1] > .9]);
 // Camera-relative strafing: D / right arrow must move along the camera's screen-right.
 const side = async key => {
@@ -112,7 +112,8 @@ results.push(['漫游向右拖动与自由视角同向（抓取式：画面右�
 await page.evaluate(() => window.__scene.view.set({ position: [-47.5, 15], heading: -Math.PI / 2 }));
 await page.keyboard.down('w'); await page.waitForTimeout(500); await page.keyboard.up('w');
 const edge = await view();
-results.push(['城镇西侧道路边界限制', edge.roam.position[0] >= -48 && edge.roam.position[0] <= -47.5 && await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
+// W10f: the walk is no longer kept inside the town: west from the town edge it goes on along N01's road (RN01), still on the walkable surface
+results.push(['向西越过城镇边界继续走上 N01 出城道路（W10f）', edge.roam.position[0] < -47.5 && edge.roam.surface.line === 'N01-west' && await page.evaluate(() => { const p = window.__scene.view.get().roam.position; return window.__scene.view.isWalkable([p[0], p[2]]); })]);
 await page.keyboard.press('v');
 const freeAfter = await view();
 results.push(['V 键退出并恢复原自由视角', freeAfter.mode === 'free' && freeAfter.yaw === freeBefore.yaw && freeAfter.pitch === freeBefore.pitch && freeAfter.dist === freeBefore.dist && freeAfter.target.every((v, i) => v === freeBefore.target[i])]);

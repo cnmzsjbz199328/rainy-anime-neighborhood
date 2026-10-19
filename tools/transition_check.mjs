@@ -41,8 +41,9 @@ if (want('c2')) {
     T.setMode('sphere');T.step(3);
     T.auto=false;S.bend.set(.37);S.view.set({dist:9});T.step(2);check('手工测试钩子',S.bend.get()===.37);T.auto=true;T.setMode('flat');T.step(2);
     S.view.set({target:[20,1.2,65],dist:25});T.step(2);check('农田 d=25 保留目标',S.view.get().target[0]===20&&S.view.get().target[2]===65&&S.view.get().dist===25&&S.terrain.rest.every(m=>m.visible));
-    S.view.set({mode:'roam'});check('农田禁漫游',S.view.get().mode==='free');check('农田使用统一外观',!!S.look);
-    S.view.set({target:[0,1.2,0],mode:'roam'});check('城镇可漫游',S.view.get().mode==='roam');T.setMode('sphere');check('切换先退出漫游',S.view.get().mode==='free');T.step(2);check('球形保持统一外观',!!S.look);
+    // W10f: the walk works on every road of the flat map (it starts at the nearest carriageway to the target), never on the sphere
+    S.view.set({mode:'roam'});const fr=S.view.get();check(`农田可漫游，从最近道路出发（${fr.roam?fr.roam.spawn.line+' '+fr.roam.spawn.distance.toFixed(1)+' m':'未进入'}）`,fr.mode==='roam'&&S.view.isWalkable([fr.roam.position[0],fr.roam.position[2]])&&fr.roam.spawn.distance<20);check('农田使用统一外观',!!S.look);
+    S.view.set({mode:'free'});S.view.set({target:[0,1.2,0],mode:'roam'});check('城镇可漫游',S.view.get().mode==='roam');T.setMode('sphere');check('切换先退出漫游',S.view.get().mode==='free');T.step(2);S.view.set({mode:'roam'});check('球形不可漫游',S.view.get().mode==='free');check('球形保持统一外观',!!S.look);
     T.setMode('flat');T.step(2);check('城镇与球形共用外观控制器',!!S.look);T.setMode('sphere');check('切换保留统一外观',!!S.look);
     return checks;
   });

@@ -245,7 +245,7 @@ for(const f of L.legacyFurniture.filter(f=>f.group!=='streetLamp')){const g=grou
   g.rotation.y=rotY;g.position.set(x-(ax*c+az*n),LV.pavement-y0,z-(-ax*n+az*c));}
 // The pole's wires end at fixed points of the old street; hidden until P3 rewires the network.
 groups.utilityPole.traverse(o=>{if(o.isMesh&&o.geometry.type==='TubeGeometry')o.visible=false;});
-// W8f-a: everything built so far is the town (ground, buildings, furniture, puddles); its large faces get sphere copies the first time uBend > 0 (below).
+// Everything built so far is the town (ground, buildings, furniture); the weather registers its animated drips below.
 const townRoots=scene.children.slice();
 // Rain falls in a box that follows the view target, never under the roofs and awnings of the town's buildings (their registered shelter rects, see layout.js).
 // WX2: every drop falls from 6.8 m above its floor to its floor, the receiving surface below it + 0.2 m (weather_fx.surfaceY: in the town the street ground, so 0.2 as
@@ -275,21 +275,37 @@ const zoomUser=zoomTo;
 const sphereCamera=SPHERE_CAMERA(THREE,BEND,camera);
 function syncSphereTarget(){const p=sphereCamera.flat();target.x=p[0];target.z=p[1];}
 function orbitSphere(dx,dy){yaw-=dx*.006;pitch=Math.max(.16,Math.min(Math.PI/2,pitch+dy*.005));}
-const townDistance=()=>TRANSITION.patchDistance(target.x,target.z,BH);
-const townAvailable=()=>TR.mode==='flat'&&BEND.get()===0&&townDistance()===0;
 function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
 function shiftTarget(wx,wz){target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));const x=target.x+wx;target.x=TR.mode==='sphere'?BEND.wrapX(x):Math.max(TR.xMin,Math.min(TR.xMax,x));}
 
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
-// Town walking camera (W9a) uses only the frozen roads and alleys in layout.js.
-// Walkable rectangles are narrower than the carriageways, keeping the camera away from plots.
-const nodeById=Object.fromEntries(L.roadNodes.map(n=>[n.id,n])),walkRects=[];
-for(const r of L.roads){const half=L.ROAD_TYPES[r.type].carriageway/2-.4;for(let i=0;i<r.nodes.length-1;i++){const a=nodeById[r.nodes[i]],b=nodeById[r.nodes[i+1]];walkRects.push(a.z===b.z?[Math.min(a.x,b.x),a.z-half,Math.max(a.x,b.x),a.z+half]:[a.x-half,Math.min(a.z,b.z),a.x+half,Math.max(a.z,b.z)]);}}
-for(const a of L.alleys){const m=.3;walkRects.push([a.rect[0]+m,a.rect[1]+m,a.rect[2]-m,a.rect[3]-m]);}
-function constrainWalk(x,z){let best=null,bestD=Infinity;for(const r of walkRects){const px=Math.max(r[0]+.12,Math.min(r[2]-.12,x)),pz=Math.max(r[1]+.12,Math.min(r[3]-.12,z)),d=(px-x)**2+(pz-z)**2;if(d<bestD){bestD=d;best=[px,pz];}}return best||[0,15];}
-let roamButton=null,joystickValue=[0,0],lookPointer=null;
+// W10f (W10_SPEC 2.8): one walk on the whole flat map. It stands on the walkable surfaces of the one ground sampler (ground.js: the roads with their shoulders, the
+// bridge decks, stairs and boardwalk, the town's carriageways, alleys, pavements, ramps, the walkway and the bus aprons) with the W9a pace and eye in true metres,
+// times the display scale s of the surface under it (1 in the town frame): 1.5 m/s, the eye 1.62 m above the ground under the camera, 3.1 m behind the walker, the
+// look point 1.28 m up and 4 m ahead. A step goes on to the layer nearest the walker's height (a deck stays a deck, a tunnel a tunnel) and climbs at most 0.25 m (a curb,
+// a stair riser); a blocked step slides along x or z. The camera stays over the walkable surface (pulled in where the surface behind ends). Entering starts at the
+// nearest carriageway to the view target (ground.spawn); the free view's target, yaw, pitch and distance are kept for the way back.
+const WALK={speed:1.5,eye:1.62,look:1.28,back:3.1,ahead:4,climb:.25,sub:.25};
+let ground=null,roamButton=null,joystickValue=[0,0],lookPointer=null;
 const keys=new Set();
-function setRoaming(enabled){if(enabled&&!townAvailable())return;if(enabled===!!roam)return;if(enabled){if(BEND.get()>0){BEND.set(0);scene.fog.density=lightBase.fog=TR.fog0;}roam={position:new THREE.Vector3(-8,LV.carriageway,15),heading:-Math.PI/2,lookPitch:0,cameraPosition:new THREE.Vector3(),hasCameraPosition:false};camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+const roamAvailable=()=>!!ground&&TR.mode==='flat'&&BEND.get()===0&&!TR.animating;
+function setRoaming(enabled){if(enabled&&!roamAvailable())return;if(enabled===!!roam)return;
+  if(enabled){const sp=ground.spawn(target.x,target.z,[target.x-camera.position.x,target.z-camera.position.z]);if(!sp)return;
+    roam={position:new THREE.Vector3(sp.x,sp.y,sp.z),heading:sp.heading,lookPitch:0,sample:sp,spawn:{x:sp.x,z:sp.z,heading:sp.heading,distance:sp.distance,line:sp.line,edge:sp.edge},cameraPosition:new THREE.Vector3(),camSample:null,hasCameraPosition:false};
+    camera.fov=46;camera.near=.08;camera.far=400;camera.updateProjectionMatrix();}
+  else{roam=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();lookPointer=null;joystickValue=[0,0];}
+  if(roamButton){roamButton.textContent=roam?'自由视角  V':'街景漫游  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+// one walk step: the surface at (x, z) on the walker's layer, if it is no higher or lower than a curb; x wraps into the flat map (the camera follows the wrap)
+function walkTo(x,z,y){const q=ground.at(x,z,{y});return q&&Math.abs(q.y-y)<=WALK.climb*q.s?q:null;}
+function roamStep(dt,[mx,mz]){const p=roam.position,h=roam.heading,fX=Math.sin(h),fZ=Math.cos(h),rX=-Math.cos(h),rZ=Math.sin(h),v=WALK.speed*roam.sample.s*dt,dx=(fX*mz+rX*mx)*v,dz=(fZ*mz+rZ*mx)*v,n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/(WALK.sub*roam.sample.s)));
+  for(let i=0;i<n;i++){const ax=dx/n,az=dz/n;let tx=p.x+ax,tz=p.z+az,q=walkTo(tx,tz,p.y);if(!q&&ax){tx=p.x+ax;tz=p.z;q=walkTo(tx,tz,p.y);}if(!q&&az){tx=p.x;tz=p.z+az;q=walkTo(tx,tz,p.y);}if(!q)break;
+    if(Math.abs(q.x-tx)>1)roam.cameraPosition.x+=q.x-tx;p.set(q.x,q.y,q.z);roam.sample=q;}}
+function roamCamera(dt){const p=roam.position,s=roam.sample.s,h=roam.heading,fX=Math.sin(h),fZ=Math.cos(h),c=roam.cameraPosition,reach=d=>WALK.climb*s+.15*d;let want=null;
+  for(const f of [1,.8,.6,.45,.3,.2,.1]){const d=WALK.back*s*f,q=ground.at(p.x-fX*d,p.z-fZ*d,{y:p.y});if(q&&Math.abs(q.y-p.y)<=reach(d)){want=q;break;}}
+  if(!want)want=roam.sample;
+  if(!roam.hasCameraPosition){c.x=want.x;c.z=want.z;roam.hasCameraPosition=true;}else{const k=1-Math.exp(-dt*5);c.x+=(want.x-c.x)*k;c.z+=(want.z-c.z)*k;}
+  let cq=ground.at(c.x,c.z,{y:p.y});if(!cq||Math.abs(cq.y-p.y)>reach(WALK.back*s)){c.x=want.x;c.z=want.z;cq=want;}
+  c.y=cq.y+WALK.eye*cq.s;roam.camSample=cq;camera.position.copy(c);const ad=WALK.ahead*s;camera.lookAt(p.x+fX*ad,p.y+WALK.look*s+Math.tan(roam.lookPitch)*ad,p.z+fZ*ad);}
 function toggleRoaming(){setRoaming(!roam);}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}@media(pointer:coarse){#town-walk-stick{display:block}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='街景漫游  V';roamButton.title='切换街景漫游与自由视角';roamButton.setAttribute('aria-label','切换街景漫游与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
@@ -348,22 +364,22 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
   if(TR.auto){scene.fog.density=lightBase.fog=TR.fog0*TRANSITION.fogOf(BEND.get());}
-  const available=townAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'仅平面城镇内可漫游';
+  const available=roamAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'球形地图与切换动画中不可漫游';
 }
-// the point the camera looks at: the target, lifted onto the ground of the planet in proportion to uBend (a pure function of the target and uBend: no hysteresis)
-function lookTarget(u){const away=townDistance(),lift=Math.max(u,TRANSITION.smoothstep(0,24,away));if(!(lift>0))return[target.x,target.y,target.z];const ll=lonLatAt(target.x,target.z),h=terrain.sampler()(ll.lon,ll.lat);const flatH=Math.max(0,((h??TERRAIN.BASE)-TERRAIN.BASE)/Math.cos(ll.lat*Math.PI/180));return[target.x,target.y+(1-u)*TRANSITION.smoothstep(0,24,away)*flatH+u*Math.max(0,h??0),target.z];}
+// the point the camera looks at: the target, target.y above the shown ground under it (ground.js, the same in the town and outside it); a point of the flat frame,
+// so the bend carries it onto the sphere with everything else (a pure function of the target: no hysteresis; u is kept for the callers)
+function lookTarget(u){void u;return[target.x,target.y+ground.y(target.x,target.z),target.z];}
 // W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height), and the camera-target
 // distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
 // (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
-function weatherView(){if(roam){const ll=lonLatAt(roam.position.x,roam.position.z);return{lonLat:ll,h:1.6,d:camera.position.distanceTo(roam.position),target:[roam.position.x,0,roam.position.z],u:0};}
+function weatherView(){if(roam){const p=roam.position,ll=lonLatAt(p.x,p.z);return{lonLat:ll,h:camera.position.y-p.y,d:camera.position.distanceTo(p),target:[p.x,p.y,p.z],u:0};}
   const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u,cam:[camera.position.x,camera.position.z]};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
-// keep the camera 0.5 m above the rendered ground under it (the sphere's radial direction under the camera)
-function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),h=terrain.sampler()(lam/(Math.PI/180),phi/(Math.PI/180));if(h==null)return;const want=R+Math.max(0,h)+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
+// keep the camera 0.5 m above the shown ground's altitude under it (ground.js; the sphere's radial direction under the camera)
+function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),want=R+ground.alt(lam/(Math.PI/180),phi/(Math.PI/180))+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
-if(roam){const [mx,mz]=movement(),fX=Math.sin(roam.heading),fZ=Math.cos(roam.heading),rX=-Math.cos(roam.heading),rZ=Math.sin(roam.heading),moveX=fX*mz+rX*mx,moveZ=fZ*mz+rZ*mx,speed=1.5,[wx,wz]=constrainWalk(roam.position.x+moveX*speed*elapsed,roam.position.z+moveZ*speed*elapsed);roam.position.x=wx;roam.position.z=wz;
-  const backX=roam.position.x-Math.sin(roam.heading)*3.1,backZ=roam.position.z-Math.cos(roam.heading)*3.1,[cx,cz]=constrainWalk(backX,backZ),camTarget=new THREE.Vector3(roam.position.x,LV.carriageway+1.28,roam.position.z),wantCam=new THREE.Vector3(cx,LV.carriageway+1.62,cz);if(!roam.hasCameraPosition){roam.cameraPosition.copy(wantCam);roam.hasCameraPosition=true;}else roam.cameraPosition.lerp(wantCam,1-Math.exp(-elapsed*5));camera.position.copy(roam.cameraPosition);const lookAngle=roam.heading,lookDist=4;camera.lookAt(camTarget.x+Math.sin(lookAngle)*lookDist,camTarget.y+Math.tan(roam.lookPitch)*lookDist,camTarget.z+Math.cos(lookAngle)*lookDist);
+if(roam){roamStep(elapsed,movement());roamCamera(elapsed);
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
@@ -378,11 +394,6 @@ const stars=STARS.attach(THREE,scene),martB=L.buildings.find(b=>b.plot==='B05-P0
 nightLight=NIGHTLIGHT.attach({THREE,scene,camera,hemi,moon,stars,getSetting:()=>window.LOOK_API?window.LOOK_API.state.settings.light:'rainy',town:{store:martAt}});
 const terrain=TERRAIN.attach(scene,()=>{const m=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:ramp});m.onBeforeCompile=WEATHER_FX.snowCover;return m;},BEND);   // WX3: a thin whitening of the ground where it snows
 BEND.attach(scene);
-// W8f-a (W8_SPEC 12.1 B): bend.js moves vertices only, so on the sphere a face is its flat chord: the town's 96 m ground and street meshes sank about 24 m and the sky
-// showed through the streets. The first time uBend > 0, every town mesh and ink line with a horizontal edge over 4 m gets a subdivided copy (BEND.tessellate, sag <= 2.2 cm),
-// swapped in while uBend > 0; at uBend = 0 the town draws its own geometry again (the default view is bit for bit the old one, WC12).
-const townSphere={built:null,on:false};
-BEND.onChange(u=>{const on=u>0;if(on===townSphere.on)return;if(on&&!townSphere.built)townSphere.built=BEND.tessellate(townRoots,{maxEdge:4,box:50});townSphere.on=on;townSphere.built.use(on);});
 const look=LOOK.attach(scene,{lights:{hemi,moon},ramp,renderer,lightBase},BEND,terrain);
 const roads=ROADS.attach(scene,{ramp,renderer,townAsphalt:matT('#46505b','asphalt'),buildTownRoadDetails},BEND,terrain,look);
 const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,look);
@@ -408,6 +419,12 @@ const worldgen=WORLDGEN.create({progress:(value,label)=>{loading.querySelector('
 worldgen.start().then(()=>{
 const groundOccupancy=[];scene.traverse(o=>{if(o.isMesh&&o.userData.groundOccupancy)groundOccupancy.push(o);});
 terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.stats.occupancyCut.meshesTagged=groundOccupancy.length;
+// W10f (W10_SPEC 2.5, 2.8): the one ground sampler of the camera and the walk; then one geometry for the flat map and the sphere: every mesh and line set with a part in
+// the town and a horizontal edge over 4 m is cut to <= 4 m now, while the world is built (bend.js subdivide; the chord of a 4 m edge sags 2.2 cm on the sphere). The far
+// lights of the night panorama are made first (night step, else at the first frame) so that they are cut too.
+ground=GROUND.attach({W:WORLD,L,terrain:terrain.sampler(),roads:roads.data(),ROADS,BRIDGE,SEAM:BEND.SEAM});
+nightStep(weatherView());
+const townGeometry=BEND.subdivide([scene],{maxEdge:4,region:[-BH,-BH,BH,BH]});
 // WX2 (docs/world/WEATHER_COMPLETION_PLAN.md 5.2, 5.3): the weather's receiving surfaces (the rendered terrain, the roads and decks of the lamp table, each landmark's
 // roofs and grounds) and its registered effects: the buildings' animated drips and window runs (their live line batches in the drip colours) and rain rings (live
 // additive rings), the landmarks' tagged parts (userData.weather), the mist belt of ameni-dake. Only their opacity and visibility follow the weather; nothing moves.
@@ -420,7 +437,8 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
     weatherFx.register(o,{kind:/Rain$/.test(top.name)?'drip':'impact',owner:'reset',src,lon:ll.lon,lat:ll.lat});});}   // a rain chain's basin rings follow its flow (drip), a pond's follow the rain
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,townAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,sphere:townSphere},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam)roam.position.set(v.position[0],LV.carriageway,v.position[1]);if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return walkRects.some(r=>p[0]>=r[0]+.12-1e-6&&p[0]<=r[2]-.12+1e-6&&p[1]>=r[1]+.12-1e-6&&p[1]<=r[3]-.12+1e-6);},pan}};
+const surfaceOf=q=>({y:q.y,s:q.s,kind:q.kind,layer:q.layer,line:q.line,route:q.route,edge:q.edge,station:q.station,offset:q.offset,slope:q.slope});
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,walk:{config:WALK,step(dt,input){if(roam){roamStep(dt,input||[0,0]);roamCamera(dt);}return roam?window.__scene.view.get().roam:null;}},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:roam.position.toArray(),heading:roam.heading,lookPitch:roam.lookPitch,surface:surfaceOf(roam.sample),camera:roam.camSample?surfaceOf(roam.camSample):null,spawn:roam.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){const q=ground.at(v.position[0],v.position[1]);if(q){roam.position.set(q.x,q.y,q.z);roam.sample=q;roam.hasCameraPosition=false;}}if(v.heading!=null&&roam)roam.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

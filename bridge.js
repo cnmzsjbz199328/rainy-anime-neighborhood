@@ -197,7 +197,7 @@ function tunnel(W, edgeId, bed) {
   return { edge: edgeId, from: sp.fromMeters, to: sp.toMeters, length: sp.toMeters - sp.fromMeters, idx, samples: S, flatOf: F, tangent: T, bed: i => bed[i], innerR: 4.7, wallH: 1.0, shell: 0.7 };
 }
 
-const BRIDGE = { build, tunnel, DECK, COL, TOPCOLS: TOPCOLS.map(q => q[0]) };
+const BRIDGE = { build, tunnel, DECK, COL, TOPCOLS: TOPCOLS.map(q => q[0]), topLift: o => topAt(o)[1] };   // topLift: the deck top above the girder at an offset (ground.js)
 if (typeof module !== 'undefined' && module.exports) module.exports = BRIDGE;
 else global.BRIDGE = BRIDGE;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

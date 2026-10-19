@@ -5,8 +5,8 @@
 //   B1  the town on the sphere has no holes: sphere mode, magenta sky, 24 deterministic cameras (target inside the town, d 9-80, any yaw, pitch 0.2-1.4). For every pixel
 //       the camera ray is intersected with the sphere (radius R, centre (0, -R, 0)); a pixel whose hit lies inside the town patch (flat |x|, |z| <= 47) must not show the sky
 //       (magenta within 120 levels): at most 0.02 % of all pixels. Run the same tool with --html on the pre-w8f-a page for the comparison (no new hooks are used).
-//   B3  sphere copies of the town (W8f-a hook window.__scene.town.sphere): objects, triangles and segments before / after, first build time; draw calls and triangles of
-//       the default view (2374 / 239958) and of a sphere view of the town
+//   B3  the town's cut geometry (W10f hook window.__scene.town.geometry, bend.js subdivide): objects, triangles and segments before / after, build time; draw calls and
+//       triangles of the default view and of a sphere view of the town
 //   --shots  docs/world/w8f/ (or --out): the 12.0 cameras (bw-*, je1-*, jt04-*, je2-*, n03-*, town-*), the four other abutments and four junctions from above, day-town
 import fs from 'node:fs';
 import path from 'node:path';
@@ -91,14 +91,14 @@ if (needBrowser) {
       `页面 ${path.relative(root, html) || html}：落在城镇补丁（|x|、|z| ≤ 47）内的像素 ${r.inPatch}/${r.all}，其中显示背景色的 ${r.bad} 个 = ${f(share * 100, 4)}%（上限 0.02%），用时 ${Date.now() - t0} ms`,
       `最差机位 #${r.worst.k}（target ${r.worst.target.map(v => f(v, 1)).join(', ')}，d ${f(r.worst.dist, 1)}，yaw ${f(r.worst.yaw, 2)}，pitch ${f(r.worst.pitch, 2)}）：${r.worst.nb} 个像素`,
       `每个机位的失败像素：${r.rows.map(q => q.nb).join(' ')}`]);
-    const st = await page.evaluate(() => { const S = window.__scene, T = S.town && S.town.sphere && S.town.sphere.built; if (!T) return null;
+    // W10f: the town is cut once while the world is built (window.__scene.town.geometry, bend.js subdivide); the flat map and the sphere draw the same geometry
+    const st = await page.evaluate(() => { const S = window.__scene, T = S.town && S.town.geometry; if (!T) return null;
       S.view.set({ target: [0, 1.2, 0], dist: 45, yaw: -0.97, pitch: 0.7 }); window.__step(10); S.renderer.render(S.scene, S.camera); const sp = { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles };
-      T.use(false); S.renderer.render(S.scene, S.camera); const flat = { calls: S.renderer.info.render.calls, tri: S.renderer.info.render.triangles }; T.use(true);
-      return { ...T.stats, sp, flat }; });
-    if (st) out(st.trianglesAfter - st.trianglesBefore <= 150000 && def.calls === 2374 && def.tri === 239958, 'W8f-a B3 球面城镇细分的代价', [
-      `细分对象：网格 ${st.meshes}、墨线 ${st.lines}（在 ${st.objects} 个城镇对象中）；三角形 ${st.trianglesBefore} → ${st.trianglesAfter}（+${st.trianglesAfter - st.trianglesBefore}，目标 ≤ 15 万）；线段 ${st.segmentsBefore} → ${st.segmentsAfter}（+${st.segmentsAfter - st.segmentsBefore}）`,
-      `首次生成 ${st.ms} ms（SwiftShader，进入球形时一次）；最长边 ≤ ${st.maxEdge} m（R = 90 时弦下沉 ≤ ${f(st.maxEdge ** 2 / 720 * 100, 1)} cm）`,
-      `默认视角（平面、细分前）${def.calls} 次绘制调用 / ${def.tri} 三角形（要求 2374 / 239958）；球形城镇 town-sphere-aerial：${st.sp.calls} / ${st.sp.tri}，同一帧换回平面几何 ${st.flat.calls} / ${st.flat.tri}（细分增量 ${st.sp.tri - st.flat.tri} 三角形）`]);
+      return { ...T, sp }; });
+    if (st) out(st.trianglesAfter - st.trianglesBefore <= 150000, 'W8f-a B3 城镇细分的代价（W10f：构建时细分，平面与球形同一份几何）', [
+      `细分对象：网格 ${st.meshes}、墨线 ${st.lines}（检查 ${st.objects} 个对象）；三角形 ${st.trianglesBefore} → ${st.trianglesAfter}（+${st.trianglesAfter - st.trianglesBefore}，目标 ≤ 15 万）；线段 ${st.segmentsBefore} → ${st.segmentsAfter}（+${st.segmentsAfter - st.segmentsBefore}）`,
+      `启动时一次 ${st.ms} ms；最长边 ≤ ${st.maxEdge} m（R = 90 时弦下沉 ≤ ${f(st.maxEdge ** 2 / 720 * 100, 1)} cm）`,
+      `默认视角 ${def.calls} 次绘制调用 / ${def.tri} 三角形；球形城镇 town-sphere-aerial：${st.sp.calls} / ${st.sp.tri}`]);
     else out(true, 'W8f-a B3（此页面没有 W8f-a 细分钩子，跳过）', [`默认视角 ${def.calls} / ${def.tri}`]);
   }
 

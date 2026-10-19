@@ -16,7 +16,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error' && !/deprecated|GPU stall|ReadPixels/.test(m.text())) errors.push(m.text()); });
 await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
-await page.waitForFunction(() => window.__scene && window.__scene.bend);
+await page.waitForFunction(() => window.__scene && window.__scene.bend, null, { timeout: 180000 });   // W10a: the scene appears once the whole world is built (SwiftShader: up to a minute)
 await page.waitForTimeout(1500);
 
 const out = await page.evaluate(async () => {
