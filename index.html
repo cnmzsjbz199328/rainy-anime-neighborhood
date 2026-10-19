@@ -7332,7 +7332,9 @@ else global.GROUND = GROUND;
 //                  wall, stair, curb, plot, edge). Built per 8 m cell on first use; the town's cells when the ride first starts.
 //   I4 obstacles   circles, capsule segments and boxes (flat frame, with a flat height range): layout.js furniture and the legacy fixtures' slots, the road lamp table
 //                  (streetlights.js), the instances of the roads, bridges, stairs and boardwalk (radius or box from their flora.js templates), the landmarks' solid meshes.
-//   I5 occluders   (R2)
+//   I5 occluders   R2: what the camera may not enter or look through (low-poly boxes, never the rendered meshes): the town's buildings and their attachments (layout.js
+//                  parts' measured localBounds placed by their transforms), every landmark solid box at any height; the bridges are kept by the camera's deck limit (the
+//                  pylon legs stand outside the deck), the tunnel lining and the terrain are tested analytically by ride.js
 // Records and obstacles are kept in the display frame [SEAM, SEAM + PERIOD); a query near the seam also reads the other end, shifted by one turn.
 (function (global) {
 'use strict';
@@ -7433,6 +7435,16 @@ function attach(ctx) {
   for (const st of RD.stairs) instances('stairs', st.instances);
   for (const ex of RD.extras || []) instances('extra', ex.instances);
   for (const bx of ctx.landmarkBoxes || []) addObstacle({ pts: bx.pts.map(q => [q[0], q[1]]), y0: bx.y0, y1: bx.y1, src: bx.lm });
+  // ---- I5: the camera's occluders (boxes with a flat height range) in their own grid
+  const occl = new Map();
+  const addOccluder = o => { const xs = o.pts.map(q => q[0]), zs = o.pts.map(q => q[1]), mx = show((Math.min(...xs) + Math.max(...xs)) / 2), sh = mx - (Math.min(...xs) + Math.max(...xs)) / 2; if (sh) o.pts = o.pts.map(q => [q[0] + sh, q[1]]);
+    let a2 = 0; for (let i = 0, j = o.pts.length - 1; i < o.pts.length; j = i++) a2 += (o.pts[j][0] - o.pts[i][0]) * (o.pts[j][1] + o.pts[i][1]); if (a2 < 0) o.pts.reverse();
+    o.bb = [Math.min(...o.pts.map(q => q[0])), Math.min(...o.pts.map(q => q[1])), Math.max(...o.pts.map(q => q[0])), Math.max(...o.pts.map(q => q[1]))];
+    for (let a = Math.floor(o.bb[0] / CELL); a <= Math.floor(o.bb[2] / CELL); a++) for (let b = Math.floor(o.bb[1] / CELL); b <= Math.floor(o.bb[3] / CELL); b++) { const k = key(a, b); let l = occl.get(k); if (!l) occl.set(k, l = []); l.push(o); }
+    stats.occluders = (stats.occluders || 0) + 1; };
+  for (const st of L.structures) for (const p of st.parts) { if (p.role !== 'building' && p.role !== 'attachment') continue; const b = p.localBounds, k = st.transform.scale ?? L.SAMPLE_SCALE;
+    addOccluder({ pts: [[b.min[0], b.min[2]], [b.max[0], b.min[2]], [b.max[0], b.max[2]], [b.min[0], b.max[2]]].map(([x, z]) => L.toWorld(st, x, z)), y0: b.min[1] * k, y1: b.max[1] * k, src: st.plot + ' ' + p.group }); }
+  for (const bx of ctx.landmarkBoxes || []) addOccluder({ pts: bx.pts.map(q => [q[0], q[1]]), y0: bx.y0, y1: bx.y1, src: bx.lm });
   // ---- queries
   // the cells under the box [x - r, x + r] x [z - r, z + r]; near the seam the other end too (its items shifted by one turn): visit(item list, shift, cell key)
   const around = (x, z, r, visit) => {
@@ -7453,6 +7465,10 @@ function attach(ctx) {
     // build the records of the cells within r of (x, z) now; at most `max` cells (the rest on later calls); returns the cells still missing
     prefetch(x, z, r, max = Infinity) { let n = 0, missing = 0; around(x, z, r, k => { if (built.has(k)) return; if (n < max) { build(k); n++; } else missing++; }); return missing; },
     built: k => built.has(k), CELL,
+    // I5: the occluder boxes whose footprint meets the box [x0, x1] x [z0, z1] (shifted next to x0 near the seam)
+    occluders(x0, z0, x1, z1) { const out = [], seen = new Set(), cx = (x0 + x1) / 2, r = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) / 2 + 0.5;
+      around(cx, (z0 + z1) / 2, r, (k, sh) => { for (const o of occl.get(k) || []) { if (seen.has(o)) continue; seen.add(o); out.push(sh ? { ...o, pts: o.pts.map(q => [q[0] + sh, q[1]]), bb: [o.bb[0] + sh, o.bb[1], o.bb[2] + sh, o.bb[3]] } : o); } });
+      return out; },
     // the town's cells (the first ride start)
     prepareTown() { const t0 = Date.now(); this.prefetch(0, 0, H0 + 2); return Date.now() - t0; },
   };
@@ -7479,8 +7495,11 @@ else global.RIDE_WORLD = RIDE_WORLD;
 //   ground    the front and rear wheel contacts each on their own surface (the walker's level: ground.at with a height hint), the rider's root at their middle
 //   steps     dt <= 1/60 per substep (a substep moves <= 0.07 m x s: the capsule cannot pass a boundary or a 0.1 m post), a frame at most 0.12 s
 //   seam      the display frame wraps: the rider's x moves by one turn, the caller shifts what follows it (onWrap)
-//   camera    R1: the follow place of 6.7 (focus 0.92 m over the root, 3.5 m behind and 0.70 m up, look 1.6 m ahead and 0.05 m up), turned by the look yaw and pitch,
-//             the follow distance 2.5-6 m, never under the ground below it + 0.12 m; R2 adds damping, occlusion and the limits
+//   camera    R2 (6.7): the follow place (focus 0.92 m over the root, 3.5 m behind and 0.70 m up, look 1.6 m ahead and 0.05 m up), turned by the look yaw and pitch, the
+//             follow distance 2.5-6 m; damped per axis in the rider's frame (along lambda 6, up 4, across 3); a 0.2 m sphere swept from the focus to the camera against the
+//             occluders (ride_world.js I5 boxes, the terrain, the tunnel lining): pulled in at once to the hit - 0.25 m (not under 1.2 m) and raised up to 0.6 m (not in a
+//             tunnel), let out again at lambda 2; then kept within 0.5 m of the rideable surface (0 on a deck, the boardwalk, stairs and in the tunnel), 0.12 m over the ground
+//             below it (0.3 m over a deck), 0.3 m from a tunnel's wall and roof
 (function (global) {
 'use strict';
 const CFG = {
@@ -7489,6 +7508,7 @@ const CFG = {
   radius: 0.32, half: 0.5, height: 1.75, wheelbase: 0.94, clearLow: 0.12,
   focus: 0.92, back: 3.5, up: 0.70, ahead: 1.6, lookUp: 0.05, fov: 46, near: 0.08, dist: [2.5, 6.0], pitch: [-0.10, 1.05], yawPx: 0.005, pitchPx: 0.003, recentre: 0.4, camClear: 0.12,
   sub: 1 / 60, maxFrame: 0.12, stopAngle: 60 * Math.PI / 180, band: 0.6, passes: 4, pushGrade: [0.15, 0.12],
+  damp: { along: 6, up: 4, across: 3, release: 2 }, sweepR: 0.2, minDist: 1.2, hitBack: 0.25, raise: 0.6, outside: 0.5, deckClear: 0.3, tunnelClear: 0.3, tunnel: { r: 4.7, wall: 1.0 },
 };
 CFG.pitch0 = Math.atan2(CFG.up, CFG.back);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v), sgn = v => (v < 0 ? -1 : 1), smooth = t => t * t * (3 - 2 * t);
@@ -7616,8 +7636,57 @@ function create(ctx) {
     if (!q || Math.abs(q.y - st.y) > stepTol(st.sample, q, move, s) || res.pen > 0.05 * s) { st.rejected++; if (!q) st.offSurface++; st.speed = 0; return; }
     const wrap = q.x - res.x;
     st.x = q.x; st.z = q.z; st.y = q.y; st.s = q.s; st.sample = q; st.speed = v;
-    if (Math.abs(wrap) > 1) { st.wraps++; if (st.onWrap) st.onWrap(wrap); }
+    if (Math.abs(wrap) > 1) { st.wraps++; if (st.cam) st.cam.pos[0] += wrap; if (st.onWrap) st.onWrap(wrap); }
     wheels(); st.mode = modeOf(q); st.carry = st.mode === 'push' && ([q, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair);
+  }
+  // ---- the chase camera (6.7)
+  const P3 = (x, y, z) => [x, y, z];
+  function ideal() { const s = st.s, yaw = st.heading + st.lookYaw, dx = Math.sin(yaw), dz = Math.cos(yaw), fy = st.root + CFG.focus * s, Rc = st.dist / Math.cos(CFG.pitch0) * s, p = st.lookPitch;
+    return { focus: P3(st.x, fy, st.z), pos: P3(st.x - dx * Rc * Math.cos(p), fy + Rc * Math.sin(p), st.z - dz * Rc * Math.cos(p)), look: P3(st.x + dx * CFG.ahead * s, fy + CFG.lookUp * s, st.z + dz * CFG.ahead * s), len: Rc }; }
+  const inTunnel = () => !!(st.sample && st.sample.layer === 'tunnel');
+  // the ground under a point: the walkable surface on the rider's level if there is one (a tunnel's floor, a road in a cut: the terrain sampler knows neither), else the terrain
+  const groundUnder = (x, z) => { const q = G.at(x, z, { y: st.y }); return q && Math.abs(q.y - st.y) < 3 * st.s ? q : null; };
+  // inside the tunnel's lining with a margin: offset within the radius, height under the roof (1 m walls, a 4.7 m half circle)
+  function tunnelOk(x, y, z, margin) { const q = G.at(x, z, { y: st.y }); if (!q || q.layer !== 'tunnel') return true; const s = q.s, o = Math.abs(q.offset || 0), h = (y - q.y) / s, R = CFG.tunnel.r - margin; return o <= R && h <= CFG.tunnel.wall + Math.sqrt(Math.max(0, R * R - o * o)); }
+  // distance from a point to a convex polygon (0 inside)
+  function boxDist(P, x, z) { let inside = true, d = Infinity; for (let i = 0, n = P.length; i < n; i++) { const A = P[i], B = P[(i + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], l2 = ex * ex + ez * ez || 1e-12, t = Math.max(0, Math.min(1, ((x - A[0]) * ex + (z - A[1]) * ez) / l2)); d = Math.min(d, Math.hypot(x - A[0] - ex * t, z - A[1] - ez * t)); if ((x - A[0]) * ez - (z - A[1]) * ex > 0) inside = false; } return inside ? 0 : d; }
+  // the first fraction along f -> p where a sphere of radius r meets an occluder box, the terrain or (in the tunnel) the lining; 1 if none
+  function sweep(f, p, r) {
+    const s = st.s, dx = p[0] - f[0], dy = p[1] - f[1], dz = p[2] - f[2], len = Math.hypot(dx, dy, dz); if (len < 1e-6) return 1;
+    const boxes = Wd.occluders(Math.min(f[0], p[0]) - r, Math.min(f[2], p[2]) - r, Math.max(f[0], p[0]) + r, Math.max(f[2], p[2]) + r), n = Math.max(2, Math.ceil(len / (0.25 * s))), tun = inTunnel();     // samples 0.25 m apart: within the 0.2 m sphere, no wall falls between two
+    for (let i = 1; i <= n; i++) { const t = i / n, x = f[0] + dx * t, y = f[1] + dy * t, z = f[2] + dz * t, back = (i - 1) / n;
+      const gq = groundUnder(x, z); if (y < (gq ? gq.y : G.y(x, z)) + r) { sweep.why = gq ? 'ground ' + gq.kind : 'terrain'; return back; }
+      if (tun && !tunnelOk(x, y, z, CFG.tunnelClear * s)) { sweep.why = 'tunnel'; return back; }
+      for (const o of boxes) { if (y < o.y0 - r || y > o.y1 + r || x < o.bb[0] - r || x > o.bb[2] + r || z < o.bb[1] - r || z > o.bb[3] + r) continue; if (boxDist(o.pts, x, z) < r) { sweep.why = 'box ' + o.src; return back; } } }
+    return 1;
+  }
+  // the horizontal limit: within `allowed` of the rideable surface (the point that much nearer the focus stands on it)
+  function horizOk(f, x, z, allowed) { if (G.at(x, z, { y: st.y })) return true; if (allowed <= 0) return false; const dx = f[0] - x, dz = f[2] - z, l = Math.hypot(dx, dz) || 1; return !!G.at(x + dx / l * allowed, z + dz / l * allowed, { y: st.y }); }
+  function cameraStep(dt) {
+    const s = st.s, I = ideal(), c = st.cam || (st.cam = { pos: I.pos.slice(), d: I.len, raise: 0, init: false });
+    // occlusion along the ideal ray: in at once, out at lambda 2
+    const hit = sweep(I.focus, I.pos, CFG.sweepR * s); c.why = hit < 1 ? sweep.why : ''; const want = hit < 1 ? Math.max(CFG.minDist * s, hit * I.len - CFG.hitBack * s) : I.len;
+    c.d = !c.init || want < c.d ? Math.min(want, I.len) : want - c.d < 1e-3 * s ? want : c.d + (want - c.d) * (1 - Math.exp(-CFG.damp.release * dt));
+    c.pulled = c.d < I.len - 1e-6;
+    const raiseT = inTunnel() ? 0 : CFG.raise * s * Math.max(0, Math.min(1, (I.len - c.d) / Math.max(1e-6, I.len - CFG.minDist * s)));
+    c.raise = !c.init || raiseT > c.raise ? raiseT : c.raise - raiseT < 1e-3 * s ? raiseT : c.raise + (raiseT - c.raise) * (1 - Math.exp(-CFG.damp.release * dt));
+    const k = c.d / I.len, target = [I.focus[0] + (I.pos[0] - I.focus[0]) * k, I.focus[1] + (I.pos[1] - I.focus[1]) * k + c.raise, I.focus[2] + (I.pos[2] - I.focus[2]) * k];
+    // damping per axis in the rider's frame
+    if (!c.init || dt <= 0) c.pos = target.slice();
+    else { const fx = Math.sin(st.heading), fz = Math.cos(st.heading), ex = target[0] - c.pos[0], ey = target[1] - c.pos[1], ez = target[2] - c.pos[2], al = ex * fx + ez * fz, ac = -ex * fz + ez * fx;
+      const ka = 1 - Math.exp(-CFG.damp.along * dt), ku = 1 - Math.exp(-CFG.damp.up * dt), kc = 1 - Math.exp(-CFG.damp.across * dt);
+      c.pos[0] += fx * al * ka - fz * ac * kc; c.pos[2] += fz * al * ka + fx * ac * kc; c.pos[1] += ey * ku; }
+    c.init = true;
+    // the limits in order: nothing between the focus and the camera; the horizontal limit; the height; the tunnel lining
+    const q0 = st.sample || {}, allowed = q0.layer === 'deck' || q0.layer === 'tunnel' || q0.kind === 'boardwalk' || q0.kind === 'stairs' ? 0 : CFG.outside * s;
+    const back = t => [I.focus[0] + (c.pos[0] - I.focus[0]) * t, I.focus[1] + (c.pos[1] - I.focus[1]) * t, I.focus[2] + (c.pos[2] - I.focus[2]) * t];
+    c.clamped = '';
+    const h2 = sweep(I.focus, c.pos, CFG.sweepR * s); if (h2 < 1) { const L2 = Math.hypot(c.pos[0] - I.focus[0], c.pos[1] - I.focus[1], c.pos[2] - I.focus[2]) || 1; c.pos = back(Math.max(0, (h2 * L2 - 0.05 * s) / L2)); c.clamped += 'occluder '; }
+    if (!horizOk(I.focus, c.pos[0], c.pos[2], allowed)) { let lo = 0, hi = 1; for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2, p = back(m); if (horizOk(I.focus, p[0], p[2], allowed)) lo = m; else hi = m; } c.pos = back(lo); c.clamped += 'surface '; }
+    const qc = groundUnder(c.pos[0], c.pos[2]), floor = qc ? qc.y + (qc.layer === 'deck' ? CFG.deckClear : CFG.camClear) * s : G.y(c.pos[0], c.pos[2]) + CFG.camClear * s;
+    if (c.pos[1] < floor) { c.pos[1] = floor; c.clamped += 'height '; }
+    if (inTunnel() && !tunnelOk(c.pos[0], c.pos[1], c.pos[2], CFG.tunnelClear * s)) { let lo = 0, hi = 1; for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2, p = back(m); if (tunnelOk(p[0], p[1], p[2], CFG.tunnelClear * s)) lo = m; else hi = m; } c.pos = back(lo); c.clamped += 'tunnel '; }
+    c.focus = I.focus; c.look = I.look; c.blocked = st.debugCam ? sweep(I.focus, c.pos, 0.02 * s) < 1 : null;     // the sight line's own test only when a check asks (st.debugCam)
   }
   const api = {
     CFG, capOf, state: st,
@@ -7631,7 +7700,7 @@ function create(ctx) {
       st.x = q.x; st.z = q.z; st.y = q.y; st.s = q.s; st.sample = q; st.heading = heading ?? st.heading; st.speed = opt.speed || 0; st.steerCmd = 0; st.stopT = 0; st.contact = null;
       const fx = Math.sin(st.heading), fz = Math.cos(st.heading), res = resolve(st.x, st.z, fx, fz, st.s, st.y, st.x, st.z), q2 = (own && G.layers(res.x, res.z).find(c => c.line === own.line && c.layer === own.layer)) || at(res.x, res.z, st.y);
       if (q2) { st.x = q2.x; st.z = q2.z; st.y = q2.y; st.s = q2.s; st.sample = q2; }
-      wheels(); st.mode = modeOf(st.sample); st.carry = st.mode === 'push' && ([st.sample, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair); return st.sample;
+      wheels(); st.mode = modeOf(st.sample); st.carry = st.mode === 'push' && ([st.sample, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair); st.cam = null; cameraStep(0); return st.sample;
     },
     // start riding for a free view target (I8 spawn, 6.3); returns the spawn
     enter(tx, tz, dir) {
@@ -7650,20 +7719,15 @@ function create(ctx) {
       if (total > 0) for (let i = 0; i < n; i++) sub(dt, thr, steer);
       if (st.recentre) { st.recentre.t = Math.min(1, st.recentre.t + total / CFG.recentre); const k = smooth(st.recentre.t); st.lookYaw = st.recentre.yaw * (1 - k); st.lookPitch = st.recentre.pitch + (CFG.pitch0 - st.recentre.pitch) * k; if (st.recentre.t >= 1) st.recentre = null; }
       Wd.prefetch(st.x, st.z, 2.5 * CFG.back * st.s, 2);
+      cameraStep(total);
       st.ms = now() - t0; return st;
     },
     // look: a drag of (dx, dy) pixels (grab style: dragging right turns the view left, dragging down lifts the view), the wheel / pinch factor, recentre (C, double tap)
     look(dx, dy) { st.recentre = null; st.lookYaw += dx * CFG.yawPx; st.lookPitch = clamp(st.lookPitch - dy * CFG.pitchPx, CFG.pitch[0], CFG.pitch[1]); },
     zoom(f) { st.dist = clamp(st.dist * f, CFG.dist[0], CFG.dist[1]); },
     recentre() { let y = st.lookYaw % (2 * Math.PI); if (y > Math.PI) y -= 2 * Math.PI; if (y < -Math.PI) y += 2 * Math.PI; st.lookYaw = y; st.recentre = { t: 0, yaw: y, pitch: st.lookPitch }; },
-    // the follow camera (R1): position, look point, focus (flat frame)
-    camera() {
-      const s = st.s, yaw = st.heading + st.lookYaw, dx = Math.sin(yaw), dz = Math.cos(yaw), fy = st.root + CFG.focus * s, Rc = st.dist / Math.cos(CFG.pitch0) * s, p = st.lookPitch;
-      const pos = [st.x - dx * Rc * Math.cos(p), fy + Rc * Math.sin(p), st.z - dz * Rc * Math.cos(p)];
-      const q = at(pos[0], pos[2], fy), gy = Math.max(q ? q.y : -Infinity, G.y(pos[0], pos[2]));
-      if (pos[1] < gy + CFG.camClear * s) pos[1] = gy + CFG.camClear * s;
-      return { position: pos, look: [st.x + dx * CFG.ahead * s, fy + CFG.lookUp * s, st.z + dz * CFG.ahead * s], focus: [st.x, fy, st.z], fov: CFG.fov, near: CFG.near };
-    },
+    // the chase camera (R2, 6.7): its pose this frame (flat frame); state in st.cam, advanced by cameraStep in step()
+    camera() { if (!st.cam) cameraStep(0); const c = st.cam; return { position: c.pos.slice(), look: c.look.slice(), focus: c.focus.slice(), fov: CFG.fov, near: CFG.near, pulled: c.pulled, dist: c.d, raise: c.raise, blocked: c.blocked, clamped: c.clamped, why: c.why }; },
     get() {
       const q = st.sample || {};
       return { active: st.active, x: st.x, y: st.y, z: st.z, root: st.root, heading: st.heading, speed: st.speed, steerCmd: st.steerCmd, throttle: st.throttle, steer: st.steer, mode: st.mode, carry: !!st.carry, cap: st.cap, s: st.s,
@@ -7678,6 +7742,480 @@ function create(ctx) {
 const RIDE = { create, CFG, capOf };
 if (typeof module !== 'undefined' && module.exports) module.exports = RIDE;
 else global.RIDE = RIDE;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// R2 rider helpers. Ported from riba2534/claude-opus-5-5-demo, pelican-bike/src/util.js at commit 54adc1fb64155f9dd7c1c90ecae7b8185ac540b8
+// (https://github.com/riba2534/claude-opus-5-5-demo/tree/54adc1fb64155f9dd7c1c90ecae7b8185ac540b8/pelican-bike), used with the user's permission (README).
+// Changes for this project: a plain global script over the embedded Three.js 0.160.1 (no ESM import); clamp/lerp/smoothstep/damp, loft, DynamicTube, solveTwoBone and
+// placeBetween kept as upstream; unitCylinder/cylBetween return geometry only (shadows dropped: the project has none); paint/normalizeForMerge replaced by geom(), which
+// gives a part its vertex colour, and merge(), a local stand-in for three/addons mergeGeometries (non-indexed position, normal, uv, colour); new: Rig, which writes several
+// rigid parts, each with its own matrix per frame, into one buffer (one draw call for the legs and wings).
+(function (global) {
+'use strict';
+const T = () => global.THREE;
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// frame-rate independent exponential damping
+const damp = (a, b, lambda, dt) => lerp(a, b, 1 - Math.exp(-lambda * dt));
+const v3 = (x, y, z) => new (T().Vector3)(x, y, z);
+
+// a cylinder along +Y of length 1, its foot at the origin (with placeBetween: a movable bone)
+function unitCylinder(r0, r1, radial = 8) { const g = new (T().CylinderGeometry)(r1, r0, 1, radial, 1, false); g.translate(0, 0.5, 0); return g; }
+const _v = () => (global.__riderV || (global.__riderV = new (T().Vector3)()));
+function placeBetween(obj, a, b) {
+  const v = _v().subVectors(b, a), len = v.length();
+  obj.position.copy(a);
+  if (len > 1e-6) obj.quaternion.setFromUnitVectors(v3(0, 1, 0), v.multiplyScalar(1 / len));
+  obj.scale.set(1, Math.max(len, 1e-4), 1);
+}
+// a cylinder from a to b, as geometry
+function cylBetween(a, b, r0, r1, radial = 8) {
+  const g = unitCylinder(r0, r1, radial), o = new (T().Object3D)(); placeBetween(o, a, b); o.updateMatrix(); g.applyMatrix4(o.matrix); return g;
+}
+
+// lofted geometry: the section section(t, a) -> [y, z] swept along the centre line center(t); (y, z) = (cos th h, sin th w), th = 2 pi a
+function loft({ segs = 24, ring = 12, center, section, color }) {
+  const THREE = T(), pos = [], uv = [], col = [], idx = [], c = new THREE.Color();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs, p = center(t);
+    for (let j = 0; j <= ring; j++) { const a = j / ring, [y, z] = section(t, a); pos.push(p.x, p.y + y, p.z + z); uv.push(t, a); if (color) { color(t, a, c); col.push(c.r, c.g, c.b); } }
+  }
+  for (let i = 0; i < segs; i++) for (let j = 0; j < ring; j++) { const a = i * (ring + 1) + j, b = a + ring + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (color) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+
+// a tube of varying radius rebuilt every frame (the pelican's neck), parallel transport frames so it never twists
+class DynamicTube {
+  constructor(tub, rad, radiusFn, color) {
+    const THREE = T(); this.tub = tub; this.rad = rad; this.radiusFn = radiusFn;
+    const n = (tub + 1) * (rad + 1); this.pos = new Float32Array(n * 3); this.nor = new Float32Array(n * 3);
+    const uv = new Float32Array(n * 2), col = new Float32Array(n * 3), idx = [], cc = new THREE.Color(color || '#ffffff');
+    for (let i = 0; i <= tub; i++) for (let j = 0; j <= rad; j++) { const k = i * (rad + 1) + j; uv[k * 2] = i / tub; uv[k * 2 + 1] = j / rad; col.set([cc.r, cc.g, cc.b], k * 3); }
+    for (let i = 0; i < tub; i++) for (let j = 0; j < rad; j++) { const a = i * (rad + 1) + j, b = a + rad + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+    const g = new THREE.BufferGeometry(), pa = new THREE.BufferAttribute(this.pos, 3), na = new THREE.BufferAttribute(this.nor, 3);
+    pa.setUsage(THREE.DynamicDrawUsage); na.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', pa); g.setAttribute('normal', na); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx);
+    this.geometry = g; this.curve = new THREE.CatmullRomCurve3([v3(0, 0, 0), v3(0, 1, 0)], false, 'centripetal');
+    this._P = []; this._T = []; for (let i = 0; i <= tub; i++) { this._P.push(new THREE.Vector3()); this._T.push(new THREE.Vector3()); }
+    this._N = new THREE.Vector3(); this._B = new THREE.Vector3(); this._d = new THREE.Vector3();
+  }
+  update(points) {
+    const { tub, rad, pos, nor, _P, _T, _N, _B, _d } = this;
+    this.curve.points = points;
+    for (let i = 0; i <= tub; i++) this.curve.getPoint(i / tub, _P[i]);
+    for (let i = 0; i <= tub; i++) _T[i].subVectors(_P[Math.min(tub, i + 1)], _P[Math.max(0, i - 1)]).normalize();
+    const T0 = _T[0]; _N.set(0, 0, 1); if (Math.abs(T0.dot(_N)) > 0.9) _N.set(1, 0, 0); _N.addScaledVector(T0, -T0.dot(_N)).normalize();
+    for (let i = 0; i <= tub; i++) {
+      const Ti = _T[i]; if (i > 0) _N.addScaledVector(Ti, -Ti.dot(_N)).normalize(); _B.crossVectors(Ti, _N);
+      const r = this.radiusFn(i / tub), P = _P[i];
+      for (let j = 0; j <= rad; j++) { const th = (j / rad) * TAU, c = Math.cos(th), s = Math.sin(th), k = (i * (rad + 1) + j) * 3;
+        _d.set(_N.x * c + _B.x * s, _N.y * c + _B.y * s, _N.z * c + _B.z * s); pos[k] = P.x + _d.x * r; pos[k + 1] = P.y + _d.y * r; pos[k + 2] = P.z + _d.z * r; nor[k] = _d.x; nor[k + 1] = _d.y; nor[k + 2] = _d.z; }
+    }
+    this.geometry.attributes.position.needsUpdate = true; this.geometry.attributes.normal.needsUpdate = true;
+  }
+}
+
+// two-bone IK: hip -> knee -> ankle, the pole sets the bend; returns whether the target is in reach
+let _dir, _bend;
+function solveTwoBone(A, Tg, a, b, pole, outMid, outEnd) {
+  if (!_dir) { _dir = new (T().Vector3)(); _bend = new (T().Vector3)(); }
+  _dir.subVectors(Tg, A); let d = _dir.length(); const reach = a + b, ok = d <= reach * 0.999;
+  d = clamp(d, Math.abs(a - b) + 1e-4, reach * 0.999); _dir.normalize();
+  const cosA = clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1), sinA = Math.sqrt(1 - cosA * cosA);
+  _bend.copy(pole).addScaledVector(_dir, -pole.dot(_dir)); if (_bend.lengthSq() < 1e-8) _bend.set(1, 0, 0); _bend.normalize();
+  outMid.copy(A).addScaledVector(_dir, a * cosA).addScaledVector(_bend, a * sinA); outEnd.copy(A).addScaledVector(_dir, d);
+  return ok;
+}
+
+// a part: non-indexed geometry with one vertex colour (unless it has its own colours), uv kept (the paper grain), optional matrix
+function geom(g, color, matrix) {
+  const THREE = T(); let q = g.index ? g.toNonIndexed() : g;
+  for (const k of Object.keys(q.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) q.deleteAttribute(k);
+  if (!q.attributes.normal) q.computeVertexNormals();
+  if (!q.attributes.uv) q.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count * 2), 2));
+  if (!q.attributes.color || color) { const c = new THREE.Color(color || '#ffffff'), n = q.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3); q.setAttribute('color', new THREE.BufferAttribute(a, 3)); }
+  if (matrix) q.applyMatrix4(matrix);
+  q.morphAttributes = {}; return q;
+}
+// concatenate parts made by geom()
+function merge(parts) {
+  const THREE = T(), names = ['position', 'normal', 'uv', 'color'], size = { position: 3, normal: 3, uv: 2, color: 3 }, n = parts.reduce((a, p) => a + p.attributes.position.count, 0), out = new THREE.BufferGeometry();
+  for (const k of names) { const arr = new Float32Array(n * size[k]); let o = 0; for (const p of parts) { arr.set(p.attributes[k].array, o); o += p.attributes[k].array.length; } out.setAttribute(k, new THREE.BufferAttribute(arr, size[k])); }
+  return out;
+}
+// several rigid parts in one buffer, each placed by its own matrix every frame (CPU, a few thousand vertices): rig.set(i, matrix); rig.commit()
+class Rig {
+  constructor(parts) {
+    const THREE = T(); this.parts = parts; this.base = parts.map(p => ({ pos: p.attributes.position.array.slice(), nor: p.attributes.normal.array.slice() }));
+    this.geometry = merge(parts); this.offs = []; let o = 0; for (const p of parts) { this.offs.push(o); o += p.attributes.position.array.length; }
+    this.geometry.attributes.position.setUsage(THREE.DynamicDrawUsage); this.geometry.attributes.normal.setUsage(THREE.DynamicDrawUsage); this._n = new THREE.Matrix3();
+  }
+  set(i, m) {
+    const e = m.elements, P = this.geometry.attributes.position.array, N = this.geometry.attributes.normal.array, b = this.base[i], o = this.offs[i], ne = this._n.getNormalMatrix(m).elements;
+    for (let k = 0; k < b.pos.length; k += 3) { const x = b.pos[k], y = b.pos[k + 1], z = b.pos[k + 2]; P[o + k] = e[0] * x + e[4] * y + e[8] * z + e[12]; P[o + k + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; P[o + k + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const a = b.nor[k], c = b.nor[k + 1], d = b.nor[k + 2], nx = ne[0] * a + ne[3] * c + ne[6] * d, ny = ne[1] * a + ne[4] * c + ne[7] * d, nz = ne[2] * a + ne[5] * c + ne[8] * d, l = Math.hypot(nx, ny, nz) || 1; N[o + k] = nx / l; N[o + k + 1] = ny / l; N[o + k + 2] = nz / l; }
+  }
+  commit() { this.geometry.attributes.position.needsUpdate = true; this.geometry.attributes.normal.needsUpdate = true; this.geometry.computeBoundingSphere(); }
+}
+
+const RIDER_UTIL = { TAU, clamp, lerp, smoothstep, damp, v3, unitCylinder, placeBetween, cylBetween, loft, DynamicTube, solveTwoBone, geom, merge, Rig };
+if (typeof module !== 'undefined' && module.exports) module.exports = RIDER_UTIL;
+else global.RIDER_UTIL = RIDER_UTIL;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// R2 bicycle. Ported from riba2534/claude-opus-5-5-demo, pelican-bike/src/bicycle.js at commit 54adc1fb64155f9dd7c1c90ecae7b8185ac540b8
+// (https://github.com/riba2534/claude-opus-5-5-demo/tree/54adc1fb64155f9dd7c1c90ecae7b8185ac540b8/pelican-bike), used with the user's permission (README).
+// Kept from upstream: the frame geometry points (P), WHEEL_R 0.3 m, wheelbase 0.94 m, the crank (0.15 m), chainring and cog radii and GEARS, the frame / fork / steer / wheel /
+// crank / pedal / fender / bar / basket layout and the update({ wheelAngle, crankAngle, steerAngle }) contract with its anchors (grips, pedals) and steerMatrix().
+// Changed for this project (docs/world/THIRD_PERSON_ROAM_PLAN.md section 3, R2 design card docs/world/R2_RIDER_CARD.md): the PBR materials, decal, wicker and fish textures
+// are gone: every part is a toon colour (vertex colours on the project's paper-grain toon material); the 0.0014 m spokes and the chain links are ink lines; the gear teeth
+// are dropped; parts are merged per moving piece (frame, steer, each wheel, crank, both pedals) so the bike costs 11 draw calls; no spot light and no shadows (the lamp and
+// tail light are self-lit faces); the bell and the fish are replaced by the design card's basket (a convenience-store bag with a leek); segment counts are lowered.
+(function (global) {
+'use strict';
+const WHEEL_R = 0.3;
+const GEARS = [[44, 28], [44, 22], [44, 18], [44, 15], [44, 12]];
+const CRANK = 0.15, RING_R = 0.1, COG_R = 0.042;
+// the R2 design card's colours
+const COL = { frame: '#5b8783', frameDark: '#3f5d5b', chrome: '#b7bec2', dark: '#2b2d31', tire: '#26282c', wall: '#b39a74', leather: '#6e4a30', cream: '#e6dcc2', grip: '#5a3e2a',
+  wicker: '#a8845a', wickerDark: '#7d5f3e', bag: '#ece8de', bagStripe: '#5f9c95', leek: '#7aa65a', leekWhite: '#e7e4d4', lamp: '#fff0c8', tail: '#ff4a3a', reflector: '#ff9a3a' };
+
+function createBicycle(M) {
+  const THREE = global.THREE, U = global.RIDER_UTIL, { v3, cylBetween, geom, merge, Rig, TAU } = U;
+  const P = { rearHub: v3(-0.46, WHEEL_R, 0), frontHub: v3(0.48, WHEEL_R, 0), bb: v3(-0.06, 0.25, 0), seat: v3(-0.2, 0.64, 0), saddle: v3(-0.235, 0.705, 0), headTop: v3(0.32, 0.72, 0), headBot: v3(0.36, 0.57, 0) };
+  const group = new THREE.Group(); group.name = 'ride:bicycle';
+  const mtx = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(v3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), v3(sx, sy, sz));
+  const mesh = (parts, mat, name) => { const m = new THREE.Mesh(merge(parts), mat); m.name = name; m.frustumCulled = false; return m; };
+
+  // ---- frame (rigid)
+  const axis = P.headTop.clone().sub(P.headBot).normalize();
+  const ht0 = P.headTop.clone().addScaledVector(axis, 0.025), ht1 = P.headBot.clone().addScaledVector(axis, -0.02);
+  const F = [], FL = [];
+  F.push(geom(cylBetween(ht1, ht0, 0.021, 0.021), COL.frame));
+  F.push(geom(cylBetween(P.seat, P.headTop.clone().addScaledVector(axis, -0.02), 0.016, 0.016), COL.frame));
+  F.push(geom(cylBetween(P.bb, P.headBot.clone().addScaledVector(axis, 0.03), 0.02, 0.019), COL.frame));
+  F.push(geom(cylBetween(P.bb, P.seat.clone().addScaledVector(v3(0.35, -1, 0).normalize(), -0.03), 0.018, 0.017), COL.frame));
+  for (const s of [-1, 1]) {
+    F.push(geom(cylBetween(P.bb.clone().setZ(s * 0.02), P.rearHub.clone().setZ(s * 0.05), 0.011, 0.008, 6), COL.frame));
+    F.push(geom(cylBetween(P.seat.clone().add(v3(0, -0.02, s * 0.015)), P.rearHub.clone().setZ(s * 0.05), 0.009, 0.007, 6), COL.frame));
+    F.push(geom(new THREE.BoxGeometry(0.035, 0.03, 0.006), COL.chrome, mtx(P.rearHub.x, P.rearHub.y, s * 0.052)));
+  }
+  for (const p of [P.seat, ht0, ht1]) F.push(geom(new THREE.SphereGeometry(0.024, 8, 6), COL.chrome, mtx(p.x, p.y, p.z)));
+  F.push(geom(new THREE.CylinderGeometry(0.025, 0.025, 0.085, 10).rotateX(Math.PI / 2), COL.chrome, mtx(P.bb.x, P.bb.y, 0)));
+  F.push(geom(cylBetween(P.seat, P.saddle.clone().add(v3(0.005, -0.02, 0)), 0.012, 0.012, 6), COL.chrome));
+  // the saddle: a sphere pressed into a sprung leather seat (upstream shape)
+  const saddleGeo = new THREE.SphereGeometry(1, 16, 8); { const p = saddleGeo.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), nose = x > 0 ? 1 - 0.68 * Math.pow(x, 1.3) : 1 + 0.08 * x; p.setXYZ(i, x * 0.13, y * (y > 0 ? 0.03 : 0.012), z * 0.085 * nose); } saddleGeo.computeVertexNormals(); }
+  F.push(geom(saddleGeo, COL.leather, mtx(P.saddle.x + 0.01, P.saddle.y + 0.018, 0)));
+  for (const s of [-1, 1]) F.push(geom(new THREE.CylinderGeometry(0.012, 0.012, 0.045, 6), COL.chrome, mtx(P.saddle.x - 0.08, P.saddle.y - 0.017, s * 0.045)));
+  // rear fender, cog, derailleur, a rear rack light
+  const fender = (a0, len) => new THREE.CylinderGeometry(WHEEL_R + 0.022, WHEEL_R + 0.022, 0.055, 20, 1, true, a0, len).rotateX(Math.PI / 2);
+  F.push(geom(fender(Math.PI * 0.72, Math.PI * 0.92), COL.cream, mtx(P.rearHub.x, P.rearHub.y, 0)));
+  F.push(geom(new THREE.TorusGeometry(COG_R, 0.006, 4, 16), COL.chrome, mtx(P.rearHub.x, P.rearHub.y, 0.058)));
+  F.push(geom(new THREE.BoxGeometry(0.02, 0.07, 0.012), COL.dark, mtx(P.rearHub.x + 0.005, P.rearHub.y - 0.07, 0.06, 0, 0, 0.3)));
+  FL.push(geom(new THREE.BoxGeometry(0.02, 0.035, 0.03), COL.tail, mtx(P.seat.x - 0.025, P.seat.y, 0)));
+  FL.push(geom(new THREE.BoxGeometry(0.006, 0.02, 0.05), COL.reflector, mtx(P.rearHub.x - WHEEL_R - 0.024, P.rearHub.y + 0.08, 0, 0, 0, 0.4)));
+  const frameMesh = mesh(F, M.toon, 'ride:bike frame'), frameLights = mesh(FL, M.light, 'ride:bike lights');
+  group.add(frameMesh, frameLights);
+
+  // ---- wheels: tire, cream wall, rim, hub (one geometry, two meshes); spokes as ink (one line set, two objects)
+  const wheelGeo = merge([geom(new THREE.TorusGeometry(WHEEL_R - 0.018, 0.018, 6, 36), COL.tire), geom(new THREE.TorusGeometry(WHEEL_R - 0.031, 0.011, 4, 36), COL.wall),
+    geom(new THREE.TorusGeometry(WHEEL_R - 0.04, 0.007, 4, 36), COL.chrome), geom(new THREE.CylinderGeometry(0.02, 0.02, 0.1, 8).rotateX(Math.PI / 2), COL.chrome)]);
+  const spokePts = []; for (let i = 0; i < 28; i++) { const side = i % 2 ? 1 : -1, lace = (Math.floor(i / 2) % 2 ? 1 : -1) * 0.42, ar = (i / 28) * TAU, ah = ar + lace; spokePts.push(Math.cos(ah) * 0.024, Math.sin(ah) * 0.024, side * 0.034, Math.cos(ar) * (WHEEL_R - 0.045), Math.sin(ar) * (WHEEL_R - 0.045), side * 0.004); }
+  const spokeGeo = new THREE.BufferGeometry(); spokeGeo.setAttribute('position', new THREE.Float32BufferAttribute(spokePts, 3));
+  const wheel = name => { const g = new THREE.Group(), rot = new THREE.Group(), m = new THREE.Mesh(wheelGeo, M.toon), l = new THREE.LineSegments(spokeGeo, M.spoke); m.name = name; l.name = name + ' spokes'; m.frustumCulled = l.frustumCulled = false; rot.add(m, l); g.add(rot); return { group: g, rot }; };
+  const rear = wheel('ride:bike rear wheel'); rear.group.position.copy(P.rearHub); group.add(rear.group);
+
+  // ---- chainring and cranks (one mesh, turns about the bottom bracket), pedals (one rig, kept level)
+  const crank = new THREE.Group(); crank.position.copy(P.bb); group.add(crank);
+  const C = [geom(new THREE.TorusGeometry(RING_R, 0.006, 4, 24), COL.chrome, mtx(0, 0, 0.065))];
+  for (let i = 0; i < 5; i++) { const a = (i / 5) * TAU; C.push(geom(new THREE.BoxGeometry(RING_R * 0.95, 0.012, 0.006), COL.chrome, mtx(Math.cos(a) * RING_R * 0.47, Math.sin(a) * RING_R * 0.47, 0.066, 0, 0, a))); }
+  const arm = () => new THREE.BoxGeometry(CRANK, 0.022, 0.012).translate(CRANK / 2, 0, 0);
+  C.push(geom(arm(), COL.chrome, mtx(0, 0, 0.078)), geom(arm(), COL.chrome, mtx(0, 0, -0.078, 0, 0, Math.PI)));
+  const crankMesh = mesh(C, M.toon, 'ride:bike crank'); crank.add(crankMesh);
+  const pedalPart = () => merge([geom(new THREE.BoxGeometry(0.085, 0.016, 0.075), COL.dark), geom(new THREE.BoxGeometry(0.01, 0.018, 0.04), COL.reflector, mtx(0.045, 0, 0)), geom(new THREE.BoxGeometry(0.01, 0.018, 0.04), COL.reflector, mtx(-0.045, 0, 0))]);
+  const pedals = new Rig([pedalPart(), pedalPart()]), pedalMesh = new THREE.Mesh(pedals.geometry, M.toon); pedalMesh.name = 'ride:bike pedals'; pedalMesh.frustumCulled = false; group.add(pedalMesh);
+  const pedalR = new THREE.Object3D(), pedalL = new THREE.Object3D(); group.add(pedalR, pedalL);
+
+  // ---- chain: the upstream path (chainring front arc, lower run, cog arc, upper run) as one ink loop
+  const chainGeo = (() => { const c1 = new THREE.Vector2(P.bb.x, P.bb.y), c2 = new THREE.Vector2(P.rearHub.x, P.rearHub.y), r1 = RING_R + 0.004, r2 = COG_R + 0.004, d = c1.distanceTo(c2), th = Math.atan2(c2.y - c1.y, c2.x - c1.x), be = Math.acos((r1 - r2) / d), topA = th - be, botA = th + be, pts = [];
+    for (let i = 0; i <= 16; i++) { const a = topA + (botA - TAU - topA) * i / 16; pts.push([c1.x + Math.cos(a) * r1, c1.y + Math.sin(a) * r1]); }
+    for (let i = 0; i <= 8; i++) { const a = botA + (topA - botA) * i / 8; pts.push([c2.x + Math.cos(a) * r2, c2.y + Math.sin(a) * r2]); }
+    const seg = []; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; seg.push(a[0], a[1], 0.062, b[0], b[1], 0.062); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)); return g; })();
+  const chain = new THREE.LineSegments(chainGeo, M.ink); chain.name = 'ride:bike chain'; chain.frustumCulled = false; group.add(chain);
+
+  // ---- steer assembly: fork, crown, front wheel, fender, stem, bar, grips, the basket and its bag, the lamp (turns about the head tube)
+  const steer = new THREE.Group(); steer.position.copy(P.headBot); group.add(steer);
+  const local = p => p.clone().sub(P.headBot), S = [], SL = [];
+  for (const s of [-1, 1]) { const pts = [local(P.headBot.clone().addScaledVector(axis, -0.02)).setZ(s * 0.03), local(P.headBot.clone().addScaledVector(axis, -0.14)).setZ(s * 0.05), local(P.frontHub.clone().add(v3(-0.03, 0.06, 0))).setZ(s * 0.052), local(P.frontHub).setZ(s * 0.052)];
+    S.push(geom(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 8, 0.011, 6), COL.frame)); }
+  { const c = local(P.headBot.clone().addScaledVector(axis, -0.03)); S.push(geom(new THREE.BoxGeometry(0.04, 0.03, 0.12), COL.chrome, mtx(c.x, c.y, c.z, 0, 0, Math.atan2(axis.y, axis.x) - Math.PI / 2))); }
+  { const fh = local(P.frontHub); S.push(geom(fender(Math.PI * 0.5, Math.PI * 0.72), COL.cream, mtx(fh.x, fh.y, 0))); }
+  const stemBase = P.headTop.clone().addScaledVector(axis, 0.02), stemTop = P.headTop.clone().addScaledVector(axis, 0.1), barC = stemTop.clone().add(v3(0.04, 0.012, 0));
+  S.push(geom(cylBetween(local(stemBase), local(stemTop), 0.012, 0.012, 6), COL.chrome), geom(cylBetween(local(stemTop), local(barC), 0.011, 0.011, 6), COL.chrome));
+  const barPts = [v3(0.19, 0.866, -0.255), v3(0.26, 0.866, -0.232), v3(0.315, 0.848, -0.13), v3(barC.x, barC.y, 0), v3(0.315, 0.848, 0.13), v3(0.26, 0.866, 0.232), v3(0.19, 0.866, 0.255)].map(local);
+  S.push(geom(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(barPts, false, 'centripetal'), 24, 0.0105, 6), COL.chrome));
+  const grips = {};
+  for (const s of [-1, 1]) { S.push(geom(cylBetween(local(v3(0.255, 0.866, s * 0.234)), local(v3(0.185, 0.866, s * 0.256)), 0.016, 0.017, 6), COL.grip));
+    const a = new THREE.Object3D(); a.position.copy(local(v3(0.222, 0.868, s * 0.245))); steer.add(a); grips[s > 0 ? 'R' : 'L'] = a; }
+  // basket (wicker cone, rim) with the card's contents: a convenience-store bag and a leek
+  { const b = local(v3(0.53, 0.78, 0)), bm = (x, y, z, rx = 0, ry = 0, rz = 0) => mtx(b.x + x, b.y + y, b.z + z, rx, ry, rz);
+    S.push(geom(new THREE.CylinderGeometry(0.15, 0.125, 0.15, 12, 1, true), COL.wicker, bm(0, 0, 0)), geom(new THREE.CircleGeometry(0.125, 12).rotateX(-Math.PI / 2), COL.wickerDark, bm(0, -0.075, 0)),
+      geom(new THREE.TorusGeometry(0.15, 0.008, 4, 16).rotateX(Math.PI / 2), COL.wickerDark, bm(0, 0.075, 0)));
+    for (let i = 0; i < 3; i++) S.push(geom(new THREE.TorusGeometry(0.138 - i * 0.008, 0.003, 3, 16).rotateX(Math.PI / 2), COL.wickerDark, bm(0, 0.035 - i * 0.035, 0)));
+    S.push(geom(new THREE.SphereGeometry(0.1, 10, 8).scale(0.9, 1.05, 0.8), COL.bag, bm(-0.01, 0.06, 0.02)), geom(new THREE.CylinderGeometry(0.081, 0.081, 0.02, 10), COL.bagStripe, bm(-0.01, 0.07, 0.02, 0, 0, 0)));
+    S.push(geom(cylBetween(v3(0, 0, 0), v3(-0.06, 0.32, -0.05), 0.016, 0.014, 6), COL.leekWhite, bm(0.03, 0.04, -0.03)), geom(cylBetween(v3(-0.06, 0.32, -0.05), v3(-0.1, 0.46, -0.1), 0.014, 0.008, 6), COL.leek, bm(0.03, 0.04, -0.03))); }
+  S.push(geom(cylBetween(local(v3(0.44, 0.66, 0)), local(v3(0.5, 0.71, 0)), 0.006, 0.006, 4), COL.chrome));
+  // the lamp: chrome body, a self-lit lens (no light source)
+  { const l = local(v3(0.695, 0.745, 0)); S.push(geom(new THREE.CylinderGeometry(0.03, 0.026, 0.055, 10).rotateZ(Math.PI / 2), COL.chrome, mtx(l.x, l.y, l.z))); SL.push(geom(new THREE.CircleGeometry(0.026, 10).rotateY(Math.PI / 2), COL.lamp, mtx(l.x + 0.029, l.y, l.z))); }
+  const steerMesh = mesh(S, M.toon, 'ride:bike steer'), steerLights = mesh(SL, M.light, 'ride:bike lamp'); steer.add(steerMesh, steerLights);
+  const front = wheel('ride:bike front wheel'); front.group.position.copy(local(P.frontHub)); steer.add(front.group);
+  const _m = new THREE.Matrix4();
+  // the per-frame update (upstream contract): wheel and crank angles, steering about the head tube, the pedals level at the crank ends
+  function update({ wheelAngle, crankAngle, steerAngle }) {
+    rear.rot.rotation.z = -wheelAngle; front.rot.rotation.z = -wheelAngle; crank.rotation.z = -crankAngle;
+    pedalR.position.set(P.bb.x + Math.cos(-crankAngle) * CRANK, P.bb.y + Math.sin(-crankAngle) * CRANK, 0.125);
+    pedalL.position.set(P.bb.x - Math.cos(-crankAngle) * CRANK, P.bb.y - Math.sin(-crankAngle) * CRANK, -0.125);
+    pedals.set(0, _m.makeTranslation(pedalR.position.x, pedalR.position.y, pedalR.position.z)); pedals.set(1, _m.makeTranslation(pedalL.position.x, pedalL.position.y, pedalL.position.z)); pedals.commit();
+    steer.quaternion.setFromAxisAngle(axis, steerAngle); steer.updateMatrix();
+  }
+  update({ wheelAngle: 0, crankAngle: 0, steerAngle: 0 });
+  return { group, update, P, anchors: { gripL: grips.L, gripR: grips.R, pedalL, pedalR }, steerMatrix: () => steer.matrix, meshes: [frameMesh, frameLights, rear.rot.children[0], rear.rot.children[1], crankMesh, pedalMesh, chain, steerMesh, steerLights, front.rot.children[0], front.rot.children[1]] };
+}
+
+const RIDER_BICYCLE = { createBicycle, WHEEL_R, GEARS, CRANK, RING_R, COG_R, COL };
+if (typeof module !== 'undefined' && module.exports) module.exports = RIDER_BICYCLE;
+else global.RIDER_BICYCLE = RIDER_BICYCLE;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// R2 pelican rider. Ported from riba2534/claude-opus-5-5-demo, pelican-bike/src/pelican.js at commit 54adc1fb64155f9dd7c1c90ecae7b8185ac540b8
+// (https://github.com/riba2534/claude-opus-5-5-demo/tree/54adc1fb64155f9dd7c1c90ecae7b8185ac540b8/pelican-bike), used with the user's permission (README).
+// Kept from upstream: the body shape (deformed sphere with the cream chest), BODY_POS / BODY_PITCH, the anchors (hips, shoulders, neck), the bone lengths (thigh 0.36,
+// shin 0.37, humerus 0.22, forearm 0.23, beak 0.4 m), the S-shaped dynamic neck, the head (skull, forehead, throat, crest, eyes), the lofted upper and lower beak and the
+// pouch, the feet, the wing panels and primaries, and update(): pedalling bob and sway, two-bone IK of the legs to the pedals and of the wings to the grips, the steadied head.
+// Changed for this project (R2 design card docs/world/R2_RIDER_CARD.md): toon colours on the project's paper-grain material instead of the PBR, sheen and feather textures;
+// a pen outline as a back-face hull of the body and the head; the helmet and the sunglasses replaced by the card's rain gear (a mustard rain cape over the body, a navy
+// brimmed rain hat) and the red scarf knot kept; no blink, honk, gulp, trick or wing spreading; the legs and wings are one buffer of rigid parts placed per frame
+// (RIDER_UTIL.Rig), the body and the head one mesh each, so the pelican costs 6 draw calls; new poses for this project: one foot down when stopped, walking beside the bike
+// when pushing it (stairs, steep boardwalk: decision U1); segment counts lowered.
+(function (global) {
+'use strict';
+const BODY_POS = [-0.13, 0.965, 0], BODY_PITCH = 0.35, THIGH = 0.36, SHIN = 0.37, HUMERUS = 0.22, FOREARM = 0.23, BEAK_L = 0.4;
+const COL = { white: '#f3f0e8', cream: '#f2dfa4', grey: '#dfdcd4', black: '#2a2b30', panel: '#ebe7dc', skin: '#efbf98', eye: '#1c120e', iris: '#b5473a', leg: '#e88a3a',
+  beakBase: '#eda07e', beakMid: '#f0c060', beakTip: '#e48c3c', nail: '#c44a32', pouch: '#e9b25c', cape: '#d2ae52', capeDark: '#a9893c', hat: '#3e4b5e', hatBrim: '#323d4d', scarf: '#c8443e' };
+
+function createPelican(M) {
+  const THREE = global.THREE, U = global.RIDER_UTIL, { v3, loft, DynamicTube, solveTwoBone, geom, merge, Rig, unitCylinder, clamp, lerp, damp, smoothstep, TAU } = U;
+  const root = new THREE.Group(); root.name = 'ride:pelican';
+  const mtx = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1, order = 'XYZ') => new THREE.Matrix4().compose(v3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, order)), v3(sx, sy, sz));
+  const hullOf = (g, d) => { const q = g.clone(), p = q.attributes.position, n = q.attributes.normal; for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) + n.getX(i) * d, p.getY(i) + n.getY(i) * d, p.getZ(i) + n.getZ(i) * d); return q; };
+  const named = (m, name) => { m.name = name; m.frustumCulled = false; return m; };
+
+  // ---- body: deformed sphere with the cream chest (upstream bodyGeometry), the tail feathers, the rain cape, the scarf knot at the neck's root
+  const bodyGeometry = () => { const g = new THREE.SphereGeometry(1, 28, 18), p = g.attributes.position, col = new Float32Array(p.count * 3), white = new THREE.Color(COL.white), cream = new THREE.Color(COL.cream), grey = new THREE.Color(COL.grey), c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), taper = x < 0 ? 1 - 0.5 * Math.pow(-x, 1.7) : 1 - 0.14 * x * x; let X = x * 0.4, Y = y * 0.215 * taper * (y < 0 ? 0.92 : 1); const Z = z * 0.2 * taper;
+      if (x < -0.35) Y += (-x - 0.35) * 0.06; if (x > 0.2 && y > 0) X += y * 0.05 * (x - 0.2); p.setXYZ(i, X, Y, Z);
+      c.copy(white).lerp(cream, smoothstep(0.35, 0.85, x) * smoothstep(-0.6, 0.1, y) * 0.8).lerp(grey, smoothstep(0.2, 0.9, y) * smoothstep(0.2, -0.6, x) * 0.5); col.set([c.r, c.g, c.b], i * 3); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g; };
+  const featherShape = (len, width) => { const s = new THREE.Shape(); s.moveTo(0, 0); s.quadraticCurveTo(len * 0.12, width * 0.55, len * 0.5, width * 0.5); s.quadraticCurveTo(len * 0.92, width * 0.42, len, 0); s.quadraticCurveTo(len * 0.9, -width * 0.42, len * 0.5, -width * 0.5); s.quadraticCurveTo(len * 0.12, -width * 0.55, 0, 0); const g = new THREE.ShapeGeometry(s, 3); g.rotateX(Math.PI / 2); return g; };
+  const bodyGeo = bodyGeometry();
+  const body = new THREE.Group(); body.position.set(...BODY_POS); body.rotation.z = BODY_PITCH; root.add(body);
+  const B = [geom(bodyGeo)];
+  for (let i = 0; i < 7; i++) B.push(geom(featherShape(0.17, 0.06), COL.panel, new THREE.Matrix4().multiplyMatrices(mtx(-0.37, 0.035 - Math.abs(i - 3) * 0.003, 0), mtx(0, 0, 0, 0, Math.PI + (i - 3) * 0.16, 0.25))));
+  // the rain cape (card U3): the body's upper half, 14 % larger, hanging a little lower at the sides, with a darker hem
+  { const g = new THREE.SphereGeometry(1, 24, 12, 0, TAU, 0, Math.PI * 0.62), p = g.attributes.position, col = new Float32Array(p.count * 3), a = new THREE.Color(COL.cape), d = new THREE.Color(COL.capeDark);
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), taper = x < 0 ? 1 - 0.45 * Math.pow(-x, 1.7) : 1 - 0.14 * x * x; p.setXYZ(i, x * 0.43, y * 0.25 * taper + (y < 0.2 ? -0.03 : 0), z * 0.235 * taper); const c = y < 0.0 ? d : a; col.set([c.r, c.g, c.b], i * 3); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); B.push(geom(g, undefined, mtx(0.0, 0.012, 0))); }
+  B.push(geom(new THREE.TorusGeometry(0.068, 0.022, 6, 14), COL.scarf, mtx(0.29, 0.13, 0, 0, Math.PI / 2, 0.9)));
+  const bodyMesh = named(new THREE.Mesh(merge(B), M.toon), 'ride:pelican body'); body.add(bodyMesh);
+  const bodyHull = named(new THREE.Mesh(hullOf(bodyGeo, 0.011), M.hull), 'ride:pelican body outline'); body.add(bodyHull);
+  const anchor = (x, y, z) => { const o = new THREE.Object3D(); o.position.set(x, y, z); body.add(o); return o; };
+  const A = { hipL: anchor(-0.05, -0.125, -0.09), hipR: anchor(-0.05, -0.125, 0.09), shL: anchor(0.14, 0.085, -0.17), shR: anchor(0.14, 0.085, 0.17), neck: anchor(0.3, 0.1, 0) };
+
+  // ---- neck (rebuilt every frame)
+  const neck = new DynamicTube(16, 10, t => lerp(0.085, 0.05, smoothstep(0.0, 0.45, t)) + 0.004 * Math.sin(t * Math.PI) + (t > 0.85 ? (t - 0.85) * 0.05 : 0), COL.white);
+  const neckMesh = named(new THREE.Mesh(neck.geometry, M.toon), 'ride:pelican neck'); root.add(neckMesh);
+
+  // ---- head: skull, forehead, throat, crest, eye patches and eyes, the lofted beak and pouch (upstream), the card's rain hat
+  const head = new THREE.Group(); root.add(head);
+  const Hp = [], hullParts = [];
+  { const skull = new THREE.SphereGeometry(0.075, 16, 10).scale(1.3, 1.0, 0.9), fore = new THREE.SphereGeometry(0.05, 12, 8).scale(1.45, 0.85, 0.85).translate(0.05, -0.006, 0), thr = new THREE.SphereGeometry(0.045, 10, 8).translate(0.02, -0.045, 0);
+    for (const g of [skull, fore, thr]) { Hp.push(geom(g, COL.white)); hullParts.push(geom(hullOf(g.index ? g.toNonIndexed() : g, 0.009), COL.white)); } }
+  for (let i = 0; i < 5; i++) Hp.push(geom(new THREE.ConeGeometry(0.012, 0.07, 5), COL.white, mtx(-0.085, 0.02 + i * 0.006, (i - 2) * 0.012, 0, 0, Math.PI / 2 + 0.5 + (i % 2) * 0.2)));
+  for (const s of [-1, 1]) { Hp.push(geom(new THREE.SphereGeometry(0.03, 10, 8).scale(1.25, 0.8, 0.45), COL.skin, mtx(0.048, 0.004, s * 0.05)), geom(new THREE.SphereGeometry(0.0128, 8, 6), COL.eye, mtx(0.05, 0.008, s * 0.06)),
+    geom(new THREE.SphereGeometry(0.006, 6, 4), COL.iris, mtx(0.054, 0.009, s * 0.0715)), geom(new THREE.SphereGeometry(0.0035, 6, 4), COL.eye, mtx(0.0555, 0.009, s * 0.0752))); }
+  const beakM = mtx(0.078, -0.016, 0, 0, 0, -0.3);
+  const upperBeak = loft({ segs: 18, ring: 10, center: t => v3(t * BEAK_L, -0.006 * t - 0.012 * t * t * t, 0), section: (t, a) => { const th = a * TAU, close = Math.sqrt(Math.max(0, 1 - Math.pow(t, 10))), w = (0.034 * (1 - 0.55 * t) + 0.007) * close, h = (0.017 * (1 - 0.5 * t) + 0.004) * close, c = Math.cos(th); return [c > 0 ? c * h * (c > 0.9 ? 1.18 : 1) : c * h * 0.3, Math.sin(th) * w]; },
+    color: (t, a, c) => { c.set(COL.beakBase).lerp(new THREE.Color(COL.beakMid), smoothstep(0, 0.35, t)).lerp(new THREE.Color(COL.beakTip), smoothstep(0.5, 0.95, t)); if (t > 0.94) c.set(COL.nail); } });
+  const lowerBeak = loft({ segs: 14, ring: 8, center: t => v3(t * BEAK_L * 0.97, -0.018 - 0.008 * t - 0.012 * t * t * t, 0), section: (t, a) => { const th = a * TAU, close = Math.sqrt(Math.max(0, 1 - Math.pow(t, 10))); return [Math.cos(th) * (0.007 * close + 0.001), Math.sin(th) * (0.032 * (1 - 0.55 * t) + 0.006) * close]; },
+    color: (t, a, c) => c.set(COL.beakMid).lerp(new THREE.Color(COL.beakTip), t) });
+  const pouch = loft({ segs: 14, ring: 10, center: t => v3(t * BEAK_L * 0.95, -0.02 - 0.008 * t - 0.012 * t * t * t, 0), section: (t, a) => { const phi = a * Math.PI, close = Math.sqrt(Math.max(0, 1 - Math.pow(t, 8))), bell = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.72)), 1.25); return [-Math.sin(phi) * (0.07 * bell + 0.004) * close, Math.cos(phi) * (0.031 * (1 - 0.5 * t) + 0.004) * close]; } });
+  Hp.push(geom(upperBeak, undefined, beakM), geom(lowerBeak, undefined, beakM), geom(pouch, COL.pouch, beakM));
+  // the rain hat (card U3): a low crown and a brim that dips at the back, tilted a little forward
+  { const hm = mtx(-0.012, 0.045, 0, 0, 0, -0.12), crown = new THREE.SphereGeometry(0.082, 14, 6, 0, TAU, 0, Math.PI * 0.5).scale(1.25, 0.8, 1.05), brim = new THREE.CylinderGeometry(0.15, 0.17, 0.012, 16, 1).translate(-0.01, 0.0, 0);
+    Hp.push(geom(crown, COL.hat, hm), geom(brim, COL.hatBrim, hm), geom(new THREE.TorusGeometry(0.098, 0.006, 4, 16).rotateX(Math.PI / 2).scale(1.25, 1, 1.05), COL.hatBrim, new THREE.Matrix4().multiplyMatrices(hm, mtx(0, 0.008, 0))));
+    hullParts.push(geom(hullOf(crown.toNonIndexed(), 0.008), COL.white, hm)); }
+  const headMesh = named(new THREE.Mesh(merge(Hp), M.toon), 'ride:pelican head'), headHull = named(new THREE.Mesh(merge(hullParts), M.hull), 'ride:pelican head outline'); head.add(headMesh, headHull);
+
+  // ---- legs and wings: one rig of rigid parts
+  const footGeometry = () => { const s = new THREE.Shape(); s.moveTo(-0.02, 0.012); s.quadraticCurveTo(0.04, 0.03, 0.1, 0.05); s.quadraticCurveTo(0.09, 0.028, 0.105, 0.022); s.quadraticCurveTo(0.11, 0.01, 0.125, 0.0); s.quadraticCurveTo(0.11, -0.01, 0.105, -0.022); s.quadraticCurveTo(0.09, -0.028, 0.1, -0.05); s.quadraticCurveTo(0.04, -0.03, -0.02, -0.012); s.closePath();
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004, bevelSegments: 1, curveSegments: 4 }); g.rotateX(-Math.PI / 2); return g; };
+  const panelGeometry = (len, depth, n) => { const s = new THREE.Shape(); s.moveTo(0, -0.01); s.lineTo(len, -0.01); for (let i = 0; i <= n; i++) { const x = len - (i / n) * len, d = depth * (0.75 + 0.25 * Math.sin((i / n) * Math.PI)); s.quadraticCurveTo(x + len / n / 2, d * 1.08, x, d * 0.9); } s.lineTo(0, -0.01); const g = new THREE.ShapeGeometry(s, 3); g.rotateX(Math.PI / 2); return g; };
+  const parts = [], idx = {};
+  const part = (name, g) => { idx[name] = parts.length; parts.push(g); };
+  for (const s of [-1, 1]) { const k = s < 0 ? 'L' : 'R';
+    part('thigh' + k, geom(unitCylinder(0.064, 0.042, 8), COL.white)); part('knee' + k, geom(new THREE.SphereGeometry(0.043, 8, 6), COL.white)); part('shin' + k, geom(unitCylinder(0.024, 0.019, 6), COL.leg));
+    part('ankle' + k, geom(new THREE.SphereGeometry(0.021, 6, 4), COL.leg)); part('foot' + k, geom(footGeometry(), COL.leg)); }
+  const primaries = [0.2, 0.24, 0.27, 0.28, 0.27, 0.24];
+  for (const s of [-1, 1]) { const k = s < 0 ? 'L' : 'R';
+    part('sh' + k, merge([geom(new THREE.SphereGeometry(1, 8, 6), COL.white, mtx(HUMERUS / 2, 0, 0.018, 0, 0, 0, HUMERUS / 2 + 0.025, 0.036, 0.07)), geom(panelGeometry(HUMERUS, 0.14, 4), COL.panel, mtx(0, -0.004, 0))]));
+    part('el' + k, merge([geom(new THREE.SphereGeometry(1, 8, 6), COL.white, mtx(FOREARM / 2, 0, 0.014, 0, 0, 0, FOREARM / 2 + 0.02, 0.03, 0.058)), geom(panelGeometry(FOREARM, 0.085, 5), COL.panel, mtx(0, 0.002, 0)), geom(panelGeometry(FOREARM, 0.165, 6), COL.black, mtx(0, -0.004, 0))]));
+    part('wr' + k, merge([geom(new THREE.SphereGeometry(1, 8, 6), COL.white, mtx(0.02, 0, 0, 0, 0, 0, 0.05, 0.03, 0.038)), ...primaries.map((l, i) => geom(featherShape(l, 0.05), COL.black, new THREE.Matrix4().multiplyMatrices(mtx(0.01, -0.003 - i * 0.0015, 0.004 * i), mtx(0, 0, 0, 0, -(Math.PI - 0.12 - i * 0.05), 0))))])); }
+  const rig = new Rig(parts), rigMesh = named(new THREE.Mesh(rig.geometry, M.toonDouble), 'ride:pelican legs and wings'); root.add(rigMesh);
+
+  // ---- animation
+  const st = { yaw: 0, pitch: 0, headBob: 0, stand: 0 };
+  const V = {}; for (const k of ['hip', 'knee', 'ank', 'tgt', 'sh', 'el', 'wr', 'pole', 'tmp', 'trail', 'headPos', 'neckBase', 'up']) V[k] = new THREE.Vector3();
+  const neckPts = [v3(0, 0, 0), v3(0, 0, 0), v3(0, 0, 0), v3(0, 0, 0), v3(0, 0, 0)];
+  const _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3(), _mb = new THREE.Matrix4(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), UPV = v3(0, 1, 0), ONE = v3(1, 1, 1);
+  const local = (a, out) => out.copy(a.position).applyMatrix4(body.matrix);
+  const bone = (name, a, b) => { _bx.subVectors(b, a); const len = _bx.length(); _q.setFromUnitVectors(UPV, len > 1e-6 ? _bx.multiplyScalar(1 / len) : UPV); rig.set(idx[name], _m.compose(a, _q, V.up.set(1, Math.max(len, 1e-4), 1))); };
+  const at = (name, p, q) => rig.set(idx[name], _m.compose(p, q || _q.identity(), ONE));
+  // a joint frame from the bone direction and a trailing-edge hint (upstream orientJoint)
+  const joint = (name, from, to, trailHint) => { _bx.subVectors(to, from).normalize(); _bz.copy(trailHint).addScaledVector(_bx, -trailHint.dot(_bx)); if (_bz.lengthSq() < 1e-6) _bz.set(0, -1, 0); _bz.normalize(); _by.crossVectors(_bz, _bx); _mb.makeBasis(_bx, _by, _bz); _q.setFromRotationMatrix(_mb); rig.set(idx[name], _m.compose(from, _q, ONE)); };
+  // ctx: t, crankAngle, pedal (0..1), grips {L, R}, pedals {L, R} (root frame), mode 'ride' | 'stop' | 'push', footDown (the left foot's ground point, root frame),
+  // walk (metres walked, for the stride), lookYaw (the head turns toward the view, clamped), standGrip (push: the bike's left grip, root frame)
+  function update(dt, ctx) {
+    const { t, crankAngle, pedal, mode } = ctx, push = mode === 'push';
+    st.stand = damp(st.stand, push ? 1 : 0, 8, dt);
+    const k = st.stand, bob = -Math.abs(Math.sin(crankAngle)) * 0.012 * pedal * (1 - k);
+    const sk = (ctx.stop || 0) * (1 - k);     // stopped on the bike: off the saddle, a little forward and down (the leg is 0.73 m)
+    body.position.set(lerp(BODY_POS[0], -0.02, k) + 0.1 * sk, lerp(BODY_POS[1], 0.84, k) - 0.09 * sk + bob + (push ? Math.abs(Math.sin(ctx.walk * Math.PI / 0.55)) * 0.012 : 0), 0);
+    body.rotation.set(Math.sin(crankAngle) * 0.035 * pedal * (1 - k), 0, lerp(BODY_PITCH, 0.14, k) - 0.08 * sk); body.updateMatrix();
+    // legs
+    for (const s of [-1, 1]) { const L = s < 0 ? 'L' : 'R';
+      local(s < 0 ? A.hipL : A.hipR, V.hip);
+      if (push) { const ph = ctx.walk * Math.PI / 0.55 + (s < 0 ? 0 : Math.PI); V.tgt.set(0.02 + Math.sin(ph) * 0.16, 0.03 + Math.max(0, Math.cos(ph)) * 0.05, s * 0.1); }
+      else if (s < 0 && ctx.footDown) V.tgt.copy(ctx.footDown);
+      else { const p = s < 0 ? ctx.pedals.L : ctx.pedals.R; V.tgt.set(p.x - 0.04, p.y + 0.046, p.z * 0.92); }
+      V.pole.set(1, 0.15, s * 0.32);
+      solveTwoBone(V.hip, V.tgt, THIGH, SHIN, V.pole, V.knee, V.ank);
+      bone('thigh' + L, V.hip, V.knee); at('knee' + L, V.knee); bone('shin' + L, V.knee, V.ank); at('ankle' + L, V.ank);
+      _q.setFromEuler(new THREE.Euler(0, 0, push || (s < 0 && ctx.footDown) ? 0 : -0.08 + Math.sin(-crankAngle + (s > 0 ? 0 : Math.PI) + 0.6) * 0.12)); at('foot' + L, V.tmp.set(V.ank.x - 0.012, V.ank.y - 0.04, V.ank.z), _q.clone());
+      if (s < 0) st.footY = V.ank.y - 0.04; }
+    // wings: to the grips (riding), the right wing to the bike's left grip and the left wing at rest (pushing)
+    for (const s of [-1, 1]) { const L = s < 0 ? 'L' : 'R';
+      local(s < 0 ? A.shL : A.shR, V.sh);
+      const grip = push ? (s > 0 ? ctx.standGrip : V.tmp.set(V.sh.x + 0.05, V.sh.y - 0.38, V.sh.z - 0.06)) : (s < 0 ? ctx.grips.L : ctx.grips.R);
+      V.pole.set(-0.25, 0.75, s * 0.85); solveTwoBone(V.sh, grip, HUMERUS, FOREARM, V.pole, V.el, V.wr);
+      V.trail.set(-1, -0.7, 0);
+      joint('sh' + L, V.sh, V.el, V.trail); joint('el' + L, V.el, V.wr, V.trail);
+      V.tmp.subVectors(V.wr, V.el).normalize().multiplyScalar(0.1).add(V.wr); joint('wr' + L, V.wr, V.tmp, V.trail); }
+    rig.commit();
+    // head: steadied against the bob, turned a little toward the view
+    local(A.neck, V.neckBase);
+    st.headBob = damp(st.headBob, bob * 0.25, 10, dt);
+    V.headPos.set(V.neckBase.x + 0.092, V.neckBase.y + 0.355 - bob * 0.75 + st.headBob, 0);
+    st.yaw = damp(st.yaw, clamp((ctx.lookYaw || 0) * 0.6, -1.0, 1.0), 4, dt); st.pitch = damp(st.pitch, -0.05, 6, dt);
+    head.position.copy(V.headPos); head.rotation.set(Math.sin(t * 1.3) * 0.03, st.yaw, st.pitch, 'YZX'); head.updateMatrix();
+    // the S-shaped neck
+    neckPts[0].copy(V.neckBase).add(V.tmp.set(-0.03, -0.03, 0)); neckPts[1].copy(V.neckBase).add(V.tmp.set(0.035, 0.07, 0)); neckPts[2].copy(V.neckBase).lerp(V.headPos, 0.45).add(V.tmp.set(0.035, 0, 0));
+    neckPts[3].set(-0.075, -0.1, 0).applyMatrix4(head.matrix).lerp(V.tmp.copy(V.headPos).add(_by.set(-0.075, -0.1, 0)), 0.4); neckPts[4].set(-0.03, -0.03, 0).applyMatrix4(head.matrix);
+    neck.update(neckPts);
+  }
+  return { root, body, head, update, state: st, rig, rigIndex: idx, meshes: [bodyMesh, bodyHull, neckMesh, headMesh, headHull, rigMesh] };
+}
+
+const RIDER_PELICAN = { createPelican, COL, BODY_POS, BODY_PITCH };
+if (typeof module !== 'undefined' && module.exports) module.exports = RIDER_PELICAN;
+else global.RIDER_PELICAN = RIDER_PELICAN;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script><script>
+// R2 (docs/world/THIRD_PERSON_ROAM_PLAN.md 3, 6.5 attitude; design card docs/world/R2_RIDER_CARD.md): the visible rider, the ported pelican on the ported bicycle
+// (rider_pelican.js, rider_bicycle.js, rider_util.js: riba2534/claude-opus-5-5-demo pelican-bike at commit 54adc1fb64155f9dd7c1c90ecae7b8185ac540b8).
+// The animation coupling follows upstream main.js updateRide: the wheels turn at v / 0.3, an automatic gear keeps the cadence near 86 rpm while pedalling, the lean is
+// atan(lateral acceleration / 9.8) x 1.4 within +-0.4 (lambda 7), the bars turn with lambda 10; here the lateral acceleration and the steering come from the kinematic bicycle
+// of ride.js (yaw rate w: lean from v w, bars atan(0.94 w / v) within +-0.6), the pitch is the slope between the two wheel contacts, the rider stands on one foot when stopped
+// and walks beside the bike pushing it on stairs and the steep boardwalk. Materials: the project's toon ramp and paper grain (vertex colours), ink lines, self-lit lamps, no
+// light source. Everything is scaled by the display scale s of the surface under the rider. Built once, before the first frame (hidden until a ride starts).
+(function (global) {
+'use strict';
+function create(ctx) {
+  const THREE = global.THREE, U = global.RIDER_UTIL, BK = global.RIDER_BICYCLE, PL = global.RIDER_PELICAN, { clamp, damp } = U;
+  const M = {
+    toon: new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, map: ctx.paper }),
+    toonDouble: new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, map: ctx.paper, side: THREE.DoubleSide }),
+    light: new THREE.MeshBasicMaterial({ vertexColors: true }),
+    ink: new THREE.LineBasicMaterial({ color: ctx.inkColor, transparent: true, opacity: 0.68 }),
+    spoke: new THREE.LineBasicMaterial({ color: '#3b4048', transparent: true, opacity: 0.5 }),
+    hull: new THREE.MeshBasicMaterial({ color: ctx.inkColor, side: THREE.BackSide }),
+  };
+  const root = new THREE.Group(); root.name = 'ride:rider'; root.visible = false;
+  const frame = new THREE.Group(); frame.rotation.order = 'ZXY'; root.add(frame);
+  const bike = BK.createBicycle(M), pelican = PL.createPelican(M);
+  bike.group.position.x = -0.01;                      // the hubs at -0.47 and +0.47: the root is the middle of the two wheel contacts (ride.js)
+  frame.add(bike.group, pelican.root);
+  const PUSH = [-0.05, 0, -0.5];                       // pushing: the pelican walks on the bike's left
+  const st = { wheel: 0, crank: 0, gear: 2, lean: 0, steer: 0, pitch: 0, heading: null, stopK: 0, pushK: 0, walk: 0, mode: 'ride', omega: 0 };
+  const V = { gripL: new THREE.Vector3(), gripR: new THREE.Vector3(), pedalL: new THREE.Vector3(), pedalR: new THREE.Vector3(), foot: new THREE.Vector3(), standGrip: new THREE.Vector3(), tmp: new THREE.Vector3() };
+  const wpi = a => Math.atan2(Math.sin(a), Math.cos(a));
+  // r: the ride's state (ride.get()): x, root, z, heading, speed, mode, s, wheels [front, rear], lookYaw, throttle
+  function update(dt, r) {
+    const s = r.s || 1, v = r.speed;
+    const w = st.heading === null || dt <= 0 ? 0 : wpi(r.heading - st.heading) / dt; st.heading = r.heading; st.omega = damp(st.omega, w, 12, dt);
+    const push = r.mode === 'push'; st.mode = r.mode;
+    // wheels and cranks (upstream: auto gear for ~86 rpm, the crank turns only while pedalling)
+    st.wheel += v / BK.WHEEL_R * dt;
+    const rpm = Math.abs(v) / BK.WHEEL_R * 60 / (2 * Math.PI); let best = st.gear, err = 1e9; BK.GEARS.forEach(([a, b], i) => { const e = Math.abs(rpm / (a / b) - 86); if (e < err) { err = e; best = i; } });
+    const cur = rpm / (BK.GEARS[st.gear][0] / BK.GEARS[st.gear][1]); if (best !== st.gear && (cur > 102 || cur < 68)) st.gear += Math.sign(best - st.gear);
+    const pedalling = !push && v > 0.25 && (r.throttle || 0) >= 0;
+    st.crank += pedalling ? v / BK.WHEEL_R / (BK.GEARS[st.gear][0] / BK.GEARS[st.gear][1]) * dt : 0;
+    // attitude: lean into the turn (lateral acceleration v w; a left turn has w > 0 and leans left: negative about the bike's forward axis), the bars, one foot down when stopped
+    st.stopK = damp(st.stopK, !push && Math.abs(v) < (st.stopK > 0.5 ? 0.5 : 0.3) ? 1 : 0, 8, dt);
+    st.pushK = damp(st.pushK, push ? 1 : 0, 8, dt);
+    const leanT = push ? 0 : clamp(Math.atan(-v * st.omega / 9.8) * 1.4, -0.4, 0.4) * (1 - st.stopK) - 0.08 * st.stopK;
+    st.lean = damp(st.lean, leanT, 7, dt);
+    const sv = Math.abs(v) < 1e-6 ? 1 : Math.sign(v);
+    st.steer = damp(st.steer, clamp(Math.atan(0.94 * st.omega / (Math.max(Math.abs(v), 0.5) * sv)), -0.6, 0.6), 10, dt);
+    st.pitch = Math.atan2(r.wheels[0] - r.wheels[1], 0.94 * s);
+    root.position.set(r.x, r.root, r.z); root.rotation.y = r.heading - Math.PI / 2; root.scale.setScalar(s);
+    frame.rotation.set(st.lean, 0, st.pitch);
+    bike.update({ wheelAngle: st.wheel, crankAngle: st.crank, steerAngle: st.steer });
+    // the pelican: on the saddle, or walking beside the bike
+    const off = st.pushK > 0.5 ? PUSH : [0, 0, 0]; pelican.root.position.set(off[0], off[1], off[2]);
+    const sm = bike.steerMatrix(), bo = bike.group.position, rel = p => p.add(bo).sub(pelican.root.position);
+    rel(V.gripL.copy(bike.anchors.gripL.position).applyMatrix4(sm)); rel(V.gripR.copy(bike.anchors.gripR.position).applyMatrix4(sm));
+    rel(V.pedalL.copy(bike.anchors.pedalL.position)); rel(V.pedalR.copy(bike.anchors.pedalR.position));
+    V.standGrip.copy(bike.anchors.gripL.position).applyMatrix4(sm).add(bo).sub(pelican.root.position);
+    // the left foot: from its pedal to a ground point beside the bike (the bike leans 0.08 rad toward it)
+    let footDown = null; if (st.stopK > 0.01) { V.tmp.set(V.pedalL.x - 0.04, V.pedalL.y + 0.046, V.pedalL.z * 0.92); V.foot.set(-0.05, 0.064, -0.3).sub(pelican.root.position); footDown = V.tmp.lerp(V.foot, st.stopK).clone(); }
+    st.walk += push ? Math.abs(v) * dt : 0;
+    pelican.update(dt, { t: (st.t = (st.t || 0) + dt), crankAngle: st.crank, pedal: pedalling ? 1 : 0.3, mode: st.pushK > 0.5 ? 'push' : 'ride', stop: st.stopK, grips: { L: V.gripL, R: V.gripR }, pedals: { L: V.pedalL, R: V.pedalR }, footDown, walk: st.walk, lookYaw: r.lookYaw, standGrip: V.standGrip });
+  }
+  const meshes = [...bike.meshes, ...pelican.meshes];
+  function stats() { let tris = 0; for (const m of meshes) { if (!m.isMesh) continue; const g = m.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } return { drawCalls: meshes.length, meshes: meshes.filter(m => m.isMesh).length, lines: meshes.filter(m => m.isLineSegments).length, triangles: Math.round(tris) }; }
+  // the rider's measures for the checks (K9): height above the root, the left foot above the ground, the wheels' bottoms, the angles
+  const _b = new THREE.Box3(), _p = new THREE.Vector3();
+  function get() {
+    root.updateMatrixWorld(true); _b.makeEmpty(); for (const m of meshes) if (m.isMesh) _b.expandByObject(m, true);
+    const s = root.scale.x, foot = st.stopK > 0.9 ? (() => { const g = pelican.state.footY, p = _p.set(-0.05, g, -0.3 - (pelican.root.position.z || 0)); return p.applyMatrix4(frame.matrixWorld).y - root.position.y; })() : null;
+    const hubs = [[-0.47, 0], [0.47, 0]].map(([x]) => _p.set(x, 0, 0).applyMatrix4(frame.matrixWorld).y - root.position.y);
+    return { visible: root.visible, height: (_b.max.y - root.position.y) / s, footDown: st.stopK > 0.9, footY: foot === null ? null : foot / s, wheelBottoms: hubs.map(h => h / s), wheel: st.wheel, crank: st.crank, gear: st.gear, lean: st.lean, steer: st.steer, pitch: st.pitch, omega: st.omega, mode: st.mode, stopK: st.stopK, pushK: st.pushK, ...stats() };
+  }
+  return { root, update, get, stats, bike, pelican, materials: M, state: st };
+}
+const RIDER = { create };
+if (typeof module !== 'undefined' && module.exports) module.exports = RIDER;
+else global.RIDER = RIDER;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script><script>
@@ -23620,7 +24158,7 @@ function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarg
 // changes. Enter (V, the button, view.set) from the free view's target: the nearest carriageway (ground.spawn), a hint when that is more than 2 m away, a 1 s blend from the
 // free camera (fov 36 -> 46, near 0.25 -> 0.08). Leave by V, Esc, the button or the sphere: the free view's target, yaw, pitch and distance are never changed while riding,
 // so they come back as they were. Blur, a hidden page or a cancelled pointer clears every input. The ride's data (ride_world.js) is made the first time a ride starts.
-let ground=null,ride=null,rideWorld=null,roamButton=null,joystickValue=[0,0],rideBlend=null,hintTimer=0;
+let ground=null,ride=null,rideWorld=null,rider=null,roamButton=null,joystickValue=[0,0],rideBlend=null,hintTimer=0;
 const keys=new Set(),MOVE_KEYS=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'],STICK_DEAD=.12;
 const roamAvailable=()=>!!ground&&TR.mode==='flat'&&BEND.get()===0&&!TR.animating;
 function ensureRide(){if(ride)return ride;rideWorld=RIDE_WORLD.attach({ground,L,roads:roads.data(),lamps:(streetlights.data()||{}).lamps||[],landmarkBoxes:landmarkSolids});
@@ -23630,6 +24168,7 @@ function setRoaming(enabled){if(enabled&&!roamAvailable())return;if(enabled===!!
   if(enabled){ensureRide();const sp=ride.enter(target.x,target.z,[target.x-camera.position.x,target.z-camera.position.z]);if(!sp)return;
     roam={position:new THREE.Vector3(ride.state.x,ride.state.root,ride.state.z)};rideBlend={t:0,from:{pos:camera.position.toArray(),look:lookTarget(0),fov:camera.fov,near:camera.near}};showHint(sp);}
   else{ride.exit();roam=null;rideBlend=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();clearInput();}
+  if(rider)rider.root.visible=!!roam;if(!roam&&tunnelVoids)for(const o of tunnelVoids)o.visible=true;
   if(roamButton){roamButton.textContent=roam?'自由视角  V':'骑行  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
 // 6.3 rule 5: the start is more than 2 m from the view target: say where the ride starts
@@ -23640,6 +24179,10 @@ function showHint(sp){const d=sp.distance/(ride.state.s||1);if(d<=2){hint.style.
 const dead=v=>Math.abs(v)<STICK_DEAD?0:Math.sign(v)*(Math.abs(v)-STICK_DEAD)/(1-STICK_DEAD);
 function rideInput(){const c=v=>Math.max(-1,Math.min(1,v));return{throttle:c((keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+dead(joystickValue[1])),steer:c((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+dead(joystickValue[0]))};}
 // the follow camera of the ride (ride.camera()), blended from the free camera for the first second
+// R2: the rider (rider.js) follows the ride's state
+// the tunnel portals' black void discs stand for the dark bore seen from afar; riding through the tunnel road they would hide the rider and the far portal, so they hide then
+let tunnelVoids=null;function voidsFor(st){if(!tunnelVoids){tunnelVoids=[];roads.state.root.traverse(o=>{if(o.isMesh&&/^road:tunnel void|tunnel void$/.test(o.name))tunnelVoids.push(o);});}const near=!!roam&&!!st&&!!st.sample&&!!ground.lines.find(l=>l.tunnel&&l.id===st.sample.line);for(const o of tunnelVoids)o.visible=!near;}
+function riderStep(dt){voidsFor(ride.state);if(!rider)return;const st=ride.state;rider.update(dt,{x:st.x,root:st.root,z:st.z,heading:st.heading,speed:st.speed,mode:st.mode,s:st.s,wheels:[st.yF,st.yB],lookYaw:st.lookYaw,throttle:st.throttle});}
 function rideCamera(dt){const c=ride.camera(),st=ride.state;roam.position.set(st.x,st.root,st.z);let pos=c.position,look=c.look,fov=c.fov,near=c.near;
   if(rideBlend){rideBlend.t=Math.min(1,rideBlend.t+dt/1.0);const k=smooth01(rideBlend.t),f=rideBlend.from,mix=(a,b)=>a.map((v,i)=>v+(b[i]-v)*k);pos=mix(f.pos,pos);look=mix(f.look,look);fov=f.fov+(fov-f.fov)*k;near=f.near+(near-f.near)*k;if(rideBlend.t>=1)rideBlend=null;}
   camera.position.set(pos[0],pos[1],pos[2]);if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(look[0],look[1],look[2]);
@@ -23738,7 +24281,7 @@ function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
 // keep the camera 0.5 m above the shown ground's altitude under it (ground.js; the sphere's radial direction under the camera)
 function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),want=R+ground.alt(lam/(Math.PI/180),phi/(Math.PI/180))+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
-if(roam){ride.step(elapsed,rideInput());rideCamera(elapsed);
+if(roam){ride.step(elapsed,rideInput());riderStep(elapsed);rideCamera(elapsed);
 }else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
   camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
@@ -23784,6 +24327,9 @@ terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.s
 ground=GROUND.attach({W:WORLD,L,terrain:terrain.sampler(),roads:roads.data(),ROADS,BRIDGE,SEAM:BEND.SEAM});
 nightStep(weatherView());
 const townGeometry=BEND.subdivide([scene],{maxEdge:4,region:[-BH,-BH,BH,BH]});
+// R2 (THIRD_PERSON_ROAM_PLAN 3, docs/world/R2_RIDER_CARD.md): the rider, the ported pelican on the ported bicycle (rider.js), built once before the first frame inside the
+// terrain's private random stream (three.js draws its object ids from Math.random: the town's rain keeps its stream); hidden until a ride starts
+TERRAIN.withPrivateRandom(()=>{rider=RIDER.create({ramp,paper:paperTex,inkColor:LOOK.PARAMS.inkColor});});scene.add(rider.root);
 // WX2 (docs/world/WEATHER_COMPLETION_PLAN.md 5.2, 5.3): the weather's receiving surfaces (the rendered terrain, the roads and decks of the lamp table, each landmark's
 // roofs and grounds) and its registered effects: the buildings' animated drips and window runs (their live line batches in the drip colours) and rain rings (live
 // additive rings), the landmarks' tagged parts (userData.weather), the mist belt of ameni-dake. Only their opacity and visibility follow the weather; nothing moves.
@@ -23797,7 +24343,7 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
 const surfaceOf=q=>({y:q.y,s:q.s,kind:q.kind,layer:q.layer,line:q.line,route:q.route,edge:q.edge,station:q.station,offset:q.offset,slope:q.slope});
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});rideCamera(dt);return ride.get();},camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:[ride.state.x,ride.state.root,ride.state.z],heading:ride.state.heading,lookYaw:ride.state.lookYaw,lookPitch:ride.state.lookPitch,dist:ride.state.dist,speed:ride.state.speed,mode:ride.state.mode,surface:ride.state.sample?surfaceOf(ride.state.sample):null,contact:ride.state.contact,spawn:ride.state.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){if(ride.place(v.position[0],v.position[1],v.heading??ride.state.heading)){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}}else if(v.heading!=null&&roam)ride.state.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});riderStep(dt);rideCamera(dt);return ride.get();},rider:()=>rider?rider.get():null,riderApi:()=>rider,camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:[ride.state.x,ride.state.root,ride.state.z],heading:ride.state.heading,lookYaw:ride.state.lookYaw,lookPitch:ride.state.lookPitch,dist:ride.state.dist,speed:ride.state.speed,mode:ride.state.mode,surface:ride.state.sample?surfaceOf(ride.state.sample):null,contact:ride.state.contact,spawn:ride.state.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){if(ride.place(v.position[0],v.position[1],v.heading??ride.state.heading)){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}}else if(v.heading!=null&&roam)ride.state.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

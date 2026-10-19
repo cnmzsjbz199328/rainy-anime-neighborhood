@@ -7,7 +7,9 @@
 //                  wall, stair, curb, plot, edge). Built per 8 m cell on first use; the town's cells when the ride first starts.
 //   I4 obstacles   circles, capsule segments and boxes (flat frame, with a flat height range): layout.js furniture and the legacy fixtures' slots, the road lamp table
 //                  (streetlights.js), the instances of the roads, bridges, stairs and boardwalk (radius or box from their flora.js templates), the landmarks' solid meshes.
-//   I5 occluders   (R2)
+//   I5 occluders   R2: what the camera may not enter or look through (low-poly boxes, never the rendered meshes): the town's buildings and their attachments (layout.js
+//                  parts' measured localBounds placed by their transforms), every landmark solid box at any height; the bridges are kept by the camera's deck limit (the
+//                  pylon legs stand outside the deck), the tunnel lining and the terrain are tested analytically by ride.js
 // Records and obstacles are kept in the display frame [SEAM, SEAM + PERIOD); a query near the seam also reads the other end, shifted by one turn.
 (function (global) {
 'use strict';
@@ -108,6 +110,16 @@ function attach(ctx) {
   for (const st of RD.stairs) instances('stairs', st.instances);
   for (const ex of RD.extras || []) instances('extra', ex.instances);
   for (const bx of ctx.landmarkBoxes || []) addObstacle({ pts: bx.pts.map(q => [q[0], q[1]]), y0: bx.y0, y1: bx.y1, src: bx.lm });
+  // ---- I5: the camera's occluders (boxes with a flat height range) in their own grid
+  const occl = new Map();
+  const addOccluder = o => { const xs = o.pts.map(q => q[0]), zs = o.pts.map(q => q[1]), mx = show((Math.min(...xs) + Math.max(...xs)) / 2), sh = mx - (Math.min(...xs) + Math.max(...xs)) / 2; if (sh) o.pts = o.pts.map(q => [q[0] + sh, q[1]]);
+    let a2 = 0; for (let i = 0, j = o.pts.length - 1; i < o.pts.length; j = i++) a2 += (o.pts[j][0] - o.pts[i][0]) * (o.pts[j][1] + o.pts[i][1]); if (a2 < 0) o.pts.reverse();
+    o.bb = [Math.min(...o.pts.map(q => q[0])), Math.min(...o.pts.map(q => q[1])), Math.max(...o.pts.map(q => q[0])), Math.max(...o.pts.map(q => q[1]))];
+    for (let a = Math.floor(o.bb[0] / CELL); a <= Math.floor(o.bb[2] / CELL); a++) for (let b = Math.floor(o.bb[1] / CELL); b <= Math.floor(o.bb[3] / CELL); b++) { const k = key(a, b); let l = occl.get(k); if (!l) occl.set(k, l = []); l.push(o); }
+    stats.occluders = (stats.occluders || 0) + 1; };
+  for (const st of L.structures) for (const p of st.parts) { if (p.role !== 'building' && p.role !== 'attachment') continue; const b = p.localBounds, k = st.transform.scale ?? L.SAMPLE_SCALE;
+    addOccluder({ pts: [[b.min[0], b.min[2]], [b.max[0], b.min[2]], [b.max[0], b.max[2]], [b.min[0], b.max[2]]].map(([x, z]) => L.toWorld(st, x, z)), y0: b.min[1] * k, y1: b.max[1] * k, src: st.plot + ' ' + p.group }); }
+  for (const bx of ctx.landmarkBoxes || []) addOccluder({ pts: bx.pts.map(q => [q[0], q[1]]), y0: bx.y0, y1: bx.y1, src: bx.lm });
   // ---- queries
   // the cells under the box [x - r, x + r] x [z - r, z + r]; near the seam the other end too (its items shifted by one turn): visit(item list, shift, cell key)
   const around = (x, z, r, visit) => {
@@ -128,6 +140,10 @@ function attach(ctx) {
     // build the records of the cells within r of (x, z) now; at most `max` cells (the rest on later calls); returns the cells still missing
     prefetch(x, z, r, max = Infinity) { let n = 0, missing = 0; around(x, z, r, k => { if (built.has(k)) return; if (n < max) { build(k); n++; } else missing++; }); return missing; },
     built: k => built.has(k), CELL,
+    // I5: the occluder boxes whose footprint meets the box [x0, x1] x [z0, z1] (shifted next to x0 near the seam)
+    occluders(x0, z0, x1, z1) { const out = [], seen = new Set(), cx = (x0 + x1) / 2, r = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) / 2 + 0.5;
+      around(cx, (z0 + z1) / 2, r, (k, sh) => { for (const o of occl.get(k) || []) { if (seen.has(o)) continue; seen.add(o); out.push(sh ? { ...o, pts: o.pts.map(q => [q[0] + sh, q[1]]), bb: [o.bb[0] + sh, o.bb[1], o.bb[2] + sh, o.bb[3]] } : o); } });
+      return out; },
     // the town's cells (the first ride start)
     prepareTown() { const t0 = Date.now(); this.prefetch(0, 0, H0 + 2); return Date.now() - t0; },
   };

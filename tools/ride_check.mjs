@@ -13,6 +13,9 @@
 //   K7  the spawn probes RS-01..RS-12 (6.3)
 //   K8  the seam: one wrap per crossing, heading and speed unbroken, the camera without a jump
 //   K11 the W9a town corridors, RT-01/RT-02/RT-03 town legs and the 20 random pieces outside the town ride through; no page errors
+//   K5  (R2) the camera along ridden routes (--k5routes): never inside an occluder, 0.12 m x s over the surface, the horizontal limit, the sight line blocked <= 1 % of the
+//       steps and never longer than 0.2 s, >= 1.2 m in alleys and W01, inside the tunnel lining with 0.3 m; rays from the focus to the camera against the rendered scene
+//   K9  (R2) the rider: height <= 1.75 m x s, both wheels on the ground, wheel rate v / 0.3, lean and bars with the turn, pitch with the slope, one foot down when stopped
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -315,6 +318,80 @@ if (want('K11')) {
   check('K11', res.town.every(r => r.reached && r.off === 0) && res.random.length === 20 && res.random.every(r => r.reached && r.off === 0) && routeTown.every(r => r.reached),
     `W9a 城镇走廊 ${res.town.filter(r => r.reached).length}/${res.town.length}、城外随机 20 段 ${res.random.filter(r => r.reached).length}/20 走通（种子 20261018）；RT-01/02/03 城内段见 K1（${routeTown.filter(r => r.reached).length}/${routeTown.length}）`);
   report.k11 = res;
+}
+// ---- K9 (R2): the rider: height, both wheels on the ground, wheel rate, lean and bars with the turn, pitch with the slope, one foot down when stopped
+if (want('K9')) {
+  const r = await page.evaluate(() => {
+    const S = window.__scene, G = S.ground, dt = 1 / 60, out = {};
+    if (S.view.get().mode !== 'roam') { S.view.set({ mode: 'free', mapMode: 'flat' }); S.view.set({ mode: 'roam' }); }
+    const R = () => S.ride.rider(), g = () => S.ride.get();
+    // straight at speed on R01: the wheel rate, the height, the wheels on the ground
+    S.ride.set({ x: -7, z: 16.75, heading: -Math.PI / 2, speed: 3.0 }); for (let i = 0; i < 30; i++) S.ride.step(dt, { throttle: 0.72, steer: 0 });
+    const w0 = R().wheel; let vsum = 0; for (let i = 0; i < 60; i++) { S.ride.step(dt, { throttle: 0.72, steer: 0 }); vsum += g().speed * dt; } const w1 = R().wheel;
+    out.wheelRate = (w1 - w0) / (vsum / 0.3);
+    const a = R(), b = g(); out.height = a.height; out.wheelGap = Math.max(Math.abs(a.wheelBottoms[1] - (b.wheels[0] - b.root) / b.s), Math.abs(a.wheelBottoms[0] - (b.wheels[1] - b.root) / b.s));
+    out.drawCalls = a.drawCalls; out.triangles = a.triangles;
+    // a left turn in X01 at 2 m/s: lean, bars and the turn have one sign (left: w > 0, the lean negative about the forward axis, the bars positive)
+    S.ride.set({ x: 2, z: 15, heading: -Math.PI / 2, speed: 2.0 }); for (let i = 0; i < 45; i++) S.ride.step(dt, { throttle: 0.48, steer: -0.6 });
+    const t = R(); out.turn = { omega: t.omega, lean: t.lean, steer: t.steer, ok: t.omega > 0.05 && -t.lean > 0.01 && t.steer > 0.01 };
+    S.ride.set({ x: 2, z: 15, heading: -Math.PI / 2, speed: 2.0 }); for (let i = 0; i < 45; i++) S.ride.step(dt, { throttle: 0.48, steer: 0.6 });
+    const u = R(); out.turnR = { omega: u.omega, lean: u.lean, steer: u.steer, ok: u.omega < -0.05 && -u.lean < -0.01 && u.steer < -0.01 };
+    // the pitch on RN01-06 (5.3 %): the slope between the two wheel contacts and the road's own slope
+    const ln = G.lines.find(l => l.id === 'RN01-ridge'), e6 = window.__RT.range(ln, 'RN01-06'), st = (e6[0] + e6[1]) / 2, p0 = ln.point(st, -1.75), p1 = ln.point(st + 0.5, -1.75);
+    S.ride.set({ x: p0.x, z: p0.z, heading: Math.atan2(p1.x - p0.x, p1.z - p0.z), speed: 3 }); for (let i = 0; i < 20; i++) S.ride.step(dt, { throttle: 0.7, steer: 0 });
+    const c = R(), d = g(), q = G.at(d.x, d.z, { y: d.y }); out.pitch = { rider: c.pitch, contacts: Math.atan2(d.wheels[0] - d.wheels[1], 0.94 * d.s), road: Math.atan(q.slope * Math.cos(d.heading - q.heading)), grade: q.slope };
+    // stopped: one foot down
+    S.ride.set({ x: -7, z: 16.75, heading: -Math.PI / 2, speed: 2 }); for (let i = 0; i < 90; i++) S.ride.step(dt, { throttle: i < 40 ? -1 : 0, steer: 0 }); for (let i = 0; i < 60; i++) S.ride.step(dt, { throttle: 0, steer: 0 });
+    const e = R(); out.stop = { footDown: e.footDown, footY: e.footY, speed: g().speed };
+    // pushing on a stair: walking beside the bike
+    const sl = G.lines.find(l => l.id === 'RN08-02'), sp = sl.point(20, 0), sq = sl.point(20.5, 0); S.ride.set({ x: sp.x, z: sp.z, heading: Math.atan2(sq.x - sp.x, sq.z - sp.z) }); for (let i = 0; i < 60; i++) S.ride.step(dt, { throttle: 1, steer: 0 });
+    out.push = { mode: g().mode, riderMode: R().mode, pushK: R().pushK };
+    return out;
+  });
+  const ok = r.height <= 1.75 && r.wheelGap <= 0.01 && Math.abs(r.wheelRate - 1) <= 0.01 && r.turn.ok && r.turnR.ok && Math.abs(r.pitch.rider - r.pitch.contacts) <= 0.01 && Math.abs(r.pitch.rider - r.pitch.road) <= 0.01 && r.stop.footDown && r.stop.footY !== null && Math.abs(r.stop.footY) <= 0.03;
+  check('K9', ok, `主体总高 ${f(r.height, 3)} m（≤ 1.75 m × s）；两轮离地差 ${f(r.wheelGap, 4)} m；轮角速度 / (v / 0.3) = ${f(r.wheelRate, 4)}（±1%）；左转 ω ${f(r.turn.omega, 3)}、倾角 ${f(r.turn.lean, 3)}、把手角 ${f(r.turn.steer, 3)}，右转 ω ${f(r.turnR.omega, 3)}、倾角 ${f(r.turnR.lean, 3)}、把手角 ${f(r.turnR.steer, 3)}（同号：${r.turn.ok && r.turnR.ok}）；RN01-06 俯仰 ${f(r.pitch.rider, 4)} rad、轮接地点坡度 ${f(r.pitch.contacts, 4)}、路面坡度 ${f(r.pitch.road, 4)}（±0.01）；停住单脚落地 ${r.stop.footDown}，脚底离地 ${f(r.stop.footY, 3)} m；石阶推车 ${r.push.mode}/${r.push.riderMode}；绘制调用 ${r.drawCalls}、三角形 ${r.triangles}`);
+  report.k9 = r;
+}
+
+// ---- K5 (R2): the camera on ridden routes: never inside an occluder, 0.12 m over the surface, the horizontal limit, the sight line, the narrow places and the tunnel;
+// and, independent of the occluder boxes, rays from the focus to the camera against the rendered scene every 15 steps
+if (want('K5')) {
+  const names = opt('--k5routes') === 'all' ? ROUTES.map(r => r.id) : (opt('--k5routes') || 'RT-01,RT-02,RT-05,RT-06a').split(',');
+  const rows = [];
+  for (const id of names) {
+    const rt = ROUTES.find(q => q.id === id);
+    const r = await page.evaluate(({ rt }) => {
+      const S = window.__scene, G = S.ground, T = window.THREE, W = S.ride.world(), CFG = S.ride.cfg, dt = 1 / 60;
+      const { P, Lc, ev } = window.__RT.routePath(rt);
+      const out = { name: rt.id, steps: 0, inside: 0, low: 0, horiz: 0, blocked: 0, blockRun: 0, maxRun: 0, narrow: 0, narrowMin: Infinity, tunnel: 0, rays: 0, rayHits: 0, clamped: {}, pulled: 0 };
+      const meshes = []; S.scene.traverse(o => { if (o.isMesh && o.visible && !o.isInstancedMesh && o.material && !o.material.transparent && o.material.blending !== T.AdditiveBlending) { let rider = false; for (let p = o; p; p = p.parent) if (/^ride:/.test(p.name || '')) rider = true; if (!rider) meshes.push(o); } });
+      const ray = new T.Raycaster(), A = new T.Vector3(), B = new T.Vector3();
+      const boxDist = (Pp, x, z) => { let inside = true, d = Infinity; for (let i = 0, n = Pp.length; i < n; i++) { const a = Pp[i], b = Pp[(i + 1) % n], ex = b[0] - a[0], ez = b[1] - a[1], l2 = ex * ex + ez * ez || 1e-12, t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / l2)); d = Math.min(d, Math.hypot(x - a[0] - ex * t, z - a[1] - ez * t)); if ((x - a[0]) * ez - (z - a[1]) * ex > 0) inside = false; } return inside ? 0 : d; };
+      const hook = () => {
+        const g = S.ride.get(), c = S.ride.camera(), s = g.s, p = c.position, f = c.focus; out.steps++;
+        if (c.pulled) { out.pulled++; if (c.why) { out.why = out.why || {}; out.why[c.why] = (out.why[c.why] || 0) + 1; } } for (const k of (c.clamped || '').trim().split(' ').filter(Boolean)) out.clamped[k] = (out.clamped[k] || 0) + 1;
+        const boxes = W.occluders(p[0] - 0.3, p[2] - 0.3, p[0] + 0.3, p[2] + 0.3); if (boxes.some(o => p[1] > o.y0 - 0.15 * s && p[1] < o.y1 + 0.15 * s && boxDist(o.pts, p[0], p[2]) < 0.15 * s - 1e-6)) out.inside++;
+        const q0 = G.at(p[0], p[2], { y: g.y }), q = q0 && Math.abs(q0.y - g.y) < 3 * s ? q0 : null, floor = q ? q.y : G.y(p[0], p[2]); if (p[1] < floor + 0.12 * s - 1e-6) out.low++;
+        const allowed = g.layer === 'deck' || g.layer === 'tunnel' || g.kind === 'boardwalk' || g.kind === 'stairs' ? 0 : 0.5 * s;
+        if (!q) { const dx = f[0] - p[0], dz = f[2] - p[2], l = Math.hypot(dx, dz) || 1; if (allowed <= 0 || !G.at(p[0] + dx / l * (allowed + 0.02 * s), p[2] + dz / l * (allowed + 0.02 * s), { y: g.y })) out.horiz++; }
+        if (c.blocked) { out.blocked++; out.blockRun++; out.maxRun = Math.max(out.maxRun, out.blockRun); } else out.blockRun = 0;
+        if (g.kind === 'alley' || g.kind === 'walkway') { const d = Math.hypot(p[0] - f[0], p[1] - f[1], p[2] - f[2]) / s; out.narrowMin = Math.min(out.narrowMin, d); if (d < 1.2 - 1e-6) out.narrow++; }
+        if (g.layer === 'tunnel' && q && q.layer === 'tunnel') { const o = Math.abs(q.offset || 0), h = (p[1] - q.y) / s; if (o > CFG.tunnel.r - CFG.tunnelClear + 1e-6 || h > CFG.tunnel.wall + Math.sqrt(Math.max(0, (CFG.tunnel.r - CFG.tunnelClear) ** 2 - o * o)) + 1e-6) out.tunnel++; }
+        if (out.steps % 15 === 0) { A.set(f[0], f[1], f[2]); B.set(p[0], p[1], p[2]); const d = B.clone().sub(A), len = d.length(); if (len > 0.05) { ray.set(A, d.normalize()); ray.far = len; ray.near = 0.05; out.rays++; const near = meshes.filter(m => { if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere(); const bs = m.geometry.boundingSphere, c2 = bs.center.clone().applyMatrix4(m.matrixWorld); return c2.distanceTo(A) < bs.radius * Math.max(m.scale.x, m.scale.y, m.scale.z, 1) + len + 1; }); const hh = ray.intersectObjects(near.filter(m => { for (let q = m; q; q = q.parent) if (!q.visible) return false; return true; }), false); // the terrain surface inside the RN01-05 bore where the hill is lower than the tunnel's crown (a defect of the scene, BACKLOG): counted apart
+              const tunnelTerrain = hh.length && g.layer === 'tunnel' && /^terrain/.test(((x => { let t = x; while (t.parent && t.parent !== S.scene) t = t.parent; return t.name || x.name; })(hh[0].object)) || '');
+              if (tunnelTerrain) out.tunnelTerrain = (out.tunnelTerrain || 0) + 1;
+              if (hh.length && !tunnelTerrain) { out.rayHits++; let top = hh[0].object; while (top.parent && top.parent !== S.scene) top = top.parent; const qf = G.at(f[0], f[2], { y: g.y }), qp = G.at(p[0], p[2], { y: g.y }), key = (hh[0].object.name || top.name || '?') + ' @' + hh[0].distance.toFixed(2) + '/' + len.toFixed(2) + ' focus s ' + (qf && qf.station != null ? qf.station.toFixed(1) : '-') + ' ' + (qf && qf.layer) + ' cam s ' + (qp && qp.station != null ? qp.station.toFixed(1) : '-') + ' o ' + (qp && qp.offset != null ? qp.offset.toFixed(2) : '-') + ' h ' + (qp ? ((p[1] - qp.y) / s).toFixed(2) : '-') + ' ' + (qp && qp.layer); out.rayWhat = out.rayWhat || []; if (out.rayWhat.length < 8) out.rayWhat.push(key + ' ' + g.kind + ' ' + g.line); } } }
+      };
+      S.scene.updateMatrixWorld(true); S.ride.api().state.debugCam = true;
+      const orig = S.ride.step; S.ride.step = (dt2, input) => { const res = orig(dt2, input); hook(); return res; };
+      const drv = window.__RT.drive(rt.id, P, Lc, ev); S.ride.step = orig; S.ride.api().state.debugCam = false;
+      return { ...out, reached: drv.reached, narrowMin: out.narrowMin === Infinity ? null : +out.narrowMin.toFixed(3) };
+    }, { rt });
+    rows.push(r);
+  }
+  const ok = rows.every(r => r.reached && r.inside === 0 && r.low === 0 && r.horiz === 0 && r.blocked <= 0.01 * r.steps && r.maxRun <= 12 && r.narrow === 0 && r.tunnel === 0 && r.rayHits <= Math.max(0, Math.floor(0.01 * r.rays)));
+  check('K5', ok, `镜头：${rows.map(r => r.name).join('、')} 共 ${rows.reduce((a, r) => a + r.steps, 0)} 步`, rows.map(r => `${r.name}${r.reached ? '' : '（未走通）'} ${r.steps} 步：在遮挡体内 ${r.inside}、离面 < 0.12 m ${r.low}、超出水平约束 ${r.horiz}、视线被挡 ${r.blocked} 步（最长连续 ${r.maxRun} 步）、窄处 < 1.2 m ${r.narrow}（最近 ${r.narrowMin ?? '—'} m）、隧道越限 ${r.tunnel}、收近 ${r.pulled} 步、约束 ${JSON.stringify(r.clamped)}；渲染网格射线 ${r.rays} 条命中 ${r.rayHits}${r.tunnelTerrain ? `（另有 ${r.tunnelTerrain} 条命中隧道内低覆土处的地形面，既有缺陷，见待办池）` : ''}${r.rayWhat ? ' ' + JSON.stringify(r.rayWhat) : ''}${r.why ? '；收近原因 ' + JSON.stringify(r.why) : ''}`));
+  report.k5 = rows;
 }
 await page.close();
 

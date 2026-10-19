@@ -12,8 +12,11 @@
 //   ground    the front and rear wheel contacts each on their own surface (the walker's level: ground.at with a height hint), the rider's root at their middle
 //   steps     dt <= 1/60 per substep (a substep moves <= 0.07 m x s: the capsule cannot pass a boundary or a 0.1 m post), a frame at most 0.12 s
 //   seam      the display frame wraps: the rider's x moves by one turn, the caller shifts what follows it (onWrap)
-//   camera    R1: the follow place of 6.7 (focus 0.92 m over the root, 3.5 m behind and 0.70 m up, look 1.6 m ahead and 0.05 m up), turned by the look yaw and pitch,
-//             the follow distance 2.5-6 m, never under the ground below it + 0.12 m; R2 adds damping, occlusion and the limits
+//   camera    R2 (6.7): the follow place (focus 0.92 m over the root, 3.5 m behind and 0.70 m up, look 1.6 m ahead and 0.05 m up), turned by the look yaw and pitch, the
+//             follow distance 2.5-6 m; damped per axis in the rider's frame (along lambda 6, up 4, across 3); a 0.2 m sphere swept from the focus to the camera against the
+//             occluders (ride_world.js I5 boxes, the terrain, the tunnel lining): pulled in at once to the hit - 0.25 m (not under 1.2 m) and raised up to 0.6 m (not in a
+//             tunnel), let out again at lambda 2; then kept within 0.5 m of the rideable surface (0 on a deck, the boardwalk, stairs and in the tunnel), 0.12 m over the ground
+//             below it (0.3 m over a deck), 0.3 m from a tunnel's wall and roof
 (function (global) {
 'use strict';
 const CFG = {
@@ -22,6 +25,7 @@ const CFG = {
   radius: 0.32, half: 0.5, height: 1.75, wheelbase: 0.94, clearLow: 0.12,
   focus: 0.92, back: 3.5, up: 0.70, ahead: 1.6, lookUp: 0.05, fov: 46, near: 0.08, dist: [2.5, 6.0], pitch: [-0.10, 1.05], yawPx: 0.005, pitchPx: 0.003, recentre: 0.4, camClear: 0.12,
   sub: 1 / 60, maxFrame: 0.12, stopAngle: 60 * Math.PI / 180, band: 0.6, passes: 4, pushGrade: [0.15, 0.12],
+  damp: { along: 6, up: 4, across: 3, release: 2 }, sweepR: 0.2, minDist: 1.2, hitBack: 0.25, raise: 0.6, outside: 0.5, deckClear: 0.3, tunnelClear: 0.3, tunnel: { r: 4.7, wall: 1.0 },
 };
 CFG.pitch0 = Math.atan2(CFG.up, CFG.back);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v), sgn = v => (v < 0 ? -1 : 1), smooth = t => t * t * (3 - 2 * t);
@@ -149,8 +153,57 @@ function create(ctx) {
     if (!q || Math.abs(q.y - st.y) > stepTol(st.sample, q, move, s) || res.pen > 0.05 * s) { st.rejected++; if (!q) st.offSurface++; st.speed = 0; return; }
     const wrap = q.x - res.x;
     st.x = q.x; st.z = q.z; st.y = q.y; st.s = q.s; st.sample = q; st.speed = v;
-    if (Math.abs(wrap) > 1) { st.wraps++; if (st.onWrap) st.onWrap(wrap); }
+    if (Math.abs(wrap) > 1) { st.wraps++; if (st.cam) st.cam.pos[0] += wrap; if (st.onWrap) st.onWrap(wrap); }
     wheels(); st.mode = modeOf(q); st.carry = st.mode === 'push' && ([q, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair);
+  }
+  // ---- the chase camera (6.7)
+  const P3 = (x, y, z) => [x, y, z];
+  function ideal() { const s = st.s, yaw = st.heading + st.lookYaw, dx = Math.sin(yaw), dz = Math.cos(yaw), fy = st.root + CFG.focus * s, Rc = st.dist / Math.cos(CFG.pitch0) * s, p = st.lookPitch;
+    return { focus: P3(st.x, fy, st.z), pos: P3(st.x - dx * Rc * Math.cos(p), fy + Rc * Math.sin(p), st.z - dz * Rc * Math.cos(p)), look: P3(st.x + dx * CFG.ahead * s, fy + CFG.lookUp * s, st.z + dz * CFG.ahead * s), len: Rc }; }
+  const inTunnel = () => !!(st.sample && st.sample.layer === 'tunnel');
+  // the ground under a point: the walkable surface on the rider's level if there is one (a tunnel's floor, a road in a cut: the terrain sampler knows neither), else the terrain
+  const groundUnder = (x, z) => { const q = G.at(x, z, { y: st.y }); return q && Math.abs(q.y - st.y) < 3 * st.s ? q : null; };
+  // inside the tunnel's lining with a margin: offset within the radius, height under the roof (1 m walls, a 4.7 m half circle)
+  function tunnelOk(x, y, z, margin) { const q = G.at(x, z, { y: st.y }); if (!q || q.layer !== 'tunnel') return true; const s = q.s, o = Math.abs(q.offset || 0), h = (y - q.y) / s, R = CFG.tunnel.r - margin; return o <= R && h <= CFG.tunnel.wall + Math.sqrt(Math.max(0, R * R - o * o)); }
+  // distance from a point to a convex polygon (0 inside)
+  function boxDist(P, x, z) { let inside = true, d = Infinity; for (let i = 0, n = P.length; i < n; i++) { const A = P[i], B = P[(i + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], l2 = ex * ex + ez * ez || 1e-12, t = Math.max(0, Math.min(1, ((x - A[0]) * ex + (z - A[1]) * ez) / l2)); d = Math.min(d, Math.hypot(x - A[0] - ex * t, z - A[1] - ez * t)); if ((x - A[0]) * ez - (z - A[1]) * ex > 0) inside = false; } return inside ? 0 : d; }
+  // the first fraction along f -> p where a sphere of radius r meets an occluder box, the terrain or (in the tunnel) the lining; 1 if none
+  function sweep(f, p, r) {
+    const s = st.s, dx = p[0] - f[0], dy = p[1] - f[1], dz = p[2] - f[2], len = Math.hypot(dx, dy, dz); if (len < 1e-6) return 1;
+    const boxes = Wd.occluders(Math.min(f[0], p[0]) - r, Math.min(f[2], p[2]) - r, Math.max(f[0], p[0]) + r, Math.max(f[2], p[2]) + r), n = Math.max(2, Math.ceil(len / (0.25 * s))), tun = inTunnel();     // samples 0.25 m apart: within the 0.2 m sphere, no wall falls between two
+    for (let i = 1; i <= n; i++) { const t = i / n, x = f[0] + dx * t, y = f[1] + dy * t, z = f[2] + dz * t, back = (i - 1) / n;
+      const gq = groundUnder(x, z); if (y < (gq ? gq.y : G.y(x, z)) + r) { sweep.why = gq ? 'ground ' + gq.kind : 'terrain'; return back; }
+      if (tun && !tunnelOk(x, y, z, CFG.tunnelClear * s)) { sweep.why = 'tunnel'; return back; }
+      for (const o of boxes) { if (y < o.y0 - r || y > o.y1 + r || x < o.bb[0] - r || x > o.bb[2] + r || z < o.bb[1] - r || z > o.bb[3] + r) continue; if (boxDist(o.pts, x, z) < r) { sweep.why = 'box ' + o.src; return back; } } }
+    return 1;
+  }
+  // the horizontal limit: within `allowed` of the rideable surface (the point that much nearer the focus stands on it)
+  function horizOk(f, x, z, allowed) { if (G.at(x, z, { y: st.y })) return true; if (allowed <= 0) return false; const dx = f[0] - x, dz = f[2] - z, l = Math.hypot(dx, dz) || 1; return !!G.at(x + dx / l * allowed, z + dz / l * allowed, { y: st.y }); }
+  function cameraStep(dt) {
+    const s = st.s, I = ideal(), c = st.cam || (st.cam = { pos: I.pos.slice(), d: I.len, raise: 0, init: false });
+    // occlusion along the ideal ray: in at once, out at lambda 2
+    const hit = sweep(I.focus, I.pos, CFG.sweepR * s); c.why = hit < 1 ? sweep.why : ''; const want = hit < 1 ? Math.max(CFG.minDist * s, hit * I.len - CFG.hitBack * s) : I.len;
+    c.d = !c.init || want < c.d ? Math.min(want, I.len) : want - c.d < 1e-3 * s ? want : c.d + (want - c.d) * (1 - Math.exp(-CFG.damp.release * dt));
+    c.pulled = c.d < I.len - 1e-6;
+    const raiseT = inTunnel() ? 0 : CFG.raise * s * Math.max(0, Math.min(1, (I.len - c.d) / Math.max(1e-6, I.len - CFG.minDist * s)));
+    c.raise = !c.init || raiseT > c.raise ? raiseT : c.raise - raiseT < 1e-3 * s ? raiseT : c.raise + (raiseT - c.raise) * (1 - Math.exp(-CFG.damp.release * dt));
+    const k = c.d / I.len, target = [I.focus[0] + (I.pos[0] - I.focus[0]) * k, I.focus[1] + (I.pos[1] - I.focus[1]) * k + c.raise, I.focus[2] + (I.pos[2] - I.focus[2]) * k];
+    // damping per axis in the rider's frame
+    if (!c.init || dt <= 0) c.pos = target.slice();
+    else { const fx = Math.sin(st.heading), fz = Math.cos(st.heading), ex = target[0] - c.pos[0], ey = target[1] - c.pos[1], ez = target[2] - c.pos[2], al = ex * fx + ez * fz, ac = -ex * fz + ez * fx;
+      const ka = 1 - Math.exp(-CFG.damp.along * dt), ku = 1 - Math.exp(-CFG.damp.up * dt), kc = 1 - Math.exp(-CFG.damp.across * dt);
+      c.pos[0] += fx * al * ka - fz * ac * kc; c.pos[2] += fz * al * ka + fx * ac * kc; c.pos[1] += ey * ku; }
+    c.init = true;
+    // the limits in order: nothing between the focus and the camera; the horizontal limit; the height; the tunnel lining
+    const q0 = st.sample || {}, allowed = q0.layer === 'deck' || q0.layer === 'tunnel' || q0.kind === 'boardwalk' || q0.kind === 'stairs' ? 0 : CFG.outside * s;
+    const back = t => [I.focus[0] + (c.pos[0] - I.focus[0]) * t, I.focus[1] + (c.pos[1] - I.focus[1]) * t, I.focus[2] + (c.pos[2] - I.focus[2]) * t];
+    c.clamped = '';
+    const h2 = sweep(I.focus, c.pos, CFG.sweepR * s); if (h2 < 1) { const L2 = Math.hypot(c.pos[0] - I.focus[0], c.pos[1] - I.focus[1], c.pos[2] - I.focus[2]) || 1; c.pos = back(Math.max(0, (h2 * L2 - 0.05 * s) / L2)); c.clamped += 'occluder '; }
+    if (!horizOk(I.focus, c.pos[0], c.pos[2], allowed)) { let lo = 0, hi = 1; for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2, p = back(m); if (horizOk(I.focus, p[0], p[2], allowed)) lo = m; else hi = m; } c.pos = back(lo); c.clamped += 'surface '; }
+    const qc = groundUnder(c.pos[0], c.pos[2]), floor = qc ? qc.y + (qc.layer === 'deck' ? CFG.deckClear : CFG.camClear) * s : G.y(c.pos[0], c.pos[2]) + CFG.camClear * s;
+    if (c.pos[1] < floor) { c.pos[1] = floor; c.clamped += 'height '; }
+    if (inTunnel() && !tunnelOk(c.pos[0], c.pos[1], c.pos[2], CFG.tunnelClear * s)) { let lo = 0, hi = 1; for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2, p = back(m); if (tunnelOk(p[0], p[1], p[2], CFG.tunnelClear * s)) lo = m; else hi = m; } c.pos = back(lo); c.clamped += 'tunnel '; }
+    c.focus = I.focus; c.look = I.look; c.blocked = st.debugCam ? sweep(I.focus, c.pos, 0.02 * s) < 1 : null;     // the sight line's own test only when a check asks (st.debugCam)
   }
   const api = {
     CFG, capOf, state: st,
@@ -164,7 +217,7 @@ function create(ctx) {
       st.x = q.x; st.z = q.z; st.y = q.y; st.s = q.s; st.sample = q; st.heading = heading ?? st.heading; st.speed = opt.speed || 0; st.steerCmd = 0; st.stopT = 0; st.contact = null;
       const fx = Math.sin(st.heading), fz = Math.cos(st.heading), res = resolve(st.x, st.z, fx, fz, st.s, st.y, st.x, st.z), q2 = (own && G.layers(res.x, res.z).find(c => c.line === own.line && c.layer === own.layer)) || at(res.x, res.z, st.y);
       if (q2) { st.x = q2.x; st.z = q2.z; st.y = q2.y; st.s = q2.s; st.sample = q2; }
-      wheels(); st.mode = modeOf(st.sample); st.carry = st.mode === 'push' && ([st.sample, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair); return st.sample;
+      wheels(); st.mode = modeOf(st.sample); st.carry = st.mode === 'push' && ([st.sample, st.qF, st.qB].some(w => w && w.kind === 'stairs') || st.nearStair); st.cam = null; cameraStep(0); return st.sample;
     },
     // start riding for a free view target (I8 spawn, 6.3); returns the spawn
     enter(tx, tz, dir) {
@@ -183,20 +236,15 @@ function create(ctx) {
       if (total > 0) for (let i = 0; i < n; i++) sub(dt, thr, steer);
       if (st.recentre) { st.recentre.t = Math.min(1, st.recentre.t + total / CFG.recentre); const k = smooth(st.recentre.t); st.lookYaw = st.recentre.yaw * (1 - k); st.lookPitch = st.recentre.pitch + (CFG.pitch0 - st.recentre.pitch) * k; if (st.recentre.t >= 1) st.recentre = null; }
       Wd.prefetch(st.x, st.z, 2.5 * CFG.back * st.s, 2);
+      cameraStep(total);
       st.ms = now() - t0; return st;
     },
     // look: a drag of (dx, dy) pixels (grab style: dragging right turns the view left, dragging down lifts the view), the wheel / pinch factor, recentre (C, double tap)
     look(dx, dy) { st.recentre = null; st.lookYaw += dx * CFG.yawPx; st.lookPitch = clamp(st.lookPitch - dy * CFG.pitchPx, CFG.pitch[0], CFG.pitch[1]); },
     zoom(f) { st.dist = clamp(st.dist * f, CFG.dist[0], CFG.dist[1]); },
     recentre() { let y = st.lookYaw % (2 * Math.PI); if (y > Math.PI) y -= 2 * Math.PI; if (y < -Math.PI) y += 2 * Math.PI; st.lookYaw = y; st.recentre = { t: 0, yaw: y, pitch: st.lookPitch }; },
-    // the follow camera (R1): position, look point, focus (flat frame)
-    camera() {
-      const s = st.s, yaw = st.heading + st.lookYaw, dx = Math.sin(yaw), dz = Math.cos(yaw), fy = st.root + CFG.focus * s, Rc = st.dist / Math.cos(CFG.pitch0) * s, p = st.lookPitch;
-      const pos = [st.x - dx * Rc * Math.cos(p), fy + Rc * Math.sin(p), st.z - dz * Rc * Math.cos(p)];
-      const q = at(pos[0], pos[2], fy), gy = Math.max(q ? q.y : -Infinity, G.y(pos[0], pos[2]));
-      if (pos[1] < gy + CFG.camClear * s) pos[1] = gy + CFG.camClear * s;
-      return { position: pos, look: [st.x + dx * CFG.ahead * s, fy + CFG.lookUp * s, st.z + dz * CFG.ahead * s], focus: [st.x, fy, st.z], fov: CFG.fov, near: CFG.near };
-    },
+    // the chase camera (R2, 6.7): its pose this frame (flat frame); state in st.cam, advanced by cameraStep in step()
+    camera() { if (!st.cam) cameraStep(0); const c = st.cam; return { position: c.pos.slice(), look: c.look.slice(), focus: c.focus.slice(), fov: CFG.fov, near: CFG.near, pulled: c.pulled, dist: c.d, raise: c.raise, blocked: c.blocked, clamped: c.clamped, why: c.why }; },
     get() {
       const q = st.sample || {};
       return { active: st.active, x: st.x, y: st.y, z: st.z, root: st.root, heading: st.heading, speed: st.speed, steerCmd: st.steerCmd, throttle: st.throttle, steer: st.steer, mode: st.mode, carry: !!st.carry, cap: st.cap, s: st.s,
