@@ -3,7 +3,8 @@
 // world.js roadNetwork. Headings follow scene.js: forward = (sin h, cos h), so h = 0 south, pi north, -pi/2 west, +pi/2 east.
 // The validator reads only world.js and layout.js (no browser, no scene code): town waypoints on the rideable town surfaces of layout.js
 // (a facility band only inside a curb cut), clearance to the town furniture, world node chains connected by edges, spans, classes and scale.
-// Rideability itself is decided by the W10f surface interface; legs that wait for it or for decision U1 (stairs) are flagged, not failed.
+// Rideability follows the R0 close-out (plan 6.13): stairs and the RN12-01 steel stair are pushed (U1), the I9 sites of ground.js join the network where it has no edge,
+// and legs that only a spawn or ride.set can reach (the network gap at LM01) are flagged, not failed.
 // Run: node tools/ride_routes.mjs [--json]
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -42,7 +43,7 @@ export const ROUTES = [
     town([[-40, -13.5], [-32, -16.5], [-11.5, -16.5]], [{ at: 'end', do: 'stop', hold: 1 }]),     // X02: R02 has priority, the R03 approaches stop
     town([[-11.5, -16.5], [40, -16.5]], [{ at: 'end', do: 'stop' }]),
   ] },
-  { id: 'RT-02', name: '窄巷、W01 通道与坡口', start: { x: -1.5, z: 42, heading: N }, depends: ['W10f-I10'], legs: [
+  { id: 'RT-02', name: '窄巷、W01 通道与坡口', start: { x: -1.5, z: 42, heading: N }, legs: [
     town([[-1.5, 42], [-1.5, 35.5], ['arc', [-5, 35.5], 3.5, 0, -90], [-18, 32.25]], [{ at: 'end', do: 'stop' }, { at: 'end', do: 'pivot', to: N }]),  // A01-DW
     town([[-18, 32.25], [-18, 26]], [{ at: 'end', do: 'stop' }, { at: 'end', do: 'reverse', m: 2 }]),   // back 2 m, then forward over the same 2 m
     town([[-18, 26], [-18, 20]], [{ at: 'end', do: 'stop' }, { at: 'end', do: 'pivot', to: E }]),                      // W01, 2 m
@@ -80,28 +81,31 @@ export const ROUTES = [
     world(['J-T09', 'LM06-north'], { ev: [{ at: 'end', do: 'stop' }, { at: 'end', do: 'uturn' }] }), world(['LM06-north', 'J-T09']) ] },
   { id: 'RT-08c', name: 'RN08 到 LM05 石阶', start: { node: 'J-T08', toward: 'J-T08b' }, depends: ['U1'], legs: [
     world(['J-T08', 'J-T08b', 'LM05-west'], { ev: [{ at: 'end', do: 'stop' }, { at: 'end', do: 'pivot', to: 'back' }] }), world(['LM05-west', 'J-T08b']) ] },
-  { id: 'RT-09', name: '北线：LM02、石阶、雪道（显示比例到 4.05）', start: { x: -1.5, z: -36, heading: N }, depends: ['U1', 'W10f-I9'], legs: [
+  // R0 close-out (plan 6.13.5): LM01-west (the stair top, 21.6 m) and LM01-north (the foot, 26.7 m away on a ~70 % lava slope) are not connected, so the north line is two routes
+  { id: 'RT-09a', name: '北线：LM02 场地与 RN05-02 石阶推车到 LM01-west', start: { x: -1.5, z: -36, heading: N }, depends: ['U1', 'I9-LM02'], legs: [
     town([[-1.5, -36], [-1.5, -48]]),
     world(['N04', 'C01-N', 'C01-T02', 'LM02-east']), { site: ['LM02-east', 'LM02-northeast'] },
-    world(['LM02-northeast', 'LM01-west']), { site: ['LM01-west', 'LM01-north'] },
+    world(['LM02-northeast', 'LM01-west'], { ev: [{ at: 'end', do: 'stop' }, { at: 'end', do: 'pivot', to: 'back' }] }), world(['LM01-west', 'LM02-northeast']),
+  ] },
+  { id: 'RT-09b', name: '北线：RN10-01 雪道到 LM07（显示比例到 4.05）', start: { node: 'LM01-north', toward: 'LM07-west' }, depends: ['set-only'], legs: [
     world(['LM01-north', 'LM07-west'], { ev: [{ at: 'end', do: 'stop', look: true }, { at: 'end', do: 'uturn' }] }), world(['LM07-west', 'LM01-north']),
   ] },
-  { id: 'RT-10', name: 'J-LM08 护栏门与检修梯到灯塔岛', start: { node: 'J-LM08', toward: 'LM08-south' }, depends: ['U1', 'W10f-I9'], legs: [
+  { id: 'RT-10', name: 'J-LM08 护栏门与检修梯到灯塔岛', start: { node: 'J-LM08', toward: 'LM08-south' }, depends: ['U1'], legs: [
     world(['J-LM08', 'LM08-south'], { ev: [{ at: 'end', do: 'stop' }, { at: 'end', do: 'pivot', to: 'back' }] }), world(['LM08-south', 'J-LM08']) ] },
 ];
 
 // boundary probes: ride into the boundary at 90 deg and 30 deg at the surface's speed cap (section 6.5)
 export const COLLISION_PROBES = [
   { id: 'RC-01', what: 'R01 南侧路缘 0.13 m（非坡口）', at: [-20, 17.5], heading: S, expect: 'block' },
-  { id: 'RC-02', what: '同一路缘的坡口 X01-CW-W-RPb', at: [-8.5, 17.5], heading: S, expect: 'pass', depends: ['W10f-I10'] },
+  { id: 'RC-02', what: '同一路缘的坡口 X01-CW-W-RPb', at: [-8.5, 17.5], heading: S, expect: 'pass' },
   { id: 'RC-03', what: '巷道路灯 ALAMP-A01-3 正面', at: [-10, 33.75], heading: W_, expect: 'block' },
-  { id: 'RC-04', what: 'W01 东侧墙（便利店）', at: [-18, 26], heading: E, expect: 'block', depends: ['W10f-I10'] },
+  { id: 'RC-04', what: 'W01 东侧墙（便利店）', at: [-18, 26], heading: E, expect: 'block' },
   { id: 'RC-05', what: 'CR01 南段外侧边沟', node: ['C01-S', 'C01-SW'], s: 20, side: 'outer', expect: 'block' },
   { id: 'RC-06', what: 'RN01-03 桥护栏（跨中北侧）', edge: 'RN01-03', s: 'mid', side: 'left', expect: 'block' },
   { id: 'RC-07', what: 'RN01-05 隧道侧墙（s = 18）', edge: 'RN01-05', s: 18, side: 'left', expect: 'block' },
   { id: 'RC-08', what: 'RN11-01 栈道绳栏（跨中）', edge: 'RN11-01', s: 'mid', side: 'left', expect: 'block' },
   { id: 'RC-09', what: 'X01 信号灯杆 SIG-X01-W 所在设施带', at: [-6.5, 12.5], heading: N, expect: 'block' },
-  { id: 'RC-10', what: '地标场地设施（LM02 售货机、公交牌）', site: 'LM02', expect: 'block', depends: ['W10f-I4', 'W10f-I9'] },
+  { id: 'RC-10', what: '地标场地设施（LM02 售货机、公交牌）', site: 'LM02', expect: 'block', depends: ['I9-LM02'] },
 ];
 // spawn probes: free-view targets and the expected snap (section 6.3)
 export const SPAWN_PROBES = [
@@ -113,8 +117,8 @@ export const SPAWN_PROBES = [
   { id: 'RS-06', what: 'RN01-03 桥下海面', edge: 'RN01-03', s: 'mid', below: true, expect: '桥面同一断面（不落在桥下）' },
   { id: 'RS-07', what: 'RN01-05 隧道正上方山体', edge: 'RN01-05', s: 18, above: true, expect: '较近洞口外 5 m 的 RN01 路面' },
   { id: 'RS-08', what: 'RN05-02 石阶中段', edge: 'RN05-02', s: 'mid', expect: '石阶下端外的路面（不出生在石阶上）' },
-  { id: 'RS-09', what: 'LM02 村内场地', lonLat: [-38.5, 38.5], expect: 'W10f 公共区域或 RN05-01', depends: ['W10f-I9'] },
-  { id: 'RS-10', what: 'LM07 冰原（显示比例 4）', lonLat: [72, 76.5], expect: 'RN10-01 雪道', depends: ['U1'] },
+  { id: 'RS-09', what: 'LM02 村内场地', lonLat: [-38.5, 38.5], expect: 'RN05-01（I9 场地不是出生面）' },
+  { id: 'RS-10', what: 'LM07 冰原（显示比例 4）', lonLat: [72, 76.5], expect: 'RN10-01 雪道' },
   { id: 'RS-11', what: '开阔海面', lonLat: [0, -60], expect: '最近道路（可能很远），提示距离' },
   { id: 'RS-12', what: '平面接缝西海', lonLat: [-85, -12], expect: 'RN01-13 桥面，x 在 [xMin, xMax) 内' },
 ];
@@ -201,11 +205,11 @@ function validate() {
           until = leg.untilSeam !== undefined ? seamAt + leg.untilSeam : leg.until !== undefined ? leg.until : chain;
         if (!(from >= 0 && until <= chain + 1e-6 && from < until)) errors.push(`${tag}: run ${from}-${until} m outside the chain of ${chain.toFixed(1)} m`);
         len += until - from;
-      } else if (leg.site) flags.push(`${rt.id}: ${leg.site.join(' -> ')} has no network edge; it needs a W10f public area (I9)`);
+      } else if (leg.site) flags.push(`${rt.id}: ${leg.site.join(' -> ')} has no network edge; ridden on the I9 site of ground.js (R1)`);
     }
     if (rt.start && rt.start.node) { const q = edgeOf(rt.start.node, rt.start.toward); if (!q) errors.push(`${rt.id}: start ${rt.start.node} -> ${rt.start.toward} is not an edge`); }
-    if (spans.has('stairs')) flags.push(`${rt.id}: stairs (push, decision U1)`);
-    for (const d of rt.depends || []) flags.push(`${rt.id}: depends on ${d}`);
+    if (spans.has('stairs')) flags.push(`${rt.id}: stairs (pushed at 0.8 m/s, U1)`);
+    for (const d of rt.depends || []) if (d === 'set-only') flags.push(`${rt.id}: no network edge reaches its start (network gap at LM01): started by ride.set or a spawn`); else if (d !== 'U1') flags.push(`${rt.id}: uses ${d}`);
     if (minPost < 0.6) errors.push(`${rt.id}: passes ${minPost.toFixed(2)} m from ${postId} (< 0.6 m: rider 0.32 + post + margin)`);
     rows.push({ id: rt.id, name: rt.name, length: +len.toFixed(1), town: Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, +v.toFixed(1)])), classes: [...classes], spans: [...spans],
       scale: kmax ? [+kmin.toFixed(3), +kmax.toFixed(3)] : null, maxGrade: +(grade * 100).toFixed(1), nearestPost: minPost < Infinity ? `${postId} ${minPost.toFixed(2)} m` : null });
