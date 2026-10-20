@@ -5,6 +5,8 @@
 // of ride.js (yaw rate w: lean from v w, bars atan(0.94 w / v) within +-0.6), the pitch is the slope between the two wheel contacts, the rider stands on one foot when stopped
 // and walks beside the bike pushing it on stairs and the steep boardwalk. Materials: the project's toon ramp and paper grain (vertex colours), ink lines, self-lit lamps, no
 // light source. Everything is scaled by the display scale s of the surface under the rider. Built once, before the first frame (hidden until a ride starts).
+// W9b (SPHERE_RIDING_PLAN 4.4): on the sphere and through a switch the rider is drawn by the shader's bend like the road under it (bend.js); its materials are noWrap,
+// the rider's place being in the flat display frame already, so a bike whose ends lie on both sides of the seam is not cut into two halves a turn apart.
 (function (global) {
 'use strict';
 function create(ctx) {
@@ -17,6 +19,7 @@ function create(ctx) {
     spoke: new THREE.LineBasicMaterial({ color: '#3b4048', transparent: true, opacity: 0.5 }),
     hull: new THREE.MeshBasicMaterial({ color: ctx.inkColor, side: THREE.BackSide }),
   };
+  for (const m of Object.values(M)) m.userData.noWrap = true;
   const root = new THREE.Group(); root.name = 'ride:rider'; root.visible = false;
   const frame = new THREE.Group(); frame.rotation.order = 'ZXY'; root.add(frame);
   const bike = BK.createBicycle(M), pelican = PL.createPelican(M);

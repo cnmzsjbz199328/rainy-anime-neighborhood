@@ -275,45 +275,128 @@ const zoomUser=zoomTo;
 const sphereCamera=SPHERE_CAMERA(THREE,BEND,camera);
 function syncSphereTarget(){const p=sphereCamera.flat();target.x=p[0];target.z=p[1];}
 function orbitSphere(dx,dy){yaw-=dx*.006;pitch=Math.max(.16,Math.min(Math.PI/2,pitch+dy*.005));}
-function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;setRoaming(false);if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));}
+// W9b: a switch changes the map's form only; a ride goes on through it (the free view's own state is set for the new form as before)
+function setMapMode(mode){if(!['flat','sphere'].includes(mode)||mode===TR.mode)return;if(mode==='sphere')sphereCamera.reset(target.toArray());else{target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z));pitch=Math.min(1.45,pitch);}TR.mode=mode;TR.animating=true;mapButton.textContent=mode==='flat'?'球形地图':'平面地图';mapButton.setAttribute('aria-pressed',String(mode==='sphere'));rideButtons();}
 function shiftTarget(wx,wz){target.z=Math.max(-TR.limitZ,Math.min(TR.limitZ,target.z+wz));const x=target.x+wx;target.x=TR.mode==='sphere'?BEND.wrapX(x):Math.max(TR.xMin,Math.min(TR.xMax,x));}
 
 function pan(dx,dy){const k=dist*.0011,c=Math.cos(yaw),n=Math.sin(yaw);shiftTarget(-(dx*c+dy*n)*k,-(-dx*n+dy*c)*k);}
 // R1 (docs/world/THIRD_PERSON_ROAM_PLAN.md 6.2-6.6, 6.13): one roam, the ride (W10_SPEC 2.8). ride.js moves the rider on the walkable surfaces of the one ground sampler
 // (ground.js) and against ride_world.js's boundaries and obstacles; here: the keys, the touch stick, the look drags, the wheel and pinch, the follow camera and the state
-// changes. Enter (V, the button, view.set) from the free view's target: the nearest carriageway (ground.spawn), a hint when that is more than 2 m away, a 1 s blend from the
-// free camera (fov 36 -> 46, near 0.25 -> 0.08). Leave by V, Esc, the button or the sphere: the free view's target, yaw, pitch and distance are never changed while riding,
-// so they come back as they were. Blur, a hidden page or a cancelled pointer clears every input. The ride's data (ride_world.js) is made the first time a ride starts.
-let ground=null,ride=null,rideWorld=null,rider=null,roamButton=null,joystickValue=[0,0],rideBlend=null,hintTimer=0;
+// changes. Blur, a hidden page or a cancelled pointer clears every input. The ride's data (ride_world.js) is made the first time a ride starts.
+// W9b (docs/world/SPHERE_RIDING_PLAN.md 3-4): the map's form (flat / sphere) and the way of looking (free / ride) are independent, four combinations. A map switch only
+// changes the form's goal (setMapMode): the ride, its input and its rider go on, and the bend is advanced once per frame for both views (transitionStep, before the camera
+// and the weather). The ride's state stays in the flat display frame; ride_view.js maps its camera to the drawn map (rideCamera) and the rider is drawn by the shader's bend.
+// Enter (V, the button, view.set) from the free view's target on either map, not while the map switches (the hint says why): the nearest carriageway (ground.spawn), facing
+// the way the view looks (on the sphere: the view direction on the spawn's tangent plane), a hint when it is more than 2 m away. Leave (V, Esc, the button, view.set) at any
+// time: the free view takes the rider's place (freeExit). Both ways a 1 s smoothstep hand-off of the drawn camera (position, orientation, fov 36 <-> 46, near 0.25 <-> 0.08).
+let ground=null,ride=null,rideWorld=null,rider=null,roamButton=null,joystickValue=[0,0],camBlend=null,hintTimer=0,rideView=null,rideSurf=null,freeLevel=null,inputHold=null;
 const keys=new Set(),MOVE_KEYS=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'],STICK_DEAD=.12;
-const roamAvailable=()=>!!ground&&TR.mode==='flat'&&BEND.get()===0&&!TR.animating;
+// entering needs the world and a settled map; leaving is always possible (the two are never one disabled state)
+const enterAvailable=()=>!!ground&&!TR.animating;
 function ensureRide(){if(ride)return ride;rideWorld=RIDE_WORLD.attach({ground,L,roads:roads.data(),lamps:(streetlights.data()||{}).lamps||[],landmarkBoxes:landmarkSolids});
-  ride=RIDE.create({ground,world:rideWorld});ride.state.onWrap=shift=>{if(rideBlend){rideBlend.from.pos[0]+=shift;rideBlend.from.look[0]+=shift;}};return ride;}
+  ride=RIDE.create({ground,world:rideWorld});ride.state.onWrap=shift=>{if(camBlend)camBlend.from.pos.x+=(1-BEND.get())*shift;};return ride;}
 const smooth01=t=>t*t*(3-2*t);
-function setRoaming(enabled){if(enabled&&!roamAvailable())return;if(enabled===!!roam)return;
-  if(enabled){ensureRide();const sp=ride.enter(target.x,target.z,[target.x-camera.position.x,target.z-camera.position.z]);if(!sp)return;
-    roam={position:new THREE.Vector3(ride.state.x,ride.state.root,ride.state.z)};rideBlend={t:0,from:{pos:camera.position.toArray(),look:lookTarget(0),fov:camera.fov,near:camera.near}};showHint(sp);}
-  else{ride.exit();roam=null;rideBlend=null;camera.fov=36;camera.near=.25;camera.far=400;camera.updateProjectionMatrix();clearInput();}
-  if(rider)rider.root.visible=!!roam;if(!roam&&tunnelVoids)for(const o of tunnelVoids)o.visible=true;
-  if(roamButton){roamButton.textContent=roam?'自由视角  V':'骑行  V';roamButton.setAttribute('aria-pressed',String(!!roam));}canvas.style.cursor=roam?'grab':'';}
+// the hand-off of the drawn camera: from the pose it had when the view changed to the pose the new view computes, over 1 s (run after either view has set the camera)
+function startBlend(fov,near){camBlend={t:0,from:{pos:camera.position.clone(),quat:camera.quaternion.clone(),fov:camera.fov,near:camera.near},to:{fov,near}};}
+const blendQ=new THREE.Quaternion();
+function blendStep(dt){if(!camBlend)return;camBlend.t=Math.min(1,camBlend.t+dt/1.0);const k=smooth01(camBlend.t),f=camBlend.from,e=camBlend.to;camera.position.lerpVectors(f.pos,camera.position,k);blendQ.copy(camera.quaternion);camera.quaternion.slerpQuaternions(f.quat,blendQ,k);
+  camera.fov=f.fov+(e.fov-f.fov)*k;camera.near=f.near+(e.near-f.near)*k;camera.updateProjectionMatrix();if(camBlend.t>=1)camBlend=null;}
+function rideButtons(){if(!roamButton)return;const can=enterAvailable();roamButton.disabled=!roam&&!can;roamButton.title=roam?'退出骑行，在当前位置回到自由视角':can?'从视线目标附近的道路开始骑行':'地图切换中，切换完成后可骑行';
+  roamButton.textContent=roam?'自由视角  V':'骑行  V';roamButton.setAttribute('aria-pressed',String(!!roam));}
+// the free view's direction of view as a flat direction [dx, dz] at (x, z): on the flat map the target minus the camera (R1); drawn bent, the camera's forward on the tangent
+// plane of (x, z) in its east / south parts (conformal: they are the flat x and z), the screen's up when it looks straight down
+function viewDir(x,z){if(!(BEND.get()>0))return[target.x-camera.position.x,target.z-camera.position.z];const b=BEND.basis(x,z),f=new THREE.Vector3();camera.updateMatrixWorld();camera.getWorldDirection(f);
+  let e=f.x*b.east[0]+f.y*b.east[1]+f.z*b.east[2],s=f.x*b.south[0]+f.y*b.south[1]+f.z*b.south[2];if(Math.hypot(e,s)<.05){const y=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1);e=y.x*b.east[0]+y.y*b.east[1]+y.z*b.east[2];s=y.x*b.south[0]+y.y*b.south[1]+y.z*b.south[2];}return[e,s];}
+function setRoaming(enabled){if(enabled===!!roam)return;
+  if(enabled){if(!enterAvailable()){if(ground)showMessage('地图切换中，切换完成后再开始骑行');return;}ensureRide();const sp0=ground.spawn(target.x,target.z,viewDir(target.x,target.z));if(!sp0){showMessage('附近没有可以骑行的道路');return;}
+    const sp=ride.enter(target.x,target.z,viewDir(sp0.x,sp0.z));if(!sp){showMessage('附近没有可以骑行的道路');return;}
+    roam={position:new THREE.Vector3(ride.state.x,ride.state.root,ride.state.z)};startBlend(RIDE.CFG.fov,RIDE.CFG.near);showHint(sp);}
+  else{freeExit();startBlend(36,.25);ride.exit();roam=null;camera.far=TRANSITION.farOf(TR.mode);camera.updateProjectionMatrix();clearInput();}
+  if(rider)rider.root.visible=!!roam;voidsFor();
+  rideButtons();canvas.style.cursor=roam?'grab':'';}
 function toggleRoaming(){setRoaming(!roam);}
+// W9b 3: leaving keeps the map's goal and takes the free view to the rider's place: the target at the rider's focus on its own level (a deck or a tunnel stays the look
+// target's ground while the target is over it: baseAt), the direction the ride camera looked from, the distance it had as drawn within the free range (9-400 m). The pose
+// kept is the first unoccluded of: that view, that view raised (pitch + 0.15 rad steps to the top), then from behind the rider along the road and from ahead, raised the same
+// way; tested as the map will settle (the free frame at the goal's bend, with liftCamera's lift) by the ride's own point test (ride.js: the ground on the rider's level, the
+// terrain, the tunnel lining, the occluder boxes) on the sight line from the target to the camera, every 0.25 m; none clear: the first (counted in freeExit.last)
+function freeExit(){
+  const st=ride.state,c=ride.camera(),s=st.s,q=st.sample||{},uEnd=TR.mode==='sphere'?1:0,CFG=RIDE.CFG;
+  target.x=st.x;target.z=st.z;freeLevel=q.layer==='deck'||q.layer==='tunnel'?{y:st.y,layer:q.layer,line:q.line}:null;target.y=st.root+CFG.focus*s-baseAt(target.x,target.z);
+  const o=[c.position[0]-c.focus[0],c.position[1]-c.focus[1],c.position[2]-c.focus[2]],yaw0=Math.atan2(o[0],o[2]),top=uEnd?Math.PI/2:1.45,pitch0=Math.max(.16,Math.min(top,Math.atan2(o[1],Math.hypot(o[0],o[2]))));
+  const u=BEND.get(),fd=u>0?rideView.point(c.focus,u):c.focus,d=zoomTo(Math.hypot(camera.position.x-fd[0],camera.position.y-fd[1],camera.position.z-fd[2]));
+  const look=lookTarget(uEnd),tries=[];for(const y of [yaw0,st.heading+Math.PI,st.heading])for(let p=y===yaw0?pitch0:Math.max(pitch0,.16);p<=top+1e-9;p+=.15){tries.push([y,Math.min(p,top)]);if(p<top&&p+.15>top)tries.push([y,top]);}
+  let pick=null,n=0;for(const [y,p] of tries){n++;if(freeClear(look,d,y,p,uEnd,s)){pick=[y,p];break;}}
+  freeExit.last={tried:n,clear:!!pick,dist:d,yaw:pick?pick[0]:yaw0,pitch:pick?pick[1]:pitch0,level:freeLevel&&freeLevel.layer};
+  yaw=pick?pick[0]:yaw0;pitch=pick?pick[1]:pitch0;dist=d;if(TR.mode==='sphere')sphereCamera.reset(target.toArray());}
+// the free camera of (look, d, yaw, pitch) at the bend u, drawn: as the frame loop puts it (TRANSITION.frame, the sphere's lift)
+function freePose(look,d,y,p,u){const fr=TRANSITION.frame(BEND,look,d,y,p,u),P=fr.position.slice();if(u>0){const L=liftPoint(P,u,look);if(L)return{position:L,lookAt:fr.lookAt};}return{position:P,lookAt:fr.lookAt};}
+function freeClear(look,d,y,p,u,s){const fr=freePose(look,d,y,p,u),A=fr.lookAt,P=fr.position,L=Math.hypot(P[0]-A[0],P[1]-A[1],P[2]-A[2]),step=.25*s*rideView.scale(look[1],look[2],u).v,n=Math.max(2,Math.ceil(L/step)),pts=[],g0=rideView.inverse(P,u,look);
+  if(!g0)return false;for(let i=1;i<=n;i++){const t=i/n,Q=[A[0]+(P[0]-A[0])*t,A[1]+(P[1]-A[1])*t,A[2]+(P[2]-A[2])*t];pts.push(rideView.inverse(Q,u,[look[0]+(g0[0]-look[0])*t,look[1]+(g0[1]-look[1])*t,look[2]+(g0[2]-look[2])*t]));}
+  return ride.firstBlocked(pts,.1*s).i<0;}
 // 6.3 rule 5: the start is more than 2 m from the view target: say where the ride starts
 function spawnName(sp){const e=WORLD.roadNetwork.edges.find(q=>q.id===sp.edge);if(!e)return sp.line||'道路';const town=L.roads.find(r=>r.id===e.source||r.id===e.id);if(town)return(town.name||town.id)+'（'+e.id+'）';
   const lm=[e.from,e.to].map(id=>WORLD.roadNetwork.nodeById[id]).find(n=>n&&n.landmark),lmName=lm?(WORLD.landmarks.find(q=>q.id===lm.landmark)||{}).name:null;return e.route+'（'+e.id+(lmName?' · '+lmName:'')+'）';}
-function showHint(sp){const d=sp.distance/(ride.state.s||1);if(d<=2){hint.style.display='none';return;}hint.textContent=`从最近的道路出发：${spawnName(sp)}，${d<10?d.toFixed(1):Math.round(d)} m`;hint.style.display='block';clearTimeout(hintTimer);hintTimer=setTimeout(()=>{hint.style.display='none';},3000);}
+function showMessage(text){hint.textContent=text;hint.style.display='block';clearTimeout(hintTimer);hintTimer=setTimeout(()=>{hint.style.display='none';},3000);}
+function showHint(sp){const d=sp.distance/(ride.state.s||1);if(d<=2){hint.style.display='none';return;}showMessage(`从最近的道路出发：${spawnName(sp)}，${d<10?d.toFixed(1):Math.round(d)} m`);}
 // the ride's input: throttle (W/up, S/down, the stick's vertical) and steer (D/right, A/left, the stick's horizontal; the stick past a 0.12 dead zone, then linear), added and clipped
+// (inputHold: a check's fixed input in place of the keys and the stick)
 const dead=v=>Math.abs(v)<STICK_DEAD?0:Math.sign(v)*(Math.abs(v)-STICK_DEAD)/(1-STICK_DEAD);
-function rideInput(){const c=v=>Math.max(-1,Math.min(1,v));return{throttle:c((keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+dead(joystickValue[1])),steer:c((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+dead(joystickValue[0]))};}
-// the follow camera of the ride (ride.camera()), blended from the free camera for the first second
+function rideInput(){if(inputHold)return{throttle:inputHold.throttle||0,steer:inputHold.steer||0};const c=v=>Math.max(-1,Math.min(1,v));return{throttle:c((keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+dead(joystickValue[1])),steer:c((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+dead(joystickValue[0]))};}
 // R2: the rider (rider.js) follows the ride's state
 // the tunnel portals' black void discs stand for the dark bore seen from afar (free view); riding, the bore is seen as it is from everywhere (they used to hide only on the
-// tunnel's own road, so coming off the RN01-03 / RN01-07 decks a portal stayed black until the abutment, 9.3 / 26.4 m before it, and then opened at once)
-let tunnelVoids=null;function voidsFor(){if(!tunnelVoids){tunnelVoids=[];roads.state.root.traverse(o=>{if(o.isMesh&&/^road:tunnel void|tunnel void$/.test(o.name))tunnelVoids.push(o);});}for(const o of tunnelVoids)o.visible=!roam;}
-function riderStep(dt){voidsFor();if(!rider)return;const st=ride.state;rider.update(dt,{x:st.x,root:st.root,z:st.z,heading:st.heading,speed:st.speed,mode:st.mode,s:st.s,wheels:[st.yF,st.yB],lookYaw:st.lookYaw,throttle:st.throttle});}
-function rideCamera(dt){const c=ride.camera(),st=ride.state;roam.position.set(st.x,st.root,st.z);let pos=c.position,look=c.look,fov=c.fov,near=c.near;
-  if(rideBlend){rideBlend.t=Math.min(1,rideBlend.t+dt/1.0);const k=smooth01(rideBlend.t),f=rideBlend.from,mix=(a,b)=>a.map((v,i)=>v+(b[i]-v)*k);pos=mix(f.pos,pos);look=mix(f.look,look);fov=f.fov+(fov-f.fov)*k;near=f.near+(near-f.near)*k;if(rideBlend.t>=1)rideBlend=null;}
-  camera.position.set(pos[0],pos[1],pos[2]);if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(look[0],look[1],look[2]);
-  if(camera.fov!==fov||camera.near!==near||camera.far!==400){camera.fov=fov;camera.near=near;camera.far=400;camera.updateProjectionMatrix();}}
+// tunnel's own road, so coming off the RN01-03 / RN01-07 decks a portal stayed black until the abutment, 9.3 / 26.4 m before it, and then opened at once). W9b: also
+// in the free view while its target is the level of a tunnel (left there by a ride): the view looks at a place inside the bore
+let tunnelVoids=null;function voidsFor(){if(!tunnelVoids){tunnelVoids=[];roads.state.root.traverse(o=>{if(o.isMesh&&/^road:tunnel void|tunnel void$/.test(o.name))tunnelVoids.push(o);});}const show=!roam&&!(freeLevel&&freeLevel.layer==='tunnel');for(const o of tunnelVoids)o.visible=show;}
+// W9b 4.4: bent, a face is drawn as the chord of its bent corners, up to 2.2 cm under the sphere for the town's 4 m edges (W10f); each wheel is lowered by the depth of the
+// drawn walk surface under it (ride_view.js surfaces: the road, junction, deck, plank and town ground meshes, as unify_check U7 reads them), the root by their mean. The
+// index is made the first time the rider is drawn bent.
+function walkSurfaces(){const list=[],v=new THREE.Vector3(),t0=performance.now();scene.updateMatrixWorld(true);
+  const take=o=>{const g=o.geometry,p=g.attributes.position,pos=new Float32Array(p.count*3),wrap=!(o.material&&o.material.userData&&o.material.userData.noWrap);for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);pos[i*3]=wrap?BEND.wrapX(v.x):v.x;pos[i*3+1]=v.y;pos[i*3+2]=v.z;}list.push({pos,index:g.index?g.index.array:null});};
+  roads.state.root.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&(/^road:(route |junction paving)/.test(o.name)||/^road:bridge .* top$/.test(o.name)||o.name==='road:plank'))take(o);});
+  scene.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&o.userData.groundOccupancy){let lm=false;for(let q=o;q;q=q.parent)if(/^lm\d/i.test(q.name||''))lm=true;if(!lm)take(o);}});
+  const S=rideView.surfaces(list);S.stats.ms=Math.round(performance.now()-t0);return S;}
+function wheelSag(st,u){if(!rideSurf)rideSurf=walkSurfaces();const s=st.s,fx=Math.sin(st.heading),fz=Math.cos(st.heading),h=RIDE.CFG.wheelbase/2*s,out=[0,0];
+  [[1,st.yF],[-1,st.yB]].forEach(([k,y],i)=>{const x=BEND.wrapX(st.x+k*fx*h),z=st.z+k*fz*h,q=rideSurf.sag(x,y,z,u,.1*s);if(q)out[i]=q.sag/rideView.scale(y,z,u).v;});return out;}
+function riderStep(dt){voidsFor();if(!rider)return;const st=ride.state,u=BEND.get();let wF=st.yF,wB=st.yB,root=st.root;
+  if(u>0){const g=wheelSag(st,u);riderStep.sag=g;wF-=g[0];wB-=g[1];root-=(g[0]+g[1])/2;}else riderStep.sag=null;
+  rider.update(dt,{x:st.x,root,z:st.z,heading:st.heading,speed:st.speed,mode:st.mode,s:st.s,wheels:[wF,wB],lookYaw:st.lookYaw,throttle:st.throttle});}
+// the follow camera of the ride (ride.camera(), flat) on the map as drawn: ride_view.js's pose at the bend u (u = 0: the flat pose itself), then the display pass (W9b 4.3):
+// the straight sight line from the focus to the camera, as drawn, sampled 0.25 m x s apart and each sample taken back to the flat frame (rideView.inverse) where ride.js
+// tests it like its own sweep (0.2 m x s); a hit pulls the camera in along it to the hit - 0.25 m x s (not under 1.2 m x s) at once, let out again at lambda 2; the camera
+// point is kept within the horizontal limit and inside the tunnel lining with 0.3 m x s (pulled in along the drawn line), 0.12 m x s over the ground on the rider's level
+// (0.3 on a deck; lifted at once, let down at lambda 2). A sample is taken back only where the bend
+// keeps a third of the place's scale (its flat point at most 3 x as far from the focus as the flat sight line's, + 0.5 m x s): on the far side of the planet mid-switch the
+// whole place is drawn as a sheet and the drawn line beside it hides nothing; those samples are left out (rideDisp.unknown). Where a switch folds the place itself (the
+// bend keeps under half its scale at the focus: ride_view.js kept; only on the far side of the planet mid-switch, where the drawn place turns over within a few frames
+// while the camera's frame turns steadily) the pass stands down for the rest of that switch and lets out what it held at lambda 2: no pull or lift jumps (W9b SR3)
+const rideDisp={k:1,init:false,why:'',lift:0,liftS:0,tunnel:0,unknown:0,folded:false,kept:1};
+// a ride placed anew (view.set position, the checks' ride.set) starts its camera anew: the display pass too
+const resetDisp=()=>{Object.assign(rideDisp,{k:1,init:false,why:'',lift:0,liftS:0,tunnel:0,unknown:0,folded:false,kept:1});};
+function displayPass(c,d,u,dt){
+  const st=ride.state,s=st.s,CFG=RIDE.CFG,F=d.focus,P=d.position,dx=P[0]-F[0],dy=P[1]-F[1],dz=P[2]-F[2],Ld=Math.hypot(dx,dy,dz);if(Ld<1e-6)return P;
+  const rel=()=>1-Math.exp(-CFG.damp.release*dt);rideDisp.kept=rideView.kept(c.focus,u);if(u>=1)rideDisp.folded=false;else if(rideDisp.kept<.5)rideDisp.folded=true;
+  if(rideDisp.folded){rideDisp.k+=(1-rideDisp.k)*rel();rideDisp.liftS+=(0-rideDisp.liftS)*rel();rideDisp.why='folded';rideDisp.lift=0;rideDisp.tunnel=0;const k=rideDisp.k,up=d.up,l=rideDisp.liftS;return[F[0]+dx*k+up[0]*l,F[1]+dy*k+up[1]*l,F[2]+dz*k+up[2]*l];}
+  const sc=rideView.scale(c.focus[1],c.focus[2],u),unit=s*Math.max(sc.v,1e-3),n=Math.max(2,Math.ceil(Ld/(.25*unit))),pts=[];
+  const flatAt=t=>[c.focus[0]+(c.position[0]-c.focus[0])*t,c.focus[1]+(c.position[1]-c.focus[1])*t,c.focus[2]+(c.position[2]-c.focus[2])*t],Lf=Math.hypot(c.position[0]-c.focus[0],c.position[1]-c.focus[1],c.position[2]-c.focus[2]);
+  const back=(q,t)=>{const w=rideView.inverse(q,u,flatAt(t));return w&&Math.hypot(w[0]-c.focus[0],w[1]-c.focus[1],w[2]-c.focus[2])<=3*t*Lf+.5*s?w:null;};
+  for(let i=1;i<=n;i++){const t=i/n;pts.push(back([F[0]+dx*t,F[1]+dy*t,F[2]+dz*t],t));}rideDisp.unknown=pts.filter(p=>!p).length;
+  const hit=ride.firstBlocked(pts,CFG.sweepR*s),want=hit.i<0?1:Math.max(Math.min(1,CFG.minDist*unit/Ld),(hit.i/n*Ld-CFG.hitBack*unit)/Ld);
+  rideDisp.k=!rideDisp.init||want<rideDisp.k?want:want-rideDisp.k<1e-4?want:rideDisp.k+(want-rideDisp.k)*(1-Math.exp(-CFG.damp.release*dt));rideDisp.init=true;rideDisp.why=hit.why;
+  let k=Math.min(1,rideDisp.k);rideDisp.lift=0;rideDisp.tunnel=0;
+  const okAt=m=>{const q=back([F[0]+dx*m,F[1]+dy*m,F[2]+dz*m],m);return !q||(ride.reach(q[0],q[2])&&(!ride.inTunnel()||ride.tunnelOk(q[0],q[1],q[2],CFG.tunnelClear*s)));};
+  if(!okAt(k)){let lo=0,hi=k;for(let i=0;i<8;i++){const m=(lo+hi)/2;if(okAt(m))lo=m;else hi=m;}rideDisp.tunnel=k-lo;k=lo;}
+  let out=[F[0]+dx*k,F[1]+dy*k,F[2]+dz*k];
+  const w=back(out,k);
+  let liftW=0;if(w){const fl=ride.floorAt(w[0],w[2]),need=fl.y+(fl.deck?CFG.deckClear:CFG.camClear)*s;if(w[1]<need)liftW=(need-w[1])*sc.v;}
+  rideDisp.liftS=liftW>rideDisp.liftS?liftW:rideDisp.liftS+(liftW-rideDisp.liftS)*rel();rideDisp.lift=rideDisp.liftS;
+  if(rideDisp.liftS>0){const up=d.up,l=rideDisp.liftS;out=[out[0]+up[0]*l,out[1]+up[1]*l,out[2]+up[2]*l];}
+  return out;}
+function rideCamera(dt){const c=ride.camera(),st=ride.state,u=BEND.get();roam.position.set(st.x,st.root,st.z);let pos=c.position,look=c.look,up=[0,1,0];
+  if(u>0){const d=rideView.pose(c,u);pos=displayPass(c,d,u,dt);look=d.look;up=d.up;}
+  else{rideView.state.ref=null;rideDisp.folded=false;if(rideDisp.k<1-1e-4||rideDisp.liftS>1e-4){/* back on the flat map: what the pass still held is let out at lambda 2 */const r=1-Math.exp(-RIDE.CFG.damp.release*dt),F=c.focus,P=c.position;rideDisp.k+=(1-rideDisp.k)*r;rideDisp.liftS-=rideDisp.liftS*r;const k=rideDisp.k;pos=[F[0]+(P[0]-F[0])*k,F[1]+(P[1]-F[1])*k+rideDisp.liftS,F[2]+(P[2]-F[2])*k];}else{rideDisp.k=1;rideDisp.liftS=0;}}
+  camera.position.set(pos[0],pos[1],pos[2]);camera.up.set(up[0],up[1],up[2]);camera.lookAt(look[0],look[1],look[2]);
+  if(camera.fov!==c.fov||camera.near!==c.near||camera.far!==400){camera.fov=c.fov;camera.near=c.near;camera.far=400;camera.updateProjectionMatrix();}}
 const style=document.createElement('style');style.textContent=`#town-view-toggle{position:fixed;z-index:5;top:14px;right:14px;padding:8px 11px;border:1px solid rgba(205,220,220,.32);border-radius:18px;background:rgba(23,34,49,.62);color:#e8e5d9;font:12px/1.2 system-ui,sans-serif;letter-spacing:.03em;backdrop-filter:blur(5px);cursor:pointer;opacity:.78}#town-view-toggle:hover,#town-view-toggle:focus-visible{opacity:1;background:rgba(31,47,63,.9);outline:1px solid rgba(205,220,220,.55)}#town-view-toggle:disabled{opacity:.4;cursor:not-allowed}#town-walk-stick{position:fixed;z-index:4;left:24px;bottom:24px;width:108px;height:108px;border:1px solid rgba(210,224,224,.22);border-radius:50%;background:rgba(23,34,49,.25);touch-action:none;display:none}#town-walk-nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border:1px solid rgba(225,233,224,.42);border-radius:50%;background:rgba(89,116,125,.56);pointer-events:none}#ride-hint{position:fixed;z-index:5;left:50%;bottom:28px;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:7px 12px;border-radius:14px;background:rgba(23,34,49,.72);color:#e8e5d9;font:12px/1.4 system-ui,sans-serif;pointer-events:none;display:none;text-align:center}@media(pointer:coarse){#town-walk-stick{display:block}#ride-hint{bottom:146px}}@media(max-width:520px){#town-view-toggle{top:10px;right:10px;font-size:11px;padding:7px 9px}#town-walk-stick{left:18px;bottom:20px;width:100px;height:100px}}`;
 document.head.appendChild(style);roamButton=document.createElement('button');roamButton.id='town-view-toggle';roamButton.type='button';roamButton.textContent='骑行  V';roamButton.title='切换骑行与自由视角';roamButton.setAttribute('aria-label','切换骑行与自由视角');roamButton.addEventListener('click',toggleRoaming);document.body.appendChild(roamButton);
 const hint=document.createElement('div');hint.id='ride-hint';hint.setAttribute('role','status');document.body.appendChild(hint);
@@ -322,12 +405,13 @@ const stick=document.createElement('div');stick.id='town-walk-stick';stick.setAt
 function updateStick(e){const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=33,k=len>max?max/len:1;joystickValue=[dx*k/max,-dy*k/max];nub.style.transform=`translate(${dx*k}px,${dy*k}px)`;}
 function stickReset(){stickPointer=null;joystickValue=[0,0];nub.style.transform='';}
 stick.addEventListener('pointerdown',e=>{if(!roam)return;stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);e.preventDefault();});stick.addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)updateStick(e);});for(const ev of ['pointerup','pointercancel','lostpointercapture'])stick.addEventListener(ev,e=>{if(e.pointerId===stickPointer)stickReset();});
-// riding: one pointer drags the look (grab style), two pinch the follow distance, the wheel too; a double click or double tap recentres the look
-const pointers=new Map();let last=null,pinch=0,mid=null,tap=null;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());
+// riding: one pointer drags the look (grab style), two pinch the follow distance, the wheel too; a double click or double tap recentres the look. W9b: on the sphere too --
+// riding, no branch (down, move, up, the finger left on the screen) hands a pointer to the sphere's grab
+const pointers=new Map();let last=null,pinch=0,mid=null,tap=null,pinch0=0,dist0=0;const canvas=renderer.domElement;canvas.style.touchAction='none';canvas.addEventListener('contextmenu',e=>e.preventDefault());
 function clearInput(){keys.clear();stickReset();pointers.clear();last=null;tap=null;}
-canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(roam&&pointers.size===1){const t=performance.now(),dbl=tap&&t-tap.t<320&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<24;tap=dbl?null:{t,x:e.clientX,y:e.clientY,moved:0};if(dbl)ride.recentre();}if(TR.mode==='sphere'&&!roam&&pointers.size===1)sphereCamera.begin(e.clientX,e.clientY,canvas.getBoundingClientRect());if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};}});
-canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};if(roam){if(d>1)ride.zoom(pinch/d);}else{dist=zoomUser(dist*pinch/d);if(TR.mode==='sphere'){sphereCamera.end();orbitSphere(m.x-mid.x,m.y-mid.y);}else pan(m.x-mid.x,m.y-mid.y);}pinch=d;mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){ride.look(dx,dy);if(tap)tap.moved+=Math.abs(dx)+Math.abs(dy);}else if(TR.mode==='sphere'){if(e.buttons===2||e.shiftKey||e.ctrlKey){sphereCamera.end();orbitSphere(dx,dy);}else{sphereCamera.drag(e.clientX,e.clientY);syncSphereTarget();}}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});
-for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);if(ev==='pointercancel'){tap=null;}if(tap&&tap.moved>24)tap=null;if(TR.mode==='sphere')sphereCamera.end();last=null;if(pointers.size===1){last={...[...pointers.values()][0]};if(TR.mode==='sphere')sphereCamera.begin(last.x,last.y,canvas.getBoundingClientRect());}if(roam)canvas.style.cursor='grab';});
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});last={x:e.clientX,y:e.clientY};if(roam&&pointers.size===1){const t=performance.now(),dbl=tap&&t-tap.t<320&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<24;tap=dbl?null:{t,x:e.clientX,y:e.clientY,moved:0};if(dbl)ride.recentre();}if(TR.mode==='sphere'&&!roam&&pointers.size===1)sphereCamera.begin(e.clientX,e.clientY,canvas.getBoundingClientRect());if(roam)canvas.style.cursor='grabbing';if(pointers.size===2){let p=[...pointers.values()];pinch=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};pinch0=pinch;dist0=dist;}});
+canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const m={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};if(roam){if(d>1)ride.zoom(pinch/d);}else{/* W9b: from the gesture's start, so that the 9 m limit (where a ride leaves the free view) does not drift a parallel drag's distance */if(d>1)dist=zoomUser(dist0*pinch0/d);if(TR.mode==='sphere'){sphereCamera.end();orbitSphere(m.x-mid.x,m.y-mid.y);}else pan(m.x-mid.x,m.y-mid.y);}pinch=d;mid=m;}else if(last){let dx=e.clientX-last.x,dy=e.clientY-last.y;if(roam){ride.look(dx,dy);if(tap)tap.moved+=Math.abs(dx)+Math.abs(dy);}else if(TR.mode==='sphere'){if(e.buttons===2||e.shiftKey||e.ctrlKey){sphereCamera.end();orbitSphere(dx,dy);}else{sphereCamera.drag(e.clientX,e.clientY);syncSphereTarget();}}else if(e.buttons===2||e.shiftKey||e.ctrlKey)pan(dx,dy);else{yaw-=dx*.006;pitch=Math.max(.16,Math.min(1.45,pitch+dy*.005));}}last={x:e.clientX,y:e.clientY};});
+for(const ev of ['pointerup','pointercancel'])canvas.addEventListener(ev,e=>{pointers.delete(e.pointerId);if(ev==='pointercancel'){tap=null;}if(tap&&tap.moved>24)tap=null;if(TR.mode==='sphere')sphereCamera.end();last=null;if(pointers.size===1){last={...[...pointers.values()][0]};if(TR.mode==='sphere'&&!roam)sphereCamera.begin(last.x,last.y,canvas.getBoundingClientRect());}if(roam)canvas.style.cursor='grab';});
 canvas.addEventListener('wheel',e=>{e.preventDefault();if(roam){ride.zoom(Math.exp(e.deltaY*.001));return;}dist=zoomUser(dist*Math.exp(e.deltaY*.001));},{passive:false});
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(e.metaKey||e.ctrlKey||e.altKey)return;if(!e.repeat&&(k==='v'||(k==='escape'&&roam))){toggleRoaming();e.preventDefault();return;}if(roam&&k==='c'){if(!e.repeat)ride.recentre();e.preventDefault();return;}if(MOVE_KEYS.includes(k)){keys.add(k);e.preventDefault();}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));addEventListener('blur',clearInput);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInput();});
@@ -393,25 +477,38 @@ const landmarkJob=TERRAIN.job(function*(){const s0=seed,WO=window.WORLD,RR=90,DD
 function transitionStep(dt){
   if(TR.auto&&TR.animating){const end=TR.mode==='sphere'?1:0;TR.phase=Math.max(0,Math.min(1,TR.phase+(end?1:-1)*dt/TRANSITION.DURATION));BEND.set(TRANSITION.bendOf(TR.phase));TR.animating=TR.phase!==end;}
   if(TR.auto){scene.fog.density=lightBase.fog=TR.fog0*TRANSITION.fogOf(BEND.get());}
-  const available=roamAvailable();roamButton.disabled=!available;roamButton.title=available?'切换街景漫游与自由视角':'球形地图与切换动画中不可漫游';
+  rideButtons();
 }
 // the point the camera looks at: the target, target.y above the shown ground under it (ground.js, the same in the town and outside it); a point of the flat frame,
-// so the bend carries it onto the sphere with everything else (a pure function of the target: no hysteresis; u is kept for the callers)
-function lookTarget(u){void u;return[target.x,target.y+ground.y(target.x,target.z),target.z];}
+// so the bend carries it onto the sphere with everything else (u is kept for the callers). W9b: after a ride left on a deck or in a tunnel the ground is that level's
+// surface (freeLevel, followed while the target stays over it) and not the sea under the bridge or the hill over the tunnel; off it, the shown ground again
+function baseAt(x,z){if(freeLevel){const q=ground.at(x,z,{y:freeLevel.y});if(q&&q.layer===freeLevel.layer&&Math.abs(q.y-freeLevel.y)<.5*q.s+.3){freeLevel.y=q.y;return q.y;}freeLevel=null;}return ground.y(x,z);}
+function lookTarget(u){void u;return[target.x,target.y+baseAt(target.x,target.z),target.z];}
 // W8b: the weather at the camera's target and the camera's height above the ground there (weather_fx.js fades every effect with that height), and the camera-target
 // distance d (the weather's fog keeps the target visible from there). On the flat map the height is taken above the look target, which sits on the shown ground
 // (lookTarget: the rendered terrain, the sea at 0, 1.2 m in the town), not above the unlifted target.y (on high ground that counted the hill as camera height).
-function weatherView(){if(roam){const p=roam.position,ll=lonLatAt(p.x,p.z);return{lonLat:ll,h:camera.position.y-p.y,d:camera.position.distanceTo(p),target:[p.x,p.y,p.z],u:0};}
+// W9b 4.5: riding, the place is the rider's (its flat position: the weather, the rain box and the daylight follow it) and u the bend as drawn; h and d are measured as
+// drawn, from the rider's drawn root to the drawn camera (h along the local up there, on the rider's own level: a deck, a tunnel), the units of the scene's fog and of
+// the rain lines' fade; on the flat map exactly the old camera.y - root and camera-root distance
+function weatherView(){if(roam){const p=roam.position,ll=lonLatAt(p.x,p.z),u=BEND.get(),q=u>0?rideView.point([p.x,p.y,p.z],u):[p.x,p.y,p.z],up=u>0?rideView.upAt(p.x,p.z,u):[0,1,0],C=camera.position,v=[C.x-q[0],C.y-q[1],C.z-q[2]],fc=ride.camera().position;
+    return{lonLat:ll,h:u>0?v[0]*up[0]+v[1]*up[1]+v[2]*up[2]:C.y-p.y,d:u>0?Math.hypot(v[0],v[1],v[2]):C.distanceTo(p),target:[p.x,p.y,p.z],u,cam:[fc[0],fc[2]]};}
   const u=BEND.get(),ll=lonLatAt(target.x,target.z);let h;if(u>0){const R=BEND.R,P=camera.position;h=Math.hypot(P.x,P.y+R,P.z)-R-Math.max(0,WORLD.height(ll.lon,ll.lat)-1.6);}else h=camera.position.y-lookTarget(0)[1];return{lonLat:ll,h,d:dist,target:[target.x,target.y,target.z],u,cam:[camera.position.x,camera.position.z]};}
 // W8c: the night light by the camera's height above the ground (nightlight.js, stars.js): lamps and light band, far lights, readable panorama light, stars; all of it is 0 / 1 on the flat town
 function nightStep(wv){nightLight.tick({h:wv.h,u:BEND.get()});}
-// keep the camera 0.5 m above the shown ground's altitude under it (ground.js; the sphere's radial direction under the camera)
-function liftCamera(){const R=BEND.R,P=camera.position,vx=P.x,vy=P.y+R,vz=P.z,r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),want=R+ground.alt(lam/(Math.PI/180),phi/(Math.PI/180))+.5;if(r<want){const k=want/r;camera.position.set(vx*k,vy*k-R,vz*k);}}
+// keep the camera 0.5 m above the shown ground's altitude under it (ground.js; the sphere's radial direction under the camera). W9b: not inside a tunnel's bore (a free view
+// handed over by a ride in the tunnel): there the ground under the camera is the tunnel's floor, not the hill over it (P drawn at the bend u, near: a flat point close by)
+function inBore(P,u,near){const w=rideView.inverse(P,u,near);if(!w)return false;const q=ground.at(w[0],w[2],{y:w[1]});if(!q||q.layer!=='tunnel')return false;const T=RIDE.CFG.tunnel,o=Math.abs(q.offset||0),h=(w[1]-q.y)/q.s;return o<T.r&&h>-.05&&h<T.wall+Math.sqrt(Math.max(0,T.r*T.r-o*o));}
+function liftPoint(P,u,near){const R=BEND.R,vx=P[0],vy=P[1]+R,vz=P[2],r=Math.hypot(vx,vy,vz),lam=Math.atan2(vx,vy),phi=Math.asin(Math.max(-1,Math.min(1,-vz/r))),want=R+ground.alt(lam/(Math.PI/180),phi/(Math.PI/180))+.5;
+  if(r>=want||inBore(P,u,near))return null;const k=want/r;return[vx*k,vy*k-R,vz*k];}
+function liftCamera(near){const L=liftPoint(camera.position.toArray(),BEND.get(),near||lookTarget(0));if(L)camera.position.set(L[0],L[1],L[2]);}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});let prev=0;function frame(ms){requestAnimationFrame(frame);const t=ms*.001,elapsed=Math.min(.12,t-prev),dt=Math.min(.04,elapsed);prev=t;
+// W9b 4.2: the bend advances once per frame for both views, before the camera and the weather read it
+transitionStep(elapsed);
 if(roam){ride.step(elapsed,rideInput());riderStep(elapsed);rideCamera(elapsed);
-}else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}transitionStep(elapsed);const u=BEND.get(),fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lookTarget(u),dist,yaw,pitch):TRANSITION.frame(BEND,lookTarget(u),dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
+}else{const [kx,kz]=movement();if((kx||kz)&&TR.mode==='sphere'){sphereCamera.move(kx,kz,Math.max(3,Math.min(40,dist*.6))*elapsed,yaw);syncSphereTarget();}else if(kx||kz){const sp=dist*.6*elapsed;shiftTarget((Math.cos(yaw)*kx-Math.sin(yaw)*kz)*sp,(-Math.sin(yaw)*kx-Math.cos(yaw)*kz)*sp);}const u=BEND.get(),lt=lookTarget(u);voidsFor();const fr=TR.mode==='sphere'&&u===1?sphereCamera.frame(lt,dist,yaw,pitch):TRANSITION.frame(BEND,lt,dist,yaw,pitch,u),far=TRANSITION.farOf(TR.mode);if(camera.far!==far){camera.far=far;camera.updateProjectionMatrix();}
   if(u>0&&!fr.screenUp){const centering=TRANSITION.smoothstep(80,300,dist)*u;fr.lookAt=[fr.lookAt[0]*(1-centering),fr.lookAt[1]*(1-centering)-BEND.R*centering,fr.lookAt[2]*(1-centering)];}
-  camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera();if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
+  camera.position.set(fr.position[0],fr.position[1],fr.position[2]);if(u>0){camera.up.set(fr.up[0],fr.up[1],fr.up[2]);liftCamera(lt);if(fr.screenUp&&pitch>Math.PI/2-1e-7)camera.up.fromArray(fr.screenUp);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}else{if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(fr.lookAt[0],fr.lookAt[1],fr.lookAt[2]);}}
+blendStep(elapsed);
 {const wv=weatherView();nightStep(wv);weatherFx.tick(t,dt,wv);if(window.ROADS_API)window.ROADS_API.setPuddleWeight(weatherFx.get()?.puddleWeight??1);}
 rainBounds();const rs=weatherFx.stamp();if(rs!==rainStamp){const jump=weatherFx.lockVersion()!==rainLv||Math.abs(weatherFx.bucket()-rainBucket)>1;rainLv=weatherFx.lockVersion();rainBucket=weatherFx.bucket();rainRefresh=jump?rainCount:0;rainPass=jump?0:8;}rainStamp=rs;
 /* the drops' rain weights follow the field: at once when the lock changes or the weather time jumps (so a locked clear is clear at the next frame), else over 8 frames */
@@ -429,8 +526,8 @@ const ocean=OCEAN.attach(scene,{lights:{hemi,moon},ramp,renderer},BEND,terrain,l
 const quality=QUALITY.create();const cover=LANDCOVER.attach(scene,{lights:{hemi,moon},ramp,renderer,quality},BEND,terrain,look);
 // W10c: every ordinary road lamp from one table (streetlights.js), planned once the land cover exists so that a lamp steps aside and the fields never do
 const streetlights=STREETLIGHTS.attach(scene,{ramp,renderer},BEND,terrain,look);
-// W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target
-const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
+// W8e-c: the clear daytime of the sphere, applied at render time only (daylight.js); the sun's frame follows the view target (W9b: riding, the rider)
+const daylight=DAYLIGHT.attach({THREE,scene,hemi,moon,BEND,target:()=>roam?[roam.position.x,roam.position.y,roam.position.z]:[target.x,target.y,target.z],glint:()=>window.OCEAN_API&&window.OCEAN_API.state.built?window.OCEAN_API.uniforms:null});
 // W10a (W10_SPEC 2.4): the whole world is built before the first frame (worldgen.js), behind the loading screen of build.py; the canvas stays hidden
 // until the first frame, which is the complete world. No module is built on demand and none is shown or hidden by view.
 renderer.domElement.style.visibility='hidden';
@@ -451,7 +548,7 @@ terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.s
 // W10f (W10_SPEC 2.5, 2.8): the one ground sampler of the camera and the walk; then one geometry for the flat map and the sphere: every mesh and line set with a part in
 // the town and a horizontal edge over 4 m is cut to <= 4 m now, while the world is built (bend.js subdivide; the chord of a 4 m edge sags 2.2 cm on the sphere). The far
 // lights of the night panorama are made first (night step, else at the first frame) so that they are cut too.
-ground=GROUND.attach({W:WORLD,L,terrain:terrain.sampler(),roads:roads.data(),ROADS,BRIDGE,SEAM:BEND.SEAM});
+ground=GROUND.attach({W:WORLD,L,terrain:terrain.sampler(),roads:roads.data(),ROADS,BRIDGE,SEAM:BEND.SEAM});rideView=RIDE_VIEW.create(BEND);
 nightStep(weatherView());
 const townGeometry=BEND.subdivide([scene],{maxEdge:4,region:[-BH,-BH,BH,BH]});
 // R2 (THIRD_PERSON_ROAM_PLAN 3, docs/world/R2_RIDER_CARD.md): the rider, the ported pelican on the ported bicycle (rider.js), built once before the first frame inside the
@@ -470,7 +567,12 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
 const surfaceOf=q=>({y:q.y,s:q.s,kind:q.kind,layer:q.layer,line:q.line,route:q.route,edge:q.edge,station:q.station,offset:q.offset,slope:q.slope});
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});riderStep(dt);rideCamera(dt);return ride.get();},rider:()=>rider?rider.get():null,riderApi:()=>rider,camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:[ride.state.x,ride.state.root,ride.state.z],heading:ride.state.heading,lookYaw:ride.state.lookYaw,lookPitch:ride.state.lookPitch,dist:ride.state.dist,speed:ride.state.speed,mode:ride.state.mode,surface:ride.state.sample?surfaceOf(ride.state.sample):null,contact:ride.state.contact,spawn:ride.state.spawn}:null}),set(v){if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);}if(v.mapMode)setMapMode(v.mapMode);if(v.mode){setRoaming(v.mode==='roam');}if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());if(v.position&&roam){if(ride.place(v.position[0],v.position[1],v.heading??ride.state.heading)){roam.position.set(ride.state.x,ride.state.root,ride.state.z);rideBlend=null;}}else if(v.heading!=null&&roam)ride.state.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable:enterAvailable,enterAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);camBlend=null;resetDisp();}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});riderStep(dt);rideCamera(dt);return ride.get();},rider:()=>rider?rider.get():null,riderApi:()=>rider,camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids,
+  // W9b: the display adapter, the ride camera as drawn at a bend u (pure: the state is not stepped), a fixed input for the frame loop, the display pass, the wheel sag, the exit's pick, the hand-off
+  view:()=>rideView,display:u=>ride?rideView.pose(ride.camera(),u??BEND.get()):null,hold(v){inputHold=v||null;},disp:()=>({...rideDisp}),sag:()=>riderStep.sag||null,surfaces:()=>rideSurf?rideSurf.stats:null,exitInfo:()=>freeExit.last||null,blend:()=>camBlend?{t:camBlend.t}:null},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:[ride.state.x,ride.state.root,ride.state.z],heading:ride.state.heading,lookYaw:ride.state.lookYaw,lookPitch:ride.state.lookPitch,dist:ride.state.dist,speed:ride.state.speed,mode:ride.state.mode,surface:ride.state.sample?surfaceOf(ride.state.sample):null,contact:ride.state.contact,spawn:ride.state.spawn}:null}),set(v){/* W9b: leaving comes first (it puts the free view at the rider), so a target, yaw, pitch or dist given with it are the view kept; a free view given explicitly is taken at once (no hand-off); entering comes last, after the target and the map */
+    if(v.mode==='free'&&roam)setRoaming(false);
+    if(v.target){target.fromArray(v.target);target.x=BEND.wrapX(target.x);freeLevel=null;}if(v.mapMode)setMapMode(v.mapMode);if(v.yaw!=null)yaw=v.yaw;if(v.pitch!=null)pitch=v.pitch;if(v.dist!=null)dist=zoomTo(v.dist);if(v.target&&TR.mode==='sphere')sphereCamera.reset(target.toArray());
+    if(!roam&&(v.target||v.yaw!=null||v.pitch!=null||v.dist!=null))camBlend=null;if(v.mode==='roam')setRoaming(true);if(v.position&&roam){if(ride.place(v.position[0],v.position[1],v.heading??ride.state.heading)){roam.position.set(ride.state.x,ride.state.root,ride.state.z);camBlend=null;resetDisp();}}else if(v.heading!=null&&roam)ride.state.heading=v.heading;},isWalkable(p){return !!ground.at(p[0],p[1]);},pan}};
 requestAnimationFrame(frame);
 }).catch(error=>{console.error(error);loading.querySelector('p').textContent='世界加载失败，请刷新重试';});
 })();

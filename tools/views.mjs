@@ -75,7 +75,7 @@ results.push([`自由视角 W 向前、D/A 向屏幕右/左平移（${kw.fwd.toF
 await page.evaluate(() => window.__scene.view.set({ yaw: 2.5, pitch: .5, dist: 34, target: [-7, 1.2, 20] }));
 
 // R1 (THIRD_PERSON_ROAM_PLAN 6.11): the ride. Kept: V enters, W moves, on the walkable surface, the follow camera above the ground, the look drag (over 90 deg, no snap
-// back, the heading unchanged), the grab direction, V leaves and restores the free view, the three touch items. Retired with the walk: the layout.js rectangles, the town's
+// back, the heading unchanged), the grab direction, V leaves (W9b: at the rider's place), the three touch items. Retired with the walk: the layout.js rectangles, the town's
 // west road limit and the A/D strafe (the walkable surface, the collision probes and the steering sign of tools/ride_check.mjs replace them).
 const freeBefore = await view();
 await page.keyboard.press('v');
@@ -110,9 +110,12 @@ await page.keyboard.press('c'); await page.waitForTimeout(500);
 await page.mouse.move(640, 400); await page.mouse.down(); await page.mouse.move(700, 400, { steps: 4 }); await page.mouse.up();
 const grab = (await view()).roam;
 results.push(['骑行向右拖动与自由视角同向（抓取式：画面右移，视线左转）', grab.lookYaw > 0]);
+const rideLast = (await view()).roam;
 await page.keyboard.press('v');
 const freeAfter = await view();
-results.push(['V 键退出并恢复原自由视角', freeAfter.mode === 'free' && freeAfter.yaw === freeBefore.yaw && freeAfter.pitch === freeBefore.pitch && freeAfter.dist === freeBefore.dist && freeAfter.target.every((v, i) => v === freeBefore.target[i])]);
+// W9b (SPHERE_RIDING_PLAN 3): leaving puts the free view at the rider's place (R1 restored the view from before the ride)
+void freeBefore;
+results.push(['V 键退出：自由视角目标在骑手当前位置（W9b）', freeAfter.mode === 'free' && freeAfter.mapMode === 'flat' && Math.abs(freeAfter.target[0] - rideLast.position[0]) < 1e-6 && Math.abs(freeAfter.target[2] - rideLast.position[2]) < 1e-6 && freeAfter.dist >= 9]);
 
 // Animation: rain falls, ripples grow, the X01 signals change phase (30 s cycle; sample over ~20 s).
 const anim = () => page.evaluate(() => {

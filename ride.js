@@ -17,6 +17,8 @@
 //             occluders (ride_world.js I5 boxes, the terrain, the tunnel lining): pulled in at once to the hit - 0.25 m (not under 1.2 m) and raised up to 0.6 m (not in a
 //             tunnel), let out again at lambda 2; then kept within 0.5 m of the rideable surface on the rider's level (0 on a deck, the boardwalk and in the tunnel), 0.12 m over the ground
 //             below it (0.3 m over a deck), 0.3 m from a tunnel's wall and roof
+//   display   W9b: everything here stays in the flat display frame on both maps; ride_view.js maps the camera to the drawn map and scene.js tests the drawn sight line
+//             with this sweep's own point test and limits (firstBlocked, reach, floorAt, tunnelOk)
 (function (global) {
 'use strict';
 const CFG = {
@@ -167,14 +169,18 @@ function create(ctx) {
   function tunnelOk(x, y, z, margin) { const q = G.at(x, z, { y: st.y }); if (!q || q.layer !== 'tunnel') return true; const s = q.s, o = Math.abs(q.offset || 0), h = (y - q.y) / s, R = CFG.tunnel.r - margin; return o <= R && h <= CFG.tunnel.wall + Math.sqrt(Math.max(0, R * R - o * o)); }
   // distance from a point to a convex polygon (0 inside)
   function boxDist(P, x, z) { let inside = true, d = Infinity; for (let i = 0, n = P.length; i < n; i++) { const A = P[i], B = P[(i + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], l2 = ex * ex + ez * ez || 1e-12, t = Math.max(0, Math.min(1, ((x - A[0]) * ex + (z - A[1]) * ez) / l2)); d = Math.min(d, Math.hypot(x - A[0] - ex * t, z - A[1] - ez * t)); if ((x - A[0]) * ez - (z - A[1]) * ex > 0) inside = false; } return inside ? 0 : d; }
+  // one point of a sweep: what a sphere of radius r at (x, y, z) meets -- the ground on the rider's level or the terrain, (in the tunnel) the lining, an occluder box; '' if none
+  function blockedAt(x, y, z, r, boxes, tun) {
+    const gq = groundUnder(x, z); if (y < (gq ? gq.y : G.y(x, z)) + r) return gq ? 'ground ' + gq.kind : 'terrain';
+    if (tun && !tunnelOk(x, y, z, CFG.tunnelClear * st.s)) return 'tunnel';
+    for (const o of boxes) { if (y < o.y0 - r || y > o.y1 + r || x < o.bb[0] - r || x > o.bb[2] + r || z < o.bb[1] - r || z > o.bb[3] + r) continue; if (boxDist(o.pts, x, z) < r) return 'box ' + o.src; }
+    return '';
+  }
   // the first fraction along f -> p where a sphere of radius r meets an occluder box, the terrain or (in the tunnel) the lining; 1 if none
   function sweep(f, p, r) {
     const s = st.s, dx = p[0] - f[0], dy = p[1] - f[1], dz = p[2] - f[2], len = Math.hypot(dx, dy, dz); if (len < 1e-6) return 1;
     const boxes = Wd.occluders(Math.min(f[0], p[0]) - r, Math.min(f[2], p[2]) - r, Math.max(f[0], p[0]) + r, Math.max(f[2], p[2]) + r), n = Math.max(2, Math.ceil(len / (0.25 * s))), tun = inTunnel();     // samples 0.25 m apart: within the 0.2 m sphere, no wall falls between two
-    for (let i = 1; i <= n; i++) { const t = i / n, x = f[0] + dx * t, y = f[1] + dy * t, z = f[2] + dz * t, back = (i - 1) / n;
-      const gq = groundUnder(x, z); if (y < (gq ? gq.y : G.y(x, z)) + r) { sweep.why = gq ? 'ground ' + gq.kind : 'terrain'; return back; }
-      if (tun && !tunnelOk(x, y, z, CFG.tunnelClear * s)) { sweep.why = 'tunnel'; return back; }
-      for (const o of boxes) { if (y < o.y0 - r || y > o.y1 + r || x < o.bb[0] - r || x > o.bb[2] + r || z < o.bb[1] - r || z > o.bb[3] + r) continue; if (boxDist(o.pts, x, z) < r) { sweep.why = 'box ' + o.src; return back; } } }
+    for (let i = 1; i <= n; i++) { const t = i / n, why = blockedAt(f[0] + dx * t, f[1] + dy * t, f[2] + dz * t, r, boxes, tun); if (why) { sweep.why = why; return (i - 1) / n; } }
     return 1;
   }
   // the horizontal limit: within `allowed` of the rideable surface (the point that much nearer the focus stands on it)
@@ -245,6 +251,19 @@ function create(ctx) {
     zoom(f) { st.dist = clamp(st.dist * f, CFG.dist[0], CFG.dist[1]); },
     recentre() { let y = st.lookYaw % (2 * Math.PI); if (y > Math.PI) y -= 2 * Math.PI; if (y < -Math.PI) y += 2 * Math.PI; st.lookYaw = y; st.recentre = { t: 0, yaw: y, pitch: st.lookPitch }; },
     // the chase camera (R2, 6.7): its pose this frame (flat frame); state in st.cam, advanced by cameraStep in step()
+    // W9b (SPHERE_RIDING_PLAN 4.3): the tests of the display pass (scene.js) on flat points taken back from the drawn sight line: the first of pts (flat points, null
+    // skipped) that a sphere of radius r meets (sweep's test), the floor under a point on the rider's level (or the terrain), the tunnel lining
+    firstBlocked(pts, r) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity; for (const p of pts) if (p) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]); }
+      if (x0 === Infinity) return { i: -1, why: '' };
+      const boxes = Wd.occluders(x0 - r, z0 - r, x1 + r, z1 + r), tun = inTunnel();
+      for (let i = 0; i < pts.length; i++) { const p = pts[i]; if (!p) continue; const why = blockedAt(p[0], p[1], p[2], r, boxes, tun); if (why) return { i, why }; }
+      return { i: -1, why: '' };
+    },
+    // the horizontal limit of the camera (6.7 rule 2) at a flat point, for the camera as it stands this frame
+    reach(x, z) { const q0 = st.sample || {}, allowed = q0.layer === 'deck' || q0.layer === 'tunnel' || q0.kind === 'boardwalk' ? 0 : CFG.outside * st.s, f = st.cam && st.cam.focus ? st.cam.focus : [st.x, st.y, st.z]; return horizOk(f, x, z, allowed); },
+    floorAt(x, z) { const q = groundUnder(x, z); return q ? { y: q.y, deck: q.layer === 'deck', kind: q.kind } : { y: G.y(x, z), deck: false, kind: 'terrain' }; },
+    tunnelOk: (x, y, z, margin) => tunnelOk(x, y, z, margin), inTunnel,
     camera() { if (!st.cam) cameraStep(0); const c = st.cam; return { position: c.pos.slice(), look: c.look.slice(), focus: c.focus.slice(), fov: CFG.fov, near: CFG.near, pulled: c.pulled, dist: c.d, raise: c.raise, blocked: c.blocked, clamped: c.clamped, why: c.why }; },
     get() {
       const q = st.sample || {};
