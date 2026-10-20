@@ -400,6 +400,13 @@ try {
             landmarks: Object.keys(S.landmarks.info).filter(k => k.startsWith('LM')).length, probe: S.quality.state.probe.length }; }
         return render(...args); }; } });
   });
+  // TERRAIN_HOLE_REPAIR_PLAN 4.2: a geometry is valid before any ray or overlap test reads it (an index past the position count read as NaN and its triangle was
+  // skipped unseen: 39 terrain meshes up to 2026-10-20); U2, U3-town and U5 fail on an invalid mesh instead of passing over it
+  await page.addInitScript(() => { window.__geomIssues = g => { const out = [], pos = g && g.attributes && g.attributes.position; if (!pos) return ['no position'];
+    for (const [k, a] of Object.entries(g.attributes)) { if (!k) out.push('empty attribute key'); else if (a.count !== pos.count && !a.isInstancedBufferAttribute) out.push(`${k} count ${a.count} != ${pos.count}`); }
+    let bad = 0; for (let i = 0; i < pos.count; i++) if (!Number.isFinite(pos.getX(i)) || !Number.isFinite(pos.getY(i)) || !Number.isFinite(pos.getZ(i))) bad++; if (bad) out.push(`${bad} non-finite positions`);
+    if (g.index) { let wrong = 0; for (let i = 0; i < g.index.count; i++) { const v = g.index.getX(i); if (!(Number.isInteger(v) && v >= 0 && v < pos.count)) wrong++; } if (wrong) out.push(`${wrong} indices outside [0, ${pos.count})`); }
+    return out; }; });
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href + '?quality=auto');
   await page.waitForFunction(() => window.__firstWorld, null, { timeout: 120000 });
   const first = await page.evaluate(() => window.__firstWorld);
@@ -458,12 +465,13 @@ try {
     for (const q of probes) { q.p = wrap(q.p); interest.add(key(q.p[0], q.p[2])); }
     const cells = new Map(), sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     const rayHit = (o, d, A, C, E) => { const e1 = sub(C, A), e2 = sub(E, A), p = cross(d, e2), det = dot(e1, p); if (Math.abs(det) < 1e-13) return null; const inv = 1 / det, s = sub(o, A), u = dot(s, p) * inv; if (u < -1e-7 || u > 1 + 1e-7) return null; const q = cross(s, e1), v = dot(d, q) * inv; if (v < -1e-7 || u + v > 1 + 1e-7) return null; const t = dot(e2, q) * inv; return t > 0 ? t : null; };
-    const idMatrix = new T.Matrix4(), worldVertex = new T.Vector3(); let triangles = 0;
+    const idMatrix = new T.Matrix4(), worldVertex = new T.Vector3(), invalid = []; let triangles = 0;
     S.scene.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || !o.geometry?.attributes?.position || !visible(o)) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material]; if (mats.some(m => !m || (m.transparent && m.opacity <= 0) || m.blending === T.AdditiveBlending)) return;
       o.updateMatrixWorld(true); const transformed = !o.matrixWorld.equals(idMatrix);
       const g = o.geometry, pos = g.attributes.position, ix = g.index, count = ix ? ix.count : pos.count, road = roadSet.has(o), surface = surfaceSet.has(o), name = o.name || o.parent?.name || o.type;
+      const why = window.__geomIssues(g); if (why.length) { invalid.push(`${name}: ${why.join(', ')}`); return; }
       for (let t = 0; t + 2 < count; t += 3) {
         const v = [0, 1, 2].map(k => { const n = ix ? ix.getX(t + k) : t + k; if (transformed) { worldVertex.set(pos.getX(n), pos.getY(n), pos.getZ(n)).applyMatrix4(o.matrixWorld); return [B.wrapX(worldVertex.x), worldVertex.y, worldVertex.z]; } return [B.wrapX(pos.getX(n)), pos.getY(n), pos.getZ(n)]; }), x0 = Math.floor(Math.min(v[0][0], v[1][0], v[2][0])), x1 = Math.floor(Math.max(v[0][0], v[1][0], v[2][0])), z0 = Math.floor(Math.min(v[0][2], v[1][2], v[2][2])), z1 = Math.floor(Math.max(v[0][2], v[1][2], v[2][2]));
         if ((x1 - x0 + 1) * (z1 - z0 + 1) > 2500) continue;
@@ -471,7 +479,7 @@ try {
         for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = `${x},${z}`; if (!interest.has(k)) continue; let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(tri); triangles++; }
       }
     });
-    const tally = { rays: 0, occluded: 0, missed: 0, examples: [], exits: exitCounts, triangles, junctionProbes: Object.fromEntries(crJunctions.map(j => [j.node, 0])) };
+    const tally = { rays: 0, occluded: 0, missed: 0, examples: [], exits: exitCounts, triangles, invalid, junctionProbes: Object.fromEntries(crJunctions.map(j => [j.node, 0])) };
     for (const state of ['flat', 'sphere']) {
       const u = state === 'sphere' ? 1 : 0, count = { rays: 0, occluded: 0, missed: 0, raised: 0, raisedBy: {}, examples: [], blockers: {}, misses: [], junctionProbes: Object.fromEntries(crJunctions.map(j => [j.node, 0])) };
       const bend = p => { const q = wrap(p); return u ? B.point(q[0], q[1], q[2], 1) : q; };
@@ -516,8 +524,8 @@ try {
     return tally;
   });
   const junctionProbeOK = Object.keys(u2.junctionProbes).length === 10 && Object.values(u2.junctionProbes).every(n => n > 0) && ['flat', 'sphere'].every(s => Object.keys(u2[s].junctionProbes).length === 10 && Object.values(u2[s].junctionProbes).every(n => n > 0));
-  const u2ok = ['flat', 'sphere'].every(s => u2[s].rays > 0 && u2[s].occluded === 0 && u2[s].missed === 0 && u2[s].raised === 0) && Object.keys(u2.exits).length === 9 && Object.values(u2.exits).every(n => n > 0) && junctionProbeOK;
-  check('U2', u2ok, `实际路网可见三角面竖直射线，铺装每 0.5 m 一行、每行 9 点，CR01 十个路口的连续沥青带和接入口另加 0.5 m 网格；平面 ${u2.flat.rays} 点（遮挡 ${u2.flat.occluded}、无命中 ${u2.flat.missed}、其他道路抬高 ${u2.flat.raised}），球形 ${u2.sphere.rays} 点（遮挡 ${u2.sphere.occluded}、无命中 ${u2.sphere.missed}、其他道路抬高 ${u2.sphere.raised}）；路口采样 ${Object.entries(u2.junctionProbes).map(([k, n]) => `${k} ${n}`).join('、')}；九出口 0–6 m 探针 ${Object.entries(u2.exits).map(([k, n]) => `${k} ${n}`).join('、')}；参与相交三角形 ${u2.triangles}${!u2ok ? `；遮挡物 ${JSON.stringify({ flat: u2.flat.blockers, sphere: u2.sphere.blockers })}；抬高分布 ${JSON.stringify(u2.flat.raisedBy)}；无命中例 ${JSON.stringify({ flat: u2.flat.misses, sphere: u2.sphere.misses })}；例：${[...u2.flat.examples, ...u2.sphere.examples].slice(0, 8).join('；')}` : ''}`);
+  const u2ok = !u2.invalid.length && ['flat', 'sphere'].every(s => u2[s].rays > 0 && u2[s].occluded === 0 && u2[s].missed === 0 && u2[s].raised === 0) && Object.keys(u2.exits).length === 9 && Object.values(u2.exits).every(n => n > 0) && junctionProbeOK;
+  check('U2', u2ok, `实际路网可见三角面竖直射线，铺装每 0.5 m 一行、每行 9 点，CR01 十个路口的连续沥青带和接入口另加 0.5 m 网格；平面 ${u2.flat.rays} 点（遮挡 ${u2.flat.occluded}、无命中 ${u2.flat.missed}、其他道路抬高 ${u2.flat.raised}），球形 ${u2.sphere.rays} 点（遮挡 ${u2.sphere.occluded}、无命中 ${u2.sphere.missed}、其他道路抬高 ${u2.sphere.raised}）；路口采样 ${Object.entries(u2.junctionProbes).map(([k, n]) => `${k} ${n}`).join('、')}；九出口 0–6 m 探针 ${Object.entries(u2.exits).map(([k, n]) => `${k} ${n}`).join('、')}；参与相交三角形 ${u2.triangles}、非法网格 ${u2.invalid.length}${u2.invalid.length ? `（${u2.invalid.slice(0, 4).join('；')}）` : ''}${!u2ok ? `；遮挡物 ${JSON.stringify({ flat: u2.flat.blockers, sphere: u2.sphere.blockers })}；抬高分布 ${JSON.stringify(u2.flat.raisedBy)}；无命中例 ${JSON.stringify({ flat: u2.flat.misses, sphere: u2.sphere.misses })}；例：${[...u2.flat.examples, ...u2.sphere.examples].slice(0, 8).join('；')}` : ''}`);
   // 30 s after the first frame, the camera cycling through the three states once a second
   const STATES = [{ mapMode: 'flat', target: [-7, 1.2, 20], dist: 34 }, { mapMode: 'flat', target: [-90, 1.2, 60], dist: 30 }, { mapMode: 'sphere', dist: 140 }];
   const rows = [], start = Date.now();
@@ -537,7 +545,7 @@ try {
   const town = await page.evaluate(() => {
     const S = window.__scene, T = window.THREE, L = window.LAYOUT, world = new Set();
     for (const r of [S.look.state.root, S.cover.state.root, S.ocean.state.root, ...S.terrain.ring, ...S.terrain.rest, ...Object.values(S.landmarks.info).flatMap(q => (q && q.groups) || [])]) r.traverse(o => world.add(o));
-    const patch = new T.Box3(new T.Vector3(-50, -5, -50), new T.Vector3(50, 5, 50)), box = new T.Box3(), CELL = 1, cells = new Map(), broad = [], cellKey = (x, z) => `${x},${z}`;
+    const patch = new T.Box3(new T.Vector3(-50, -5, -50), new T.Vector3(50, 5, 50)), box = new T.Box3(), CELL = 1, cells = new Map(), broad = [], cellKey = (x, z) => `${x},${z}`, invalid = [];
     const visible = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; }, addTriangle = tri => {
       const x0 = Math.max(-50, Math.floor(Math.min(...tri.v.map(p => p[0])))), x1 = Math.min(50, Math.floor(Math.max(...tri.v.map(p => p[0])))), z0 = Math.max(-50, Math.floor(Math.min(...tri.v.map(p => p[2])))), z1 = Math.min(50, Math.floor(Math.max(...tri.v.map(p => p[2]))));
       if (x0 > x1 || z0 > z1) return; const count = (x1 - x0 + 1) * (z1 - z0 + 1); if (count > 2500) { broad.push(tri); return; }
@@ -547,6 +555,7 @@ try {
     S.scene.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || !visible(o) || !o.geometry?.attributes?.position) return;
       const g = o.geometry, pos = g.attributes.position; if (!g.boundingBox) g.computeBoundingBox(); if (!box.copy(g.boundingBox).applyMatrix4(o.matrixWorld).intersectsBox(patch)) return;
+      const why = window.__geomIssues(g); if (why.length) { invalid.push(`${o.name || o.parent?.name || o.type}: ${why.join(', ')}`); return; }
       const ix = g.index, total = ix ? ix.count : pos.count, start = Math.max(0, g.drawRange.start || 0), end = Math.min(total, start + (Number.isFinite(g.drawRange.count) ? g.drawRange.count : total)), e = o.matrixWorld.elements;
       for (let t = start - start % 3; t + 2 < end; t += 3) {
         const material = Array.isArray(o.material) ? (g.groups.find(q => t >= q.start && t + 2 < q.start + q.count) ? o.material[g.groups.find(q => t >= q.start && t + 2 < q.start + q.count).materialIndex] : null) : o.material;
@@ -571,23 +580,27 @@ try {
       hits.sort((a, b) => b.y - a.y); if (!hits.length) continue;
       const top = hits[0], wrong = world.has(top.object) ? [top] : hits.slice(1).filter(h => world.has(h.object) && top.y - h.y < 0.05 && (Array.isArray(h.object.material) ? h.object.material : [h.object.material]).some(m => m.polygonOffset));
       if (wrong.length) { nBad++; for (const h of wrong) { const k = name(h.object); (bad[k] = bad[k] || { n: 0, at: [] }).n++; if (bad[k].at.length < 3) bad[k].at.push(`(${x.toFixed(1)}, ${z.toFixed(1)})`); } } }
-    return { n, nBad, bad };
+    return { n, nBad, bad, invalid };
   });
-  check('U3-town', town.nBad === 0, `城镇车行道与巷道 ${town.n} 点，被世界图层盖住或下方 5 cm 内埋着带偏移的世界地面层 ${town.nBad} 点${town.nBad ? '：' + Object.entries(town.bad).map(([k, v]) => `${k} ${v.n}（${v.at.join('、')}）`).join('；') : ''}`);
+  check('U3-town', town.nBad === 0 && !town.invalid.length, `城镇车行道与巷道 ${town.n} 点，被世界图层盖住或下方 5 cm 内埋着带偏移的世界地面层 ${town.nBad} 点；非法网格 ${town.invalid.length}${town.invalid.length ? `（${town.invalid.slice(0, 4).join('；')}）` : ''}${town.nBad ? '：' + Object.entries(town.bad).map(([k, v]) => `${k} ${v.n}（${v.at.join('、')}）`).join('；') : ''}`);
   const u5 = await page.evaluate(() => {
     const S = window.__scene, T = window.THREE, CELL = 2, key = (x, z) => `${x},${z}`, cells = new Map(), occupancy = [], terrain = S.terrain.ring.concat(S.terrain.rest), visible = o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
     S.scene.updateMatrixWorld(true);
     const add = tri => { const b = [Math.min(...tri.map(p => p[0])), Math.max(...tri.map(p => p[0])), Math.min(...tri.map(p => p[1])), Math.max(...tri.map(p => p[1]))], id = occupancy.length; occupancy.push({ tri, b });
       for (let x = Math.floor(b[0] / CELL); x <= Math.floor(b[1] / CELL); x++) for (let z = Math.floor(b[2] / CELL); z <= Math.floor(b[3] / CELL); z++) { const k = key(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id); } };
+    const invalid = []; for (const m of terrain) { const why = window.__geomIssues(m.geometry); if (why.length) invalid.push(`terrain ${m.userData.terrain?.kind} ${m.userData.terrain?.cx},${m.userData.terrain?.cy}: ${why.join(', ')}`); }
     S.scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || !visible(o) || !o.userData.groundOccupancy || !o.geometry?.attributes?.position) return; const g = o.geometry, p = g.attributes.position, ix = g.index, e = o.matrixWorld.elements, n = ix ? ix.count : p.count;
+      { const why = window.__geomIssues(g); if (why.length) { invalid.push(`${o.name || o.parent?.name}: ${why.join(', ')}`); return; } }
       for (let t = 0; t + 2 < n; t += 3) { const v = [0,1,2].map(k => { const i = ix ? ix.getX(t+k) : t+k, x=p.getX(i), y=p.getY(i), z=p.getZ(i); return [e[0]*x+e[4]*y+e[8]*z+e[12],e[1]*x+e[5]*y+e[9]*z+e[13],e[2]*x+e[6]*y+e[10]*z+e[14]]; });
         const ny=(v[1][2]-v[0][2])*(v[2][0]-v[0][0])-(v[1][0]-v[0][0])*(v[2][2]-v[0][2]); if (ny>1e-10) add(v.map(q=>[q[0],q[2]])); }
     });
     const area = p => Math.abs(p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2), clip = (subject, edgeA, edgeB, sign) => { const out=[], val=p=>((edgeB[0]-edgeA[0])*(p[1]-edgeA[1])-(edgeB[1]-edgeA[1])*(p[0]-edgeA[0]))*sign; let a=subject.at(-1), da=val(a); for (const b of subject) { const db=val(b); if ((da<0)!==(db<0)) { const t=da/(da-db); out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]); } if (db>=-1e-10) out.push(b); a=b; da=db; } return out; };
-    let terrainTriangles=0, tested=0, overlapPairs=0, overlapArea=0;
-    for (const m of terrain) { const g=m.geometry,p=g.attributes.position,ix=g.index,n=ix?ix.count:p.count; for (let t=0;t+2<n;t+=3) { const tri=[0,1,2].map(k=>{const i=ix?ix.getX(t+k):t+k;return[p.getX(i),p.getZ(i)];}), box=[Math.min(...tri.map(q=>q[0])),Math.max(...tri.map(q=>q[0])),Math.min(...tri.map(q=>q[1])),Math.max(...tri.map(q=>q[1]))], ids=new Set(); terrainTriangles++;
+    // a positive overlap thinner than 0.1 mm is Float32 rounding of the cut's new vertices along a shared edge (|x| ~ 200 m: ~1.5e-5 m), not ground under the occupancy;
+    // counted apart (TERRAIN_HOLE_REPAIR_PLAN: before 2026-10-21 these terrain triangles were invalid and dropped out of this test unseen)
+    let terrainTriangles=0, tested=0, overlapPairs=0, overlapArea=0, floatSlivers=0, sliverWidth=0;
+    for (const m of terrain) { const g=m.geometry,p=g.attributes.position,ix=g.index,n=ix?ix.count:p.count; if (window.__geomIssues(g).length) continue; for (let t=0;t+2<n;t+=3) { const tri=[0,1,2].map(k=>{const i=ix?ix.getX(t+k):t+k;return[p.getX(i),p.getZ(i)];}), box=[Math.min(...tri.map(q=>q[0])),Math.max(...tri.map(q=>q[0])),Math.min(...tri.map(q=>q[1])),Math.max(...tri.map(q=>q[1]))], ids=new Set(); terrainTriangles++;
         for(let x=Math.floor(box[0]/CELL);x<=Math.floor(box[1]/CELL);x++)for(let z=Math.floor(box[2]/CELL);z<=Math.floor(box[3]/CELL);z++)for(const id of cells.get(key(x,z))||[])ids.add(id);
-        for(const id of ids){const o=occupancy[id],b=o.b;if(b[1]<=box[0]+1e-7||b[0]>=box[1]-1e-7||b[3]<=box[2]+1e-7||b[2]>=box[3]-1e-7)continue;tested++;let q=tri, sign=((o.tri[1][0]-o.tri[0][0])*(o.tri[2][1]-o.tri[0][1])-(o.tri[1][1]-o.tri[0][1])*(o.tri[2][0]-o.tri[0][0]))>=0?1:-1;for(let e=0;e<3&&q.length>=3;e++)q=clip(q,o.tri[e],o.tri[(e+1)%3],sign);const a=q.length>=3?area(q):0;if(a>1e-6){overlapPairs++;overlapArea+=a;} }
+        for(const id of ids){const o=occupancy[id],b=o.b;if(b[1]<=box[0]+1e-7||b[0]>=box[1]-1e-7||b[3]<=box[2]+1e-7||b[2]>=box[3]-1e-7)continue;tested++;let q=tri, sign=((o.tri[1][0]-o.tri[0][0])*(o.tri[2][1]-o.tri[0][1])-(o.tri[1][1]-o.tri[0][1])*(o.tri[2][0]-o.tri[0][0]))>=0?1:-1;for(let e=0;e<3&&q.length>=3;e++)q=clip(q,o.tri[e],o.tri[(e+1)%3],sign);const a=q.length>=3?area(q):0;if(a>1e-6){let le=0;for(let i=0;i<q.length;i++){const u=q[i],w=q[(i+1)%q.length];le=Math.max(le,Math.hypot(u[0]-w[0],u[1]-w[1]));}const wd=2*a/le;if(wd>1e-4){overlapPairs++;overlapArea+=a;}else{floatSlivers++;sliverWidth=Math.max(sliverWidth,wd);}} }
       } }
     let boundaryWalls=0, outletMeshes=0;
     S.scene.traverse(o=>{ if (!o.isMesh || !visible(o) || !o.geometry?.attributes?.position) return; if (/outlet/i.test(o.name||'')) outletMeshes++; const g=o.geometry,p=g.attributes.position,ix=g.index,n=ix?ix.count:p.count,e=o.matrixWorld.elements;
@@ -595,10 +608,10 @@ try {
     });
     const cover=S.cover.stats(), patch=window.WORLD.TOWN_PATCH, W=window.WORLD; let heightEdgeError=0;
     for(let i=0;i<=100;i++){const t=i/100, lat=patch.latMin+(patch.latMax-patch.latMin)*t, lon=patch.lonMin+(patch.lonMax-patch.lonMin)*t; for(const q of [[patch.lonMin,lat],[patch.lonMax,lat],[lon,patch.latMin],[lon,patch.latMax]]) heightEdgeError=Math.max(heightEdgeError,Math.abs(W.height(q[0],q[1])-1.6));}
-    return { occupancyTriangles:occupancy.length, terrainTriangles, tested, overlapPairs, overlapArea, boundaryWalls, outletMeshes, outletData:window.LAYOUT.outlets.length, taggedMeshes:S.terrain.stats.occupancyCut?.meshesTagged||0, clippedMeshes:S.terrain.stats.occupancyCut?.meshes||0, culled:cover.instanceOccupancyCulled||{}, before:cover.instancesBeforeOccupancy||0, after:cover.items||0, heightEdgeError, townPatch:[patch.lonMin,patch.lonMax,patch.latMin,patch.latMax] };
+    return { invalid, occupancyTriangles:occupancy.length, terrainTriangles, tested, overlapPairs, overlapArea, floatSlivers, sliverWidth, boundaryWalls, outletMeshes, outletData:window.LAYOUT.outlets.length, taggedMeshes:S.terrain.stats.occupancyCut?.meshesTagged||0, clippedMeshes:S.terrain.stats.occupancyCut?.meshes||0, culled:cover.instanceOccupancyCulled||{}, before:cover.instancesBeforeOccupancy||0, after:cover.items||0, heightEdgeError, townPatch:[patch.lonMin,patch.lonMax,patch.latMin,patch.latMax] };
   });
-  const u5ok = u5.occupancyTriangles > 0 && u5.taggedMeshes > 0 && u5.overlapPairs === 0 && u5.overlapArea < 1e-5 && u5.clippedMeshes > 0 && u5.heightEdgeError <= 0.01 && u5.boundaryWalls === 0 && u5.outletMeshes === 0 && u5.after <= u5.before;
-  check('U5', u5ok, `占地上方网格 ${u5.occupancyTriangles} 个投影三角面；对 ${u5.terrainTriangles} 个地形三角面精确相交检查 ${u5.tested} 对，正面积残留 ${u5.overlapPairs} 对 / ${u5.overlapArea.toExponential(2)} m²；边界高于 0.2 m 的底座竖面 ${u5.boundaryWalls}，外围出口模型 ${u5.outletMeshes}（layout.js 数据仍为 ${u5.outletData} 条）；平原边界高差 ${u5.heightEdgeError.toFixed(4)} m；实例 ${u5.before} → ${u5.after}，占地筛除 ${JSON.stringify(u5.culled)}`);
+  const u5ok = !u5.invalid.length && u5.occupancyTriangles > 0 && u5.taggedMeshes > 0 && u5.overlapPairs === 0 && u5.overlapArea < 1e-5 && u5.clippedMeshes > 0 && u5.heightEdgeError <= 0.01 && u5.boundaryWalls === 0 && u5.outletMeshes === 0 && u5.after <= u5.before;
+  check('U5', u5ok, `非法网格 ${u5.invalid.length}${u5.invalid.length ? `（${u5.invalid.slice(0, 4).join('；')}）` : ''}；占地上方网格 ${u5.occupancyTriangles} 个投影三角面；对 ${u5.terrainTriangles} 个地形三角面精确相交检查 ${u5.tested} 对，正面积残留 ${u5.overlapPairs} 对 / ${u5.overlapArea.toExponential(2)} m²（宽 < 0.1 mm 的 Float32 细缝 ${u5.floatSlivers} 对不计，最宽 ${(u5.sliverWidth * 1e3).toFixed(4)} mm）；边界高于 0.2 m 的底座竖面 ${u5.boundaryWalls}，外围出口模型 ${u5.outletMeshes}（layout.js 数据仍为 ${u5.outletData} 条）；平原边界高差 ${u5.heightEdgeError.toFixed(4)} m；实例 ${u5.before} → ${u5.after}，占地筛除 ${JSON.stringify(u5.culled)}`);
   check('U3-errors', !errors.length, errors.join('；') || '无页面错误');
 } finally { await browser.close(); }
 }

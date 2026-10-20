@@ -303,10 +303,13 @@ function subdivideGeometry(g, mw, maxEdge, lines) {
   if (!any) return null;
   const data = attrs.map(a => Array.from(a.array.subarray(0, a.count * a.itemSize)));
   let count = n0; const cache = new Map(), out = [];
+  // a landmark's per-vertex local frame (geometry.userData.local, scene.js) goes on with the vertices, its midpoints as the attributes' are
+  const local0 = g.userData && g.userData.local && g.userData.local.length === n0 * 3 ? g.userData.local : null, local = local0 ? Array.from(local0) : null;
   const mid = (a, b) => {
     if (a > b) { const t = a; a = b; b = t; }
     const key = a * 4194304 + b; let m = cache.get(key); if (m !== undefined) return m;
     m = count++;
+    if (local) for (let c = 0; c < 3; c++) local.push((local[a * 3 + c] + local[b * 3 + c]) / 2);
     attrs.forEach((a2, k) => { const s = a2.itemSize, d = data[k]; for (let c = 0; c < s; c++) d.push((d[a * s + c] + d[b * s + c]) / 2);
       if (names[k] === 'normal' && s === 3) { const o = m * 3, l = Math.hypot(d[o], d[o + 1], d[o + 2]) || 1; d[o] /= l; d[o + 1] /= l; d[o + 2] /= l; } });
     X.push((X[a] + X[b]) / 2); Z.push((Z[a] + Z[b]) / 2); cache.set(key, m); return m;
@@ -332,7 +335,7 @@ function subdivideGeometry(g, mw, maxEdge, lines) {
   names.forEach((k, j) => { const a = attrs[j]; G.setAttribute(k, new THREE.BufferAttribute(new a.array.constructor(data[j]), a.itemSize, a.normalized)); });
   G.setIndex(new THREE.BufferAttribute(count > 65535 ? new Uint32Array(out) : new Uint16Array(out), 1));
   if (g.groups && g.groups.length) for (const q of ng) G.addGroup(q.start, q.count, q.materialIndex);
-  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = g.name; G.userData = g.userData;
+  G.computeBoundingSphere(); G.computeBoundingBox(); G.name = g.name; G.userData = local ? { ...g.userData, local: Float32Array.from(local) } : g.userData;
   return { G, before: total / per, after: out.length / per };
 }
 // roots: objects to walk; opts.maxEdge (4 m), opts.region [x0, z0, x1, z1] (world frame): an object is cut when the box of one of its triangles or segments overlaps the

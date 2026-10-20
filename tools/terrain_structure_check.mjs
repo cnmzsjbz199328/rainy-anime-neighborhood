@@ -4,6 +4,8 @@
 // vertex shader of bend.js takes them (world matrix, the seam shift of each vertex, then the bend at uBend = 0, 0.5 and 1). The reference is the terrain
 // lattice as it was built (the chunks' own positions and indices, before any cut), not the height sampler. Structure spans come from world.js (edge spans
 // mapped onto each route's chainage here), not from the code under test.
+//   TS0 geometry (TERRAIN_HOLE_REPAIR_PLAN 4.2): every displayed mesh is valid (attribute keys and counts, finite positions, indices in range) in the three states;
+//       an invalid mesh fails here and is left out of the rays instead of dropping out unseen
 //   TS1 under the bridges: every deck row and row midpoint of the three bridges (RN01-03, RN01-07+08+09, RN01-13), at the centre, +-2.5, +-4.9 m and outside
 //       the deck at +-7, +-9 m: (a) the terrain meshes alone are hit where the uncut lattice is; (b) in the whole scene, from below the girder (the water is
 //       left out: it is transparent and writes no depth), the first opaque surface is that near-side ground or a ground overlay within 0.3 m above it
@@ -139,10 +141,15 @@ async function probe({ modes }) {
   out.info.tunnel = { route: tunnelRt.def.id, span: tunnelSpan, face0: +face0.toFixed(3), face1: +face1.toFixed(3), crownAbove, shellR, innerR: tn.innerR, voidDepth: voidDepth.map(v => +v.toFixed(4)) };
   for (const u of modes) {
     B.set(u); await frame(); await frame(); S.scene.updateMatrixWorld(true);
-    const cells = new Map(), names = new Set(), wv = new T.Vector3(), I = new T.Matrix4(); let triangles = 0;
+    const cells = new Map(), names = new Set(), wv = new T.Vector3(), I = new T.Matrix4(), invalid = []; let triangles = 0;
     const bend = p => (u ? B.point(p[0], p[1], p[2], u) : p);
+    // TS0 (TERRAIN_HOLE_REPAIR_PLAN 4.2): a mesh is valid before its triangles are read (an index past the position count reads as NaN and its triangle drops out)
+    const issues = g => { const out = [], pos = g.attributes.position; for (const [k, a] of Object.entries(g.attributes)) { if (!k) out.push('empty attribute key'); else if (a.count !== pos.count && !a.isInstancedBufferAttribute) out.push(`${k} count ${a.count} != ${pos.count}`); }
+      let bad = 0; for (let i = 0; i < pos.count; i++) if (!Number.isFinite(pos.getX(i)) || !Number.isFinite(pos.getY(i)) || !Number.isFinite(pos.getZ(i))) bad++; if (bad) out.push(`${bad} non-finite positions`);
+      if (g.index) { let wrong = 0; for (let i = 0; i < g.index.count; i++) { const v = g.index.getX(i); if (!(Number.isInteger(v) && v >= 0 && v < pos.count)) wrong++; } if (wrong) out.push(`${wrong} indices outside [0, ${pos.count})`); } return out; };
     S.scene.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || !o.geometry?.attributes?.position || !visible(o)) return;
+      { const why = issues(o.geometry); if (why.length) { invalid.push(`${o.name || o.parent?.name || o.type}${terrainMeshes.has(o) ? ' [terrain]' : ''}: ${why.join(', ')}`); return; } }
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       if (mats.some(m => m && m.userData && (m.userData.noBend || m.userData.noWrap))) return;
       const clear = mats.every(m => !m || (m.transparent && (m.depthWrite === false || m.opacity <= 0)) || m.blending === T.AdditiveBlending || m.colorWrite === false || m.visible === false);
@@ -157,7 +164,7 @@ async function probe({ modes }) {
     });
     // first hits along one ray: the terrain alone, and the scene's opaque surfaces
     const cast = (A, dir, list) => { let terr = null, first = null; for (const tri of list) { if (tri.clear) continue; const t = rayHit(A, dir, ...tri.b); if (t === null) continue; if (tri.terr && (!terr || t < terr.t)) terr = { t, name: tri.name, tri }; if (!first || t < first.t - 1e-5 || (Math.abs(t - first.t) <= 1e-5 && tri.terr)) first = { t, name: tri.name, terr: tri.terr, tunnel: tri.tunnel, road: tri.road }; } return { terr, first }; };
-    const res = { triangles, names: [...names].sort(), signature: signature(), probes: [] };
+    const res = { triangles, invalid, names: [...names].sort(), signature: signature(), probes: [] };
     probes.forEach((q, qi) => {
       const list = cells.get(key(q.xd, q.z)) || [], r = { i: qi };
       const yTop = q.ref ? Math.max(q.ref.y, yOf((q.deck ?? q.road ?? q.ref.alt) + 0, q.z)) + 20 : yOf((q.deck ?? q.road ?? 0) + 20, q.z);
@@ -383,6 +390,7 @@ for (const u of MODES) {
   console.log(`  · uBend ${u}：TS3 引道 ${Object.entries(s.approach).map(([k, v]) => `${k} ${v.road}/${v.probes}（span 内 ${v.insideSpan}，地面盖路 ${v.ground}）`).join('、')}；封面前开口 ${Object.entries(s.mouth).map(([k, v]) => `${k} ${v.probes} 点（原地形高出路面 ${v.aboveRoad} 点、最高 ${f(v.maxAboveRoad, 2)} m，高于开口轮廓 ${v.aboveProfile}，仍有地面高出路面 ${v.left}）`).join('、')}；视线 ${Object.entries(s.sights).map(([k, v]) => `${k} ${v.tunnel}/${v.rays}`).join('、')}；桥台 ${cnt(u, 'abutments').reduce((a, v) => a + v.deckTop, 0)}/${cnt(u, 'abutments').reduce((a, v) => a + v.deck, 0)} 桥面在上、${cnt(u, 'abutments').reduce((a, v) => a + v.ground, 0)}/${cnt(u, 'abutments').reduce((a, v) => a + (v.groundProbes || 0), 0)} 桥下有地（离共用行 0.05–1 m）、引道 ${cnt(u, 'abutments').reduce((a, v) => a + v.roadTop, 0)}/${cnt(u, 'abutments').reduce((a, v) => a + v.road, 0)}；端墙 ${cnt(u, 'walls').reduce((a, v) => a + v.buried, 0)}/${cnt(u, 'walls').reduce((a, v) => a + v.columns, 0)} 列墙底入地（最小埋深 ${f(Math.min(...cnt(u, 'walls').map(v => v.minCover)), 2)} m）`);
 }
 const A = data.audit, bridgeOver = Object.entries(A.overlap).filter(([k]) => k.startsWith('bridge:')).reduce((s, [, v]) => s + v, 0), tunnelOver = A.overlap['tunnel:RN01-05'] || 0;
+{ const bad = Object.entries(data.modes).flatMap(([u, M]) => (M.invalid || []).map(q => `uBend ${u} ${q}`)); check('TS0', !bad.length, `几何合法：显示中的网格（三种弯曲状态）非法 ${bad.length}${bad.length ? '：' + bad.slice(0, 6).join('；') : ''}`); }
 check('TS1', !fails.TS1.length, `桥下保留：三座桥（${data.info.bridges.map(b => `${b.id} ${b.edges.join('+')} ${b.rows} 行${b.seam ? '，跨 −85° 接缝' : ''}${b.dateline ? '，跨日界线' : ''}`).join('；')}）每行与行中点、中线/±2.5/±4.9/±7/±9 m，地形单独命中裁切前网格，桥下第一个不透明面为本侧地面${fails.TS1.length ? `；例：${fails.TS1.slice(0, 6).join('；')}` : ''}`);
 check('TS2', !fails.TS2.length, `隧道覆土：RN01-05 span ${f(data.info.tunnel.span.s0, 3)}–${f(data.info.tunnel.span.s1, 3)} m（${data.info.tunnel.route} 里程，边内 ${data.info.tunnel.span.e0}–${data.info.tunnel.span.e1} m），洞口面 ${data.info.tunnel.face0} / ${data.info.tunnel.face1} m；拱顶高出路基 ${data.info.tunnel.crownAbove} m、壳外半径 ${data.info.tunnel.shellR} m${fails.TS2.length ? `；例：${fails.TS2.slice(0, 6).join('；')}` : ''}`);
 check('TS3', !fails.TS3.length, `洞口与桥头：两端洞口视线与 span 边界两侧引道、6 个桥台的桥面/桥下/引道与端墙${fails.TS3.length ? `；例：${fails.TS3.slice(0, 6).join('；')}` : ''}`);
