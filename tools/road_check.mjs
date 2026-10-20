@@ -35,6 +35,26 @@ const arc = (a, b) => R * W.angleBetween(W.vec(a.lon, a.lat), W.vec(b.lon, b.lat
 // the vertex shader of bend.js on the CPU: flat (x, y, z) -> point on the sphere (uBend = 1)
 const bendPt = (x, y, z) => { const lam = x / R, phi = -Math.atan(Math.sinh(z / R)), s = 1 / Math.cosh(z / R), cp = Math.cos(phi), sp = Math.sin(phi); const r = R + y * s; return [r * cp * Math.sin(lam), -R + r * cp * Math.cos(lam), -r * sp]; };
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+// W10 junction fix: triangles of strips (flat x, z) and points against a route's drawn paving within 30 m of station s0 (rt.paved: RD01 +-3.5 m, on a bridge approach
+// RD01B +-5.0 m with its asphalt shoulder and kerb): the cells between the two paved edges of every two rows (each row's points lie on one line in plan, the cells are
+// straight between rows). Returns the overlap area (m^2), the deepest overlap (metres in the flat frame from the nearer paved edge) and the points that lie on it by more
+// than 0.1 mm.
+function pavedOverlap(rt, s0, strips, points = []) {
+  const P2 = 2 * Math.PI * R, at = (k, o) => { const F = rt.flatOf[k], T = rt.tangent[k], sc = o * rt.cf[k] * F.k; return [F.x - T[1] * sc, F.z + T[0] * sc]; }, cells = [];
+  for (let k = 0; k + 1 < rt.samples.length; k++) if (Math.abs(rt.samples[k].s - s0) < 30) { const a = rt.paved[k], b = rt.paved[k + 1]; cells.push([at(k, a[0]), at(k, a[1]), at(k + 1, b[1]), at(k + 1, b[0])]); }
+  const area = p => { let v = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; v += p[i][0] * q[1] - q[0] * p[i][1]; } return v / 2; };
+  const clip = (subj, poly) => { let q = subj; const sg = area(poly) >= 0 ? 1 : -1; for (let i = 0; i < poly.length && q.length >= 3; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], side = p => sg * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])), nq = [];
+    for (let k = 0; k < q.length; k++) { const p0 = q[k], p1 = q[(k + 1) % q.length], s0_ = side(p0), s1_ = side(p1); if (s0_ >= 0) nq.push(p0); if ((s0_ >= 0) !== (s1_ >= 0)) { const t = s0_ / (s0_ - s1_); nq.push([p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t]); } } q = nq; } return q; };
+  const depthIn = (c, p) => Math.min(...[[c[1], c[2]], [c[3], c[0]]].map(([a, b]) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1e-12; return Math.abs((p[0] - a[0]) * dz - (p[1] - a[1]) * dx) / l; }));
+  let ov = 0, depth = 0; const onIt = [];
+  for (const st of strips) for (let t = 0; t + 2 < st.index.length; t += 3) {
+    const tri = [0, 1, 2].map(e => { const v = st.index[t + e]; return [st.pos[v * 3], st.pos[v * 3 + 2]]; });
+    for (const c of cells) { const sh = P2 * Math.round((c[0][0] - tri[0][0]) / P2), q = clip(tri.map(p => [p[0] + sh, p[1]]), c); if (q.length < 3) continue; const a = Math.abs(area(q)); if (a <= 0) continue; ov += a; for (const v of q) depth = Math.max(depth, depthIn(c, v)); }
+  }
+  for (const p of points) { const f = [R * p.lon * D, -R * Math.asinh(Math.tan(p.lat * D))]; for (const c of cells) { const sh = P2 * Math.round((c[0][0] - f[0]) / P2), q = [f[0] + sh, f[1]], sg = area(c) >= 0 ? 1 : -1;
+    if ([0, 1, 2, 3].every(i => { const a = c[i], b = c[(i + 1) % 4]; return sg * ((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) > 0; })) { const d = depthIn(c, q); if (d > 1e-4) onIt.push(d); } } }
+  return { area: ov, depth, points: onIt.length, pointDepth: onIt.length ? Math.max(...onIt) : 0 };
+}
 
 const t0 = Date.now();
 const H = TERR.sampler(W, { lonMin: -181, lonMax: 181, latMin: -90, latMax: 90 });
@@ -327,7 +347,7 @@ check('W5-C7', '地标入口：12 个入口节点都有道路终点或路口（�
 });
 
 // ---------------------------------------------------------------- W5-C10 (W8f-a)
-check('W5-C10', '衔接（W8f-a，W8_SPEC 12.1 C）：6 个桥台的走向、竖曲线、断面重合、护栏、虚线与边线；RN01 上 3 个 T 形路口（W10b 起）的铺装、口门与齐平', ({ info, fail }) => {
+check('W5-C10', '衔接（W8f-a，W8_SPEC 12.1 C）：6 个桥台的走向、竖曲线、断面重合、护栏、虚线与边线；RN01 上 3 个 T 形路口（W10b 起）的铺装、口门与齐平，铺装、支路与描边不进干线路面（含桥头引道的路肩与路缘）、不过隧道洞口面', ({ info, fail }) => {
   const RO = ROADS, wrapX = (x, ref) => x + 2 * Math.PI * R * Math.round((ref - x) / (2 * Math.PI * R));
   for (const a of PLAN.abutments) {
     const rt = PLAN.routes.find(r => r.def.id === a.route), b = PLAN.bridges.find(q => q.def.id === a.bridge), ap = a.approach, f2 = a.fillet, bad0 = [];
@@ -386,10 +406,18 @@ check('W5-C10', '衔接（W8f-a，W8_SPEC 12.1 C）：6 个桥台的走向、竖
     let edgeD = 0; if (!j.shallowMerge) for (const p of j.pts) if (Math.abs(Math.abs(p.o) - j.vE) < 0.02) edgeD = Math.max(edgeD, Math.abs(p.h - RO.surfS(tr, p.s, p.o)));
     if (barsIn) bad.push(`口门内有 ${barsIn} 个护栏块`); if (ditch > 0.05) bad.push(`口门内边沟顶点低于路基 ${f(ditch, 3)} m`); if (endD > 0.02) bad.push(`支路末端与铺装高差 ${f(endD, 3)} m > 0.02`); if (edgeD > 0.02) bad.push(`铺装与干线路面高差 ${f(edgeD, 3)} m > 0.02`);
     if (!j.shallowMerge && Math.abs(j.coverage - 1) > 0.002) bad.push(`铺装三角形重叠或缺口（面积比 ${f(j.coverage, 4)}）`);
+    // the paving, the branch's own strip and the curb lines stay off the trunk's drawn paving (1 mm, 1e-4 m^2: Float32), and out of a tunnel past its portal face
+    const cw = j.shallowMerge ? null : pavedOverlap(tr, j.sJ, [j.strip], j.ink.flat()), cwB = pavedOverlap(tr, j.sJ, [br.strip]);
+    if (cw && (cw.area > 1e-4 || cw.depth > 1e-3)) bad.push(`铺装侵入干线路面 ${f(cw.area, 4)} m²，最深 ${f(cw.depth, 4)} m`);
+    if (cw && cw.pointDepth > 1e-3) bad.push(`路口描边有 ${cw.points} 点落在干线路面上，最深 ${f(cw.pointDepth, 4)} m`);
+    if (cwB.area > 1e-4 || cwB.depth > 1e-3) bad.push(`支路网格侵入干线路面 ${f(cwB.area, 4)} m²，最深 ${f(cwB.depth, 4)} m`);
+    const portal = tr.tunnel && !j.shallowMerge ? (() => { const before = j.sJ < tr.tunnel.s0, i0 = before ? tr.tunnel.idx[0] : tr.tunnel.idx[tr.tunnel.idx.length - 1], F0 = tr.flatOf[i0], T0 = tr.tangent[i0];
+      let past = 0, n = 0; for (let v = 0; v < j.strip.vertexCount; v++) { const a = ((j.strip.pos[v * 3] - F0.x) * T0[0] + (j.strip.pos[v * 3 + 2] - F0.z) * T0[1]) / F0.k, d = before ? a : -a; if (d > 1e-3) n++; past = Math.max(past, d); } return { past, n, face: tr.samples[i0].s }; })() : null;
+    if (portal && portal.n) bad.push(`铺装有 ${portal.n} 个顶点越过隧道洞口面（里程 ${f(portal.face, 2)} m），最远 ${f(portal.past, 3)} m`);
     if (j.shallowMerge && (j.lamEnd > 0.01 || !br.ramp || br.ramp.len + 1e-6 < j.mergeLength)) bad.push('浅角并入未从接点连续展开');
     for (const m2 of bad) fail(`${j.node} ${m2}`);
     const join = j.shallowMerge ? `浅角并入 ${f(j.mergeAngle, 1)}°，从接点展开` : `转角 ${j.corners.map(c => `${f(c.corner, 0)}°`).join(' / ')}，支路从离节点 ${f(j.lamEnd, 2)} m 处开始`;
-    info(`${j.node}（${j.branch} → ${j.trunk}，${j.paving === 'asphalt' ? '沥青' : '夯土'}铺装）：${join}；口门（边沟填平、无护栏）干线里程 ${f(mo.s0, 1)}–${f(mo.s1, 1)} m，${mo.side > 0 ? '右' : '左'}侧，口门内护栏块 ${barsIn}，边沟顶点 ${nD} 个最低比路基低 ${f(ditch, 3)} m；支路末端与铺装高差 ${f(endD, 4)} m${j.shallowMerge ? '' : `，铺装与干线路面高差 ${f(edgeD, 4)} m（抬高 ${RO.PAVE_LIFT} m）；${j.triangles} 个三角形，面积比 ${f(j.coverage, 4)}`}${br.ramp ? `；支路坡接 ${f(br.ramp.len, 1)} m（末端最大 ${f(Math.max(...br.ramp.delta.map(Math.abs)), 3)} m）` : ''}`);
+    info(`${j.node}（${j.branch} → ${j.trunk}，${j.paving === 'asphalt' ? '沥青' : '夯土'}铺装）：${join}；口门（边沟填平、无护栏）干线里程 ${f(mo.s0, 1)}–${f(mo.s1, 1)} m，${mo.side > 0 ? '右' : '左'}侧，口门内护栏块 ${barsIn}，边沟顶点 ${nD} 个最低比路基低 ${f(ditch, 3)} m；支路末端与铺装高差 ${f(endD, 4)} m${j.shallowMerge ? '' : `，铺装与干线路面高差 ${f(edgeD, 4)} m（抬高 ${RO.PAVE_LIFT} m）；${j.triangles} 个三角形，面积比 ${f(j.coverage, 4)}；按干线铺装边（节点处 ±${f(j.vE, 2)} m，扫掠网格格子）重叠 ${f(cw.area, 6)} m²、最深 ${f(cw.depth, 5)} m，描边落在干线路面上 ${cw.points} 点（${cw.points ? `最深 ${f(cw.pointDepth, 5)} m` : '无'}）${portal ? `，离洞口面（${f(portal.face, 2)} m）最近 ${f(-portal.past, 3)} m、越过 ${portal.n} 个顶点` : ''}${j.trim ? `，干线铺装边与洞口面切开 ${j.trim.triangles} 个三角形、整块去掉 ${j.trim.dropped} 个、面积 ${f(j.trim.area, 4)} m²` : ''}`}；支路网格与干线路面重叠 ${f(cwB.area, 6)} m²${br.ramp ? `；支路坡接 ${f(br.ramp.len, 1)} m（末端最大 ${f(Math.max(...br.ramp.delta.map(Math.abs)), 3)} m）` : ''}`);
   }
 });
 
@@ -447,13 +475,15 @@ check('W8f-c-J2', '节点转弯、出口铺装、草路肩与桥台虚线（W8_S
       if ((Math.abs(Math.abs(x) - 54) <= 2.75 && Math.abs(z) < 46) || (Math.abs(Math.abs(z) - 54) <= 2.75 && Math.abs(x) < 46)) continue; // ring junction replaces the verge
       const d = outerColour(rt, i, j); if (d > grassDiff) { grassDiff = d; grassWho = `${rt.def.id} s=${f(rt.samples[i].s, 1)} m`; }
     } }
+    // the taper length: 3 m, half the road where both ends taper and it is shorter than 6 m (roadkit.js)
+    const taperLen = Math.min(3, (rt.samples.at(-1).s - rt.samples[0].s) / (rt.def.opts.taperStart && rt.def.opts.taperEnd ? 2 : 1));
     if (rt.classes.includes('RD05')) for (const end of ['taperStart', 'taperEnd']) if (rt.def.opts[end]) {
-      const atEnd = end === 'taperStart' ? [...rt.samples.keys()].filter(i => rt.samples[i].s - rt.samples[0].s <= 3 + 1e-6) : [...rt.samples.keys()].filter(i => rt.samples.at(-1).s - rt.samples[i].s <= 3 + 1e-6);
+      const atEnd = end === 'taperStart' ? [...rt.samples.keys()].filter(i => rt.samples[i].s - rt.samples[0].s <= taperLen + 1e-6) : [...rt.samples.keys()].filter(i => rt.samples.at(-1).s - rt.samples[i].s <= taperLen + 1e-6);
       for (const side of [-1, 1]) {
         const inner = gridIndex(rt.grid, side * 1.5), outer = gridIndex(rt.grid, side * 2.8), widths = atEnd.map(i => ({ d: end === 'taperStart' ? rt.samples[i].s : rt.samples.at(-1).s - rt.samples[i].s,
           w: dist3(bendPt(...col(rt.strip, m, i, outer)), bendPt(...col(rt.strip, m, i, inner))) }));
         widths.sort((a, b) => a.d - b.d);
-        if (widths[0].w > 0.02 || widths.some((q, i) => i > 0 && q.w + 0.02 < widths[i - 1].w)) fail(`${rt.def.id} ${end} ${side < 0 ? '左' : '右'}草肩 3 m 内没有从 0 平滑展开：${widths.map(q => f(q.w, 2)).join(' / ')} m`);
+        if (widths[0].w > 0.02 || widths.some((q, i) => i > 0 && q.w + 0.02 < widths[i - 1].w)) fail(`${rt.def.id} ${end} ${side < 0 ? '左' : '右'}草肩 ${f(taperLen, 2)} m 内没有从 0 平滑展开：${widths.map(q => f(q.w, 2)).join(' / ')} m`);
       }
     }
   }

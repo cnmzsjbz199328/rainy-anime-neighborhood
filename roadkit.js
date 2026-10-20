@@ -307,11 +307,13 @@ function route(W, segs, o = {}) {
     cf[i] *= 1 + (Math.cos(S[i].lat * D) - 1) * townWeight;
   }
   // one column of sample i: profile mix of the classes, the approach blend into RD01B, the junction mouths
+  // the shoulders open over 3 m at a tapered end; a road too short for that (RN07-RD05 between J-T07 and LM03, 4.5 m) opens over half its length from each end
+  const taperLen = Math.min(3, (S[n - 1].s - S[0].s) / (o.taperStart && o.taperEnd ? 2 : 1));
   const shoulderScale = (oo, sP) => {
     if (!classes.includes('RD05') || Math.abs(oo) <= 1.5) return 1;
     let width = 1;
-    if (o.taperStart) width = Math.min(width, smooth(0, 3, Math.max(0, sP - S[0].s)));
-    if (o.taperEnd) width = Math.min(width, smooth(0, 3, Math.max(0, S[n - 1].s - sP)));
+    if (o.taperStart) width = Math.min(width, smooth(0, taperLen, Math.max(0, sP - S[0].s)));
+    if (o.taperEnd) width = Math.min(width, smooth(0, taperLen, Math.max(0, S[n - 1].s - sP)));
     return width;
   };
   const roadOffset = (oo, sP) => Math.abs(oo) <= 1.5 ? oo : Math.sign(oo) * (1.5 + (Math.abs(oo) - 1.5) * shoulderScale(oo, sP));

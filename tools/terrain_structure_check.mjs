@@ -15,6 +15,10 @@
 //   TS4 modes: the terrain meshes are the same objects with the same geometry at uBend 0, 0.5 and 1 (no sphere-only patch or swap); TS1-TS3 run in all three
 //   TS5 cut audit: no ground cut polygon (terrain.js roadPolygons, shared by cutGroundMeshes) overlaps a bridge deck or the tunnel interior beyond the portal
 //       openings between each span boundary and its portal face; every polygon records its source, structure and chainage
+//   TS6 tunnel clearance (2026-10-20, ride feedback): the structure read from the drawn shell and portal-ring meshes (their top arch and foot): roads.js's own envelope
+//       coincides with them; no displayed terrain point lies inside the structure (2 mm; on its outer walls and faces the ground may meet it); on a 0.25 m grid the uncut
+//       lattice inside the structure is gone and the hill over it is kept at its height; rays through the bore (vertical every 0.5 m, across at five heights every 0.25 m)
+//       meet nothing but the tunnel and its road
 // Report: docs/world/w10c/terrain-structure-review/report.json (not tracked); --ref builds that git ref in a temporary worktree and writes report-<ref>.json.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -178,6 +182,82 @@ async function probe({ modes }) {
   }
   B.set(0); await frame();
 
+  // ---- TS6: the tunnel's clearance, on the flat geometry (the cut is made there; the bend keeps the order along each vertical). The structure is read from the drawn
+  // meshes, not from the code under test: the shell's arch between every two rows (vertex row * 15 + profile point, roads.js buildTunnel) with its foot (profile point 0),
+  // each portal ring's outer arch over its depth (vertex point * 4 + 1 at the face, + 2 at the back) with its foot on the bed. A point counts as inside only 2 mm or more
+  // from the structure's outer walls and faces in plan (on them the ground meets the structure).
+  {
+    S.scene.updateMatrixWorld(true);
+    const t6 = {}, meshOf = re => { const l = []; S.roads.state.root.traverse(o => { if (o.isMesh && re.test(o.name)) l.push(o.geometry.attributes.position); }); return l; };
+    const shellPos = meshOf(/^road:tunnel shell$/)[0], ringPos = meshOf(/^road:tunnel portal ring$/), nRow = tn.idx.length, mP = shellPos ? shellPos.count / nRow : 0, V3 = (pa, k) => [pa.getX(k), pa.getY(k), pa.getZ(k)];
+    const MARGIN = 2e-3, PARTS = [], mkCell = (quad, outer, tris) => ({ quad, outer, tris, box: [Math.min(...quad.map(q => q[0])), Math.max(...quad.map(q => q[0])), Math.min(...quad.map(q => q[2])), Math.max(...quad.map(q => q[2]))] });
+    if (shellPos) { const V = (a, j) => V3(shellPos, a * mP + j), cells = [];
+      for (let a = 0; a + 1 < nRow; a++) { const q = [V(a, 1), V(a, mP - 2), V(a + 1, mP - 2), V(a + 1, 1)], f0 = V(a, 0)[1], f1 = V(a + 1, 0)[1], tris = [];
+        for (let j = 1; j + 2 < mP; j++) tris.push({ v: [V(a, j), V(a + 1, j), V(a, j + 1)], foot: [f0, f1, f0] }, { v: [V(a, j + 1), V(a + 1, j), V(a + 1, j + 1)], foot: [f0, f1, f1] });
+        cells.push(mkCell(q, [[1, 2], [3, 0], ...(a === 0 ? [[0, 1]] : []), ...(a === nRow - 2 ? [[2, 3]] : [])], tris)); }
+      PARTS.push({ kind: 'shell', cells }); }
+    ringPos.forEach((pa, k) => { const N = pa.count / 4, R4 = (a, kind) => V3(pa, a * 4 + kind), foot = R4(0, 1)[1], tris = [];
+      for (let j = 1; j + 2 < N; j++) tris.push({ v: [R4(j, 1), R4(j + 1, 1), R4(j, 2)], foot: [foot, foot, foot] }, { v: [R4(j, 2), R4(j + 1, 1), R4(j + 1, 2)], foot: [foot, foot, foot] });
+      PARTS.push({ kind: 'ring', end: k ? 'end' : 'start', cells: [mkCell([R4(1, 1), R4(N - 2, 1), R4(N - 2, 2), R4(1, 2)], [[0, 1], [1, 2], [2, 3], [3, 0]], tris)] }); });
+    for (const p of PARTS) p.box = [Math.min(...p.cells.map(c => c.box[0])), Math.max(...p.cells.map(c => c.box[1])), Math.min(...p.cells.map(c => c.box[2])), Math.max(...p.cells.map(c => c.box[3]))];
+    t6.parts = PARTS.map(p => `${p.kind}${p.end ? ':' + p.end : ''} ${p.cells.reduce((a, c) => a + c.tris.length, 0)}`);
+    // (a) the code's own envelope (roads.js tunnelEnvelope, which terrain.js cuts with) is the drawn shell and rings: every vertex of its top triangles is a drawn vertex
+    const drawn = new Set(); for (const pa of [shellPos, ...ringPos].filter(Boolean)) for (let i = 0; i < pa.count; i++) drawn.add(`${pa.getX(i).toFixed(3)},${pa.getY(i).toFixed(3)},${pa.getZ(i).toFixed(3)}`);
+    let envVerts = 0, envMissing = 0; for (const part of tn.envelope || []) for (const c of part.cells) for (const t of c.tris) t.p.forEach((q, k) => { envVerts++; if (!drawn.has(`${Math.fround(q[0]).toFixed(3)},${Math.fround(t.top[k]).toFixed(3)},${Math.fround(q[1]).toFixed(3)}`)) envMissing++; });
+    t6.envelope = { vertices: envVerts, missing: envMissing, drawnVertices: drawn.size };
+    // the structure at a plan point: every part triangle that contains it (2 mm clear of the outer walls and faces), with its top and foot (flat y)
+    const box6 = PARTS.reduce((b, p) => [Math.min(b[0], p.box[0]), Math.max(b[1], p.box[1]), Math.min(b[2], p.box[2]), Math.max(b[3], p.box[3])], [Infinity, -Infinity, Infinity, -Infinity]);
+    const segD = (q, a, b) => { const dx = b[0] - a[0], dz = b[2] - a[2], l2 = dx * dx + dz * dz || 1e-24, t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[2]) * dz) / l2)); return Math.hypot(q[0] - a[0] - dx * t, q[1] - a[2] - dz * t); };
+    const structAt = q => { const out = []; for (const p of PARTS) { if (q[0] < p.box[0] || q[0] > p.box[1] || q[1] < p.box[2] || q[1] > p.box[3]) continue; for (const c of p.cells) { if (q[0] < c.box[0] || q[0] > c.box[1] || q[1] < c.box[2] || q[1] > c.box[3]) continue;
+      for (const t of c.tris) { const w = bary(q[0], q[1], t.v); if (!w) continue; if (c.outer.some(([i, j]) => segD(q, c.quad[i], c.quad[j]) < MARGIN)) break; out.push({ part: p.kind, top: w[0] * t.v[0][1] + w[1] * t.v[1][1] + w[2] * t.v[2][1], foot: w[0] * t.foot[0] + w[1] * t.foot[1] + w[2] * t.foot[2] }); break; } } } return out; };
+    const depthIn = (st, y) => Math.max(-Infinity, ...st.map(v => Math.min(v.top - y, y - v.foot)));          // > 0: inside the structure by that much
+    const PR = (() => { const arc = 12, inner = [[-tn.innerR, 0], [-tn.innerR, tn.wallH]]; for (let a = 1; a < arc; a++) { const th = Math.PI - Math.PI * a / arc; inner.push([tn.innerR * Math.cos(th), tn.wallH + tn.innerR * Math.sin(th)]); } inner.push([tn.innerR, tn.wallH], [tn.innerR, 0]); return { inner, outerR: tn.innerR + (tn.ringOut ?? 1.2) }; })();
+    // (b1) every displayed terrain triangle over the structure: its vertices, edge midpoints and centroid lie outside it (2 mm for Float32)
+    const TOL = 2e-3, tcell = new Map(), tk = (x, z) => `${Math.floor(x)},${Math.floor(z)}`; let tTris = 0, tSamples = 0, tInside = 0, tWorst = 0; const tWhere = [];
+    for (const mesh of [...TS.ring, ...TS.rest]) { const g = mesh.geometry, pos = g.attributes.position, ix = g.index, count = ix ? ix.count : pos.count;
+      for (let t = 0; t + 2 < count; t += 3) { const v = [0, 1, 2].map(k => { const n = ix ? ix.getX(t + k) : t + k; return [pos.getX(n), pos.getY(n), pos.getZ(n)]; });
+        const x0 = Math.min(v[0][0], v[1][0], v[2][0]), x1 = Math.max(v[0][0], v[1][0], v[2][0]), z0 = Math.min(v[0][2], v[1][2], v[2][2]), z1 = Math.max(v[0][2], v[1][2], v[2][2]);
+        if (x1 < box6[0] - 1 || x0 > box6[1] + 1 || z1 < box6[2] - 1 || z0 > box6[3] + 1) continue;
+        for (let x = Math.floor(x0); x <= Math.floor(x1); x++) for (let z = Math.floor(z0); z <= Math.floor(z1); z++) { const k = `${x},${z}`; let a = tcell.get(k); if (!a) tcell.set(k, a = []); a.push(v); }
+        if (x1 < box6[0] || x0 > box6[1] || z1 < box6[2] || z0 > box6[3]) continue; tTris++;
+        const c = [0, 1, 2].map(k => (v[0][k] + v[1][k] + v[2][k]) / 3), pts = [...v, c, ...[0, 1, 2].map(e => v[e].map((a, k) => (a + v[(e + 1) % 3][k]) / 2))];
+        for (const p of pts) { const st = structAt([p[0], p[2]]); if (!st.length) continue; tSamples++; const d = depthIn(st, p[1]); if (d > TOL) { tInside++; tWorst = Math.max(tWorst, d); if (tWhere.length < 6) tWhere.push({ x: +p[0].toFixed(2), z: +p[2].toFixed(2), depth: +d.toFixed(3) }); } } } }
+    t6.terrainTriangles = { triangles: tTris, samples: tSamples, inside: tInside, worst: +tWorst.toFixed(4), where: tWhere };
+    // (b2) a 0.25 m grid over the tunnel's plan (the faces' rows, out to the ring's outer radius) against the uncut lattice: ground inside the structure is gone,
+    // the hill over it is there at the lattice's height, nothing displayed lies inside
+    const lat = new Map(); for (const c of [...TS.ringData, ...TS.restData]) for (const index of [c.ringIndex, c.restIndex]) if (index) for (let t = 0; t + 2 < index.length; t += 3) {
+      const v = [0, 1, 2].map(k => [c.pos[index[t + k] * 3], c.pos[index[t + k] * 3 + 1], c.pos[index[t + k] * 3 + 2]]), x0 = Math.min(v[0][0], v[1][0], v[2][0]), x1 = Math.max(v[0][0], v[1][0], v[2][0]), z0 = Math.min(v[0][2], v[1][2], v[2][2]), z1 = Math.max(v[0][2], v[1][2], v[2][2]);
+      if (x1 < box6[0] - 1 || x0 > box6[1] + 1 || z1 < box6[2] - 1 || z0 > box6[3] + 1) continue;
+      for (let x = Math.floor(x0); x <= Math.floor(x1); x++) for (let z = Math.floor(z0); z <= Math.floor(z1); z++) { const k = `${x},${z}`; let a = lat.get(k); if (!a) lat.set(k, a = []); a.push(v); } }
+    const yAt = (cells, x, z) => { const ys = []; for (const v of cells.get(tk(x, z)) || []) { const w = bary(x, z, v); if (w) ys.push(w[0] * v[0][1] + w[1] * v[1][1] + w[2] * v[2][1]); } return ys; };
+    const grid = { points: 0, inside: 0, hill: 0, hillKept: 0, hillMissing: 0, cut: 0, cutLeft: 0, underFoot: 0, shownInside: 0, maxShownDepth: 0, examples: [] };
+    const ringR = PR.outerR, i0 = tn.idx[0], i1 = tn.idx[tn.idx.length - 1];
+    for (let s = face0; s <= face1 + 1e-9; s += 0.25) for (let o = -ringR; o <= ringR + 1e-9; o += 0.25) {
+      const q = routeAt(tunnelRt, s, o), st = structAt([q.x, q.z]); if (!st.length) continue; grid.points++;
+      const ref = yAt(lat, q.x, q.z)[0], shown = yAt(tcell, q.x, q.z); if (ref === undefined) continue;
+      const dRef = depthIn(st, ref), top = Math.max(...st.map(v => v.top)), foot = Math.min(...st.map(v => v.foot));
+      for (const y of shown) { const d = depthIn(st, y); if (d > TOL) { grid.shownInside++; grid.maxShownDepth = Math.max(grid.maxShownDepth, d); if (grid.examples.length < 6) grid.examples.push({ s: +s.toFixed(2), o: +o.toFixed(2), above: +((y - (q.bed - BASE) * ch(q.z)) / ch(q.z)).toFixed(3), depth: +d.toFixed(3) }); } }
+      if (dRef > TOL) { grid.inside++; if (shown.some(y => Math.abs(y - ref) <= TOL)) grid.cutLeft++; else grid.cut++; }
+      else if (ref >= top + TOL) { grid.hill++; if (shown.some(y => Math.abs(y - ref) <= TOL)) grid.hillKept++; else { grid.hillMissing++; if (grid.examples.length < 6) grid.examples.push({ s: +s.toFixed(2), o: +o.toFixed(2), hillMissing: true }); } }
+      else if (ref <= foot - TOL) grid.underFoot++;
+    }
+    t6.grid = grid;
+    // (c) the bore: vertical rays from 0.1 m over the bed to 0.05 m under the drawn inner profile, every 0.5 m along and across, and rays across it at five heights every 0.25 m;
+    // every opaque surface they meet that is not the tunnel's or its road's own counts (terrain and anything else)
+    const own = /^(road:tunnel |road:route RN01-04\+RN01-05\+RN01-06$|ride:)/, profH = o => { const P = PR.inner; for (let k = 1; k + 1 < P.length; k++) { const a = P[k], b = P[k + 1]; if (o >= Math.min(a[0], b[0]) - 1e-9 && o <= Math.max(a[0], b[0]) + 1e-9 && Math.abs(b[0] - a[0]) > 1e-9) return a[1] + (b[1] - a[1]) * (o - a[0]) / (b[0] - a[0]); } return tn.wallH; };
+    const solid = []; S.scene.traverse(o => { if (!(o.isMesh || o.isInstancedMesh) || !o.geometry?.attributes?.position) return; for (let p = o; p; p = p.parent) if (!p.visible) return; const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (mats.every(m => !m || (m.transparent && m.depthWrite === false) || m.blending === T.AdditiveBlending || m.colorWrite === false)) return; let name = o.name || ''; for (let p = o.parent; p && !name; p = p.parent) name = p.name || ''; let top = o; while (top.parent && top.parent !== S.scene) top = top.parent; if (own.test(name) || own.test(top.name || '')) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); const c = o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld), r = o.geometry.boundingSphere.radius * Math.max(o.matrixWorld.getMaxScaleOnAxis(), 1);
+      const mid = routeAt(tunnelRt, (face0 + face1) / 2, 0); if (o.isInstancedMesh || c.distanceTo(new T.Vector3(mid.x, yOf(mid.bed + 3, mid.z), mid.z)) < r + 20) solid.push(o); });
+    const ray = new T.Raycaster(), A = new T.Vector3(), Bv = new T.Vector3(), bore = { rays: 0, hits: 0, byName: {}, examples: [] };
+    const shoot = (a, b, tag) => { A.set(...a); Bv.set(...b); const d = Bv.clone().sub(A), len = d.length(); if (len < 0.05) return; ray.set(A, d.normalize()); ray.near = 0; ray.far = len; bore.rays++;
+      const h = ray.intersectObjects(solid, false); if (!h.length) return; bore.hits++; const o = h[0].object; let top = o; while (top.parent && top.parent !== S.scene) top = top.parent; const name = TS.ring.includes(o) || TS.rest.includes(o) ? 'terrain' : (o.name || top.name || o.type); bore.byName[name] = (bore.byName[name] || 0) + 1; if (bore.examples.length < 8) bore.examples.push(`${name} ${tag}`); };
+    for (let s = face0 + 0.05; s < face1 - 0.05 + 1e-9; s += 0.5) for (let o = -tn.innerR + 0.15; o <= tn.innerR - 0.15 + 1e-9; o += 0.5) { const q = routeAt(tunnelRt, s, o); shoot([q.x, yOf(q.bed + 0.1, q.z), q.z], [q.x, yOf(q.bed + profH(o) - 0.05, q.z), q.z], `s=${s.toFixed(2)} o=${o.toFixed(2)} 竖`); }
+    for (let s = face0 + 0.05; s < face1 - 0.05 + 1e-9; s += 0.25) for (const dy of [0.5, 1.5, 2.5, 3.5, 4.5]) { const half = Math.sqrt(Math.max(0, tn.innerR ** 2 - Math.max(0, dy - tn.wallH) ** 2)) - 0.1; if (half <= 0.2) continue; const a = routeAt(tunnelRt, s, -half), b = routeAt(tunnelRt, s, half); shoot([a.x, yOf(a.bed + dy, a.z), a.z], [b.x, yOf(b.bed + dy, b.z), b.z], `s=${s.toFixed(2)} dy=${dy} 横`); }
+    t6.bore = bore; t6.cut = TS.stats.roadCut ? TS.stats.roadCut.structure : null; t6.solidMeshes = solid.length;
+    out.ts6 = t6;
+  }
+
   // ---- TS5: the ground cut polygons against the structures (each pair compared one circumference apart at most)
   const area = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a / 2; };
   const clip = (subj, poly) => { let q = subj; const sg = area(poly) >= 0 ? 1 : -1; for (let i = 0; i < poly.length && q.length >= 3; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], side = p => sg * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])), nq = [];
@@ -312,6 +392,10 @@ const T5 = data.info.tunnel, regOpen = ((A.structures && A.structures.kept) || [
 const openOK = regOpen.length === 2 && wantOpen.every(([a, b]) => regOpen.some(k => Math.abs(k.s0 - a) < 2e-3 && Math.abs(k.s1 - b) < 2e-3)) && regOpen.every(k => k.length <= 0.51);
 const ts5 = A.polygons > 0 && A.unlabelled === 0 && bridgeOver <= 1e-3 && tunnelOver <= 1e-3 && openOK;
 check('TS5', ts5, `裁切审计：地面裁切多边形 ${A.polygons}（未登记来源 ${A.unlabelled}${Object.keys(A.bySource).length ? `；${Object.entries(A.bySource).map(([k, v]) => `${k} ${v}`).join('、')}` : ''}）；与桥面重叠 ${f(bridgeOver, 4)} / ${f(A.zones.bridge, 1)} m²，与隧道内部（洞口面之间）重叠 ${f(tunnelOver, 4)} / ${f(A.zones.tunnel, 1)} m²；洞口开口（span 边界到洞口面）${openings}，terrain.js 登记 ${regOpen.map(k => `${k.end} ${k.s0}–${k.s1}（${k.length} m）`).join('、') || '无'}${openOK ? '' : `，应为 ${wantOpen.map(([a, b]) => `${f(a)}–${f(b)}`).join('、')}`}；路口三角形被结构裁去 ${A.structures ? A.structures.junctionTrianglesClipped : '—'}${A.offenders.length ? `；例：${A.offenders.slice(0, 4).map(o => `${o.zone} ${o.id}@${o.s} ${o.area} m² ${o.src ? JSON.stringify(o.src) : '无来源'}`).join('；')}` : ''}`);
+{ const t = data.ts6, g = t.grid, b = t.bore, e = t.envelope, tt = t.terrainTriangles;
+  const ok = e.vertices > 0 && e.missing === 0 && tt.triangles > 0 && tt.inside === 0 && g.points > 0 && g.shownInside === 0 && g.cutLeft === 0 && g.hillMissing === 0 && b.rays > 0 && b.hits === 0;
+  check('TS6', ok, `隧道净空：外包（${t.parts.join('、')}）顶面 ${e.vertices} 个顶点与所画外壳/洞口环顶点重合缺 ${e.missing}；外包上方显示地形三角形 ${tt.triangles} 个、取样 ${tt.samples} 点，进入结构 ${tt.inside}（最深 ${f(tt.worst, 4)} m，容差 0.002）${tt.where.length ? ` ${JSON.stringify(tt.where)}` : ''}；0.25 m 网格 ${g.points} 点：原地形在结构内 ${g.inside}（已切 ${g.cut}、残留 ${g.cutLeft}），高于结构顶 ${g.hill}（保留 ${g.hillKept}、缺失 ${g.hillMissing}），低于结构底 ${g.underFoot}，显示面在结构内 ${g.shownInside}（最深 ${f(g.maxShownDepth, 4)} m）${g.examples.length ? ` ${JSON.stringify(g.examples)}` : ''}；洞内射线 ${b.rays} 条命中衬砌以外的面 ${b.hits}${b.hits ? ` ${JSON.stringify(b.byName)} 例：${b.examples.join('；')}` : ''}；地形裁切 ${t.cut ? `${t.cut.triangles} 个三角形、${t.cut.removedArea} m²` : '—'}`);
+  summary.ts6 = t; }
 check('TS-page', !errors.length, `页面错误 ${errors.length}${errors.length ? '：' + errors.slice(0, 3).join(' | ') : ''}`);
 summary.fails = fails;
 summary.probes = data.probes.length; summary.sightLines = data.sights.length;

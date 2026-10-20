@@ -59,6 +59,60 @@ function subtractConvexXZ(subject, clip, eps = CUT_EPS) {
   }
   return outside;
 }
+// the part of a convex polygon where the linear function f (of x, z) is > 0 (keep > 0) or < 0
+function clipLinearXZ(poly, f, keepPositive) {
+  const out = [], val = poly.map(p => (keepPositive ? f(p) : -f(p)));
+  for (let i = 0; i < poly.length; i++) {
+    const j = (i + 1) % poly.length, a = val[i], b = val[j];
+    if (a > 0) out.push(poly[i]);
+    if ((a > 0) !== (b > 0) && a !== b) { const t = a / (a - b), p = poly[i], q = poly[j]; out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+  }
+  return out.length >= 3 && Math.abs(polygonAreaXZ(out)) > 1e-10 ? out : null;
+}
+// the plane through three points (plan [x, z], heights y) as a function of (x, z); null if they are collinear in plan
+function planeXZ(p, y) {
+  const den = (p[1][1] - p[2][1]) * (p[0][0] - p[2][0]) + (p[2][0] - p[1][0]) * (p[0][1] - p[2][1]); if (Math.abs(den) < 1e-14) return null;
+  return q => { const w0 = ((p[1][1] - p[2][1]) * (q[0] - p[2][0]) + (p[2][0] - p[1][0]) * (q[1] - p[2][1])) / den, w1 = ((p[2][1] - p[0][1]) * (q[0] - p[2][0]) + (p[0][0] - p[2][0]) * (q[1] - p[2][1])) / den; return w0 * y[0] + w1 * y[1] + (1 - w0 - w1) * y[2]; };
+}
+// A structure's volume against one planar piece of ground (W10 tunnel fix): `parts` are roads.js tunnelEnvelope(): the top of the structure as triangles in the flat frame
+// with the height of its foot under them. Inside a triangle the ground (plane g) lies in the structure where it is under the top and over the foot: both are planes there, so
+// that is a convex polygon, and it goes from the piece. The ground keeps the hill over the top (its new edge is where it meets the top, on the structure's surface) and the
+// ground under the foot. The parts are taken one after the other; the pieces stay convex. Returns null if the piece does not reach into the structure.
+function cutStructureXZ(piece, g, parts) {
+  let pieces = [piece], hit = false;
+  const box = p => [Math.min(...p.map(q => q[0])), Math.max(...p.map(q => q[0])), Math.min(...p.map(q => q[1])), Math.max(...p.map(q => q[1]))];
+  for (const part of parts) {
+    if (part.box[1] < box(piece)[0] || part.box[0] > box(piece)[1] || part.box[3] < box(piece)[2] || part.box[2] > box(piece)[3]) continue;
+    const next = [];
+    for (const pc of pieces) {
+      const pb = box(pc), holes = [];
+      for (const c of part.cells) {
+        if (c.box[1] < pb[0] || c.box[0] > pb[1] || c.box[3] < pb[2] || c.box[2] > pb[3]) continue;
+        for (const t of c.tris) {
+          if (t.box[1] < pb[0] || t.box[0] > pb[1] || t.box[3] < pb[2] || t.box[2] > pb[3]) continue;
+          let q = pc; for (let e = 0; e < 3 && q; e++) { const a = t.p[e], b = t.p[(e + 1) % 3], sg = t.sign; q = clipLinearXZ(q, r => sg * ((b[0] - a[0]) * (r[1] - a[1]) - (b[1] - a[1]) * (r[0] - a[0])), true); }
+          if (!q) continue;
+          q = clipLinearXZ(q, r => t.top(r) - g(r), true); if (q) q = clipLinearXZ(q, r => g(r) - t.foot(r), true);
+          if (q) holes.push(q);
+        }
+      }
+      if (!holes.length) { next.push(pc); continue; }
+      hit = true; let rest = [pc];
+      for (const h of holes) { const hb = box(h); rest = rest.flatMap(r => { const rb = box(r); return rb[1] < hb[0] || rb[0] > hb[1] || rb[3] < hb[2] || rb[2] > hb[3] ? [r] : subtractConvexXZ(r, h, 1e-9); }); }
+      next.push(...rest);
+    }
+    pieces = next;
+  }
+  return hit ? pieces : null;
+}
+// the envelope parts with their bounding boxes and planes (once per build)
+function prepareStructureParts(parts) {
+  const box = p => [Math.min(...p.map(q => q[0])), Math.max(...p.map(q => q[0])), Math.min(...p.map(q => q[1])), Math.max(...p.map(q => q[1]))];
+  return parts.map(part => {
+    const cells = part.cells.map(c => ({ box: box(c.quad), tris: c.tris.map(t => ({ p: t.p, box: box(t.p), sign: polygonAreaXZ(t.p) >= 0 ? 1 : -1, top: planeXZ(t.p, t.top), foot: planeXZ(t.p, t.foot) })).filter(t => t.top && t.foot) }));
+    return { kind: part.kind, end: part.end, cells, box: [Math.min(...cells.map(c => c.box[0])), Math.max(...cells.map(c => c.box[1])), Math.min(...cells.map(c => c.box[2])), Math.max(...cells.map(c => c.box[3]))] };
+  });
+}
 
 function builder(W) {
   const P = W.TOWN_PATCH, EPS = 1e-9;
@@ -303,7 +357,7 @@ function lazySampler(W, cellOf) {
   };
 }
 
-const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, builder, sampler, samplerFromChunks, lazySampler };
+const TERRAIN = { R, BASE, RING_M, CHUNK_DEG, FLAT_LAT, RING_WINDOW, builder, sampler, samplerFromChunks, lazySampler, cutStructureXZ, prepareStructureParts, planeXZ, subtractConvexXZ };
 
 // ---- scene part (needs THREE); the data builder above never touches it
 // THREE.MathUtils.generateUUID draws from Math.random. The rain of scene.js draws from the same stream every frame, so creating terrain
@@ -355,7 +409,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; root.add(m); list.push(m); return m; };
   // Once the unified road plan exists, remove the ground that a graded road replaces from the planetary ground: the swept cross-section between its rows
   // (and a short cap past each open end). This keeps the rendered terrain from sitting above roads between its much wider lattice samples.
-  // W10c: a bridge stands over the ground and a tunnel runs under it, so neither replaces any: the seabed under a deck and the hill over RN01-05 stay.
+  // W10c: a bridge stands over the ground and a tunnel runs under it, so neither replaces any: the seabed under a deck and the hill over RN01-05 stay. The tunnel's own
+  // volume is cut in three dimensions below (cutStructureXZ): where the hill is lower than the shell, the ground inside the shell and the portal rings goes.
   // The spans of world.js (roadkit.js gives them in each route's chainage) cut the rows they straddle at their exact ends (the row there interpolated, as
   // the mesh is linear between rows); a route that ends on an abutment has no cap there (the deck goes on from its last row). Every polygon keeps its
   // source (kind, route or junction, chainage); state.stats.groundCut lists the structures left uncut. The roads' full footprints stay as they are for
@@ -510,6 +565,13 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     const bySource = {}; for (const q of polys) bySource[q.src.kind] = (bySource[q.src.kind] || 0) + 1;
     connectorStats.releasedArea = +connectorStats.releasedArea.toFixed(4); for (const k of Object.keys(connectorStats.byExit)) connectorStats.byExit[k] = +connectorStats.byExit[k].toFixed(4);
     state.stats.groundCut = { kept, polygons: bySource, structureFootprints: structurePolys.length, junctionTrianglesClipped: junctionClipped, connector: connectorStats, rowFolds: folds };
+    // the tunnel's volume (roads.js tunnelEnvelope; a copy one circumference away where it reaches past the date line): the ground inside the shell and the portal
+    // rings goes, the hill over them stays (cutStructureXZ)
+    const STRUCT = [], structureCut = { triangles: 0, removedArea: 0 };
+    for (const part of prepareStructureParts((data.routes || []).flatMap(rt => (rt.tunnel && rt.tunnel.envelope) || []))) {
+      STRUCT.push(part); const k = part.box[1] > Math.PI * R ? -PERIOD : part.box[0] < -Math.PI * R ? PERIOD : 0;
+      if (k) STRUCT.push(prepareStructureParts([{ ...part, cells: part.cells.map(c => ({ quad: c.quad.map(q => [q[0] + k, q[1]]), tris: c.tris.map(t => ({ p: t.p.map(q => [q[0] + k, q[1]]), top: t.top, foot: t.foot })) })) }])[0]);
+    }
     let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0;
     const meshes = [...state.ring, ...state.rest];
     for (const mesh of meshes) {
@@ -525,16 +587,22 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
           for (let id = 0; id < polys.length; id++) { const b = polys[id].box; if (b.x1 >= box.x0 && b.x0 <= box.x1 && b.z1 >= box.z0 && b.z0 <= box.z1) found.add(id); }
         }
         const candidates = [...found].filter(id => { const b = polys[id].box; return b.x1 >= box.x0 - CUT_EPS && b.x0 <= box.x1 + CUT_EPS && b.z1 >= box.z0 - CUT_EPS && b.z0 <= box.z1 + CUT_EPS; });
-        if (!candidates.length) { index.push(...ids); trianglesAfter++; continue; }
+        const structure = STRUCT.filter(p => p.box[1] >= box.x0 && p.box[0] <= box.x1 && p.box[3] >= box.z0 && p.box[2] <= box.z1);
+        if (!candidates.length && !structure.length) { index.push(...ids); trianglesAfter++; continue; }
+        // the structure first, on the whole lattice triangle (its pieces are convex), then the road polygons: the 1 mm tolerance of the road cut can leave a sliver piece
+        // that is not convex where two cut lines run a few millimetres apart (J-T07's paving at the RN01-05 portal face), and the structure cut takes convex pieces only
         let pieces = [tri];
+        const g3 = structure.length ? planeXZ(tri, v.map(p => p[1])) : null, cutS = g3 ? cutStructureXZ(tri, g3, structure) : null;
+        if (cutS) { pieces = cutS; structureCut.triangles++; structureCut.removedArea += Math.max(0, Math.abs(polygonAreaXZ(tri)) - pieces.reduce((sum, p) => sum + Math.abs(polygonAreaXZ(p)), 0)); }
         for (const id of candidates) {
+          if (!pieces.length) break;
           const cut = polys[id], next = [];
           for (const poly of pieces) {
             const pb = { x0: Math.min(...poly.map(q => q[0])), x1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])) };
             if (cut.box.x1 < pb.x0 - 1e-7 || cut.box.x0 > pb.x1 + 1e-7 || cut.box.z1 < pb.z0 - 1e-7 || cut.box.z0 > pb.z1 + 1e-7) next.push(poly);
             else next.push(...subtractConvexXZ(poly, cut.p));
           }
-          pieces = next; if (!pieces.length) break;
+          pieces = next;
         }
         const area = Math.abs(polygonAreaXZ(tri)), remain = pieces.reduce((sum, p) => sum + Math.abs(polygonAreaXZ(p)), 0);
         if (area < 1e-10) { index.push(...ids); trianglesAfter++; continue; }
@@ -558,7 +626,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
         g.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1)); g.computeBoundingSphere();
       }
     }
-    state.stats.roadCut = { roadPolygons: polys.length, terrainMeshes: meshes.length, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
+    structureCut.removedArea = +structureCut.removedArea.toFixed(4); structureCut.parts = STRUCT.map(p => p.kind + (p.end ? ':' + p.end : ''));
+    state.stats.roadCut = { roadPolygons: polys.length, terrainMeshes: meshes.length, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3), structure: structureCut };
     return state.stats.roadCut;
   }
   // Reuse the exact road footprint for any sampled ground overlays which are built after the

@@ -58,6 +58,8 @@ function furnish(W, rt, cfg) {
   // W8f-a (W8_SPEC 12.1 C1, C2): next to an abutment the 1.98 m pieces stand at exact stations 1, 3, 5 ... m from the node, continuing the deck's parapet (flush with the
   // abutment, bridge.js), on the kerb line 4.85 m (x the deck's lateral factor) where the approach is RD01B, 4.62 m on the old shoulder before it; none in a junction mouth
   const near = [], mouths = rt.mouths || [], inMouth = (s, sd) => mouths.some(q => q.side === sd && s + 1 > q.s0 && s - 1 < q.s1) || (rt.kinks || []).some(k => Math.abs(s - k) < 2);
+  // and no piece (1.98 m long, 0.3 m thick on the 4.62-4.85 m line) reaches in past a portal face: there it would stand in the tunnel's lining (W10 tunnel fix)
+  const tun = S.filter(p => p.span === 'tunnel'), inTunnel = s => tun.length > 0 && s + 0.99 > tun[0].s && s - 0.99 < tun[tun.length - 1].s;
   const leanAt = i => Math.atan((rt.bed[Math.min(n - 1, i + 2)] - rt.bed[Math.max(0, i - 2)]) / Math.max(1e-6, S[Math.min(n - 1, i + 2)].s - S[Math.max(0, i - 2)].s));
   for (const end of ['start', 'end']) {
     if (!(cfg.barrier || []).includes(end)) continue;
@@ -65,17 +67,56 @@ function furnish(W, rt, cfg) {
     if (!ap) { near.push(end === 'start' ? [0, 14] : [rt.length - 14, rt.length]); continue; }
     const sN = end === 'end' ? rt.length : S[0].s;
     for (let k = 0; k < 7; k++) { const s = end === 'end' ? sN - 1 - 2 * k : sN + 1 + 2 * k, { i, t } = atS(rt, s), a = rt.approach[i] + (rt.approach[Math.min(n - 1, i + 1)] - rt.approach[i]) * t;
-      for (const sd of [-1, 1]) { if (inMouth(s, sd)) continue; const o = sd * (4.62 + 0.23 * a), [lo, la] = latS(rt, s, o);
+      for (const sd of [-1, 1]) { if (inMouth(s, sd) || inTunnel(s)) continue; const o = sd * (4.62 + 0.23 * a), [lo, la] = latS(rt, s, o);
         (rt.instances.barrierConcrete = rt.instances.barrierConcrete || []).push({ type: 'barrierConcrete', lon: lo, lat: la, alt: surfS(rt, s, o), yaw: yawAlong(i), s: [1, 1, 1], lean: [0, leanAt(i)], tint: [1, 1, 1], station: s, side: sd }); } }
   }
-  if (cfg.tunnel) { const tun = S.filter(p => p.span === 'tunnel'); if (tun.length) near.push([tun[0].s - 10, tun[0].s], [tun[tun.length - 1].s, tun[tun.length - 1].s + 10]); }
-  for (const [a, b] of near) for (let s = Math.max(1, a); s < Math.min(rt.length - 0.5, b); s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); if (S[i].span === 'tunnel') continue; for (const sd of [-1, 1]) if (!inMouth(s, sd)) add('barrierConcrete', i, sd * 4.62, rt.surface(i, sd * 4.62), { yaw: yawAlong(i), lean: [0, leanAt(i)] }); }
+  if (cfg.tunnel && tun.length) near.push([tun[0].s - 10, tun[0].s], [tun[tun.length - 1].s, tun[tun.length - 1].s + 10]);
+  for (const [a, b] of near) for (let s = Math.max(1, a); s < Math.min(rt.length - 0.5, b); s += 2) { const i = Math.min(n - 1, Math.round(s / 0.5)); if (inTunnel(S[i].s)) continue; for (const sd of [-1, 1]) if (!inMouth(s, sd)) add('barrierConcrete', i, sd * 4.62, rt.surface(i, sd * 4.62), { yaw: yawAlong(i), lean: [0, leanAt(i)] }); }
   // milestones every 25 m on the right shoulder (not inside the barrier zones), a bus stop sign
   for (let s = 12; s < rt.length - 4; s += 25) { const i = Math.round(s / 0.5); if (S[i].span === 'tunnel' || near.some(([a, b]) => s > a - 1 && s < b + 1)) continue; add('milestone', i, 4.1, rt.surface(i, 4.1), { yaw: yawAlong(i) + Math.PI / 2 }); }
   if (cfg.busStop) { const i = Math.round(cfg.busStop / 0.5), r = right(i); add('signBus', i, 4.2, rt.surface(i, 4.2), { yaw: yawFace(-r[0], -r[1]) }); }
   // tunnel: the samples of the span with the bed altitude (the arch geometry is made in the scene part)
   // (the portal rings stand on the first and last rows, ringDepth deep; the black void closes the opening voidDepth behind each ring face)
-  if (cfg.tunnel) { const idx = []; S.forEach((p, i) => { if (p.span === 'tunnel') idx.push(i); }); rt.tunnel = { idx, s0: S[idx[0]].s, s1: S[idx[idx.length - 1]].s, innerR: 4.7, wallH: 1.0, shell: 0.7, ringDepth: 1.4, voidDepth: 0.2 }; }
+  if (cfg.tunnel) { const idx = []; S.forEach((p, i) => { if (p.span === 'tunnel') idx.push(i); }); rt.tunnel = { idx, s0: S[idx[0]].s, s1: S[idx[idx.length - 1]].s, innerR: 4.7, wallH: 1.0, shell: 0.7, ringDepth: 1.4, ringOut: 1.2, voidDepth: 0.2 };
+    rt.tunnel.envelope = tunnelEnvelope(rt); }
+}
+
+// The tunnel's cross-sections, shared by its meshes (scene part, buildTunnel) and the terrain cut (terrain.js cutRoads): the inner profile (the walls, then the half-round
+// arch, as (o, dy) above the bed), the outer shell (the inner profile scaled about the springing line (0, wallH) by 1 + shell / innerR) and the portal ring's outer profile
+// (ringOut beyond the inner one: the walls straight out, the arch radially).
+function tunnelProfiles(tn) {
+  const arc = 12, inner = [[-tn.innerR, 0], [-tn.innerR, tn.wallH]];
+  for (let a = 1; a < arc; a++) { const th = Math.PI - Math.PI * a / arc; inner.push([tn.innerR * Math.cos(th), tn.wallH + tn.innerR * Math.sin(th)]); }
+  inner.push([tn.innerR, tn.wallH], [tn.innerR, 0]);
+  const shellScale = 1 + tn.shell / tn.innerR, outerR = tn.innerR + tn.ringOut;
+  const ring = inner.map(([o, dy]) => { if (dy <= tn.wallH + 1e-6 && Math.abs(Math.abs(o) - tn.innerR) < 1e-6) return [Math.sign(o) * outerR, dy]; const vx = o, vy = dy - tn.wallH, l = Math.hypot(vx, vy); return [vx / l * outerR, tn.wallH + vy / l * outerR]; });
+  return { inner, shellScale, ring, outerR };
+}
+// a point of the tube in the flat frame: row i of the route, profile point (o, dy) scaled about the springing line by `scale` (1: the lining, shellScale: the shell)
+function tubeAt(rt, i, [o, dy], scale) { const tn = rt.tunnel, F = rt.flatOf[i], T = rt.tangent[i], k = F.k, ro = o * scale, ry = tn.wallH + (dy - tn.wallH) * scale; return [F.x - T[1] * ro * k, (rt.bed[i] + ry - BASE) * k, F.z + T[0] * ro * k]; }
+// a point of a portal ring: the face row i0, `back` metres into the tunnel (dirSign -1 at the start portal, 1 at the end), straight along the face row's tangent
+function ringAt(rt, i0, dirSign, [o, dy], back) { const F = rt.flatOf[i0], T = rt.tangent[i0], k = F.k, dz = back * -dirSign; return [F.x - T[1] * o * k + T[0] * dz * k, (rt.bed[i0] + dy - BASE) * k, F.z + T[0] * o * k + T[1] * dz * k]; }
+// The space the tunnel takes, for the terrain cut: the top of the structure (the shell's arch between every two rows of the span; each portal ring's outer arch over its
+// depth) as triangles in the flat frame, on the same vertices and diagonals as the meshes, each with the height of the structure's foot at the same plan points (the shell's
+// foot, its profile's first point scaled, 0.15 m under the bed; the ring's on the bed). Ground between foot and top lies inside the structure; above the top it is the hill
+// over it, under the foot the ground under the road. The parts (shell, two rings) overlap and are cut one after the other; a cell is the plan quad its triangles tile.
+function tunnelEnvelope(rt) {
+  const tn = rt.tunnel, idx = tn.idx, n = idx.length, P = tunnelProfiles(tn), m = P.inner.length, foot = tn.wallH * (1 - P.shellScale), xz = p => [p[0], p[2]], parts = [];
+  const shell = [];
+  for (let a = 0; a + 1 < n; a++) {
+    const i = idx[a], i2 = idx[a + 1], top = (ii, j) => tubeAt(rt, ii, P.inner[j], P.shellScale), bot = ii => (rt.bed[ii] + foot - BASE) * rt.flatOf[ii].k, tris = [];
+    for (let j = 1; j + 2 < m; j++) { const A = top(i, j), B = top(i, j + 1), C = top(i2, j), Dd = top(i2, j + 1);         // the shell mesh's (a, c, b), (b, c, d)
+      tris.push({ p: [A, C, B].map(xz), top: [A[1], C[1], B[1]], foot: [bot(i), bot(i2), bot(i)] }, { p: [B, C, Dd].map(xz), top: [B[1], C[1], Dd[1]], foot: [bot(i), bot(i2), bot(i2)] }); }
+    shell.push({ quad: [top(i, 1), top(i, m - 2), top(i2, m - 2), top(i2, 1)].map(xz), tris });
+  }
+  parts.push({ kind: 'shell', cells: shell });
+  for (const [i0, dirSign, end] of [[idx[0], -1, 'start'], [idx[n - 1], 1, 'end']]) {
+    const at = (j, back) => ringAt(rt, i0, dirSign, P.ring[j], back), bot = (rt.bed[i0] - BASE) * rt.flatOf[i0].k, tris = [];
+    for (let j = 1; j + 2 < m; j++) { const A = at(j, 0), B = at(j, tn.ringDepth), C = at(j + 1, 0), Dd = at(j + 1, tn.ringDepth);   // the ring mesh's outer face (a0, c1, b0), (b0, c1, d0)
+      tris.push({ p: [A, C, B].map(xz), top: [A[1], C[1], B[1]], foot: [bot, bot, bot] }, { p: [B, C, Dd].map(xz), top: [B[1], C[1], Dd[1]], foot: [bot, bot, bot] }); }
+    parts.push({ kind: 'ring', end, cells: [{ quad: [at(1, 0), at(m - 2, 0), at(m - 2, tn.ringDepth), at(1, tn.ringDepth)].map(xz), tris }] });
+  }
+  return parts;
 }
 
 // generic placing helper for a swept route
@@ -223,7 +264,9 @@ function ringChain(W) {
 // its carriageway edge on the branch side (3.5 m) is one line per leg. Each of the branch's two paved edges meets the edge line of the leg it lands on;
 // a corner arc of radius r is tangent to both (T1 on the trunk edge, T2 on the branch edge); the branch then starts 0.6 m beyond the farther T2. The mouth = the trunk stations
 // where the paving outline lies in the ditch band (4.4-7.3 m from the centre), at least the branch's paved width + 1 m on each side: there the ditch is filled and no barrier stands.
-function junctionPlan(W, J, RK) {
+// pavedHalf (W10 junction fix): the trunk's drawn paved half-width at the node once it is swept, in place of its class carriageway; on a bridge approach the trunk is RD01B
+// (asphalt to 4.5 m, a kerb to 5.0 m: J-T07, J-T09) and the paving starts behind that kerb.
+function junctionPlan(W, J, RK, pavedHalf) {
   const NET = W.roadNetwork, N0 = NET.nodeById[J.node], P = plane(W, N0), tr = ROUTES.find(r => r.id === J.trunk), br = ROUTES.find(r => r.id === J.branch);
   const unit = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1], right = d => [d[1], -d[0]];
   let sJ = 0, iSeg = 0; for (; iSeg < tr.segs.length; iSeg++) { if (routeNode(NET, tr.segs[iSeg], 'start') === J.node) break; sJ += NET.edgeLength(NET.edges.find(e => e.id === tr.segs[iSeg].id)); }
@@ -234,7 +277,7 @@ function junctionPlan(W, J, RK) {
   const localBranchPaved = RK.PROFILES[NET.edges.find(e => e.id === bEdge).class].paved;
   const h = Math.max(Math.abs(localBranchPaved[0]), Math.abs(localBranchPaved[1])),
     frontHalf = Math.max(Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg].id).class].paved[0]), Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg].id).class].paved[1])),
-    backHalf = Math.max(Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg - 1].id).class].paved[0]), Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg - 1].id).class].paved[1])), vE = Math.max(frontHalf, backHalf), r = J.r, nB = right(bd);
+    backHalf = Math.max(Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg - 1].id).class].paved[0]), Math.abs(RK.PROFILES[NET.edges.find(e => e.id === tr.segs[iSeg - 1].id).class].paved[1])), vE = pavedHalf ?? Math.max(frontHalf, backHalf), r = J.r, nB = right(bd);
   const legs = { back: { d: dB, p: right(dB).map(v => v * sigma * vE) }, fwd: { d: dF, p: right(dF).map(v => v * sigma * vE) } };
   const meet = (p1, d1, p2, d2) => { const det = d1[0] * -d2[1] - d1[1] * -d2[0], rx = p2[0] - p1[0], rz = p2[1] - p1[1], l = (rx * -d2[1] - rz * -d2[0]) / det; return [p1[0] + l * d1[0], p1[1] + l * d1[1]]; };
   // station (signed metres from the node along the trunk) and distance from the trunk centre of a point of the plane (the nearer leg)
@@ -276,10 +319,11 @@ function project(rt, lon, lat, hint) {
   }
   return best;
 }
-// the junction paving in the node's plane: the outline runs along the trunk's actual carriageway edge (3.5 m, sampled from the swept trunk between the two corners), round the
+// the junction paving in the node's plane: the outline runs along the trunk's drawn paved edge (its own rows between the two corners), round the
 // corner arc and up the branch edge on one side, across the branch's actual last row, and back down the other side; it is cut into triangles by ear clipping and every edge longer
 // than 0.75 m is split at its midpoint (the same rule on both sides of an edge, no cracks), so that the heights - the trunk's surface (its mouth is flat on the bed) + PAVE_LIFT,
-// which the branch's last row was lifted to - follow the ground. Returns the strip, the ink of both curb lines and the corner data.
+// which the branch's last row was lifted to - follow the ground; what then lies on the trunk's drawn paving (asphalt, shoulder and kerb) or past a tunnel's portal face is cut
+// away. Returns the strip, the ink of both curb lines (cut the same way) and the corner data.
 function earClip(P) {
   const n = P.length, area = P.reduce((a, p, i) => { const q = P[(i + 1) % n]; return a + p[0] * q[1] - q[0] * p[1]; }, 0), V = Array.from({ length: n }, (_, i) => i);
   if (area < 0) V.reverse();
@@ -306,11 +350,27 @@ function paving(W, jp, trunk, branch) {
     const { i, t } = atS(branch, s), row = k => { let j = 0; while (j + 2 < branch.grid.length && branch.grid[j + 1] < o) j++; const f = Math.max(0, Math.min(1, (o - branch.grid[j]) / (branch.grid[j + 1] - branch.grid[j]))); return branchBase[k * branch.grid.length + j] + (branchBase[k * branch.grid.length + j + 1] - branchBase[k * branch.grid.length + j]) * f; };
     return row(i) + (row(i + 1) - row(i)) * t;
   };
-  const dLine = (q, p) => Math.abs((p[0] - q.line.p[0]) * -q.line.d[1] + (p[1] - q.line.p[1]) * q.line.d[0]), stOf = g => { const ll = jp.fromUV(g[0], g[1]); return project(trunk, ll.lon, ll.lat, jp.sJ).s; };
-  const edgeAt = s => { const [lo, la] = latS(trunk, s, jp.sigma * jp.vE); return jp.toUV({ lon: lo, lat: la }); };          // the trunk's actual carriageway edge at station s
+  const dLine = (q, p) => Math.abs((p[0] - q.line.p[0]) * -q.line.d[1] + (p[1] - q.line.p[1]) * q.line.d[0]), stOf = g => dOf(g).s;
+  // the trunk's paved edge as it is drawn: the paved half-width of each row on the junction's side (RD01 3.5 m; on a bridge approach RD01B 5.0 m, the asphalt shoulder
+  // and the kerb included; blended between), a flat Mercator offset along the row's tangent x cf, straight between the rows (roadkit.js route). edgeAt(s) is its point at
+  // station s; dOf(g) gives a point's station and its signed distance from that edge in the strip's own cell (between the cross-section lines of two rows), d < 0 on the
+  // trunk's paving. A geodesic offset (latS) lies up to 1.4 cm inside the drawn edge at 36 deg of latitude (J-T08), and project()'s nearest centre-line segment differs from
+  // the cell by up to 0.3 mm on a curve.
+  const P2 = 2 * Math.PI * R, sd = jp.sigma > 0 ? 1 : 0, TS = trunk.samples, rowE = k => { const F = trunk.flatOf[k], T = trunk.tangent[k], sc = trunk.paved[k][sd] * trunk.cf[k] * F.k; return [F.x - T[1] * sc, F.z + T[0] * sc]; };
+  const flatUV = g => { const ll = jp.fromUV(g[0], g[1]); return [R * ll.lon * D, -R * Math.asinh(Math.tan(ll.lat * D))]; }, uvFlat = (x, z) => jp.toUV({ lon: x / (R * D), lat: Math.atan(Math.sinh(-z / R)) / D });
+  const edgeAt = s => { const { i, t } = atS(trunk, s), a = rowE(i), b = rowE(i + 1), bx = b[0] + P2 * Math.round((a[0] - b[0]) / P2); return uvFlat(a[0] + (bx - a[0]) * t, a[1] + (b[1] - a[1]) * t); };
+  const rows = TS.map((_, k) => k).filter(k => k + 1 < TS.length && Math.abs(TS[k].s - jp.sJ) < 30);
+  const dOf = g => {
+    const [x0, z] = flatUV(g), along = (k, x) => (x - trunk.flatOf[k].x) * trunk.tangent[k][0] + (z - trunk.flatOf[k].z) * trunk.tangent[k][1];
+    let i = rows[rows.length - 1]; for (const k of rows) { const x = x0 + P2 * Math.round((trunk.flatOf[k].x - x0) / P2); if (along(k, x) < 0) { i = Math.max(rows[0], k - 1); break; } }
+    const x = x0 + P2 * Math.round((trunk.flatOf[i].x - x0) / P2), a = rowE(i), b = rowE(i + 1), F = trunk.flatOf[i], dir = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(dir[0], dir[1]) || 1e-12;
+    const cr = (u, v) => u[0] * v[1] - u[1] * v[0], side = Math.sign(cr(dir, [a[0] - F.x, a[1] - F.z])) || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dir[0] + (z - a[1]) * dir[1]) / (l * l)));
+    return { s: TS[i].s + (TS[i + 1].s - TS[i].s) * t, d: side * cr(dir, [x - a[0], z - a[1]]) / l / (F.k * trunk.cf[i]) };
+  };
   const sides = jp.edges.map(q => { const sX = stOf(q.X), sT = stOf(q.T1); return { q, E: dLine(q, ends[0]) < dLine(q, ends[1]) ? ends[0] : ends[1], sX, X: edgeAt(sX), T1: edgeAt(sT), sT }; }).sort((a, b) => a.sX - b.sX);
   // the body: the branch's footprint down to the trunk edge (between the two X), with T2 on its sides; two corner fans from X over the arcs (T1 snapped onto the actual edge)
-  const nB = Math.max(1, Math.ceil((sides[1].sX - sides[0].sX) / 0.5)), bottom = Array.from({ length: nB + 1 }, (_, k) => k === 0 ? sides[0].X : k === nB ? sides[1].X : edgeAt(sides[0].sX + (sides[1].sX - sides[0].sX) * k / nB));
+  // (the bottom takes the trunk's own rows between the two X: it is the drawn edge itself, no chord across a row)
+  const bottom = [sides[0].X, ...TS.filter(q => q.s > sides[0].sX + 0.05 && q.s < sides[1].sX - 0.05).map(q => edgeAt(q.s)), sides[1].X];
   const body = [...bottom, sides[1].q.T2, sides[1].E, sides[0].E, sides[0].q.T2], V = body.map(p => p.slice()), tris = earClip(V);
   const left = [sides[0].T1, ...sides[0].q.arc.slice(1)], right = [sides[1].T1, ...sides[1].q.arc.slice(1)];
   for (const [sd, arc] of [[sides[0], left], [sides[1], right]]) { const x = V.push(sd.X.slice()) - 1, first = V.length; arc.forEach(p => V.push(p.slice())); for (let k = 0; k + 1 < arc.length; k++) tris.push(x, first + k, first + k + 1); }
@@ -326,6 +386,58 @@ function paving(W, jp, trunk, branch) {
     if (k === 1) { const [A, B, C] = lp ? [p, q, r] : lq ? [q, r, p] : [r, p, q], m = mid(A, B); st.push([A, m, C], [m, B, C]); continue; }
     const [A, B, C] = !lr ? [p, q, r] : !lp ? [q, r, p] : [r, p, q], m1 = mid(A, B), m2 = mid(B, C); st.push([m1, B, m2], [A, m1, m2], [A, m2, C]);
   }
+  const triAreaOf = (VV, I) => { let a = 0; for (let t = 0; t < I.length; t += 3) { const [p, q, r] = [VV[I[t]], VV[I[t + 1]], VV[I[t + 2]]]; a += Math.abs((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) / 2; } return a; };
+  const triArea = triAreaOf(V, idx);
+  // A cut of the triangles where f changes sign (f < 0 goes): a vertex within 0.1 mm of the line is put on it (place); a cut edge is split where f is 0 (bisection: f is
+  // nearly linear along it), the point put on the line and shared by the two triangles of that edge, so no crack opens.
+  const trim = { triangles: 0, dropped: 0, area: 0, portal: 0 }, lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const cutBy = (f, place) => {
+    const Fv = V.map(f); Fv.forEach((v, k) => { if (Math.abs(v) < 1e-4) { V[k] = place(V[k]); Fv[k] = 0; } });
+    const cuts = new Map(), cutAt = (a, b) => { const key = Math.min(a, b) * 1e6 + Math.max(a, b); let c = cuts.get(key);
+      if (c === undefined) { let lo = 0, hi = 1; for (let it = 0; it < 40; it++) { const m = (lo + hi) / 2; if ((f(lerp2(V[a], V[b], m)) < 0) === (Fv[a] < 0)) lo = m; else hi = m; } c = V.push(place(lerp2(V[a], V[b], (lo + hi) / 2))) - 1; Fv.push(0); cuts.set(key, c); }
+      return c; };
+    const kept = []; let n = 0;
+    for (let t = 0; t < idx.length; t += 3) {
+      const tri = [idx[t], idx[t + 1], idx[t + 2]];
+      if (tri.every(k => Fv[k] >= 0)) { kept.push(...tri); continue; }
+      n++; if (tri.every(k => Fv[k] <= 0)) { trim.dropped++; continue; }
+      trim.triangles++; const poly = [];
+      for (let e = 0; e < 3; e++) { const a = tri[e], b = tri[(e + 1) % 3]; if (Fv[a] >= 0) poly.push(a); if (Fv[a] * Fv[b] < 0) poly.push(cutAt(a, b)); }
+      for (let k = 1; k + 1 < poly.length; k++) { const [p, q, r] = [V[poly[0]], V[poly[k]], V[poly[k + 1]]]; if (Math.abs((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) > 1e-10) kept.push(poly[0], poly[k], poly[k + 1]); }
+    }
+    idx.length = 0; idx.push(...kept); return n;
+  };
+  // (0) first split along the cross-section lines of the trunk's rows that the paving spans (both sides kept), so that every triangle lies in one cell of the trunk's
+  // strip, where its paved edge is straight: on a bridge approach the paved width changes from row to row (J-T09) and a cut chord across a row would cut the corner
+  const splitBy = f => {
+    const Fv = V.map(f), cuts = new Map(), cutAt = (a, b) => { const key = Math.min(a, b) * 1e6 + Math.max(a, b); let c = cuts.get(key);
+      if (c === undefined) { let lo = 0, hi = 1; for (let it = 0; it < 40; it++) { const m = (lo + hi) / 2; if ((f(lerp2(V[a], V[b], m)) < 0) === (Fv[a] < 0)) lo = m; else hi = m; } c = V.push(lerp2(V[a], V[b], (lo + hi) / 2)) - 1; Fv.push(0); cuts.set(key, c); }
+      return c; };
+    const out = [], fan = poly => { for (let k = 1; k + 1 < poly.length; k++) { const [p, q, r] = [V[poly[0]], V[poly[k]], V[poly[k + 1]]]; if (Math.abs((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) > 1e-10) out.push(poly[0], poly[k], poly[k + 1]); } };
+    for (let t = 0; t < idx.length; t += 3) {
+      const tri = [idx[t], idx[t + 1], idx[t + 2]];
+      if (tri.every(k => Fv[k] >= 0) || tri.every(k => Fv[k] <= 0)) { out.push(...tri); continue; }
+      const pos = [], neg = [];
+      for (let e = 0; e < 3; e++) { const a = tri[e], b = tri[(e + 1) % 3]; if (Fv[a] >= 0) pos.push(a); if (Fv[a] <= 0) neg.push(a); if (Fv[a] * Fv[b] < 0) { const c = cutAt(a, b); pos.push(c); neg.push(c); } }
+      fan(pos); fan(neg);
+    }
+    idx.length = 0; idx.push(...out);
+  };
+  { const ss = V.map(g => dOf(g).s), s0 = Math.min(...ss), s1 = Math.max(...ss);
+    TS.forEach((q, k) => { if (q.s <= s0 + 1e-6 || q.s >= s1 - 1e-6) return; const F0 = trunk.flatOf[k], T0 = trunk.tangent[k];
+      splitBy(g => { const [x, z] = flatUV(g); return ((x + P2 * Math.round((F0.x - x) / P2) - F0.x) * T0[0] + (z - F0.z) * T0[1]) / F0.k; }); }); }
+  // (1) the paving less the trunk's paving. The body and the corner arcs are laid out on the straight legs of the node's plane, the swept trunk follows its own fillets
+  // (J-T07 lies in the RN01-03 abutment's fillet: the arcs reached 0.19 m onto the asphalt), so every triangle is cut at the drawn paved edge (dOf, edgeAt).
+  const onEdge = g => edgeAt(dOf(g).s), cuts = [[g => dOf(g).d, onEdge]];
+  // (2) and it stops at a tunnel's portal face (J-T07: the corner arc ran 0.8 m into the RN01-05 portal): the face is the cross-section line of the tunnel's first or last row
+  if (trunk.tunnel) {
+    const before = jp.sJ < trunk.tunnel.s0, i0 = before ? trunk.tunnel.idx[0] : trunk.tunnel.idx[trunk.tunnel.idx.length - 1], F0 = trunk.flatOf[i0], T0 = trunk.tangent[i0];
+    cuts.push([g => { const [x, z] = flatUV(g), a = (x + P2 * Math.round((F0.x - x) / P2) - F0.x) * T0[0] + (z - F0.z) * T0[1]; return (before ? -a : a) / F0.k; }, g => g, 'portal']);
+  }
+  for (const [f, place, kind] of cuts) { const n = cutBy(f, place); if (kind === 'portal') trim.portal = n; }
+  // only the vertices that a kept triangle uses
+  { const used = [...new Set(idx)].sort((a, b) => a - b), re = new Map(used.map((v, k) => [v, k])), V2 = used.map(v => V[v]);
+    const I2 = idx.map(v => re.get(v)); trim.area = triArea - triAreaOf(V2, I2); idx.length = 0; idx.push(...I2); V.length = 0; V.push(...V2); }
   const pos = [], col = [], pts = [], C = jp.paving === 'asphalt' ? [lin('#2f3645'), lin('#353c4b')] : [lin('#6a5a46'), lin('#5a4c3b')],
     heightAt = ll => {
       const pr = project(trunk, ll.lon, ll.lat, jp.sJ), trunkH = surfS(trunk, pr.s, pr.o) + PAVE_LIFT,
@@ -346,16 +458,23 @@ function paving(W, jp, trunk, branch) {
     pos.push(R * ll.lon * D, (h - BASE) * k, -R * Math.asinh(Math.tan(ll.lat * D))); pts.push({ lon: ll.lon, lat: ll.lat, h, s: pr.s, o: pr.o });
     const hz = hash(g[0] * 1.3, g[1] * 1.1), c = C[0].map((v2, ci) => (v2 + (C[1][ci] - v2) * hz) * (0.97 + 0.05 * hash(g[0] * 2.3, g[1] * 1.9))); col.push(c[0], c[1], c[2]);
   }
-  // wound to face up in the flat frame (the coverage below shows that no two triangles overlap: the sum of their areas equals the outline's)
+  // wound to face up in the flat frame (the coverage below shows that the triangulation, before the carriageway cut, has no two triangles overlapping: the sum of their
+  // areas equals the outline's)
   for (let t = 0; t < idx.length; t += 3) { const A = idx[t] * 3, B = idx[t + 1] * 3, Cc = idx[t + 2] * 3; const ny = (pos[B + 2] - pos[A + 2]) * (pos[Cc] - pos[A]) - (pos[B] - pos[A]) * (pos[Cc + 2] - pos[A + 2]); if (ny < 0) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; } }
-  const outline = [...bottom.slice(0, 1), ...[...left].reverse(), sides[0].q.T2, sides[0].E, sides[1].E, sides[1].q.T2, ...[...right].reverse().slice(0, -1), right[0], ...bottom.slice(-1)];
   const polyA = P2 => Math.abs(P2.reduce((a, p, i) => { const q = P2[(i + 1) % P2.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
-  let triArea = 0; for (let t = 0; t < idx.length; t += 3) { const [a, b2, c2] = [V[idx[t]], V[idx[t + 1]], V[idx[t + 2]]]; triArea += Math.abs((b2[0] - a[0]) * (c2[1] - a[1]) - (b2[1] - a[1]) * (c2[0] - a[0])) / 2; }
   const bodyArea = polyA(body), fanArea = [left, right].map((arc, k) => { const X = sides[k].X; let a = 0; for (let j = 0; j + 1 < arc.length; j++) a += Math.abs((arc[j][0] - X[0]) * (arc[j + 1][1] - X[1]) - (arc[j][1] - X[1]) * (arc[j + 1][0] - X[0])) / 2; return a; });
-  const inkOf = line => { const ptsL = []; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f < 1; f += 0.25) ptsL.push([line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f]); ptsL.push(line[line.length - 1]);
-    return ptsL.map(g => { const ll = jp.fromUV(g[0], g[1]); return { lon: ll.lon, lat: ll.lat, alt: heightAt(ll) + 0.06 }; }); };
-  return { strip: { name: 'junction ' + jp.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3 }, ink: [inkOf([...left, sides[0].E]), inkOf([...right, sides[1].E])], pts, outline, triangles: idx.length / 3,
-    coverage: triArea / Math.max(1e-9, bodyArea + fanArea[0] + fanArea[1]), corners: sides.map(q => ({ leg: q.q.leg, corner: q.q.corner, s: q.sT, sX: q.sX })), ends: sides.map(q => q.E), surfaceAt: (lon, lat) => heightAt({ lon, lat }) };
+  // the curb lines stop at the same lines as the paving (a run that leaves a cut starts on its line)
+  const clipRun = (pts0, f, place) => { const runs = []; let cur = [], prev = null;
+    for (const g of pts0) { const q = { g, v: f(g) };
+      if (prev && prev.v * q.v < 0) { let lo = 0, hi = 1; for (let it = 0; it < 40; it++) { const m = (lo + hi) / 2; if ((f(lerp2(prev.g, g, m)) < 0) === (prev.v < 0)) lo = m; else hi = m; } cur.push(place(lerp2(prev.g, g, (lo + hi) / 2))); if (q.v < 0) { runs.push(cur); cur = []; } }
+      if (q.v >= -1e-4) cur.push(Math.abs(q.v) < 1e-4 ? place(g) : g); else if (cur.length) { runs.push(cur); cur = []; }
+      prev = q; }
+    runs.push(cur); return runs.filter(r => r.length > 1); };
+  const inkOf = line => { const ptsL = []; for (let k = 0; k + 1 < line.length; k++) for (let f = 0; f < 1; f += 0.25) ptsL.push(lerp2(line[k], line[k + 1], f)); ptsL.push(line[line.length - 1]);
+    let runs = [ptsL]; for (const [f, place] of cuts) runs = runs.flatMap(r => clipRun(r, f, place));
+    return runs.map(r => r.map(g => { const ll = jp.fromUV(g[0], g[1]); return { lon: ll.lon, lat: ll.lat, alt: heightAt(ll) + 0.06 }; })); };
+  return { strip: { name: 'junction ' + jp.node, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(idx), vertexCount: pos.length / 3 }, ink: [...inkOf([...left, sides[0].E]), ...inkOf([...right, sides[1].E])], pts, triangles: idx.length / 3,
+    coverage: triArea / Math.max(1e-9, bodyArea + fanArea[0] + fanArea[1]), trim: { triangles: trim.triangles, dropped: trim.dropped, area: trim.area, portal: trim.portal }, corners: sides.map(q => ({ leg: q.q.leg, corner: q.q.corner, s: q.sT, sX: q.sX })), ends: sides.map(q => q.E), surfaceAt: (lon, lat) => heightAt({ lon, lat }) };
 }
 
 // CR01 keeps its swept asphalt across every junction. The connected arms determine only where
@@ -935,6 +1054,17 @@ function* planSteps(W, H, tc) {
   const optsOf = def => routeOpts(def, ctx, tc);
   const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
   for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
+  // W10 junction fix: a T junction stands on its trunk's drawn paved edge, known once the trunk is swept (on a bridge approach RD01B: J-T07, J-T09). Where it differs from
+  // the class carriageway the junction is laid out again on it (corners, the branch's start, the mouth) and the trunk is swept again with that mouth (its cross-section,
+  // bed and approach do not depend on the mouth, so its paved width stays)
+  const again = new Set();
+  JP.forEach((jp, k) => { if (jp.shallowMerge) return; const tr = byId[jp.trunk], { i, t } = atS(tr, jp.sJ), sd = jp.sigma > 0 ? 1 : 0, w = Math.abs(tr.paved[i][sd] + (tr.paved[i + 1][sd] - tr.paved[i][sd]) * t);
+    if (Math.abs(w - jp.vE) > 1e-3) { JP[k] = junctionPlan(WS, JUNCTIONS[k], RK, w); again.add(jp.trunk); }
+    // no mouth reaches into a tunnel: it ends at the portal face, as the paving does (paving())
+    const tun = tr.samples.filter(p => p.span === 'tunnel'), m = JP[k].mouth;
+    if (tun.length && jp.sJ < tun[0].s && m.s1 > tun[0].s) { JP[k] = { ...JP[k], mouth: { ...m, s1: tun[0].s } }; again.add(jp.trunk); }
+    if (tun.length && jp.sJ > tun[tun.length - 1].s && m.s0 < tun[tun.length - 1].s) { JP[k] = { ...JP[k], mouth: { ...m, s0: tun[tun.length - 1].s } }; again.add(jp.trunk); } });
+  for (const id of again) { const def = ROUTES.find(d => d.id === id), rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
   for (const def of ROUTES.filter(branchOf)) {
     const jp = branchOf(def), trunk = byId[jp.trunk], o = optsOf(def);
     o.ramp = branchRamp(jp, trunk);
@@ -994,7 +1124,7 @@ function* planSteps(W, H, tc) {
 }
 function plan(W, H, tc) { const it = planSteps(W, H, tc); for (;;) { const r = it.next(); if (r.done) return r.value; } }
 
-const ROADS = { plan, planSteps, routeContext, routeOpts, furnish, ROUTES, STAIRS, BRIDGES, NAV_PERIOD, JUNCTIONS: [...CR01_JUNCTIONS, ...JUNCTIONS], RING_JUNCTIONS: CR01_JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS };
+const ROADS = { plan, planSteps, routeContext, routeOpts, furnish, ROUTES, STAIRS, BRIDGES, NAV_PERIOD, JUNCTIONS: [...CR01_JUNCTIONS, ...JUNCTIONS], RING_JUNCTIONS: CR01_JUNCTIONS, RING, FILLET_T, FILLET_E, PAVE_LIFT, transition, plane, project, atS, latS, surfS, tunnelProfiles, tubeAt, ringAt };
 
 // ---------------------------------------------------------------- scene part
 ROADS.attach = function (scene, ctx, BEND, TERR, LOOK_API) {
@@ -1112,33 +1242,27 @@ ROADS.attach = function (scene, ctx, BEND, TERR, LOOK_API) {
   }
 
   function buildTunnel(rt, root, stripMesh, mat) {
-    const tn = rt.tunnel, idx = tn.idx, F = rt.flatOf, T = rt.tangent, n = idx.length;
-    const arc = 12, prof = [];                                              // inner profile: wall up, then the half-round arch over (o, dy)
-    prof.push([-tn.innerR, 0]); prof.push([-tn.innerR, tn.wallH]);
-    for (let a = 1; a < arc; a++) { const th = Math.PI - Math.PI * a / arc; prof.push([tn.innerR * Math.cos(th), tn.wallH + tn.innerR * Math.sin(th)]); }
-    prof.push([tn.innerR, tn.wallH]); prof.push([tn.innerR, 0]);
+    const tn = rt.tunnel, idx = tn.idx, T = rt.tangent, n = idx.length, PR = tunnelProfiles(tn), prof = PR.inner;        // the shared cross-sections (pure part, tunnelProfiles)
     const mk = (name, scale, color, inward) => {
       const m = prof.length, pos = [], col = [], ix = [], c0 = new THREE.Color(color);
-      idx.forEach(i => { const k = F[i].k; prof.forEach(([o, dy], j) => { const ro = o * scale, ry = tn.wallH + (dy - tn.wallH) * scale + (scale > 1 ? 0 : 0); const jit = 0.9 + 0.2 * hash(rt.samples[i].s * 3, j); pos.push(F[i].x + (-T[i][1]) * ro * k, (rt.bed[i] + ry - BASE) * k, F[i].z + T[i][0] * ro * k); col.push(c0.r * jit, c0.g * jit, c0.b * jit); }); });
+      idx.forEach(i => { prof.forEach((p, j) => { const jit = 0.9 + 0.2 * hash(rt.samples[i].s * 3, j); pos.push(...tubeAt(rt, i, p, scale)); col.push(c0.r * jit, c0.g * jit, c0.b * jit); }); });
       for (let i = 0; i + 1 < n; i++) for (let j = 0; j + 1 < m; j++) { const a = i * m + j, b = a + 1, c = a + m, d = c + 1; ix.push(a, c, b, b, c, d); }
       // face toward the axis (inner lining) or away from it (outer shell): flip the winding by the sign of the normal against the direction to the centre line
-      for (let t = 0; t < ix.length; t += 3) { const a = ix[t] * 3, b = ix[t + 1] * 3, c = ix[t + 2] * 3, ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2]; const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const i = Math.floor(ix[t] / m), j = ix[t] % m; const q = prof[j], cx = (idx[i] >= 0 ? F[idx[i]].x : 0); void cx; const ox = (-T[idx[i]][1]) * q[0], oz = T[idx[i]][0] * q[0], oy = q[1] - tn.wallH * 0.5; const dir = nx * ox + nz * oz + ny * oy; if ((dir > 0) === inward) { const tmp = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = tmp; } }
+      for (let t = 0; t < ix.length; t += 3) { const a = ix[t] * 3, b = ix[t + 1] * 3, c = ix[t + 2] * 3, ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2]; const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const i = Math.floor(ix[t] / m), j = ix[t] % m; const q = prof[j]; const ox = (-T[idx[i]][1]) * q[0], oz = T[idx[i]][0] * q[0], oy = q[1] - tn.wallH * 0.5; const dir = nx * ox + nz * oz + ny * oy; if ((dir > 0) === inward) { const tmp = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = tmp; } }
       return stripMesh({ name: 'tunnel ' + name, pos: Float32Array.from(pos), col: Float32Array.from(col), index: Uint32Array.from(ix), vertexCount: n * m, normals: true }, mat);
     };
     mk('lining', 1, '#3b4250', true);
-    mk('shell', 1 + tn.shell / tn.innerR, '#7c828c', false);
-    // portal rings: a flat band between the inner profile (walls and arch) and a 1.2 m wider outer profile, 1.4 m deep, with moss on the upper half; a black fan fills the opening
+    mk('shell', PR.shellScale, '#7c828c', false);
+    // portal rings: a flat band between the inner profile (walls and arch) and the outer one (ringOut wider), ringDepth deep, with moss on the upper half; a black fan fills the opening
     for (const [i0, dirSign] of [[idx[0], -1], [idx[n - 1], 1]]) {
-      const k = F[i0].k, tx = T[i0][0], tz = T[i0][1], bx = -tz, bz = tx, base = rt.bed[i0], depth = tn.ringDepth, outerR = tn.innerR + 1.2;
-      const at = (o, dy, back) => { const dz = back * -dirSign; return [F[i0].x + bx * o * k + tx * dz * k, (base + dy - BASE) * k, F[i0].z + bz * o * k + tz * dz * k]; };
-      const outerOf = ([o, dy]) => { if (dy <= tn.wallH + 1e-6 && Math.abs(Math.abs(o) - tn.innerR) < 1e-6) return [Math.sign(o) * outerR, dy]; const vx = o, vy = dy - tn.wallH, l = Math.hypot(vx, vy); return [vx / l * outerR, tn.wallH + vy / l * outerR]; };
+      const depth = tn.ringDepth, at = (p, back) => ringAt(rt, i0, dirSign, p, back);
       const c0 = new THREE.Color('#8a8f99'), moss = new THREE.Color('#4f7a56'), dark = new THREE.Color('#5f6672'), ringPos = [], ringCol = [], ringIdx = [];
-      prof.forEach((p, a) => { const q = outerOf(p), up = p[1] > tn.wallH + 0.2 ? 1 : 0; for (const [pt, back, kind] of [[p, 0, 0], [q, 0, 1], [q, depth, 2], [p, depth, 3]]) { ringPos.push(...at(pt[0], pt[1], back)); const mv = up ? 0.25 + 0.3 * hash(a, kind) : 0.08 * hash(a, kind); const c = (kind === 3 ? dark : c0).clone().lerp(moss, mv); ringCol.push(c.r, c.g, c.b); } });
+      prof.forEach((p, a) => { const q = PR.ring[a], up = p[1] > tn.wallH + 0.2 ? 1 : 0; for (const [pt, back, kind] of [[p, 0, 0], [q, 0, 1], [q, depth, 2], [p, depth, 3]]) { ringPos.push(...at(pt, back)); const mv = up ? 0.25 + 0.3 * hash(a, kind) : 0.08 * hash(a, kind); const c = (kind === 3 ? dark : c0).clone().lerp(moss, mv); ringCol.push(c.r, c.g, c.b); } });
       const m = 4, N = prof.length; for (let a = 0; a + 1 < N; a++) for (let j = 0; j < m; j++) { const j2 = (j + 1) % m, a0 = a * m + j, b0 = a * m + j2, c1 = (a + 1) * m + j, d0 = (a + 1) * m + j2; ringIdx.push(a0, c1, b0, b0, c1, d0); }
       stripMesh({ name: 'tunnel portal ring', pos: Float32Array.from(ringPos), col: Float32Array.from(ringCol), index: Uint32Array.from(ringIdx), vertexCount: ringPos.length / 3, normals: true }, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ctx.ramp, side: THREE.DoubleSide }));
       // void: a fan from the road-level centre of the opening over the whole inner profile, recessed voidDepth (0.2 m) behind the ring face
-      const vp = [...at(0, 0.05, tn.voidDepth)], vc = [0.03, 0.04, 0.06], vi = [];
-      prof.forEach(p => { vp.push(...at(p[0], p[1], tn.voidDepth)); vc.push(0.02, 0.025, 0.04); });
+      const vp = [...at([0, 0.05], tn.voidDepth)], vc = [0.03, 0.04, 0.06], vi = [];
+      prof.forEach(p => { vp.push(...at(p, tn.voidDepth)); vc.push(0.02, 0.025, 0.04); });
       for (let a = 1; a < prof.length; a++) vi.push(0, a, a + 1);
       stripMesh({ name: 'tunnel void', pos: Float32Array.from(vp), col: Float32Array.from(vc), index: Uint32Array.from(vi), vertexCount: vp.length / 3, normals: true }, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     }

@@ -306,9 +306,10 @@ const dead=v=>Math.abs(v)<STICK_DEAD?0:Math.sign(v)*(Math.abs(v)-STICK_DEAD)/(1-
 function rideInput(){const c=v=>Math.max(-1,Math.min(1,v));return{throttle:c((keys.has('w')||keys.has('arrowup')?1:0)-(keys.has('s')||keys.has('arrowdown')?1:0)+dead(joystickValue[1])),steer:c((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+dead(joystickValue[0]))};}
 // the follow camera of the ride (ride.camera()), blended from the free camera for the first second
 // R2: the rider (rider.js) follows the ride's state
-// the tunnel portals' black void discs stand for the dark bore seen from afar; riding through the tunnel road they would hide the rider and the far portal, so they hide then
-let tunnelVoids=null;function voidsFor(st){if(!tunnelVoids){tunnelVoids=[];roads.state.root.traverse(o=>{if(o.isMesh&&/^road:tunnel void|tunnel void$/.test(o.name))tunnelVoids.push(o);});}const near=!!roam&&!!st&&!!st.sample&&!!ground.lines.find(l=>l.tunnel&&l.id===st.sample.line);for(const o of tunnelVoids)o.visible=!near;}
-function riderStep(dt){voidsFor(ride.state);if(!rider)return;const st=ride.state;rider.update(dt,{x:st.x,root:st.root,z:st.z,heading:st.heading,speed:st.speed,mode:st.mode,s:st.s,wheels:[st.yF,st.yB],lookYaw:st.lookYaw,throttle:st.throttle});}
+// the tunnel portals' black void discs stand for the dark bore seen from afar (free view); riding, the bore is seen as it is from everywhere (they used to hide only on the
+// tunnel's own road, so coming off the RN01-03 / RN01-07 decks a portal stayed black until the abutment, 9.3 / 26.4 m before it, and then opened at once)
+let tunnelVoids=null;function voidsFor(){if(!tunnelVoids){tunnelVoids=[];roads.state.root.traverse(o=>{if(o.isMesh&&/^road:tunnel void|tunnel void$/.test(o.name))tunnelVoids.push(o);});}for(const o of tunnelVoids)o.visible=!roam;}
+function riderStep(dt){voidsFor();if(!rider)return;const st=ride.state;rider.update(dt,{x:st.x,root:st.root,z:st.z,heading:st.heading,speed:st.speed,mode:st.mode,s:st.s,wheels:[st.yF,st.yB],lookYaw:st.lookYaw,throttle:st.throttle});}
 function rideCamera(dt){const c=ride.camera(),st=ride.state;roam.position.set(st.x,st.root,st.z);let pos=c.position,look=c.look,fov=c.fov,near=c.near;
   if(rideBlend){rideBlend.t=Math.min(1,rideBlend.t+dt/1.0);const k=smooth01(rideBlend.t),f=rideBlend.from,mix=(a,b)=>a.map((v,i)=>v+(b[i]-v)*k);pos=mix(f.pos,pos);look=mix(f.look,look);fov=f.fov+(fov-f.fov)*k;near=f.near+(near-f.near)*k;if(rideBlend.t>=1)rideBlend=null;}
   camera.position.set(pos[0],pos[1],pos[2]);if(camera.up.x!==0||camera.up.y!==1||camera.up.z!==0)camera.up.set(0,1,0);camera.lookAt(look[0],look[1],look[2]);
