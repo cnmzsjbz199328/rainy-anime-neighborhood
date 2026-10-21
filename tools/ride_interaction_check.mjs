@@ -171,10 +171,10 @@ if (want('RI3')) {
   const small = await H(() => [0.1, -0.1, 0.3, -0.3, 0.8, -0.8].map(th => ({ th, ...window.__HEAD.settle(th) })));
   row('小角度 0.6 θ', small.every(q => Math.abs(q.yaw - 0.6 * q.th) <= 1e-4), small.map(q => `θ ${q.th} → ${f(q.yaw, 4)}（0.6 θ = ${f(0.6 * q.th, 4)}，目标 ${f(q.goal, 4)}）`).join('，'));
   // c. limit over four turns each way, at 0.01 rad a step
-  const lim = await H(() => { const A = window.__HEAD; const a = A.sweep(0, 4 * Math.PI, 0.01), b = A.sweep(4 * Math.PI, -4 * Math.PI, 0.01), c = A.sweep(-4 * Math.PI, 0, 0.01); const p1 = A.settle(1.7), p2 = A.settle(-1.7);
+  const lim = await H(() => { const A = window.__HEAD; const a = A.sweep(0, 4 * Math.PI, 0.01), b = A.sweep(4 * Math.PI, -4 * Math.PI, 0.01), c = A.sweep(-4 * Math.PI, 0, 0.01); const p1 = A.settle(1 / 0.6), p2 = A.settle(-1 / 0.6);
     return { aY: Math.max(a.aY, b.aY, c.aY), aG: a.aG === null ? null : Math.max(a.aG, b.aG, c.aG), mY: Math.max(a.mY, b.mY, c.mY), mG: a.mG === null ? null : Math.max(a.mG, b.mG, c.mG), p1: p1.yaw, p2: p2.yaw }; });
   row('限幅 ±1 rad', lim.aY <= 1 + 1e-9 && (lim.aG === null || lim.aG <= 1 + 1e-9) && Math.abs(lim.p1 - 1) < 1e-4 && Math.abs(lim.p2 + 1) < 1e-4,
-    `θ 0 → 4π → −4π → 0（每步 0.01 rad）头最大 |${f(lim.aY, 4)}|、目标最大 |${f(lim.aG, 4)}|；θ ±1.7 → ${f(lim.p1, 4)} / ${f(lim.p2, 4)}；相邻步最大变化 头 ${f(lim.mY, 4)}、目标 ${f(lim.mG, 4)}`);
+    `θ 0 → 4π → −4π → 0（每步 0.01 rad）头最大 |${f(lim.aY, 4)}|、目标最大 |${f(lim.aG, 4)}|；θ ±1/0.6（0.6 θ 到限幅处）→ ${f(lim.p1, 4)} / ${f(lim.p2, 4)}；相邻步最大变化 头 ${f(lim.mY, 4)}、目标 ${f(lim.mG, 4)}`);
   row('连续多圈无突变（0.01 rad/步）', lim.mY <= 0.02 && (lim.mG === null || lim.mG <= 0.02), `相邻步最大变化 头 ${f(lim.mY, 4)} rad、目标 ${f(lim.mG, 4)} rad（≤ 0.02）`);
   // d. theta and theta + 2 k pi
   const per = await H(() => [0.3, 1.2, 2.0, 2.8, Math.PI, -0.7, -2.4].map(th => { const A = window.__HEAD, ref = A.settle(th).yaw; return { th, ref, k: [-2, -1, 1, 2].map(k => ({ k, yaw: A.settle(th + 2 * k * Math.PI).yaw })) }; }));
