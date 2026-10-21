@@ -3898,3 +3898,13 @@
 - 合并版检查：`terrain_structure_check` TS0–TS6 与页面错误全部通过；`landmark_check LM09 --no-shots` 3/3（含 LF1–LF7）；`ride_check --only K1,K2,K3,K7 --routes RT-11` 5/5，出生 12/12、页面错误 0；`measure_samples` 实测边界一致、页面错误 0，随后 `layout_check --png` C1–C12 通过。日志 `tools/out/th2-merge/{structure,lm09,ride,measure,layout}.log`，不入库。重生成的 topdown.svg 去掉内嵌图片后与原版相同，topdown.svg/png 已还原。
 - 本轮是分支整合，未重复 TH2 完整回归链（terrain_hole、unify、球形骑行、性能等）；其既有失败与遗留沿用上文，不宣称全部检查通过。没有打开最终图像作视觉判断，视觉仍待确认。
 - 看点沿用 TH2 上文：CR01 东段 (52,0) 低角度查看路缘连续；LM02 入口 (−58.4,−56) 查看道路接上石板街；LM09 桥尾 (−73,26) 查看场地接地及站外设施避开引道。已知 TH2 的 6 处未封台阶、H3 两点、球形 U2 四点及 LM04 北缘约 27 m 场地切口问题仍保留。
+
+## 骑行交互专项（RI-01 开启／退出、RI-02 头颈朝向）阶段细化（2026-10-21）
+
+1. 规格：[执行计划](docs/world/RIDE_INTERACTION_FIX_PLAN.md)（用户以 `/goal` 指定执行）；行为以 [SPHERE_RIDING_PLAN](docs/world/SPHERE_RIDING_PLAN.md) 第 3 节为准，结合 [THIRD_PERSON_ROAM_PLAN](docs/world/THIRD_PERSON_ROAM_PLAN.md) 6.2–6.3、6.7 与 [R2 设计卡](docs/world/R2_RIDER_CARD.md) 第 3 节（头部随环视 × 0.6、截 ±1.0 rad）。
+2. 基线与分支：本地 `main` `15317fd`（含 TH2、LM09 修复），工作树仅有规划会话留下的未提交文件（本计划、`tools/ride_entry_audit.mjs`、`docs/world/audits/ride-entry-2026-10-21.json`、ROADMAP 顶部专项段），一并作为文档提交入库；分支 `fix/ride-interaction`，每项一个小提交，只本地提交，不合并 main、不推送。
+3. 范围：RI-01 端点出生故障（`ground.js` 出生站位）、退出诊断与测试时序（`tools/ride_check.mjs` K6）、扩展进出探针（新工具）；RI-02 头部追视的周期映射（`rider_pelican.js`）与新检查。不做：道路几何、candidates 越界容差、街道/路网/地块/建筑、天气规则、freeExit 重写或任意兜底、新增区域门禁、上下追视、后续世界阶段。
+4. 退出标准（机器）：`python3 build.py`；`ride_check --only K6,K7`（K7 新增复现点 RS-13 与反向对照 RS-14，修复前 RS-13 失败、修复后通过；K6 退出断言改为事件处理时骑手位置，模式/地图/目标/距离分项输出）；`sphere_ride_check --only SR8 --no-perf`；新工具的 RI-01 端点探针、全图出生扫描、真实键鼠进出矩阵与 RI-02 头颈检查（修复前后同一工具对照）。若改动运动、出生采样或镜头再补对应 K/SR 项。画面关卡：交用户看点，状态 `待确认`。
+5. 预算：不加可见主体、不改绘制调用；`index.html` 增量仅为几行逻辑。
+6. 风险与停止条件：修复若需改道路几何或放宽全局越界容差才能成立即停下报告；退出区域现象若扩展审计仍不能复现，只交诊断方式与已修复的确定缺陷，不宣称 RI-01 全部解决。
+7. 裁决：头部目标在前方 ±95.5° 内保持原 0.6 θ（到 ±1 rad 限幅为止），其后平滑回到正前方，镜头正对骑手（θ = ±π）时为 0——连续、周期，取代「wrap 后 clamp」的翻边；不在 ride.js 回绕 lookYaw（不改镜头手感与现有 K6 环视断言）。
