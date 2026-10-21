@@ -230,9 +230,11 @@ function create(ctx) {
     enter(tx, tz, dir) {
       const sp = G.spawn(tx, tz, dir); if (!sp) return null;
       if (!api.townReady) { api.townMs = Wd.prepareTown(); api.townReady = true; }
-      st.active = true; st.lookYaw = 0; st.lookPitch = CFG.pitch0; st.dist = CFG.back; st.recentre = null; st.wraps = 0; st.rejected = 0; st.offSurface = 0;
-      api.place(sp.x, sp.z, sp.heading, { layer: sp.layer, line: sp.line });
-      st.spawn = { x: sp.x, z: sp.z, heading: sp.heading, distance: sp.distance, line: sp.line, edge: sp.edge, route: sp.route, kind: sp.kind, from: sp.from };
+      st.lookYaw = 0; st.lookPitch = CFG.pitch0; st.dist = CFG.back; st.recentre = null;
+      // RI-01: the rider stands on the spawn's surface or the ride does not start (a failed place left the rider where the last ride ended)
+      if (!api.place(sp.x, sp.z, sp.heading, { layer: sp.layer, line: sp.line })) return null;
+      st.active = true; st.wraps = 0; st.rejected = 0; st.offSurface = 0;
+      st.spawn = { x: sp.x, z: sp.z, y: sp.y, layer: sp.layer, heading: sp.heading, distance: sp.distance, line: sp.line, edge: sp.edge, route: sp.route, kind: sp.kind, from: sp.from };
       return st.spawn;
     },
     exit() { st.active = false; st.speed = 0; st.steerCmd = 0; st.throttle = 0; st.steer = 0; st.recentre = null; },

@@ -329,7 +329,7 @@ if (want('SR8')) {
     out.again = { mode: S.view.get().mode, map: T.mode, d: Math.hypot(SR.wdx(g3.x - g2.x), g3.z - g2.z) / g2.s, line: [g2.line, g3.line] };
     S.view.set({ mode: 'free' }); settle('flat');
     return out;
-  }, { probes: SPAWN_PROBES.filter(p => ['RS-01', 'RS-04', 'RS-06', 'RS-07', 'RS-09', 'RS-10', 'RS-12'].includes(p.id)) });
+  }, { probes: SPAWN_PROBES.filter(p => ['RS-01', 'RS-04', 'RS-06', 'RS-07', 'RS-09', 'RS-10', 'RS-12', 'RS-13'].includes(p.id)) });
   const sp = r.spawns, ex = r.exits, m = r.mid, a = r.again;
   const exOk = ex.every(q => q.mode === 'free' && q.mapMode === q.map && q.at[0] && q.at[1] && Math.abs(q.lookY - q.focusY) < 1e-6 && q.clear && q.info && q.info.clear && q.dist >= 9 && (q.layer !== 'tunnel' || q.info.level === 'tunnel') && (q.layer !== 'deck' || q.info.level === 'deck'));
   const midOk = m.mode === 'free' && m.anim && m.goal === 'sphere' && m.u === 1 && m.at && m.kept && m.input.throttle === 0 && m.input.steer === 0 && m.keys[0] === 0 && m.keys[1] === 0;

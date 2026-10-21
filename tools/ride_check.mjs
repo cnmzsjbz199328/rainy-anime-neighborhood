@@ -23,7 +23,7 @@ import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
 import { INIT } from './road_views.mjs';
 import { ROUTES, LANE, COLLISION_PROBES, SPAWN_PROBES, random20 } from './ride_routes.mjs';
-import { install } from './ride_driver.mjs';
+import { install, eventLog } from './ride_driver.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), require = createRequire(import.meta.url), argv = process.argv.slice(2);
 const opt = k => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : null);
@@ -145,6 +145,7 @@ if (want('K7')) {
       if (pr.id === 'RS-08') ok = ok && g.kind !== 'stairs';
       if (pr.id === 'RS-10') ok = ok && g.kind === 'snow';
       if (pr.id === 'RS-12') ok = ok && g.layer === 'deck' && g.edge === 'RN01-13' && sp.x >= S.transition.xMin && sp.x < S.transition.xMax;
+      if (pr.id === 'RS-13' || pr.id === 'RS-14') ok = ok && g.layer === 'ground' && g.line === 'RN01-ridge';
       r.ok = ok; out.push(r); S.view.set({ mode: 'free' });
     }
     return out;
@@ -291,12 +292,23 @@ if (want('K6')) {
   await p.keyboard.down('w'); await p.waitForTimeout(200); await p.evaluate(() => window.dispatchEvent(new Event('blur'))); await p.waitForTimeout(100); s = await get(); await p.keyboard.up('w');
   add(`失焦清空输入（油门 ${s.input.throttle}、转向 ${s.input.steer}）`, s.input.throttle === 0 && s.input.steer === 0);
   // leave three ways (W9b, SPHERE_RIDING_PLAN 3: the free view takes the rider's place -- its target the rider's position at the focus height, the map kept, a free
-  // distance in [9, 400] -- in place of R1's restoring the view from before the ride)
+  // distance in [9, 400] -- in place of R1's restoring the view from before the ride). RI-01: the rider is read at the event (tools/ride_driver.mjs eventLog: a capture
+  // listener that runs before the scene's), not before sending the input: on live frames a rider still coasting moves between that read and the event (the old
+  // comparison, 1e-6 m against the read before, failed now and then); mode, map, target, distance, the button, the switch, errors and the handler's time apart
   void free0;
-  const leave = async how => { const before = (await get()).r; if (how === 'v') await p.keyboard.press('v'); else if (how === 'esc') await p.keyboard.press('Escape'); else await p.click('#town-view-toggle'); await p.waitForTimeout(150); const v = (await get()).v;
-    return v.mode === 'free' && v.mapMode === 'flat' && Math.abs(v.target[0] - before.x) < 1e-6 && Math.abs(v.target[2] - before.z) < 1e-6 && v.dist >= 9 && v.dist <= 400; };
+  await p.evaluate(eventLog);
+  const leave = async (how, label) => { const before = (await get()).r; if (how === 'v') await p.keyboard.press('v'); else if (how === 'esc') await p.keyboard.press('Escape'); else await p.click('#town-view-toggle'); await p.waitForTimeout(150);
+    const v = (await get()).v, e = await p.evaluate(() => window.__RI.log.filter(q => q.pre.mode === 'roam').pop()), r = e && e.pre.r;
+    const q = { how: label || how, mode: v.mode === 'free', map: v.mapMode === 'flat', at: !!r && Math.abs(v.target[0] - r.x) < 1e-6 && Math.abs(v.target[2] - r.z) < 1e-6, dist: v.dist >= 9 && v.dist <= 400,
+      d: v.dist, speed: r ? r.speed : null, layer: r ? r.layer : null, drift: before && r ? Math.hypot(r.x - before.x, r.z - before.z) : null, disabled: e ? e.pre.disabled : null, animating: e ? e.pre.animating : null, ms: e ? e.ms : null, errors: e ? e.errors.length : null,
+      input: !!e && e.post.rideInput.throttle === 0 && e.post.rideInput.steer === 0 && e.post.input[0] === 0 && e.post.input[1] === 0 };
+    q.ok = q.mode && q.map && q.at && q.dist && q.input && q.errors === 0; return q; };
   const outV = await leave('v'); await p.keyboard.press('v'); await p.waitForTimeout(150); const outE = await leave('esc'); await p.keyboard.press('v'); await p.waitForTimeout(150); const outB = await leave('button');
-  add('V、Esc、按钮退出：自由视角目标在骑手当前位置、地图仍为平面、距离在 [9, 400]（W9b 取代逐位恢复进入前视角）', outV && outE && outB);
+  // leaving while riding (W held 1 s): the rider moves between any read and the event
+  await p.keyboard.press('v'); await p.waitForTimeout(150); await p.keyboard.down('w'); await p.waitForTimeout(1000); const outR = await leave('v', 'v（骑行中）'); await p.keyboard.up('w');
+  const leaveRows = [outV, outE, outB, outR];
+  add(`V、Esc、按钮、骑行中 V 退出：自由视角目标在事件时骑手位置、地图仍为平面、距离在 [9, 400]、事件后输入清空（W9b 取代逐位恢复进入前视角）——${leaveRows.map(q => `${q.how}：模式 ${q.mode}/地图 ${q.map}/目标 ${q.at}/距离 ${f(q.d, 1)}，事件时速度 ${f(q.speed, 2)} m/s、层 ${q.layer}、读数到事件漂移 ${f(q.drift, 4)} m、按钮禁用 ${q.disabled}、切换中 ${q.animating}、处理 ${f(q.ms, 1)} ms、输入清空 ${q.input}、异常 ${q.errors}`).join('；')}`, leaveRows.every(q => q.ok));
+  report.leaves = leaveRows;
   // W9b: a map switch keeps the ride (no exit, no new spawn); leaving stays possible during it; entering waits for the switch
   await p.keyboard.press('v'); await p.waitForTimeout(150); const sp0 = (await get()).r.spawn; await p.click('#map-mode-toggle'); await p.waitForTimeout(100); s = await get();
   const keep = s.v.mode === 'roam' && !s.btn.disabled && JSON.stringify(s.r.spawn) === JSON.stringify(sp0); await p.waitForTimeout(2600); s = await get();

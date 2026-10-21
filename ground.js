@@ -278,9 +278,19 @@ function attach(ctx) {
       const c = ln.point(s, 0), dl = Math.hypot(dir[0], dir[1]) || 1, dot = (c.T[0] * dir[0] + c.T[1] * dir[1]) / dl, sign = Math.abs(dot) < 0.2 ? 1 : Math.sign(dot);
       let p = [0, 0];
       if (ln.kind === 'route') p = lerpAt(ln.rt.paved, c); else if (ln.kind === 'bridge') p = [-3.5, 3.5]; else p = lerpAt(ln.walk, c);
-      const w = p[1] - p[0], o = w >= 4.5 ? (p[0] + p[1]) / 2 - sign * w / 4 : (p[0] + p[1]) / 2, at = ln.point(s, o);
-      // the line's own surface there (an I9 site may overlap a road's end)
-      const own = candidates(at.x, at.z).find(c => c.line === ln.id), sample = own ? { x: show(at.x), z: at.z, ...own } : api.at(at.x, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
+      const w = p[1] - p[0], o = w >= 4.5 ? (p[0] + p[1]) / 2 - sign * w / 4 : (p[0] + p[1]) / 2;
+      // the line's own surface there (an I9 site may overlap a road's end), as a fresh query finds it at the point handed out (ride.place asks G.layers there).
+      // RI-01 (docs/world/RIDE_INTERACTION_FIX_PLAN.md): point(s, o) offsets along the tangent interpolated at s while the sampler bounds a line by its first and last
+      // chord, so at a curved end the lane's point can lie mm past that bound; at an end station the point sits on the bound itself and the display wrap's rounding
+      // (show) tips it either way. Where the line's own surface is missing for that reason, the station is taken back by the overshoot the line reports at the shown
+      // point (+1 nm against rounding; a line's stations run from S[0].s, not always 0): the same road, lane and level, at most a few mm in
+      let at = ln.point(s, o), xs = show(at.x), own = null;
+      for (let k = 0; k < 6; k++) {
+        own = candidates(xs, at.z).find(c => c.line === ln.id); if (own) break;
+        const q = ln.project(canonX(xs), at.z, true); if (!q || !(q.over > 0)) break;
+        const s0 = ln.S[0].s; s = Math.min(ln.length, Math.max(s0, s + (q.s - s0 < ln.length - q.s ? 1 : -1) * (q.over + 1e-9))); at = ln.point(s, o); xs = show(at.x);
+      }
+      const sample = own ? { x: xs, z: at.z, ...own } : api.at(xs, at.z, { layer: ln.kind === 'bridge' ? 'deck' : 'ground' });
       return sample ? { ...sample, heading: Math.atan2(sign * c.T[0], sign * c.T[1]), from: [show(x), z], distance: Math.hypot(wrapDx(show(x) - sample.x), z - sample.z) } : null;
     },
     // I3: the places where the layers meet: the bridges' ends (deck <-> ground), the tunnels' portals (ground <-> tunnel), the stairs' ends

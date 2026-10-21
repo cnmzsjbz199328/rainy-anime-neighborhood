@@ -145,3 +145,24 @@ export function install(data) {
   window.__RT = { routePath, drive, chain, wdx, wpi, nodeXZ, lineOf, range, flat, links };
   return { lines: G.lines.length, links: links.length };
 }
+
+// RI-01 (docs/world/RIDE_INTERACTION_FIX_PLAN.md): every V / Esc / C keydown and every click of the ride button read at the event: a capture listener on window runs
+// before the scene's (the rider's place and level, the mode, the map switch, the button) and a later listener after it (mode, map, target, distance, input, the exit's
+// pick, the hint, the time the handler took, errors thrown meanwhile). The entries: window.__RI.log. page.evaluate(eventLog) once per page; the time is the real clock
+// (window.__realNow, saved by an init script before road_views.mjs INIT replaces performance.now, else performance.now)
+export function eventLog() {
+  if (window.__RI) return;
+  const S = window.__scene, btn = document.getElementById('town-view-toggle'), hint = document.getElementById('ride-hint'), now = window.__realNow || (() => performance.now());
+  const RI = window.__RI = { log: [], errors: [], cur: null };
+  addEventListener('error', e => RI.errors.push(String(e.message || (e.error && e.error.message) || e)));
+  const snap = () => { const r = S.ride.get(), v = S.view.get(); return { mode: v.mode, map: v.mapMode, animating: !!S.transition.animating, u: S.bend.get(), disabled: btn.disabled, text: btn.textContent,
+    r: r && r.active ? { x: r.x, y: r.y, z: r.z, root: r.root, s: r.s, layer: r.layer, line: r.line, kind: r.kind, speed: r.speed, heading: r.heading, lookYaw: r.lookYaw } : null }; };
+  const pre = (how, e) => { RI.cur = { how, key: e.key, code: e.code, mods: { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey }, target: e.target && (e.target.id || e.target.nodeName), errors0: RI.errors.length, t0: now(), pre: snap() }; };
+  const post = () => { const c = RI.cur; if (!c) return; RI.cur = null; const v = S.view.get(); c.ms = now() - c.t0;
+    const g = S.ride.get();
+    c.post = { ...snap(), target: v.target, dist: v.dist, yaw: v.yaw, pitch: v.pitch, input: v.input, rideInput: S.ride.input(), exit: S.ride.exitInfo(), spawn: g && g.spawn, hint: hint && hint.style.display === 'block' ? hint.textContent : '' };
+    c.errors = RI.errors.slice(c.errors0); RI.log.push(c); };
+  const watched = e => ['v', 'escape', 'c', 'process'].includes(String(e.key).toLowerCase()) || e.code === 'KeyV';
+  addEventListener('keydown', e => { if (watched(e)) pre('key', e); }, true); addEventListener('keydown', e => { if (watched(e)) post(); });
+  addEventListener('click', e => { if (e.target === btn) pre('button', e); }, true); btn.addEventListener('click', post);
+}

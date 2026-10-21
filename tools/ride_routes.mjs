@@ -124,6 +124,9 @@ export const SPAWN_PROBES = [
   { id: 'RS-10', what: 'LM07 冰原（显示比例 4）', lonLat: [72, 76.5], expect: 'RN10-01 雪道' },
   { id: 'RS-11', what: '开阔海面', lonLat: [0, -60], expect: '最近道路（可能很远），提示距离' },
   { id: 'RS-12', what: '平面接缝西海', lonLat: [-85, -12], expect: 'RN01-13 桥面，x 在 [xMin, xMax) 内' },
+  // RI-01 (docs/world/RIDE_INTERACTION_FIX_PLAN.md 2): nearest is RN01-ridge's east end; looking east the left lane's point lay 3.9 mm past the line's last chord
+  { id: 'RS-13', what: 'RN01-ridge 东端（RI-01 复现，朝东）', target: [191.48231506347656, -85], yaw: -Math.PI / 2, expect: 'RN01-ridge 东端左侧车道（朝东）' },
+  { id: 'RS-14', what: 'RN01-ridge 东端（RI-01 反向对照，朝西）', target: [191.48231506347656, -85], yaw: Math.PI / 2, expect: 'RN01-ridge 东端另一侧车道（朝西）' },
 ];
 
 // stairs: the RD06 stone stairs (world.js span 'stairs') and RN12-01, a boardwalk span in world.js that bridge.js builds as the two-flight steel
