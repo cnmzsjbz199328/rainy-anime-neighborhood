@@ -1,4 +1,5 @@
 // Landmark-specific checks of W7 (one function per landmark, called by tools/landmark_check.mjs with { page, info, fail, f, W, lm, M, renderShot, shots }).
+import { lm09FacilityCheck } from './lm09_facility_check.mjs';
 export const CHECKS = {};
 // LM01: the summit stays the highest point, the crater is 12 m across, the ember is far weaker than a street lamp, lanterns <= 10
 CHECKS.LM01 = async ({ page, info, fail, f, W, lm, M }) => {
@@ -86,6 +87,8 @@ CHECKS.LM09 = async ({ page, info, fail, f, W, lm, M }) => {
   // the lane must meet the trunk road surface: T01-14 ends at the entrance: its swept bed there against the lane top (0.06 m above the platform ground)
   const e = await page.evaluate(() => { const S = window.__scene; let town = 0, lmv = 0; const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; for (const [n, g] of Object.entries(S.groups)) { if (/^lm\d\d/i.test(n)) continue; g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) town = Math.max(town, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); } for (const g of S.landmarks.info.LM09.groups) g.traverse(m => { if (m.isMesh && m.material && m.material.emissive) lmv = Math.max(lmv, lum(m.material.emissive) * (m.material.emissiveIntensity ?? 1)); }); return { town, lm: lmv }; });
   info.push(`夜间：无人站最亮的自发光材质 ${f(e.lm, 3)}，城镇最亮 ${f(e.town, 3)}（${f(e.lm / e.town * 100, 0)}%）；无人站是城镇以西农田里唯一的光点，低于便利店`); if (e.lm > e.town) fail('无人站亮于城镇');
+  // the phone box and the bus stop against the final roads, the station ground, the site and the display (tools/lm09_facility_check.mjs LF1-LF7)
+  await lm09FacilityCheck({ page, info, fail, f, M });
 };
 
 CHECKS.LM03 = async ({ page, info, fail, f, W, lm, M }) => {

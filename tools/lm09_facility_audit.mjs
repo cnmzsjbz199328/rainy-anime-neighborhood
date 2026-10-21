@@ -1,5 +1,5 @@
-// Read-only geometry audit for LM09's bus sign and stop lamp. No browser or screenshots.
-// Run: node tools/lm09_facility_audit.mjs > docs/world/audits/lm09-facilities-2026-10-21.json
+// Read-only geometry audit for LM09's bus sign and stop lamp poles (the 2026-10-21 diagnosis; the full check is tools/lm09_facility_check.mjs). No browser or screenshots.
+// Run: node tools/lm09_facility_audit.mjs > /tmp/lm09-facility-audit.json (docs/world/audits/lm09-facilities-2026-10-21.json is the recorded diagnosis; do not overwrite it)
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -71,7 +71,8 @@ function measure(name, x, z, height) {
     poleRoadCrossing: { localY: (low + high) / 2, point: crossing, surfaces: under(crossing) } };
 }
 const source = read('landmarks/LM09.js');
-const boardX = Number(source.match(/BOARD_X = ([\d.]+)/)[1]), lampX = Number(source.match(/STOP_LAMP_X = ([\d.]+)/)[1]);
+// the pole of each stands on its facility anchor [x, z, yaw] (landmarks/LM09.js facility())
+const anchor = name => source.match(new RegExp(`\\b${name} = \\[([-\\d.]+), ([-\\d.]+)`)).slice(1, 3).map(Number), sign = anchor('SIGN'), lamp = anchor('LAMP');
 const sourceFiles = ['scene.js', 'landmarks/LM09.js', 'roads.js', 'roadkit.js', 'bridge.js', 'terrain.js', 'world.js', 'streetlights.js'];
 const html = read('index.html');
 const output = {
@@ -80,8 +81,7 @@ const output = {
   dirtyAtAudit: execFileSync('git', ['status', '--short'], { cwd: root, encoding: 'utf8' }).trim().split('\n'),
   embeddedSourcesMatch: Object.fromEntries(sourceFiles.map(p => [p, html.includes('<script>\n' + read(p).replaceAll('</script', '<\\/script') + '\n</script>')])),
   landmark: { id: lm.id, anchor: [lm.lon, lm.lat], sampledAltitude: h },
-  current: [measure('BOARD_X: sign and timetable', boardX, 9, 2.51), measure('STOP_LAMP_X: stop lamp', lampX, 8, 5.2)],
-  bridgeEnd: { id: 'RN01-13', point: W.lonLatToTown(...(() => { const p = RD.bridges.find(b => b.def.id === 'RN01-13').samples.at(-1); return [p.lon, p.lat]; })()) },
-  candidateOnly: [measure('sign candidate; full envelope and site obstacles not checked', 5, 4.5, 2.51), measure('lamp candidate; full envelope and site obstacles not checked', 6, 4, 5.2)]
+  current: [measure('SIGN: sign and timetable', sign[0], sign[1], 2.51), measure('LAMP: stop lamp', lamp[0], lamp[1], 5.2)],
+  bridgeEnd: { id: 'RN01-13', point: W.lonLatToTown(...(() => { const p = RD.bridges.find(b => b.def.id === 'RN01-13').samples.at(-1); return [p.lon, p.lat]; })()) }
 };
 console.log(JSON.stringify(output, null, 2));

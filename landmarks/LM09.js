@@ -103,44 +103,56 @@
     box(x, 0.86, -0.88, 0.32, 0.035, 0.04, '#50575b', false, st);
     box(x, 0.68, -0.48, 0.23, 0.04, 0.12, '#35383a', false, st); // saddle
   }
-  // Telephone booth: red frame with transparent panes and a real handset behind the glass.
-  const PX = 7.2, PZ = 5.0;
-  box(PX, 0.08, PZ, 1.0, 0.16, 1.0, '#7d8084', true, st);
-  for (const x of [PX - 0.45, PX + 0.45]) for (const z of [PZ - 0.45, PZ + 0.45]) box(x, 1.16, z, 0.09, 2.17, 0.09, '#a53b33', true, st);
-  box(PX, 2.25, PZ, 1.0, 0.15, 1.0, '#a53b33', true, st);
-  box(PX, 2.02, PZ + 0.46, 0.9, 0.12, 0.07, '#a53b33', true, st);
-  box(PX, 0.2, PZ + 0.47, 0.9, 0.1, 0.06, '#a53b33', true, st);
+  // The phone box and the bus stop (sign, waiting bench, stop lamp) are each built round their own anchor [x, z, yaw] in a sub-group whose layer survives the bake:
+  // tools/lm09_facility_check.mjs finds them by layer and checks them in world coordinates against the final roads, the ground under them and the ride boxes.
+  // LM09 facility fix (docs/world/LM09_BRIDGE_FACILITY_FIX_PLAN.md): N01-west's bridge approach (RD01B paving and its embankment) covers the site north of z = 1.2
+  // and, at x > 7.75, ends at RN01-13; W10d had left the sign and the lamp on that paving and the bench and the phone box in its embankment. All four now stand
+  // on the level lawn west of the turning circle: the sign at the circle's curb, the bench facing it, the lamp's arm over the bench, the phone box's door to the east.
+  const facility = (layer, [x, z, ry = 0]) => { const g = L.sub(x, 0, z, ry); g.userData.layer = layer; return g; };
+  const PHONE = [9.5, 1.8, -PI / 2], SIGN = [6.6, 0.55], BENCH = [8.75, 0.2, PI / 2], LAMP = [8.85, -1.0, PI];
+  // Telephone booth (door to the anchor's +Z): red frame with transparent panes and a real handset behind the glass.
+  const ph = facility('lm09-phone', PHONE), PX = 0, PZ = 0;
+  box(PX, 0.08, PZ, 1.0, 0.16, 1.0, '#7d8084', true, ph);
+  for (const x of [PX - 0.45, PX + 0.45]) for (const z of [PZ - 0.45, PZ + 0.45]) box(x, 1.16, z, 0.09, 2.17, 0.09, '#a53b33', true, ph);
+  box(PX, 2.25, PZ, 1.0, 0.15, 1.0, '#a53b33', true, ph);
+  box(PX, 2.02, PZ + 0.46, 0.9, 0.12, 0.07, '#a53b33', true, ph);
+  box(PX, 0.2, PZ + 0.47, 0.9, 0.1, 0.06, '#a53b33', true, ph);
   const boothGlass = new THREE.MeshPhysicalMaterial({ color: '#d9e5e7', transparent: true, opacity: 0.15, roughness: 0.13, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
-  for (const x of [PX - 0.43, PX + 0.43]) mesh(new THREE.PlaneGeometry(0.85, 1.73), boothGlass, x, 1.13, PZ, false, st).rotation.y = PI / 2;
-  mesh(new THREE.PlaneGeometry(0.84, 1.73), boothGlass, PX, 1.13, PZ - 0.43, false, st);
-  mesh(new THREE.PlaneGeometry(0.84, 1.72), boothGlass, PX, 1.13, PZ + 0.46, false, st);
-  box(PX + 0.27, 1.08, PZ + 0.495, 0.04, 0.16, 0.07, '#e8e4d8', true, st); // door handle
-  box(PX, 1.38, PZ - 0.33, 0.64, 0.9, 0.15, '#45545b', true, st); // telephone body
-  box(PX, 0.94, PZ - 0.23, 0.66, 0.055, 0.37, '#6b7076', true, st); // writing shelf below the controls
-  box(PX, 1.25, PZ - 0.24, 0.38, 0.22, 0.05, '#e8e4d8', true, st); // dial/keypad face
-  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) box(PX - 0.1 + col * 0.1, 1.28 - row * 0.07, PZ - 0.205, 0.04, 0.04, 0.015, '#6c7377', false, st);
-  box(PX - 0.13, 1.65, PZ - 0.2, 0.28, 0.09, 0.1, '#252c31', true, st); // handset
-  cyl(PX - 0.27, 1.56, PZ - 0.21, 0.025, 0.18, '#252c31', st);
+  for (const x of [PX - 0.43, PX + 0.43]) mesh(new THREE.PlaneGeometry(0.85, 1.73), boothGlass, x, 1.13, PZ, false, ph).rotation.y = PI / 2;
+  mesh(new THREE.PlaneGeometry(0.84, 1.73), boothGlass, PX, 1.13, PZ - 0.43, false, ph);
+  mesh(new THREE.PlaneGeometry(0.84, 1.72), boothGlass, PX, 1.13, PZ + 0.46, false, ph);
+  box(PX + 0.27, 1.08, PZ + 0.495, 0.04, 0.16, 0.07, '#e8e4d8', true, ph); // door handle
+  box(PX, 1.38, PZ - 0.33, 0.64, 0.9, 0.15, '#45545b', true, ph); // telephone body
+  box(PX, 0.94, PZ - 0.23, 0.66, 0.055, 0.37, '#6b7076', true, ph); // writing shelf below the controls
+  box(PX, 1.25, PZ - 0.24, 0.38, 0.22, 0.05, '#e8e4d8', true, ph); // dial/keypad face
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) box(PX - 0.1 + col * 0.1, 1.28 - row * 0.07, PZ - 0.205, 0.04, 0.04, 0.015, '#6c7377', false, ph);
+  box(PX - 0.13, 1.65, PZ - 0.2, 0.28, 0.09, 0.1, '#252c31', true, ph); // handset
+  cyl(PX - 0.27, 1.56, PZ - 0.21, 0.025, 0.18, '#252c31', ph);
   for (let i = 0; i < 8; i++) {
     const a = i * PI * 2 / 7;
     tube([PX - 0.26 + 0.035 * Math.sin(a), 1.52 - i * 0.055, PZ - 0.22 + 0.035 * Math.cos(a)],
-      [PX - 0.26 + 0.035 * Math.sin(a + PI * 2 / 7), 1.465 - i * 0.055, PZ - 0.22 + 0.035 * Math.cos(a + PI * 2 / 7)], 0.012, '#252c31');
+      [PX - 0.26 + 0.035 * Math.sin(a + PI * 2 / 7), 1.465 - i * 0.055, PZ - 0.22 + 0.035 * Math.cos(a + PI * 2 / 7)], 0.012, '#252c31', ph);
   }
-  box(PX - 0.39, 0.48, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, st); // door lower hinge
-  box(PX - 0.39, 1.89, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, st); // door upper hinge
-  box(PX, 1.06, PZ - 0.48, 0.62, 0.37, 0.025, '#8c3832', true, st); // rear service hatch
-  box(PX + 0.21, 1.06, PZ - 0.5, 0.055, 0.07, 0.018, '#d3c9ae', false, st);
-  // W10d / CR01 clearance: keep the entrance board, waiting bench and stop lamp outside N01-west's paved shoulder.
-  const BOARD_X = 6.0, BENCH_X = 6.5, STOP_LAMP_X = 6.5;
-  box(BOARD_X, 0.1, 9.0, 0.32, 0.2, 0.32, '#898884', true, st);
-  cyl(BOARD_X, 1.2, 9.0, 0.045, 2.4, '#7d8794', st);
-  for (const z of [8.96, 9.04]) { box(BOARD_X, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, st); box(BOARD_X, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, st); }
-  box(BOARD_X, 1.54, 9.05, 0.37, 0.46, 0.035, '#e8e4d8', true, st); // route and timetable board
-  for (let i = 0; i < 4; i++) box(BOARD_X, 1.69 - i * 0.1, 9.072, 0.3, 0.013, 0.008, '#7d8794', false, st);
-  for (const x of [BENCH_X - 0.57, BENCH_X + 0.57]) { box(x, 0.27, 4.7, 0.09, 0.46, 0.1, '#5a4a3c', true, st); box(x, 0.16, 5.01, 0.1, 0.23, 0.08, '#5a4a3c', true, st); }
-  box(BENCH_X, 0.5, 4.7, 1.35, 0.1, 0.49, '#76583e', true, st); box(BENCH_X, 0.77, 5.0, 1.35, 0.53, 0.1, '#76583e', true, st); // bus stop bench
-  cyl(STOP_LAMP_X, 2.6, 8.0, 0.06, 5.2, '#596f80', st); const hd = mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), STOP_LAMP_X + 0.4, 5.1, 8.0, false, st); cyl(STOP_LAMP_X + 0.2, 5.1, 8.0, 0.04, 0.5, '#596f80', st).rotation.z = PI / 2;
-  L.pool(STOP_LAMP_X + 0.4, 8.0, 3.0, '#ffcf8a', 0.06, 0.08); L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
+  box(PX - 0.39, 0.48, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, ph); // door lower hinge
+  box(PX - 0.39, 1.89, PZ + 0.46, 0.05, 0.16, 0.05, '#852e2b', true, ph); // door upper hinge
+  box(PX, 1.06, PZ - 0.48, 0.62, 0.37, 0.025, '#8c3832', true, ph); // rear service hatch
+  box(PX + 0.21, 1.06, PZ - 0.5, 0.055, 0.07, 0.018, '#d3c9ae', false, ph);
+  // Bus stop sign: base, pole, two-sided name plates and the route/timetable board (faces the anchor's +-Z).
+  const sg = facility('lm09-bus-sign', SIGN);
+  box(0, 0.1, 0, 0.32, 0.2, 0.32, '#898884', true, sg);
+  cyl(0, 1.2, 0, 0.045, 2.4, '#7d8794', sg);
+  for (const z of [-0.04, 0.04]) { box(0, 2.3, z, 0.5, 0.34, 0.025, '#e8ecf2', false, sg); box(0, 2.48, z + 0.014, 0.5, 0.06, 0.03, '#d58a3a', false, sg); }
+  box(0, 1.54, 0.05, 0.37, 0.46, 0.035, '#e8e4d8', true, sg); // route and timetable board
+  for (let i = 0; i < 4; i++) box(0, 1.69 - i * 0.1, 0.072, 0.3, 0.013, 0.008, '#7d8794', false, sg);
+  // Waiting bench: seat towards the anchor's -Z, back at +Z.
+  const bn = facility('lm09-bus-bench', BENCH);
+  for (const x of [-0.57, 0.57]) { box(x, 0.27, 0, 0.09, 0.46, 0.1, '#5a4a3c', true, bn); box(x, 0.16, 0.31, 0.1, 0.23, 0.08, '#5a4a3c', true, bn); }
+  box(0, 0.5, 0, 1.35, 0.1, 0.49, '#76583e', true, bn); box(0, 0.77, 0.3, 1.35, 0.53, 0.1, '#76583e', true, bn);
+  // Stop lamp: 5.2 m pole, short arm and warm head towards the anchor's +X, its light pool under the head.
+  const lp = facility('lm09-stop-lamp', LAMP);
+  cyl(0, 2.6, 0, 0.06, 5.2, '#596f80', lp); mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), warm('#ffe4b0', 0.8), 0.4, 5.1, 0, false, lp); cyl(0.2, 5.1, 0, 0.04, 0.5, '#596f80', lp).rotation.z = PI / 2;
+  L.use(lp); L.pool(0.4, 0, 3.0, '#ffcf8a', 0.06, 0.08); L.use(st);
+  L.pool(-5.5, -1.5, 3.0, '#ffcf8a', 0.05, 0.08); L.pool(1.8, -1.2, 2.2, '#dfe9f2', 0.05, 0.08);
   // ---- the track: one line along X at z = -6.4; its eastern end and buffer stop end at the N11-side platform curb; the paddy end still fades west
   const tk = group('lm09Track'); L.use(tk);
   const TRACK_EAST = -4.47, TRACK_WEST = 10.5, TRACK_LENGTH = TRACK_WEST - TRACK_EAST, TRACK_MID = (TRACK_EAST + TRACK_WEST) / 2;
@@ -217,7 +229,8 @@
   // eave drips (live)
   const dr = []; for (let i = 0; i < 6; i++) { const g = L.sub(SX - 1.5 + i * 0.6, 3.2, SZ + 1.4); g.userData.live = true; const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28), new THREE.MeshBasicMaterial({ color: '#cfe4ee', transparent: true, opacity: 0.7, depthWrite: false })); m.name = 'lm09EaveDrip'; m.userData.weather = 'drip'; g.add(m); dr.push({ g, m, ph: i * 0.17 }); }   // WX2: a weather effect
   out.stats = { platformLength: PLATFORM_LENGTH, platformExtent: [PLATFORM_MIN_X, 10], shed: [4, 2.5], shedX: SX, circle: 12, cars: 1, tracks: 1, trackEnds: 2,
-    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: TRACK_EAST, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [9.1, 10.1], lights: 4, lampsOn: 3 };
+    trackEast: TRACK_EAST, trackWest: TRACK_WEST, bufferX: TRACK_EAST, carX: CX, carExtent: [CX - 6.5, CX + 6.5], crossingExtent: [9.1, 10.1], lights: 4, lampsOn: 3,
+    circleAt: [0, cd.position.z], facilities: { phone: PHONE, sign: SIGN, bench: BENCH, lamp: LAMP } };
   out.update = (t) => {
     const p = (t % 6) / 6, a = 0.5 - 0.5 * Math.cos(p * PI * 2), b = 1 - a;                                       // 6 s period, raised cosine: no flashing
     posts.forEach(([l, r]) => { l.material.color.setRGB(0.35 + 0.65 * a, 0.12 + 0.12 * a, 0.12 + 0.12 * a); r.material.color.setRGB(0.35 + 0.65 * b, 0.12 + 0.12 * b, 0.12 + 0.12 * b); });

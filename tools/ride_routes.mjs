@@ -92,6 +92,9 @@ export const ROUTES = [
   ] },
   { id: 'RT-10', name: 'J-LM08 护栏门与检修梯到灯塔岛', start: { node: 'J-LM08', toward: 'LM08-south' }, depends: ['U1'], legs: [
     world(['J-LM08', 'LM08-south'], { ev: [{ at: 'end', do: 'stop' }, { at: 'end', do: 'pivot', to: 'back' }] }), world(['LM08-south', 'J-LM08']) ] },
+  // LM09 facility fix (docs/world/LM09_BRIDGE_FACILITY_FIX_PLAN.md): the westbound left lane of N01-west's bridge approach ran through the station's old bus sign and stop lamp
+  { id: 'RT-11', name: 'LM09 桥头引道往返（原站牌、站灯位置）', start: { node: 'C01-W-N01', toward: 'LM09-north' }, legs: [
+    world(['C01-W-N01', 'LM09-north', 'J-W1'], { ev: [{ at: 'end', do: 'stop' }, { at: 'end', do: 'uturn' }] }), world(['J-W1', 'LM09-north', 'C01-W-N01'], { ev: [{ at: 'end', do: 'stop' }] }) ] },
 ];
 
 // boundary probes: ride into the boundary at 90 deg and 30 deg at the surface's speed cap (section 6.5)
