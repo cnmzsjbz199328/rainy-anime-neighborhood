@@ -944,7 +944,9 @@ function abutWall(W, rt, ab, deckAlt) {
   const c0 = lin('#7c828c'), c1 = lin('#5f6672');
   for (let j = 0; j < m; j++) {
     const a = (i * m + j) * 3, oo = rt.grid[j], [lo, la] = rt.lateral(i, oo * rt.cf[i]), top = rt.colAlt[i * m + j], g = W.height(lo, la), bot = Math.min(top - 0.05, Math.abs(oo) <= 5.0 ? deckAlt - 1.85 : g - 0.3), k = 1 / Math.cos(la * D);
-    pos.push(st.pos[a], (top - 0.03 - BASE) * k, st.pos[a + 2], st.pos[a], (bot - BASE) * k, st.pos[a + 2]);      // 3 cm under the surface: no depth fight along the joint
+    // 3 cm under the surface where the deck's own end meets it (|o| <= 5: no depth fight along the joint); on the embankment's end beyond the deck the wall's top is the
+    // slope's last row itself, so no slot opens under it (TERRAIN_HOLE_FOLLOWUP_PLAN A3)
+    pos.push(st.pos[a], (top - (Math.abs(oo) <= 5.0 ? 0.03 : 0) - BASE) * k, st.pos[a + 2], st.pos[a], (bot - BASE) * k, st.pos[a + 2]);
     const f = 0.88 + 0.2 * hash(oo * 3.1, i); col.push(...c0.map(v => v * f), ...c1.map(v => v * f));
   }
   for (let j = 0; j + 1 < m; j++) { const a = 2 * j, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, c, c, b, d); }
@@ -960,8 +962,18 @@ function routeContext(WS, junctions = JUNCTIONS, routeIds) {
   return { AB: abutments(WS, BR, routeIds), CH: ringChain(WS), lm09Turn, JP: junctions.map(J => junctionPlan(WS, J, RK)) };
 }
 // the options of a route
-function routeOpts(def, ctx, tc) {
+// TERRAIN_HOLE_FOLLOWUP_PLAN B2: the surface a road's end meets at a landmark entrance where that is not the terrain the road follows, in metres over the site's ground at
+// its anchor (the height the landmark is built on, scene.js landmarkKit.ground): LM02's stone-slab street from the east entrance (landmarks/LM02.js: slabs 0.1 m thick at
+// 0.06, tops 0.11 m over the levelled platform), which began 0.21-0.27 m over RN05-RD03's end in the platform's transition. The road's last metres rise to it (roadkit's
+// ramp: the paved width to that height, faded across the verge, over 3-8 m at a mean 4 % of extra grade, 6 % at the ramp's steepest); its centre line and widths stay.
+const ENTRANCE_DECK = { 'LM02-east': 0.11 };
+function routeOpts(def, ctx, tc, WS = null) {
   const RK = global.ROADKIT, { AB, CH, lm09Turn, JP } = ctx, o = { ...def.opts, terrainColor: tc };
+  if (WS) for (const [end, sg] of [['start', def.segs[0]], ['end', def.segs[def.segs.length - 1]]]) {
+    const e = WS.roadNetwork.edges.find(q => q.id === sg.id), node = end === 'start' ? (sg.rev ? e.to : e.from) : (sg.rev ? e.from : e.to), lift = ENTRANCE_DECK[node], lm = lift !== undefined && WS.landmarks.find(l => node.startsWith(l.id + '-'));
+    if (!lm || o.ramp) continue; const alt = WS.height(lm.lon, lm.lat) + lift;
+    o.ramp = { end, len: d => Math.max(3, Math.min(8, d / 0.04)), target: () => alt };
+  }
   if (CH[def.id]) o.chain = CH[def.id];
   if (def.id === 'N01-west') o.turns = [lm09Turn];
   for (const a of AB.filter(q => q.route === def.id)) (o.abut = o.abut || {})[a.rEnd] = { at: a.fillet.at, T: a.fillet.Ta, brg: a.fillet.brg, grade: a.grade };
@@ -1051,7 +1063,7 @@ function* planSteps(W, H, tc) {
     bridgeTurnDefs = { 'RN01-07+08+09': ['J-P1', 'J-LM08'].map(node => nodeTurn(WS, BRIDGES.find(b => b.id === 'RN01-07+08+09').ids.map(id => ({ id })), node)) };
   void lm09Turn;
   yield;
-  const optsOf = def => routeOpts(def, ctx, tc);
+  const optsOf = def => routeOpts(def, ctx, tc, WS);
   const byId = {}, branchOf = def => JP.find(j => j.branch === def.id);
   for (const def of ROUTES.filter(d => !branchOf(d))) { const rt = RK.route(WS, def.segs, optsOf(def)); rt.def = def; rt.mouths = JP.filter(j => j.trunk === def.id).map(j => j.mouth); byId[def.id] = rt; yield; }
   // W10 junction fix: a T junction stands on its trunk's drawn paved edge, known once the trunk is swept (on a bridge approach RD01B: J-T07, J-T09). Where it differs from

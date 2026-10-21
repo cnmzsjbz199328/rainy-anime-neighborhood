@@ -14,6 +14,9 @@
 //   TS3 portals and abutments: sight lines from 4 m outside each portal into its opening reach the tunnel (void, ring) first; from 2 m outside each span
 //       boundary to the portal face the road is the first surface from above (0.05 m apart, across +-5 m); at the six abutments road and deck are on top,
 //       the uncut ground is under the first metre of the deck (0.05 m apart: the former 0.3 m end cap) and there is ground under every abutment wall column
+//   TS1/TS3 in a ground occupancy (TERRAIN_HOLE_FOLLOWUP_PLAN B1, 2026-10-21; before, those probes failed as terrain missing): where the town's or a landmark's own ground
+//       replaces the terrain (W10d; LM09's ground under RN01-13's tail), a probe checks that ground instead of the cut lattice: within 0.3 m of the lattice, the first
+//       opaque surface from below the girder (TS1), the foot of a wall column in it (TS3)
 //   TS4 modes: the terrain meshes are the same objects with the same geometry at uBend 0, 0.5 and 1 (no sphere-only patch or swap); TS1-TS3 run in all three
 //   TS5 cut audit: no ground cut polygon (terrain.js roadPolygons, shared by cutGroundMeshes) overlaps a bridge deck or the tunnel interior beyond the portal
 //       openings between each span boundary and its portal face; every polygon records its source, structure and chainage
@@ -114,6 +117,16 @@ async function probe({ modes }) {
     for (let j = 0; j < m; j++) if (Math.abs(rt.grid[j]) <= 5 + 1e-9) { const x = wp[(2 * j + 1) * 3] + tE[0] * kE, y = wp[(2 * j + 1) * 3 + 1], z = wp[(2 * j + 1) * 3 + 2] + tE[1] * kE; walls.push({ abut: tag, o: rt.grid[j] }); probes.push({ test: 'wall', abut: tag, o: rt.grid[j], x, z, bottom: altOf(y, z) }); }
   }
   for (const q of probes) { q.xd = B.wrapX(q.x); q.xo = orig(q.x); }
+  // TERRAIN_HOLE_FOLLOWUP_PLAN B1 (its default, the user not having ruled otherwise): a ground occupancy (W10d: the town's and the landmarks' own ground, scene.js
+  // userData.groundOccupancy) replaces the terrain where it lies, under a deck too (LM09's ground under RN01-13's tail, the user's layout C of 2026-10-18). So a TS1 or TS3
+  // probe in it (in plan, in its upward triangles at uBend 0) checks that ground instead of the cut lattice: it lies within 0.3 m of the lattice there, and under a deck
+  // the first opaque surface from below the girder is that ground (a wall column's foot lies in it). Before: every such probe failed as "terrain missing" (since 1bee33c).
+  const occMeshes = new Set(), occCells = new Map(); S.scene.updateMatrixWorld(true);
+  S.scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || !o.userData.groundOccupancy || !o.geometry?.attributes?.position) return; occMeshes.add(o); const g = o.geometry, p = g.attributes.position, ix = g.index, e = o.matrixWorld.elements, n = ix ? ix.count : p.count;
+    for (let t = 0; t + 2 < n; t += 3) { const v = [0, 1, 2].map(k => { const i = ix ? ix.getX(t + k) : t + k, x = p.getX(i), y = p.getY(i), z = p.getZ(i); return [B.wrapX(e[0] * x + e[4] * y + e[8] * z + e[12]), e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]]; });
+      const ny = (v[1][2] - v[0][2]) * (v[2][0] - v[0][0]) - (v[1][0] - v[0][0]) * (v[2][2] - v[0][2]); if (!(ny > 1e-10)) continue;
+      for (let x = Math.floor(Math.min(v[0][0], v[1][0], v[2][0])); x <= Math.floor(Math.max(v[0][0], v[1][0], v[2][0])); x++) for (let z = Math.floor(Math.min(v[0][2], v[1][2], v[2][2])); z <= Math.floor(Math.max(v[0][2], v[1][2], v[2][2])); z++) { const k = key(x, z); let a = occCells.get(k); if (!a) occCells.set(k, a = []); a.push(v); } } });
+  for (const q of probes) if (q.test === 'bridge' || q.test === 'abut-deck' || q.test === 'wall') { let y = null; for (const v of occCells.get(key(q.xd, q.z)) || []) { const w = bary(q.xd, q.z, v); if (w) { const h = w[0] * v[0][1] + w[1] * v[1][1] + w[2] * v[2][1]; if (y === null || h > y) y = h; } } if (y !== null) q.occAlt = altOf(y, q.z); }
   for (const q of sights) { q.a[0] = B.wrapX(q.a[0]); q.b[0] = B.wrapX(q.b[0]); }
 
   // ---- the uncut lattice
@@ -159,11 +172,11 @@ async function probe({ modes }) {
         const x0 = Math.floor(Math.min(v[0][0], v[1][0], v[2][0])), x1 = Math.floor(Math.max(v[0][0], v[1][0], v[2][0])), z0 = Math.floor(Math.min(v[0][2], v[1][2], v[2][2])), z1 = Math.floor(Math.max(v[0][2], v[1][2], v[2][2]));
         if ((x1 - x0 + 1) * (z1 - z0 + 1) > 2500) continue;
         let tri = null;
-        for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = `${x},${z}`; if (!interest.has(k)) continue; if (!tri) { tri = { v, b: v.map(bend), terr, clear, name, tunnel: tunnelNames.test(name), road: roadNames.test(name) }; if (!clear) names.add(name); } let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(tri); triangles++; }
+        for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = `${x},${z}`; if (!interest.has(k)) continue; if (!tri) { tri = { v, b: v.map(bend), terr, clear, name, tunnel: tunnelNames.test(name), road: roadNames.test(name), occ: occMeshes.has(o) }; if (!clear) names.add(name); } let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(tri); triangles++; }
       }
     });
     // first hits along one ray: the terrain alone, and the scene's opaque surfaces
-    const cast = (A, dir, list) => { let terr = null, first = null; for (const tri of list) { if (tri.clear) continue; const t = rayHit(A, dir, ...tri.b); if (t === null) continue; if (tri.terr && (!terr || t < terr.t)) terr = { t, name: tri.name, tri }; if (!first || t < first.t - 1e-5 || (Math.abs(t - first.t) <= 1e-5 && tri.terr)) first = { t, name: tri.name, terr: tri.terr, tunnel: tri.tunnel, road: tri.road }; } return { terr, first }; };
+    const cast = (A, dir, list) => { let terr = null, first = null; for (const tri of list) { if (tri.clear) continue; const t = rayHit(A, dir, ...tri.b); if (t === null) continue; if (tri.terr && (!terr || t < terr.t)) terr = { t, name: tri.name, tri }; if (!first || t < first.t - 1e-5 || (Math.abs(t - first.t) <= 1e-5 && tri.terr)) first = { t, name: tri.name, terr: tri.terr, tunnel: tri.tunnel, road: tri.road, occ: tri.occ }; } return { terr, first }; };
     const res = { triangles, invalid, names: [...names].sort(), signature: signature(), probes: [] };
     probes.forEach((q, qi) => {
       const list = cells.get(key(q.xd, q.z)) || [], r = { i: qi };
@@ -323,6 +336,12 @@ for (const u of MODES) {
       const b = st.bridge[q.bridge] || (st.bridge[q.bridge] = { probes: 0, noRef: 0, terrain: 0, missing: 0, off: 0, below: 0, belowOK: 0, holes: 0, embedded: 0, joint: 0, blocked: {}, maxErr: 0, maxDev: 0 });
       if (q.joint) { b.joint = (b.joint || 0) + 1; return; }       // the abutment row itself: the road's last row and the deck's first one (TS3 probes either side of it)
       b.probes++; if (q.refAlt === null) { b.noRef++; add('TS1', `${u} ${where(q)} 无参考三角形`); return; }
+      if (q.occAlt !== undefined) { b.occupancy = (b.occupancy || 0) + 1;       // B1: in a ground occupancy, that ground is the near-side ground (0.3 m: as below; in ray units, flat at uBend 0)
+        if (Math.abs(q.occAlt - q.refAlt) > 0.3) add('TS1', `${u} ${where(q)} 占地表面离格网 ${f(q.occAlt - q.refAlt)} m > 0.3`); else b.occupancyOK = (b.occupancyOK || 0) + 1;
+        if (r.embedded) b.embedded++; else if (r.below) { b.below++; const h = r.below.first, lim = 0.3 * Math.cosh(q.z / 90);
+          if (h && h.occ && Math.abs(h.t - r.below.tRef) <= lim) b.belowOK++; else if (h && h.t < r.below.tRef - lim) b.blocked[h.name] = (b.blocked[h.name] || 0) + 1;
+          else { b.holes = (b.holes || 0) + 1; add('TS1', `${u} ${where(q)} 占地内桥下第一个不透明面 ${h ? `${h.name}（离格网 ${f(h.t - r.below.tRef, 2)}）` : '无命中'}`); } }
+        return; }
       const e = errOf(q, r);
       if (!r.terr) { b.missing++; add('TS1', `${u} ${where(q)} 地形缺面（参考 ${f(q.refAlt)} m）`); }
       else if (!terrOK(q, r)) { b.off++; add('TS1', `${u} ${where(q)} 地形命中偏差 ${f(e, 4)} m（容差 ${f(r.tol, 4)}），顶点离未裁切地形 ${f(r.terr.dev, 4)}`); }
@@ -357,11 +376,12 @@ for (const u of MODES) {
       if (q.test === 'abut-deck') { a.deck++; const h = r.first; if (h && h.road) a.deckTop++; else add('TS3', `${u} 桥台 ${q.abut} 桥面 ${where(q)} s=${q.s} 俯视第一个面 ${h ? h.name : '无'}`);
         if (q.atJoint) { a.jointRow = (a.jointRow || 0) + 1; return; }      // the shared row itself; the ground is checked from 0.05 m beyond it
         a.groundProbes = (a.groundProbes || 0) + 1;
-        if (q.refAlt !== null && terrOK(q, r)) a.ground++; else { a.groundMissing++; add('TS3', `${u} 桥台 ${q.abut} 桥下 ${where(q)} s=${q.s} 地形${r.terr ? `偏差 ${f(errOf(q, r), 4)}` : '缺面'}`); } }
+        if (q.occAlt !== undefined && q.refAlt !== null && Math.abs(q.occAlt - q.refAlt) <= 0.3) { a.ground++; a.occupancy = (a.occupancy || 0) + 1; }      // B1: the occupancy's ground under the deck
+        else if (q.refAlt !== null && terrOK(q, r)) a.ground++; else { a.groundMissing++; add('TS3', `${u} 桥台 ${q.abut} 桥下 ${where(q)} s=${q.s} 地形${r.terr ? `偏差 ${f(errOf(q, r), 4)}` : '缺面'}`); } }
       else { a.road++; const h = r.first; if (h && h.road) a.roadTop++; else add('TS3', `${u} 桥台 ${q.abut} 引道 ${where(q)} s=${q.s} 俯视第一个面 ${h ? h.name : '无'}`); }
     } else if (q.test === 'wall') {
       const w = st.walls[q.abut] || (st.walls[q.abut] = { columns: 0, buried: 0, gap: 0, minCover: Infinity });
-      w.columns++; const ok = r.terr && terrOK(q, r) && q.refAlt >= q.bottom - 1e-3;
+      w.columns++; const ok = q.occAlt !== undefined ? q.refAlt !== null && Math.abs(q.occAlt - q.refAlt) <= 0.3 && q.occAlt >= q.bottom - 1e-3 : r.terr && terrOK(q, r) && q.refAlt >= q.bottom - 1e-3;      // (B1: or in the occupancy's ground)
       if (ok) { w.buried++; w.minCover = Math.min(w.minCover, q.refAlt - q.bottom); } else { w.gap++; add('TS3', `${u} 桥台端墙 ${q.abut} o=${q.o} 墙底 ${f(q.bottom)} m 下${r.terr ? `地面 ${f(q.refAlt)} m` : '地形缺面'}`); }
     }
   });
@@ -384,7 +404,7 @@ summary.modes4 = { sameTerrain, meshesNearProbes: allNames.length, onlySome };
 
 const cnt = (u, k) => Object.values(summary.modes[u][k]);
 for (const u of MODES) {
-  const s = summary.modes[u], b = Object.entries(s.bridge).map(([id, v]) => `${id} ${v.terrain}/${v.probes}（缺 ${v.missing}、偏 ${v.off}、最大偏差 ${f(v.maxErr, 4)} m、顶点离未裁切地形 ≤ ${f(v.maxDev, 5)}；桥下第一面为本侧地面 ${v.belowOK}/${v.below}、空洞 ${v.holes}、入梁 ${v.embedded}、桥台共用行 ${v.joint}${Object.keys(v.blocked).length ? `、更近的面 ${JSON.stringify(v.blocked)}` : ''}）`).join('；');
+  const s = summary.modes[u], b = Object.entries(s.bridge).map(([id, v]) => `${id} ${v.terrain}/${v.probes}（缺 ${v.missing}、偏 ${v.off}、最大偏差 ${f(v.maxErr, 4)} m、顶点离未裁切地形 ≤ ${f(v.maxDev, 5)}；桥下第一面为本侧地面 ${v.belowOK}/${v.below}、空洞 ${v.holes}、入梁 ${v.embedded}、桥台共用行 ${v.joint}${v.occupancy ? `、在地面占地内 ${v.occupancyOK || 0}/${v.occupancy}` : ''}${Object.keys(v.blocked).length ? `、更近的面 ${JSON.stringify(v.blocked)}` : ''}）`).join('；');
   console.log(`  · uBend ${u}：TS1 ${b}；最大命中偏差 ${f(s.maxErr, 4)} m`);
   console.log(`  · uBend ${u}：TS2 应埋藏探针 ${s.tunnel.ok || 0}/${s.tunnel.probes || 0}（缺 ${s.tunnel.missing || 0}、偏 ${s.tunnel.off || 0}、俯视被盖 ${s.tunnel.covered || 0}；洞口环 1.4 m 内未埋的合法开口探针 ${s.tunnel.portalOpen || 0}），中线参考应埋行 ${s.tunnel.buriedRows}、实际覆土 ≥ 0.3 m 行 ${s.tunnel.coveredRows}，两端外露 ${s.tunnel.exposed ? s.tunnel.exposed.join(' / ') : '—'} m`);
   console.log(`  · uBend ${u}：TS3 引道 ${Object.entries(s.approach).map(([k, v]) => `${k} ${v.road}/${v.probes}（span 内 ${v.insideSpan}，地面盖路 ${v.ground}）`).join('、')}；封面前开口 ${Object.entries(s.mouth).map(([k, v]) => `${k} ${v.probes} 点（原地形高出路面 ${v.aboveRoad} 点、最高 ${f(v.maxAboveRoad, 2)} m，高于开口轮廓 ${v.aboveProfile}，仍有地面高出路面 ${v.left}）`).join('、')}；视线 ${Object.entries(s.sights).map(([k, v]) => `${k} ${v.tunnel}/${v.rays}`).join('、')}；桥台 ${cnt(u, 'abutments').reduce((a, v) => a + v.deckTop, 0)}/${cnt(u, 'abutments').reduce((a, v) => a + v.deck, 0)} 桥面在上、${cnt(u, 'abutments').reduce((a, v) => a + v.ground, 0)}/${cnt(u, 'abutments').reduce((a, v) => a + (v.groundProbes || 0), 0)} 桥下有地（离共用行 0.05–1 m）、引道 ${cnt(u, 'abutments').reduce((a, v) => a + v.roadTop, 0)}/${cnt(u, 'abutments').reduce((a, v) => a + v.road, 0)}；端墙 ${cnt(u, 'walls').reduce((a, v) => a + v.buried, 0)}/${cnt(u, 'walls').reduce((a, v) => a + v.columns, 0)} 列墙底入地（最小埋深 ${f(Math.min(...cnt(u, 'walls').map(v => v.minCover)), 2)} m）`);

@@ -26,8 +26,9 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 // measuring after a real-time wait made the result drift between runs. Pause the page clock before loading, jump to t = 1.5 s, advance two frames, then measure.
 await page.clock.install({ time: 0 });
 await page.clock.pauseAt(100);
-await page.goto(pathToFileURL(path.join(root, 'index.html')).href);
-await page.waitForFunction(() => window.__scene && window.__scene.groups, null, { polling: 200 });
+// (an explicit 180 s, as the other tools wait: the default 30 s ran out under SwiftShader and heavy swap, TERRAIN_HOLE_FOLLOWUP_PLAN C1)
+await page.goto(pathToFileURL(path.join(root, 'index.html')).href, { timeout: 180000 });
+await page.waitForFunction(() => window.__scene && window.__scene.groups, null, { polling: 200, timeout: 180000 });
 await page.clock.fastForward(1400);
 await page.clock.runFor(32);
 await page.waitForTimeout(1500);
