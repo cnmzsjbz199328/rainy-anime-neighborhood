@@ -1,0 +1,365 @@
+{
+  "scope": "LM09 stop lamp and timetable sign; flat generated geometry; pole centreline intersects actual indexed road triangles. Not visual acceptance or complete model-envelope clearance.",
+  "head": "6e00715713227375675eafeb26088c6db25ec85f",
+  "dirtyAtAudit": [
+    "M index.html",
+    " M roadkit.js",
+    " M roads.js",
+    " M terrain.js",
+    "?? docs/world/audits/lm09-facilities-2026-10-21.json",
+    "?? tools/lm09_facility_audit.mjs"
+  ],
+  "embeddedSourcesMatch": {
+    "scene.js": true,
+    "landmarks/LM09.js": true,
+    "roads.js": true,
+    "roadkit.js": true,
+    "bridge.js": true,
+    "terrain.js": true,
+    "world.js": true,
+    "streetlights.js": true
+  },
+  "landmark": {
+    "id": "LM09",
+    "anchor": [
+      -40,
+      -18
+    ],
+    "sampledAltitude": 1.7910111844539642
+  },
+  "current": [
+    {
+      "name": "BOARD_X: sign and timetable",
+      "local": {
+        "x": 6,
+        "z": 9,
+        "height": 2.51
+      },
+      "foot": {
+        "x": -68.94859968532097,
+        "y": 0.19545914360674238,
+        "z": 19.385156717277937
+      },
+      "top": {
+        "x": -68.78705998151675,
+        "y": 2.7655589585888456,
+        "z": 19.636940836080196
+      },
+      "roadUnderFoot": [
+        {
+          "id": "N01-west",
+          "triangle": 20142,
+          "y": 0.6866196691863032
+        }
+      ],
+      "nearest": {
+        "route": "N01-west",
+        "station": 68.94496352360814,
+        "distanceFlat": 1.998732603068825,
+        "offsetGrid": -1.9755905548201584,
+        "row": 137,
+        "paved": [
+          -5,
+          5
+        ],
+        "cf": 0.9929863566304397,
+        "k": 1.0188599101777496
+      },
+      "poleRoadCrossing": {
+        "localY": 0.47795578251690585,
+        "point": {
+          "x": -68.91716490137756,
+          "y": 0.6846239646413,
+          "z": 19.434169207094953
+        },
+        "surfaces": [
+          {
+            "id": "N01-west",
+            "triangle": 20140,
+            "y": 0.6846239646410355
+          }
+        ]
+      }
+    },
+    {
+      "name": "STOP_LAMP_X: stop lamp",
+      "local": {
+        "x": 6.5,
+        "z": 8,
+        "height": 5.2
+      },
+      "foot": {
+        "x": -69.47692792467627,
+        "y": 0.19593736216684735,
+        "z": 20.39642989095775
+      },
+      "top": {
+        "x": -69.12268354271586,
+        "y": 5.536325377909029,
+        "z": 20.8499809978353
+      },
+      "roadUnderFoot": [
+        {
+          "id": "N01-west",
+          "triangle": 20530,
+          "y": 0.7658293250940866
+        }
+      ],
+      "nearest": {
+        "route": "N01-west",
+        "station": 69.68144654410627,
+        "distanceFlat": 2.8466852759235484,
+        "offsetGrid": -2.815071277457247,
+        "row": 139,
+        "paved": [
+          -5,
+          5
+        ],
+        "cf": 0.9921189835950616,
+        "k": 1.0192630948916888
+      },
+      "poleRoadCrossing": {
+        "localY": 0.5524739394566497,
+        "point": {
+          "x": -69.43740339627077,
+          "y": 0.7627553531452772,
+          "z": 20.447075462865833
+        },
+        "surfaces": [
+          {
+            "id": "N01-west",
+            "triangle": 20527,
+            "y": 0.7627553531457993
+          }
+        ]
+      }
+    }
+  ],
+  "bridgeEnd": {
+    "id": "RN01-13",
+    "point": {
+      "x": -72.90170247277838,
+      "z": 18.3187558474602
+    }
+  },
+  "candidateOnly": [
+    {
+      "name": "sign candidate; full envelope and site obstacles not checked",
+      "local": {
+        "x": 5,
+        "z": 4.5,
+        "height": 2.51
+      },
+      "foot": {
+        "x": -67.99809670166415,
+        "y": 0.1978557215704053,
+        "z": 24.02214258541939
+      },
+      "top": {
+        "x": -67.86018977734328,
+        "y": 2.798839092129347,
+        "z": 24.150354356559763
+      },
+      "roadUnderFoot": [
+        {
+          "id": "N01-west",
+          "triangle": 20277,
+          "y": 0.4884543296068363
+        }
+      ],
+      "nearest": {
+        "route": "N01-west",
+        "station": 69.17485690939803,
+        "distanceFlat": 6.72597839881128,
+        "offsetGrid": -6.649054958521032,
+        "row": 138,
+        "paved": [
+          -5,
+          5
+        ],
+        "cf": 0.9927211214099749,
+        "k": 1.0189861552381463
+      },
+      "poleRoadCrossing": {
+        "localY": 0.277967437130651,
+        "point": {
+          "x": -67.98245270332025,
+          "y": 0.4858040978438807,
+          "z": 24.036691952889107
+        },
+        "surfaces": [
+          {
+            "id": "N01-west",
+            "triangle": 20277,
+            "y": 0.4858040978440667
+          }
+        ]
+      }
+    },
+    {
+      "name": "lamp candidate; full envelope and site obstacles not checked",
+      "local": {
+        "x": 6,
+        "z": 4,
+        "height": 5.2
+      },
+      "foot": {
+        "x": -69.04103445777777,
+        "y": 0.19814397627144045,
+        "z": 24.5197240910758
+      },
+      "top": {
+        "x": -68.70678100445531,
+        "y": 5.596180521897214,
+        "z": 24.75202735422486
+      },
+      "roadUnderFoot": [
+        {
+          "id": "N01-west",
+          "triangle": 20677,
+          "y": 0.5227004247280368
+        }
+      ],
+      "nearest": {
+        "route": "N01-west",
+        "station": 70.23609321355393,
+        "distanceFlat": 6.9519998585140845,
+        "offsetGrid": -6.877622576598186,
+        "row": 140,
+        "paved": [
+          -5,
+          5
+        ],
+        "cf": 0.9914187538405843,
+        "k": 1.0195635139030765
+      },
+      "poleRoadCrossing": {
+        "localY": 0.3093173708724861,
+        "point": {
+          "x": -69.02009073722327,
+          "y": 0.5190343089923615,
+          "z": 24.534294219893823
+        },
+        "surfaces": [
+          {
+            "id": "N01-west",
+            "triangle": 20677,
+            "y": 0.5190343089923456
+          }
+        ]
+      }
+    }
+  ],
+  "headComparison": {
+    "head": "6e00715713227375675eafeb26088c6db25ec85f",
+    "method": "isolated git show HEAD sources, same audit script; excludes four pre-existing modified scene files",
+    "current": [
+      {
+        "name": "BOARD_X: sign and timetable",
+        "local": {
+          "x": 6,
+          "z": 9,
+          "height": 2.51
+        },
+        "foot": {
+          "x": -68.94859968532097,
+          "y": 0.19545914360674238,
+          "z": 19.385156717277937
+        },
+        "top": {
+          "x": -68.78705998151675,
+          "y": 2.7655589585888456,
+          "z": 19.636940836080196
+        },
+        "roadUnderFoot": [
+          {
+            "id": "N01-west",
+            "triangle": 20142,
+            "y": 0.6866196691863032
+          }
+        ],
+        "nearest": {
+          "route": "N01-west",
+          "station": 68.94496352360814,
+          "distanceFlat": 1.998732603068825,
+          "offsetGrid": -1.9755905548201584,
+          "row": 137,
+          "paved": [
+            -5,
+            5
+          ],
+          "cf": 0.9929863566304397,
+          "k": 1.0188599101777496
+        },
+        "poleRoadCrossing": {
+          "localY": 0.47795578251690585,
+          "point": {
+            "x": -68.91716490137756,
+            "y": 0.6846239646413,
+            "z": 19.434169207094953
+          },
+          "surfaces": [
+            {
+              "id": "N01-west",
+              "triangle": 20140,
+              "y": 0.6846239646410355
+            }
+          ]
+        }
+      },
+      {
+        "name": "STOP_LAMP_X: stop lamp",
+        "local": {
+          "x": 6.5,
+          "z": 8,
+          "height": 5.2
+        },
+        "foot": {
+          "x": -69.47692792467627,
+          "y": 0.19593736216684735,
+          "z": 20.39642989095775
+        },
+        "top": {
+          "x": -69.12268354271586,
+          "y": 5.536325377909029,
+          "z": 20.8499809978353
+        },
+        "roadUnderFoot": [
+          {
+            "id": "N01-west",
+            "triangle": 20530,
+            "y": 0.7658293250940866
+          }
+        ],
+        "nearest": {
+          "route": "N01-west",
+          "station": 69.68144654410627,
+          "distanceFlat": 2.8466852759235484,
+          "offsetGrid": -2.815071277457247,
+          "row": 139,
+          "paved": [
+            -5,
+            5
+          ],
+          "cf": 0.9921189835950616,
+          "k": 1.0192630948916888
+        },
+        "poleRoadCrossing": {
+          "localY": 0.5524739394566497,
+          "point": {
+            "x": -69.43740339627077,
+            "y": 0.7627553531452772,
+            "z": 20.447075462865833
+          },
+          "surfaces": [
+            {
+              "id": "N01-west",
+              "triangle": 20527,
+              "y": 0.7627553531457993
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
