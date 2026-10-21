@@ -25,17 +25,40 @@ const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[
 // a piece's fan triangle narrower than 10 um in plan (the cut's collinear points): it covers nothing, and once sealOutline moves one of its corners it stands up as
 // a thin wall over a road (TERRAIN_HOLE_REPAIR_PLAN 4.3); the terrain cuts leave it out
 const sliverXZ = (a, b, c) => { const ar = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])), l = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1]), Math.hypot(a[0] - c[0], a[1] - c[1])); return !(l > 0) || ar / l < 1e-5; };
+// the corner a convex piece is fanned from: the first whose fan has no zero-width triangle (collinear points of a cut's outline then stay corners of the triangles along
+// it, so the edge keeps the next surface's own vertices instead of one long chord past them, which leant over an end row on the sphere: TERRAIN_HOLE_FOLLOWUP_PLAN A7)
+const fanOrigin = poly => { const n = poly.length; if (n <= 3) return 0; for (let o = 0; o < n; o++) { let ok = true; for (let k = 1; k + 1 < n && ok; k++) if (sliverXZ(poly[o], poly[(o + k) % n], poly[(o + k + 1) % n])) ok = false; if (ok) return o; } return 0; };
 const polygonAreaXZ = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a * 0.5; };
 const CUT_EPS = 1e-3; // 1 mm tolerance for Float32 road rows against double-precision cut polygons
 const CUT_PAD = 0.12; // Keep ground a handspan outside the swept right-of-way so Float32 edges cannot leave grass slivers on the pavement.
-const CUT_CAP = 0.002; // m past a route's open end (TERRAIN_HOLE_REPAIR_PLAN 4.3: was 0.30)
+const GROUND_CAP = 0.002; // m past a route's open end for the ground overlays that cutGroundMeshes cuts (not the terrain: TERRAIN_HOLE_FOLLOWUP_PLAN A1)
 const SEAL_MAX = 1.2; // true metres: a cut edge takes the height of the surface that replaces it when they differ by no more (TERRAIN_HOLE_REPAIR_PLAN 4.3; a road's side slope can end 1.08 m over the ground)
+// A cut vertex lies on the replacing surface's outline only to Float32 (about 0.01 mm here) and to the cut's own tolerance: the road cut's CUT_EPS is a cross product,
+// so a vertex within 1 mm / edge length outside a clip edge counts as on it (2 mm on a row's 0.5 m side), the occupancy cut's 1e-8 is exact. The seal finds the surface
+// within that reach of the vertex, the point clamped onto the triangle (no slope is extrapolated): 2.5 mm for the road surfaces, 0.5 mm for the ground occupancy (less
+// than the overlays' 2 mm cap, GROUND_CAP: the terrain between an end row and a landmark ground meets each on its own side). TERRAIN_HOLE_FOLLOWUP_PLAN A1/A5: with the
+// -1e-6 barycentric margin of before, a vertex 5 um off J-T07's paving found no surface and kept the lattice height 0.2 m under it.
+const SEAL_TOL = 2.5e-3, SEAL_TOL_GROUND = 5e-4;
+function weightsXZ(ax, az, bx, bz, cx, cz, x, z, tol = SEAL_TOL) {
+  const den = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz), A = Math.abs(den); if (A < 1e-14) return null;
+  const w0 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / den, w1 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / den, w2 = 1 - w0 - w1;
+  if (w0 >= 0 && w1 >= 0 && w2 >= 0) return [w0, w1, w2];
+  // w times the altitude over the opposite edge (|den| / its length) is the signed distance to that edge
+  if (w0 * A / Math.hypot(cx - bx, cz - bz) < -tol || w1 * A / Math.hypot(ax - cx, az - cz) < -tol || w2 * A / Math.hypot(bx - ax, bz - az) < -tol) return null;
+  const c0 = Math.max(0, w0), c1 = Math.max(0, w1), c2 = Math.max(0, w2), s = c0 + c1 + c2; return [c0 / s, c1 / s, c2 / s];
+}
 function splitPolygonXZ(poly, a, b, sign, eps = CUT_EPS) {
   const inside = [], outside = [], side = p => sign * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
   for (let i = 0; i < poly.length; i++) {
     const p = poly[i], q = poly[(i + 1) % poly.length], sp = side(p), sq = side(q), ip = sp >= -eps, iq = sq >= -eps;
     if (ip) inside.push(p); else outside.push(p);
-    if (ip !== iq && sp !== sq) { const t = sp / (sp - sq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; inside.push(x); outside.push(x); }
+    // the crossing; where the tolerance counted one end on the line and both lie on its outer side, the line does not cross this edge: that end's projection onto the line
+    // (on it, by that end), not a point past the end on the edge's extension, which made a non-convex piece whose fan folded over its neighbours (TERRAIN_HOLE_FOLLOWUP_PLAN,
+    // unify_check U5 at M01-south's end)
+    if (ip !== iq && sp !== sq) { const t = sp / (sp - sq); let x;
+      if (t >= 0 && t <= 1) x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+      else { const r = Math.abs(sp) < Math.abs(sq) ? p : q, sr = r === p ? sp : sq, gx = -sign * (b[1] - a[1]), gz = sign * (b[0] - a[0]), g2 = gx * gx + gz * gz; x = [r[0] - sr * gx / g2, r[1] - sr * gz / g2]; }
+      inside.push(x); outside.push(x); }
   }
   const clean = p => p.filter((q, i) => Math.hypot(q[0] - p[(i + p.length - 1) % p.length][0], q[1] - p[(i + p.length - 1) % p.length][1]) > 1e-8);
   return [clean(inside), clean(outside)];
@@ -432,8 +455,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   // a flat position as a number (to 0.01 mm; |x| < 432, |z| < 283), read back from Float32 positions: sealOutline and the cut's outline record share it
   const posKey = (x, z) => Math.round(x * 1e5) * 1e8 + Math.round(z * 1e5) + 5e7;
   const add = (g, mat, kind, list, extra) => { const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.userData.terrain = { kind, ...extra }; m.userData.chunkPosition = g.attributes.position; root.add(m); list.push(m); return m; };
-  // Once the unified road plan exists, remove the ground that a graded road replaces from the planetary ground: the swept cross-section between its rows
-  // (and a 2 mm cap past each open end). This keeps the rendered terrain from sitting above roads between its much wider lattice samples.
+  // Once the unified road plan exists, remove the ground that a graded road replaces from the planetary ground: the swept cross-section between its rows.
+  // This keeps the rendered terrain from sitting above roads between its much wider lattice samples.
   // W10c: a bridge stands over the ground and a tunnel runs under it, so neither replaces any: the seabed under a deck and the hill over RN01-05 stay. The tunnel's own
   // volume is cut in three dimensions below (cutStructureXZ): where the hill is lower than the shell, the ground inside the shell and the portal rings goes.
   // The spans of world.js (roadkit.js gives them in each route's chainage) cut the rows they straddle at their exact ends (the row there interpolated, as
@@ -443,14 +466,14 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   const STRUCTURES = new Set(['tunnel', 'bridge']);
   function cutRoads(data) {
     const CELL = 2, PERIOD = 2 * Math.PI * R, polys = [], cells = new Map(), cellKey = (x, z) => `${x},${z}`, kept = [];
-    const addPoly = (p, src) => {
+    const addPoly = (p, src, list = polys) => {
       if (p.length < 3 || Math.abs(polygonAreaXZ(p)) < 1e-7) return;
       const centre = p.reduce((s, q) => s + q[0], 0) / p.length, copies = [p];
       if (centre > Math.PI * R) copies.push(p.map(q => [q[0] - PERIOD, q[1]]));
       else if (centre < -Math.PI * R) copies.push(p.map(q => [q[0] + PERIOD, q[1]]));
       for (const poly of copies) {
         const box = { x0: Math.min(...poly.map(q => q[0])), x1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])) };
-        const id = polys.length; polys.push({ p: poly, box, src });
+        const id = list.length; list.push({ p: poly, box, src }); if (list !== polys) continue;
         for (let x = Math.floor((box.x0 - CUT_EPS) / CELL); x <= Math.floor((box.x1 + CUT_EPS) / CELL); x++) for (let z = Math.floor((box.z0 - CUT_EPS) / CELL); z <= Math.floor((box.z1 + CUT_EPS) / CELL); z++) {
           const k = cellKey(x, z); let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(id);
         }
@@ -487,9 +510,10 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     };
     // TERRAIN_HOLE_REPAIR_PLAN 4.3: outside the corridors too a row reaches no further than its strip's outer columns: where a strip narrows to its paved width (an RD05
     // end's taper, a junction mouth) the pad would cut ground that nothing replaces; where verges or side slopes run on past the footprint the pad lies under them
+    // TERRAIN_HOLE_FOLLOWUP_PLAN A3: a row cuts the ground it replaces (roadkit.js rt.cut: the full footprint, over a fill side slope out to where it comes back to the terrain)
     const routeRow = (rt, i, along = 0, nearX = rt.flatOf[i].x) => {
-      const f = rt.footprint[i], e = stripEdge(rt, i);
-      let lo = f[2] - CUT_PAD, hi = f[3] + CUT_PAD;
+      const f = rt.cut ? rt.cut[i] : rt.footprint[i].slice(2), e = stripEdge(rt, i);
+      let lo = f[0] - CUT_PAD, hi = f[1] + CUT_PAD;
       if (e && (e[0] > lo || e[1] < hi)) { lo = Math.max(lo, e[0]); hi = Math.min(hi, e[1]); if (!limited.has(rt.def.id + ':' + i)) { limited.add(rt.def.id + ':' + i); connectorStats.limitedRows++; } }
       else if (!e) { const c = stripCols(rt, i); if (c[0] > lo || c[1] < hi) { lo = Math.max(lo, c[0]); hi = Math.min(hi, c[1]); connectorStats.stripRows = (connectorStats.stripRows || 0) + 1; } }
       return [flatLateral(rt, i, lo, along, nearX), flatLateral(rt, i, hi, along, nearX)];
@@ -523,9 +547,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     const lerpRow = (a, b, t) => [0, 1].map(k => [a[k][0] + (b[k][0] - a[k][0]) * t, a[k][1] + (b[k][1] - a[k][1]) * t]);
     // the connector rectangles leave this route's row and cap polygons, exactly (no tolerance: the ground then ends on the road's cut edge); a trimmed piece
     // keeps its source and records the exits
-    const addRoutePoly = (rt, p, src) => {
+    const addRoutePoly = (rt, p, src, into = polys) => {
       const list = connectorsOf.get(rt);
-      if (!list || !list.length) { addPoly(p, src); return; }
+      if (!list || !list.length) { addPoly(p, src, into); return; }
       let parts = [p]; const exits = [];
       for (const c of list) {
         const next = [];
@@ -539,7 +563,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
         }
         parts = next;
       }
-      if (!exits.length) { addPoly(p, src); return; }
+      if (!exits.length) { addPoly(p, src, into); return; }
+      if (into !== polys) { for (const q of parts) addPoly(q, { ...src, connector: exits }, into); return; }
       connectorStats.trimmed++; if (!parts.length) connectorStats.removed++; connectorStats.pieces += parts.length;
       for (const q of parts) addPoly(q, { ...src, connector: exits });
     };
@@ -562,18 +587,27 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
         kept.push({ type: 'tunnel-mouth', route: rt.def.id, end, s0: +f0.toFixed(3), s1: +f1.toFixed(3), halfWidth: tn.innerR });
       }
     }
-    // A 2 mm cap past each open end keeps the ground and the landmark lawns off the strip's end row (an interval-only mask leaves them on the end row line, where
-    // Float32 and the end row's piecewise line put them a few mm over the road). TERRAIN_HOLE_REPAIR_PLAN 4.3: it was 0.3 m and cut ground that nothing replaced
-    // (the dead ends at LM01, LM02, LM03, LM04, LM06, LM07 and the RD05 mouths at J-T07 and J-T08); where a road goes on, that surface cuts the ground under itself.
-    // On the sphere a lattice chord north of about 70 degrees shifts by more (RN10-RD08's two ends, unify_check U2; PROGRESS): a cap that wide would leave a slit
-    // on the map. A cap does not reach onto a structure.
+    // A route's open end cuts the terrain along its end row and nothing past it. TERRAIN_HOLE_REPAIR_PLAN 4.3 had a cap past it, 0.3 m and then 2 mm, to keep the
+    // ground off the end row (Float32 and the end row's piecewise cross-section left the ground's edge a few mm over the road there); TERRAIN_HOLE_FOLLOWUP_PLAN A1:
+    // in the terrain the 2 mm cap was itself a slit that nothing replaced, and on the sphere a lattice chord north of about 70 degrees shifted past it (RN10-RD08). Now
+    // the terrain's edge meets the end row vertex for vertex at the row's own heights (endColumns, sealOutline), so it neither stands over the road nor leaves a slit.
+    // The ground overlays and landmark grounds that cutGroundMeshes cuts by these polygons are not sealed to the road: they keep the 2 mm cap (state.capPolygons; the
+    // terrain under that 2 mm meets both), else their edge stands a few mm to cm over the end row (unify_check U2). A cap does not reach onto a structure.
+    const capPolys = [];
     for (const rt of data.routes || []) if (rt.samples.length > 1) {
       const S = rt.samples, last = S.length - 1;
-      for (const [i, c0, c1] of [[0, S[0].s - CUT_CAP, S[0].s], [last, S[last].s, S[last].s + CUT_CAP]]) for (const [p0, p1] of outside(c0, c1, info.get(rt).ranges)) {
+      for (const [i, c0, c1] of [[0, S[0].s - GROUND_CAP, S[0].s], [last, S[last].s, S[last].s + GROUND_CAP]]) for (const [p0, p1] of outside(c0, c1, info.get(rt).ranges)) {
         const A = routeRow(rt, i, p0 - S[i].s), Bq = routeRow(rt, i, p1 - S[i].s);
-        for (const q of rowParts(rt, A, Bq)) addRoutePoly(rt, q, { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3), ...(limited.has(rt.def.id + ':' + i) ? { stripEdge: true } : {}) });
+        for (const q of convexPartsXZ([A[0], A[1], Bq[1], Bq[0]]).parts) addRoutePoly(rt, q, { kind: 'cap', id: rt.def.id, s0: +p0.toFixed(3), s1: +p1.toFixed(3) }, capPolys);
       }
     }
+    state.capPolygons = capPolys;
+    // the strip's columns on those caps' far edges (each end row's columns 2 mm on): cutGroundMeshes splits an overlay's cut edge there (TERRAIN_HOLE_FOLLOWUP_PLAN A7)
+    const capColumns = [];
+    for (const rt of data.routes || []) { const S = rt.samples, n = S.length, m = rt.grid.length, st = rt.strip.pos, I = info.get(rt); if (n < 2) continue;
+      for (const [i, sg] of [[0, -1], [n - 1, 1]]) { if (I.ranges.some(([r0, r1]) => S[i].s >= r0 - 1e-6 && S[i].s <= r1 + 1e-6)) continue; const t = rt.tangent[i];
+        for (let j = 0; j < m; j++) { const k = (i * m + j) * 3, x = st[k] + t[0] * sg * GROUND_CAP, z = st[k + 2] + t[1] * sg * GROUND_CAP; capColumns.push([x, z]); if (Math.abs(x) > Math.PI * R) capColumns.push([x - PERIOD * Math.sign(x), z]); } } }
+    state.capColumns = capColumns;
     for (const br of data.bridges || []) {
       kept.push({ type: 'bridge', bridge: br.def ? br.def.id : br.ids.join('+'), edges: br.ids, length: +br.length.toFixed(3) });
       const st = br.strips && br.strips[0], m = br.topCols && br.topCols.length; if (!st || !m) continue;
@@ -610,11 +644,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     // the paving's height at a point of its outline (the highest junction triangle there, its copy one circumference away included); null off every paving
     const paveCells = new Map(); polys.forEach((q, id) => { if (q.src.kind !== 'junction' || !q.src.y) return;
       for (let x = Math.floor((q.box.x0 - CUT_EPS) / CELL); x <= Math.floor((q.box.x1 + CUT_EPS) / CELL); x++) for (let z = Math.floor((q.box.z0 - CUT_EPS) / CELL); z <= Math.floor((q.box.z1 + CUT_EPS) / CELL); z++) { const k = cellKey(x, z); let a = paveCells.get(k); if (!a) paveCells.set(k, a = []); a.push(id); } });
-    const pavingAt = (x, z) => { let h = null; for (const id of paveCells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const b = polys[id].box; if (x < b.x0 - 1e-4 || x > b.x1 + 1e-4 || z < b.z0 - 1e-4 || z > b.z1 + 1e-4) continue;
-      const q = polys[id].src, t = q.tri, k = PERIOD * Math.round((x - t[0][0]) / PERIOD), ax = t[0][0] + k, bx = t[1][0] + k, cx = t[2][0] + k, az = t[0][1], bz = t[1][1], cz = t[2][1];
-      const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-14) continue;
-      const w0 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d, w1 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d, w2 = 1 - w0 - w1;
-      if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue; const y = w0 * q.y[0] + w1 * q.y[1] + w2 * q.y[2]; if (h === null || y > h) h = y; } return h; };
+    const pavingAt = (x, z, tol = SEAL_TOL) => { let h = null; for (const id of paveCells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const b = polys[id].box; if (x < b.x0 - SEAL_TOL || x > b.x1 + SEAL_TOL || z < b.z0 - SEAL_TOL || z > b.z1 + SEAL_TOL) continue;
+      const q = polys[id].src, t = q.tri, k = PERIOD * Math.round((x - t[0][0]) / PERIOD), w = weightsXZ(t[0][0] + k, t[0][1], t[1][0] + k, t[1][1], t[2][0] + k, t[2][1], x, z, tol);
+      if (!w) continue; const y = w[0] * q.y[0] + w[1] * q.y[1] + w[2] * q.y[2]; if (h === null || y > h) h = y; } return h; };
     for (const mesh of meshes) {
       const g = mesh.geometry, pos = g.attributes.position, normal = g.attributes.normal, color = g.attributes.color, ix = g.index;
       const count = ix ? ix.count : pos.count, index = [], extraPos = [], extraNorm = [], extraColor = []; let meshClipped = 0;
@@ -658,7 +690,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
           if (color) for (let c = 0; c < 3; c++) extraColor.push(weights.reduce((sum, w, k) => sum + w * color.array[ids[k] * 3 + c], 0));
           return out;
         };
-        for (const poly of pieces) { const vids = poly.map(addVertex); for (let k = 1; k + 1 < vids.length; k++) { if (sliverXZ(poly[0], poly[k], poly[k + 1])) continue; index.push(vids[0], vids[k], vids[k + 1]); trianglesAfter++; } }
+        for (const poly of pieces) { const vids = poly.map(addVertex), o = fanOrigin(poly), n = poly.length; for (let k = 1; k + 1 < n; k++) { const b = (o + k) % n, c = (o + k + 1) % n; if (sliverXZ(poly[o], poly[b], poly[c])) continue; index.push(vids[o], vids[b], vids[c]); trianglesAfter++; } }
       }
       if (meshClipped) {
         const basePos = Array.from(pos.array), baseNorm = normal ? Array.from(normal.array) : null, baseColor = color ? Array.from(color.array) : null;
@@ -669,52 +701,100 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       }
     }
     structureCut.removedArea = +structureCut.removedArea.toFixed(4); structureCut.parts = STRUCT.map(p => p.kind + (p.end ? ':' + p.end : ''));
-    // a route's strip at a point (its row interval from the polygon's chainage, the column by the lateral offset; the strip's own triangles a, c, b and b, c, d)
+    // a route's strip at a point (its row interval from the polygon's chainage; the strip's own triangles a, c, b and b, c, d). Every column of those rows, by its
+    // cell's box: a column's place differs from its grid offset where the cross-section narrows (an RD05 end's taper puts the 2.8 m column at 1.6 m; TERRAIN_HOLE_FOLLOWUP_PLAN A5)
     const routeById = new Map((data.routes || []).map(rt => [rt.def.id, rt])), routeCells = new Map();
-    polys.forEach((q, id) => { if ((q.src.kind !== 'route' && q.src.kind !== 'cap') || q.src.structure || !routeById.has(q.src.id)) return;
+    polys.forEach((q, id) => { if (q.src.kind !== 'route' || (q.src.structure && q.src.structure !== 'tunnel-portal') || !routeById.has(q.src.id)) return;      // (the approach in front of a portal face is road)
       for (let x = Math.floor((q.box.x0 - CUT_EPS) / CELL); x <= Math.floor((q.box.x1 + CUT_EPS) / CELL); x++) for (let z = Math.floor((q.box.z0 - CUT_EPS) / CELL); z <= Math.floor((q.box.z1 + CUT_EPS) / CELL); z++) { const k = cellKey(x, z); let a = routeCells.get(k); if (!a) routeCells.set(k, a = []); a.push(id); } });
-    const stripAt = (rt, i0, x, z) => {
+    const stripAt = (rt, i0, x, z, tol = SEAL_TOL) => {
       const S = rt.samples, n = S.length, m = rt.grid.length, st = rt.strip.pos; let h = null;
       for (let i = Math.max(0, i0 - 1); i <= Math.min(n - 2, i0 + 1); i++) {
-        const F = rt.flatOf[i], t = rt.tangent[i], xx = x + PERIOD * Math.round((F.x - x) / PERIOD), o = ((xx - F.x) * -t[1] + (z - F.z) * t[0]) / (rt.cf[i] * F.k);
-        let j = 0, hi = m - 1; while (hi - j > 1) { const mid = (j + hi) >> 1; if (rt.grid[mid] <= o) j = mid; else hi = mid; }
-        for (let jj = Math.max(0, j - 1); jj <= Math.min(m - 2, j + 1); jj++) { const a = i * m + jj, b = a + 1, c = a + m, d = c + 1;
-          for (const [A, Bq, Cq] of [[a, c, b], [b, c, d]]) { const ax = st[A * 3], az = st[A * 3 + 2], bx = st[Bq * 3], bz = st[Bq * 3 + 2], cx = st[Cq * 3], cz = st[Cq * 3 + 2], den = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(den) < 1e-14) continue;
-            const w0 = ((bz - cz) * (xx - cx) + (cx - bx) * (z - cz)) / den, w1 = ((cz - az) * (xx - cx) + (ax - cx) * (z - cz)) / den, w2 = 1 - w0 - w1; if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue;
-            const y = w0 * st[A * 3 + 1] + w1 * st[Bq * 3 + 1] + w2 * st[Cq * 3 + 1]; if (h === null || y > h) h = y; } }
+        const F = rt.flatOf[i], xx = x + PERIOD * Math.round((F.x - x) / PERIOD);
+        for (let jj = 0; jj <= m - 2; jj++) { const a = i * m + jj, b = a + 1, c = a + m, d = c + 1;
+          if (xx < Math.min(st[a * 3], st[b * 3], st[c * 3], st[d * 3]) - SEAL_TOL || xx > Math.max(st[a * 3], st[b * 3], st[c * 3], st[d * 3]) + SEAL_TOL || z < Math.min(st[a * 3 + 2], st[b * 3 + 2], st[c * 3 + 2], st[d * 3 + 2]) - SEAL_TOL || z > Math.max(st[a * 3 + 2], st[b * 3 + 2], st[c * 3 + 2], st[d * 3 + 2]) + SEAL_TOL) continue;
+          for (const [A, Bq, Cq] of [[a, c, b], [b, c, d]]) { const w = weightsXZ(st[A * 3], st[A * 3 + 2], st[Bq * 3], st[Bq * 3 + 2], st[Cq * 3], st[Cq * 3 + 2], xx, z, tol); if (!w) continue;
+            const y = w[0] * st[A * 3 + 1] + w[1] * st[Bq * 3 + 1] + w[2] * st[Cq * 3 + 1]; if (h === null || y > h) h = y; } }
       }
       return h; };
-    const routeAt = (x, z) => { let h = null; for (const id of routeCells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const q = polys[id], b = q.box; if (x < b.x0 - 1e-4 || x > b.x1 + 1e-4 || z < b.z0 - 1e-4 || z > b.z1 + 1e-4) continue;
+    const routeAt = (x, z, tol = SEAL_TOL) => { let h = null; for (const id of routeCells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const q = polys[id], b = q.box; if (x < b.x0 - SEAL_TOL || x > b.x1 + SEAL_TOL || z < b.z0 - SEAL_TOL || z > b.z1 + SEAL_TOL) continue;
       const rt = routeById.get(q.src.id), S = rt.samples; let lo = 0, hi = S.length - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (S[mid].s <= q.src.s0 + 1e-9) lo = mid; else hi = mid; }
-      const y = stripAt(rt, lo, x, z); if (y !== null && (h === null || y > h)) h = y; } return h; };
+      const y = stripAt(rt, lo, x, z, tol); if (y !== null && (h === null || y > h)) h = y; } return h; };
     // the terrain's edge takes the height of what replaces the ground there (sealOutline): a junction's paving (its triangles are cut exactly, no slope runs on past
     // them) or the route's own strip (in an exit corridor the cut ends on the strip's outer column; elsewhere the strip's side slope runs over the cut edge)
-    // not near a structure, by the distance to its axis (true metres): a bridge's deck within 11.5 m of the axis (the ground a deck keeps reaches 9 m from it,
-    // terrain_structure_check TS1, plus a lattice triangle, so no moved vertex tilts it) and 2.5 m past its ends (TS3 at the abutments), a tunnel within 8 m of its axis
-    // (the shell's 5.4 m plus a lattice triangle: the hill over it) and 0.5 m past its portal faces (the junction paving in front of RN01-05 is sealed up to the face):
-    // the ground there keeps its own relation to the structure (TS1-TS6)
-    const axes = [];
-    for (const br of data.bridges || []) if (br.flatOf && br.flatOf.length > 1) axes.push({ pts: br.flatOf.map(f => [f.x, f.z, f.k]), side: 11.5, past: 2.5 });
-    for (const rt of data.routes || []) if (rt.tunnel && rt.tunnel.idx && rt.tunnel.idx.length > 1) axes.push({ pts: rt.tunnel.idx.map(i => [rt.flatOf[i].x, rt.flatOf[i].z, rt.flatOf[i].k]), side: 8, past: 0.5 });
-    const segCells = new Map();
-    for (const ax of axes) for (let i = 0; i + 1 < ax.pts.length; i++) {
-      const [x0, z0, k0] = ax.pts[i], [x1r, z1, k1] = ax.pts[i + 1], x1 = x1r + PERIOD * Math.round((x0 - x1r) / PERIOD), k = Math.max(k0, k1), r = (ax.side + ax.past) * k;
-      const seg = { x0, z0, x1, z1, k, side: ax.side, past: ax.past, first: i === 0, last: i + 2 === ax.pts.length };
-      for (let cx = Math.floor((Math.min(x0, x1) - r) / CELL); cx <= Math.floor((Math.max(x0, x1) + r) / CELL); cx++) for (let cz = Math.floor((Math.min(z0, z1) - r) / CELL); cz <= Math.floor((Math.max(z0, z1) + r) / CELL); cz++) { const q = cellKey(cx, cz); let l = segCells.get(q); if (!l) segCells.set(q, l = []); l.push(seg); }
+    // except the ground that the structures keep as built, as tools/terrain_structure_check.mjs reads it on the uncut lattice (TERRAIN_HOLE_FOLLOWUP_PLAN A2): under every
+    // deck row and row midpoint at o = 0, +-2.5, +-4.9 m and beside the deck at +-7, +-9 m (TS1), under the first metre of each deck at its abutments and 5 cm past the road
+    // under each end wall column (TS3), over the tunnel's structure (its envelope in plan: the hill over the shell and the portal rings, TS2 and TS6) and in its mouths
+    // between each face and its void (TS3). A vertex keeps its height when a terrain triangle that uses it, or has it inside an edge, holds one of those points or meets
+    // that plan. (It was any vertex within 11.5 m of a deck's axis and 2.5 m past its ends, 8 m of the tunnel's and 0.5 m past its faces: that also kept cut edges no check
+    // reads, J-T07 by the RN01-05 portal, the bridge approaches' embankments, the road in front of the east portal.) A point in a ground occupancy holds no terrain
+    // triangle, so the occupancy's edge is sealed as anywhere else.
+    const protPts = new Map(), protPolys = [], protCells = new Map(), pk = (x, z) => cellKey(Math.floor(x / CELL), Math.floor(z / CELL));
+    const addPt = (x, z) => { for (const xx of [x, x - PERIOD, x + PERIOD]) { if (Math.abs(xx) > Math.PI * R + 4) continue; const k = pk(xx, z); let l = protPts.get(k); if (!l) protPts.set(k, l = []); l.push([xx, z]); } };
+    const addProt = p => { for (const k of [0, -PERIOD, PERIOD]) { const q = k ? p.map(v => [v[0] + k, v[1]]) : p, box = [Math.min(...q.map(v => v[0])), Math.max(...q.map(v => v[0])), Math.min(...q.map(v => v[1])), Math.max(...q.map(v => v[1]))];
+      if (box[1] < -Math.PI * R - 4 || box[0] > Math.PI * R + 4) continue; const id = protPolys.length; protPolys.push({ p: q, box });
+      for (let x = Math.floor(box[0] / CELL); x <= Math.floor(box[1] / CELL); x++) for (let z = Math.floor(box[2] / CELL); z <= Math.floor(box[3] / CELL); z++) { const c = cellKey(x, z); let l = protCells.get(c); if (!l) protCells.set(c, l = []); l.push(id); } } };
+    for (const br of data.bridges || []) { const st = br.strips && br.strips[0], g = br.topCols, m = g && g.length, Q = br.samples, n = Q.length; if (!st || !m || n < 2) continue;
+      // the deck's plan at lateral o (its top columns; past them along the line from the centre through the edge column, as TS1 places o = +-7, +-9)
+      const col = (i, j) => [st.pos[(i * m + j) * 3], st.pos[(i * m + j) * 3 + 2]];
+      const rowAt = (i, o) => { if (Math.abs(o) > 5) { const c = rowAt(i, 0), e = col(i, o < 0 ? 0 : m - 1), f = Math.abs(o) / 5; return [c[0] + (e[0] - c[0]) * f, c[1] + (e[1] - c[1]) * f]; }
+        let j = 0; while (j + 2 < m && g[j + 1] < o) j++; const a = col(i, j), b = col(i, j + 1), t = (o - g[j]) / (g[j + 1] - g[j]); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+      const deckAt = (s, o) => { let i = 0; while (i + 2 < n && Q[i + 1].s < s) i++; const t = Math.max(0, Math.min(1, (s - Q[i].s) / (Q[i + 1].s - Q[i].s))), a = rowAt(i, o), b = rowAt(i + 1, o); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+      for (let k = 1; k < 2 * (n - 1); k++) { const s = k % 2 ? (Q[k >> 1].s + Q[(k >> 1) + 1].s) / 2 : Q[k >> 1].s; for (const o of [0, -2.5, 2.5, -4.9, 4.9, -7, 7, -9, 9]) addPt(...deckAt(s, o)); }
+      for (let k = 1; k <= 20; k++) for (const s of [k * 0.05, Q[n - 1].s - k * 0.05]) for (const o of [-4.9, -3.5, -2.1, -0.7, 0, 0.7, 2.1, 3.5, 4.9]) addPt(...deckAt(s, o));
     }
-    const nearAxis = (sg, x, z) => { const dx = sg.x1 - sg.x0, dz = sg.z1 - sg.z0, l2 = dx * dx + dz * dz, l = Math.sqrt(l2); if (l < 1e-9) return false;
-      const t = ((x - sg.x0) * dx + (z - sg.z0) * dz) / l2, side = Math.abs((x - sg.x0) * dz - (z - sg.z0) * dx) / l / sg.k; if (side > sg.side) return false;
-      if (t >= 0 && t <= 1) return true; return (t < 0 && sg.first && -t * l / sg.k <= sg.past) || (t > 1 && sg.last && (t - 1) * l / sg.k <= sg.past); };
-    // (a structure's axis is in its route's frame, a terrain vertex in its chunk's: RN01-07+08+09 crosses the date line, so the point is also looked up one circumference away)
-    const onStructure = (x, z) => [x, x + PERIOD, x - PERIOD].some(xx => (segCells.get(cellKey(Math.floor(xx / CELL), Math.floor(z / CELL))) || []).some(sg => nearAxis(sg, xx, z)));
+    for (const ab of data.abutments || []) { const rt = routeById.get(ab.route), wp = ab.wall && ab.wall.pos; if (!rt || !wp) continue;
+      const iE = ab.rEnd === 'end' ? rt.samples.length - 1 : 0, tE = rt.tangent[iE], kE = rt.flatOf[iE].k * 0.05 * (ab.rEnd === 'end' ? 1 : -1);
+      for (let j = 0; j < rt.grid.length; j++) if (Math.abs(rt.grid[j]) <= 5 + 1e-9) addPt(wp[(2 * j + 1) * 3] + tE[0] * kE, wp[(2 * j + 1) * 3 + 2] + tE[1] * kE); }
+    // the tunnel's structure for the seal (roads.js tunnelEnvelope): its top triangles in plan with the planes of their top and foot, each with its cell's outer edges (on
+    // them the ground may meet the structure, TS6)
+    const envTris = [], envCells = new Map();
+    for (const rt of data.routes || []) if (rt.tunnel && rt.tunnel.envelope) for (const part of rt.tunnel.envelope) part.cells.forEach((c, ci) => {
+      const outer = part.kind === 'shell' ? [[1, 2], [3, 0], ...(ci === 0 ? [[0, 1]] : []), ...(ci === part.cells.length - 1 ? [[2, 3]] : [])] : [[0, 1], [1, 2], [2, 3], [3, 0]];
+      for (const t of c.tris) { const top = planeXZ(t.p, t.top), foot = planeXZ(t.p, t.foot); if (!top || !foot) continue; const id = envTris.length, box = [Math.min(...t.p.map(v => v[0])), Math.max(...t.p.map(v => v[0])), Math.min(...t.p.map(v => v[1])), Math.max(...t.p.map(v => v[1]))];
+        envTris.push({ p: t.p, top, foot, topMin: Math.min(...t.top), box, quad: c.quad, outer });
+        for (let x = Math.floor(box[0] / CELL); x <= Math.floor(box[1] / CELL); x++) for (let z = Math.floor(box[2] / CELL); z <= Math.floor(box[3] / CELL); z++) { const k = cellKey(x, z); let l = envCells.get(k); if (!l) envCells.set(k, l = []); l.push(id); } } });
+    const segDist = (x, z, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz || 1e-24, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2)); return Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t); };
+    // a point inside the structure: in a top triangle's plan, more than 2 mm from its cell's outer edges, between its foot and its top by more than 2 mm
+    const inStructure = (x, z, y) => { for (const id of envCells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const e = envTris[id], [a, b, c] = e.p, den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]); if (Math.abs(den) < 1e-14) continue;
+      const w0 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (z - c[1])) / den, w1 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (z - c[1])) / den; if (w0 < -1e-9 || w1 < -1e-9 || 1 - w0 - w1 < -1e-9) continue;
+      if (e.outer.some(([i, j]) => segDist(x, z, e.quad[i], e.quad[j]) < 2e-3)) continue; if (y > e.foot([x, z]) + 2e-3 && y < e.top([x, z]) - 2e-3) return true; } return false; };
+    for (const q of polys) if (q.src.kind === 'tunnel-mouth') addProt(q.p);
+    // a plan triangle tri = [[x, z] x 3] holds a protected point or meets a protected plan (separating axes, 1 cm inclusive)
+    const sepAxis = (A, Bp) => { for (const P of [A, Bp]) for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], nx = b[1] - a[1], nz = a[0] - b[0], l = Math.hypot(nx, nz); if (l < 1e-12) continue;
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity; for (const v of A) { const d = (v[0] * nx + v[1] * nz) / l; a0 = Math.min(a0, d); a1 = Math.max(a1, d); } for (const v of Bp) { const d = (v[0] * nx + v[1] * nz) / l; b0 = Math.min(b0, d); b1 = Math.max(b1, d); }
+      if (a1 < b0 - 0.01 || b1 < a0 - 0.01) return true; } return false; };
+    const protectedTri = (tri, ys) => {
+      const x0 = Math.min(tri[0][0], tri[1][0], tri[2][0]), x1 = Math.max(tri[0][0], tri[1][0], tri[2][0]), z0 = Math.min(tri[0][1], tri[1][1], tri[2][1]), z1 = Math.max(tri[0][1], tri[1][1], tri[2][1]), seen = new Set();
+      const [a, b, c] = tri, den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+      for (let x = Math.floor(x0 / CELL); x <= Math.floor(x1 / CELL); x++) for (let z = Math.floor(z0 / CELL); z <= Math.floor(z1 / CELL); z++) {
+        if (Math.abs(den) > 1e-14) for (const q of protPts.get(cellKey(x, z)) || []) { const w0 = ((b[1] - c[1]) * (q[0] - c[0]) + (c[0] - b[0]) * (q[1] - c[1])) / den, w1 = ((c[1] - a[1]) * (q[0] - c[0]) + (a[0] - c[0]) * (q[1] - c[1])) / den; if (w0 >= -1e-6 && w1 >= -1e-6 && 1 - w0 - w1 >= -1e-6) return true; }
+        for (const id of protCells.get(cellKey(x, z)) || []) { if (seen.has(id)) continue; seen.add(id); const P = protPolys[id]; if (P.box[1] < x0 - 0.01 || P.box[0] > x1 + 0.01 || P.box[3] < z0 - 0.01 || P.box[2] > z1 + 0.01) continue; if (!sepAxis(tri, P.p)) return true; }
+        // the hill over the tunnel: a triangle over a top triangle of the structure that reaches above it (under it, by the rings' feet, the ground may meet the road)
+        if (ys) for (const id of envCells.get(cellKey(x, z)) || []) { if (seen.has('e' + id)) continue; seen.add('e' + id); const e = envTris[id]; if (e.box[1] < x0 - 0.01 || e.box[0] > x1 + 0.01 || e.box[3] < z0 - 0.01 || e.box[2] > z1 + 0.01) continue; if (Math.max(...ys) >= e.topMin - 0.01 && !sepAxis(tri, e.p)) return true; } }
+      return false; };
+    // an extra seal point within reach of protected ground (a lattice triangle round it may hold a protected point)
+    const nearProtected = (x, z) => { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const k = cellKey(Math.floor(x / CELL) + a, Math.floor(z / CELL) + b); if ((protPts.get(k) || []).length || (protCells.get(k) || []).length) return true; } return false; };
     // under a structure's footprint (a tunnel's or bridge span's rows, a deck's plan): the ground kept there
     const footCells = new Map(); structureBoxes.forEach(b => { for (let x = Math.floor(b.x0 / CELL); x <= Math.floor(b.x1 / CELL); x++) for (let z = Math.floor(b.z0 / CELL); z <= Math.floor(b.z1 / CELL); z++) { const k = cellKey(x, z); let a = footCells.get(k); if (!a) footCells.set(k, a = []); a.push(b); } });
     const inPoly = (x, z, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], b = p[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
     const underStructure = (x, z) => [x, x + PERIOD, x - PERIOD].some(xx => (footCells.get(cellKey(Math.floor(xx / CELL), Math.floor(z / CELL))) || []).some(b => xx >= b.x0 && xx <= b.x1 && z >= b.z0 && z <= b.z1 && inPoly(xx, z, b.p)));
-    state.onStructure = onStructure; state.underStructure = underStructure;      // the occupancy cut seals by the same rules (cutTerrainByGround)
+    const keepTri = (tri, ys) => protectedTri(tri, ys), underTri = tri => underStructure((tri[0][0] + tri[1][0] + tri[2][0]) / 3, (tri[0][1] + tri[1][1] + tri[2][1]) / 3);
+    // a moved triangle (its new heights) that would reach into the tunnel's structure: its corners, edge midpoints and centre, as TS6 samples it
+    const intoStructure = (tri, ys) => { if (!envTris.length) return false; const pts = [0, 1, 2].map(k => [tri[k][0], tri[k][1], ys[k]]); for (let k = 0; k < 3; k++) { const a = pts[k], b = pts[(k + 1) % 3]; pts.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]); }
+      pts.push([(tri[0][0] + tri[1][0] + tri[2][0]) / 3, (tri[0][1] + tri[1][1] + tri[2][1]) / 3, (ys[0] + ys[1] + ys[2]) / 3]); return pts.some(q => inStructure(q[0], q[1], q[2])); };
+    state.keepGround = { tri: keepTri, under: underTri, point: nearProtected, moved: intoStructure };      // the occupancy cut seals by the same rules (cutTerrainByGround)
+    state.stats.protectedGround = { points: [...protPts.values()].reduce((a, l) => a + l.length, 0), polygons: protPolys.length };
     // (where a paving and a strip meet at different heights the lower: the terrain never stands over either road surface; the higher one's edge keeps its few cm)
-    const sealHeight = (x, z) => { if (onStructure(x, z)) return null; const a = pavingAt(x, z), b = routeAt(x, z); return a === null ? b : b === null ? a : Math.min(a, b); };
-    const sealed = sealOutline(sealHeight, new Map([...routeCells, ...paveCells]), CELL, outline, underStructure);
+    const sealHeight = (x, z, tol = SEAL_TOL) => { const a = pavingAt(x, z, tol), b = routeAt(x, z, tol); return a === null ? b : b === null ? a : Math.min(a, b); };
+    state.roadSurfaceAt = sealHeight;      // the road surface at a point of its outline (the occupancy cut's corner faces, kerbFaces)
+    // the strip's columns on every open end row (a route's first and last row, not on a structure): the ground's edge runs straight along that row with vertices only
+    // where lattice edges cross it, and between them it would not follow the cross-section (RD05's grass ridge 6 cm up, RD08's snow track 6 cm down); sealOutline
+    // splits the edge at these points first (TERRAIN_HOLE_FOLLOWUP_PLAN A1). A copy one circumference away where the row lies past the date line.
+    const endColumns = [];
+    for (const rt of data.routes || []) { const S = rt.samples, n = S.length, m = rt.grid.length, st = rt.strip.pos, I = info.get(rt); if (n < 2) continue;
+      for (const i of [0, n - 1]) { if (I.ranges.some(([r0, r1]) => S[i].s >= r0 - 1e-6 && S[i].s <= r1 + 1e-6)) continue;
+        for (let j = 0; j < m; j++) { const k = (i * m + j) * 3, x = st[k], z = st[k + 2]; endColumns.push([x, z]); if (Math.abs(x) > Math.PI * R) endColumns.push([x - PERIOD * Math.sign(x), z]); } } }
+    const sealed = sealOutline(sealHeight, new Map([...routeCells, ...paveCells]), CELL, outline, state.keepGround, endColumns);
     state.stats.roadCut = { roadPolygons: polys.length, terrainMeshes: meshes.length, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3), structure: structureCut, sealed };
     return state.stats.roadCut;
   }
@@ -722,7 +802,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   // road plan (section fields, landcover surfaces, and landmark lawns/ice). Interpolate every
   // vertex attribute, including UVs, so textured overlays keep their mapping at the new edge.
   function cutGroundMeshes(meshes, localYRange = null) {
-    const polys = state.roadPolygons || [], CELL = 2, cells = new Map(), cellKey = (x, z) => `${x},${z}`;
+    const polys = [...(state.roadPolygons || []), ...(state.capPolygons || [])], CELL = 2, cells = new Map(), cellKey = (x, z) => `${x},${z}`;
     if (!polys.length || !meshes.length) return { meshes: 0, trianglesBefore: 0, trianglesAfter: 0, clippedTriangles: 0, removedArea: 0 };
     for (let id = 0; id < polys.length; id++) {
       const b = polys[id].box;
@@ -731,7 +811,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       }
     }
     const read = (a, i, c) => [a.getX, a.getY, a.getZ, a.getW][c].call(a, i), identity = new THREE.Matrix4();
-    let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0, clippedMeshes = 0;
+    let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0, clippedMeshes = 0, splits = 0;
+    const capCells = new Map(); for (const [x, z] of state.capColumns || []) { const k = cellKey(Math.floor(x / CELL), Math.floor(z / CELL)); let l = capCells.get(k); if (!l) capCells.set(k, l = []); l.push([x, z]); }
     for (const mesh of meshes) {
       const g = mesh.geometry, pos = g && g.attributes && g.attributes.position;
       if (!pos || mesh.isInstancedMesh) continue;
@@ -772,9 +853,33 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       if (meshClipped) {
         for (const a of attrs) g.setAttribute(a.name, new THREE.Float32BufferAttribute(a.data.concat(a.extra), a.itemSize));
         g.clearGroups(); g.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1)); g.computeBoundingSphere(); g.computeBoundingBox(); clippedMeshes++;
+        splits += splitOpenEdges(g, capCells);
       }
     }
-    return { meshes: clippedMeshes, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3) };
+    return { meshes: clippedMeshes, trianglesBefore, trianglesAfter, clippedTriangles, removedArea: +removedArea.toFixed(3), capSplits: splits };
+  }
+  // TERRAIN_HOLE_FOLLOWUP_PLAN A7: an overlay's edge along a road's end cap runs from one cut point to the next, metres apart; bent onto the sphere north of about 70 degrees
+  // that chord swings centimetres off the end row's own chords (LM07's ice over RN10-RD08's end, unify_check U2). Its open edges are split at the strip's columns on the
+  // cap's far edge (cells: 'cx,cz' -> [[x, z]], 2 m), every attribute linear along the edge, so the edge runs beside the end row column for column.
+  function splitOpenEdges(g, cells) {
+    const ix = g.index, P = g.attributes.position; if (!ix || !cells.size) return 0;
+    const names = Object.keys(g.attributes), base = names.map(nm => g.attributes[nm]), n0 = P.count, extra = names.map(() => []), get = (ai, i, c) => (i < n0 ? [base[ai].getX, base[ai].getY, base[ai].getZ, base[ai].getW][c].call(base[ai], i) : extra[ai][(i - n0) * base[ai].itemSize + c]);
+    const pi = names.indexOf('position'), X = i => get(pi, i, 0), Z = i => get(pi, i, 2), kOf = i => posKey(X(i), Z(i)), idx = Array.from(ix.array), uses = new Map(), ek = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+    for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { const q = ek(kOf(idx[t + e]), kOf(idx[t + (e + 1) % 3])); uses.set(q, (uses.get(q) || 0) + 1); }
+    const hitOn = (a, b) => { const ax = X(a), az = Z(a), dx = X(b) - ax, dz = Z(b) - az, l2 = dx * dx + dz * dz; if (l2 < 1.6e-7) return null; const l = Math.sqrt(l2);
+      for (let cx = Math.floor(Math.min(ax, ax + dx) / 2); cx <= Math.floor(Math.max(ax, ax + dx) / 2); cx++) for (let cz = Math.floor(Math.min(az, az + dz) / 2); cz <= Math.floor(Math.max(az, az + dz) / 2); cz++)
+        for (const q of cells.get(`${cx},${cz}`) || []) { const f = ((q[0] - ax) * dx + (q[1] - az) * dz) / l2; if (f * l > 2e-4 && (1 - f) * l > 2e-4 && Math.abs((q[0] - ax) * dz - (q[1] - az) * dx) / l < 2e-4) return f; } return null; };
+    let n = n0, splits = 0; const out = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      const stack = [[idx[t], idx[t + 1], idx[t + 2], [0, 1, 2].map(e => uses.get(ek(kOf(idx[t + e]), kOf(idx[t + (e + 1) % 3]))) === 1)]]; let guard = 0;
+      while (stack.length) { const [p0, p1, p2, open] = stack.pop(), tri = [p0, p1, p2]; let f = null, e = 0;
+        if (guard++ < 64) for (; e < 3; e++) if (open[e] && (f = hitOn(tri[e], tri[(e + 1) % 3])) !== null) break;
+        if (f === null) { out.push(p0, p1, p2); continue; }
+        const a = tri[e], b = tri[(e + 1) % 3], c = tri[(e + 2) % 3], v = n++; names.forEach((nm, ai) => { for (let k = 0; k < base[ai].itemSize; k++) extra[ai].push(get(ai, a, k) + (get(ai, b, k) - get(ai, a, k)) * f); });
+        splits++; stack.push([a, v, c, [true, false, open[(e + 2) % 3]]], [v, b, c, [true, open[(e + 1) % 3], false]]); } }
+    if (!splits) return 0;
+    names.forEach((nm, ai) => { const s2 = base[ai].itemSize, arr = []; for (let i = 0; i < n0; i++) for (let k = 0; k < s2; k++) arr.push(get(ai, i, k)); g.setAttribute(nm, new THREE.Float32BufferAttribute(arr.concat(extra[ai]), s2)); });
+    g.setIndex(new THREE.BufferAttribute(Uint32Array.from(out), 1)); g.computeBoundingSphere(); g.computeBoundingBox(); return splits;
   }
   // W10d: all marked town/landmark ground surfaces share one occupancy. After every module has
   // built, remove the terrain triangles beneath their upward-facing projected triangles.
@@ -811,9 +916,8 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     let trianglesBefore = 0, trianglesAfter = 0, clippedTriangles = 0, removedArea = 0, clippedMeshes = 0, addedVertices = 0;
     const read = (a, i, c) => [a.getX, a.getY, a.getZ, a.getW][c].call(a, i);
     // the height of the marked ground at a point of its outline (the highest of its triangles there); null off it
-    const groundAt = (x, z) => { let h = null; for (const id of cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const { p, y } = polys[id], d = (p[1][1] - p[2][1]) * (p[0][0] - p[2][0]) + (p[2][0] - p[1][0]) * (p[0][1] - p[2][1]);
-      const w0 = ((p[1][1] - p[2][1]) * (x - p[2][0]) + (p[2][0] - p[1][0]) * (z - p[2][1])) / d, w1 = ((p[2][1] - p[0][1]) * (x - p[2][0]) + (p[0][0] - p[2][0]) * (z - p[2][1])) / d, w2 = 1 - w0 - w1;
-      if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue; const q = w0 * y[0] + w1 * y[1] + w2 * y[2]; if (h === null || q > h) h = q; } return h; };
+    const groundAt = (x, z) => { let h = null; for (const id of cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || []) { const { p, y } = polys[id], w = weightsXZ(p[0][0], p[0][1], p[1][0], p[1][1], p[2][0], p[2][1], x, z, SEAL_TOL_GROUND);
+      if (!w) continue; const q = w[0] * y[0] + w[1] * y[1] + w[2] * y[2]; if (h === null || q > h) h = q; } return h; };
     for (const mesh of [...state.ring, ...state.rest]) {
       const g = mesh.geometry, pos = g.attributes.position, ix = g.index, count = ix ? ix.count : pos.count, index = [];
       // the attributes by their keys in g.attributes (a BufferAttribute's own .name is '' here, it is not the key); read through getX..getW, so the values
@@ -849,7 +953,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
           names.forEach((name, ai) => { const a = g.attributes[name]; for (let c = 0; c < a.itemSize; c++) extras[ai].push(weights.reduce((sum, w, k) => sum + w * read(a, ids[k], c), 0)); });
           return out;
         };
-        for (const p of pieces) { const vids = p.map(addVertex); for (let k = 1; k + 1 < vids.length; k++) { if (sliverXZ(p[0], p[k], p[k + 1])) continue; index.push(vids[0], vids[k], vids[k + 1]); trianglesAfter++; } addedVertices += vids.length; }
+        for (const p of pieces) { const vids = p.map(addVertex), o = fanOrigin(p), n = p.length; for (let k = 1; k + 1 < n; k++) { const b = (o + k) % n, c = (o + k + 1) % n; if (sliverXZ(p[o], p[b], p[c])) continue; index.push(vids[o], vids[b], vids[c]); trianglesAfter++; } addedVertices += vids.length; }
       }
       if (changed) {
         names.forEach((name, i) => g.setAttribute(name, new THREE.Float32BufferAttribute(original[i].concat(extras[i]), g.attributes[name].itemSize)));
@@ -859,12 +963,14 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     // W10_SPEC W10d U5: the ground's edge meets the terrain within 0.01 m. The town's islands stand 0.15 m over the plain with no outer face (and the plain's lattice
     // has columns on the town's edge); a landmark's ground sits a few cm off the lattice: the terrain's edge takes the ground's height (sealOutline), not near a
     // structure (the road cut's rule: the ground under a deck stays the lattice)
-    const seal = sealOutline((x, z) => (state.onStructure && state.onStructure(x, z) ? null : groundAt(x, z)), cells, CELL, null, state.underStructure || null);
+    // (a vertex this cut made on a road's outline, where the ground's outline crosses an end row or a strip's edge, takes the road's height: the road seal ran before it)
+    const roadAt = state.roadSurfaceAt || (() => null), seal = sealOutline((x, z) => { const h = groundAt(x, z); return h !== null ? h : roadAt(x, z); }, cells, CELL, null, state.keepGround || null);
     // last, every terrain mesh loses its zero-width slivers (the cuts' collinear points; sliverXZ): they cover nothing and stand up as thin walls where a corner moved
     let slivers = 0; for (const m of [...state.ring, ...state.rest]) { const g = m.geometry, p = g.attributes.position, ix = g.index.array, keep = [];
       for (let t = 0; t < ix.length; t += 3) { if (sliverXZ([p.getX(ix[t]), p.getZ(ix[t])], [p.getX(ix[t + 1]), p.getZ(ix[t + 1])], [p.getX(ix[t + 2]), p.getZ(ix[t + 2])])) { slivers++; continue; } keep.push(ix[t], ix[t + 1], ix[t + 2]); }
       if (keep.length < ix.length) g.setIndex(new THREE.BufferAttribute(Uint32Array.from(keep), 1)); }
     seal.slivers = slivers;
+    seal.kerbs = state.roadSurfaceAt ? kerbFaces(groundAt, cells, CELL) : null;
     return { meshes: clippedMeshes, occupancyTriangles: polys.length, trianglesBefore, trianglesAfter, clippedTriangles, addedVertices, removedArea: +removedArea.toFixed(3), seal, geometryGate: gate('occupancy cut') };
   }
   // TERRAIN_HOLE_REPAIR_PLAN 4.3: the cut terrain meets the surface that replaces it. A used terrain vertex on that surface's outline (the remaining triangles lie
@@ -873,7 +979,9 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
   // edge of a remaining triangle that does not use it (the cut met a lattice edge from one side only), and where any used vertex lies inside an edge whose end moves,
   // that triangle is split there, so moving the points opens no crack.
   // near(x, z): the point is within reach of the surface (cheap); C: the size of near's cells (a mesh outside every such cell is passed over)
-  function sealOutline(heightAt, nearCells, C, candidates = null, keep = null) {
+  // extras: [[x, z], ...] points of the outline that need not be vertices yet (cutRoads: the strip's columns on its open end rows): an open edge through one is split
+  // there and the new vertex takes the surface's height, so the cut edge follows the surface's own vertices
+  function sealOutline(heightAt, nearCells, C, candidates = null, keep = null, extras = null) {
     // numeric keys (a position to 0.01 mm, a cell of C m): |x| < 432, |z| < 283 in the flat frame
     const meshes = [...state.ring, ...state.rest], key = posKey, target = new Map(), cell = (cx, cz) => (cx + 4096) * 8192 + cz + 4096, cellOf = (x, z) => cell(Math.floor(x / C), Math.floor(z / C)), tcells = new Map();
     const stats = { vertices: 0, points: 0, split: 0, meshes: 0, maxStep: 0 }, t0 = performance.now();
@@ -883,17 +991,33 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
     const near = (x, z) => nearSet.has(cellOf(x, z)), reach = (m, set) => { const t = m.userData.terrain, B16 = 16 * C, lon0 = t.cx * CHUNK_DEG - 182, lat0 = Math.max(-FLAT_LAT, t.cy * CHUNK_DEG - 92), lat1 = Math.min(FLAT_LAT, t.cy * CHUNK_DEG - 73);
       const x0 = R * lon0 * D, x1 = R * (lon0 + CHUNK_DEG + 4) * D, z0 = -R * Math.asinh(Math.tan(lat1 * D)), z1 = -R * Math.asinh(Math.tan(lat0 * D));
       for (let x = Math.floor(x0 / B16); x <= Math.floor(x1 / B16); x++) for (let z = Math.floor(z0 / B16); z <= Math.floor(z1 / B16); z++) if (set.has(cell(x, z))) return true; return false; };
-    const list = meshes.filter(m => reach(m, blocks)), usedOf = g => { const u = new Uint8Array(g.attributes.position.count); for (const i of g.index.array) u[i] = 1; return u; };
+    const list = meshes.filter(m => reach(m, blocks)), usedOf = g => { const u = new Uint8Array(g.attributes.position.count); for (const i of g.index.array) u[i] = 1; return u; }, vkeys = new Set();
     for (const m of list) { const g = m.geometry, p = g.attributes.position, used = usedOf(g);
-      for (let i = 0; i < p.count; i++) { if (!used[i]) continue; const x = p.getX(i), z = p.getZ(i); if (!near(x, z)) continue; const k = key(x, z); if (target.has(k) || (candidates && !candidates.has(k))) continue;
+      for (let i = 0; i < p.count; i++) { if (!used[i]) continue; const x = p.getX(i), z = p.getZ(i); if (!near(x, z)) continue; const k = key(x, z); if (extras) vkeys.add(k); if (target.has(k) || (candidates && !candidates.has(k))) continue;
         const h = heightAt(x, z); if (h === null) continue; const step = Math.abs(h - p.getY(i)) / Math.cosh(z / R); if (step < 1e-7 || step > SEAL_MAX) continue;
         target.set(k, { x, z, h }); stats.maxStep = Math.max(stats.maxStep, step); const c = cellOf(x, z); let l = tcells.get(c); if (!l) tcells.set(c, l = []); l.push(target.get(k)); } }
-    // a point of a triangle that lies under a structure's footprint stays (the ground kept under a deck or a tunnel's road would come up through it)
+    // the points of a triangle that keeps its ground stay (keep.tri: the ground the structure checks read, TERRAIN_HOLE_FOLLOWUP_PLAN A2), its corners and any point inside
+    // one of its edges (a split there would bend it); under a structure's footprint (keep.under) a corner does not rise: the ground kept under a deck or a tunnel's road
+    // would come up through it (it may go down to meet the road in front of a portal, A2)
+    const inEdge = (q, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz; if (l2 < 1e-12) return false; const t = ((q.x - a[0]) * dx + (q.z - a[1]) * dz) / l2; return t > 0 && t < 1 && Math.abs((q.x - a[0]) * dz - (q.z - a[1]) * dx) / Math.sqrt(l2) < 2e-4; };
     if (keep && target.size) for (const m of list) { const g = m.geometry, p = g.attributes.position, ix = g.index.array;
-      for (let t = 0; t < ix.length; t += 3) { let hit = false; const k3 = [0, 1, 2].map(e => key(p.getX(ix[t + e]), p.getZ(ix[t + e]))); for (const k of k3) if (target.has(k)) hit = true; if (!hit) continue;
-        const cx = (p.getX(ix[t]) + p.getX(ix[t + 1]) + p.getX(ix[t + 2])) / 3, cz = (p.getZ(ix[t]) + p.getZ(ix[t + 1]) + p.getZ(ix[t + 2])) / 3; if (!keep(cx, cz)) continue;
-        for (const k of k3) if (target.delete(k)) stats.kept = (stats.kept || 0) + 1; } }
+      for (let t = 0; t < ix.length; t += 3) { const P3 = [0, 1, 2].map(e => [p.getX(ix[t + e]), p.getZ(ix[t + e])]), k3 = P3.map(v => key(v[0], v[1])), inside = [];
+        let hit = k3.some(k => target.has(k)); const x0 = Math.min(P3[0][0], P3[1][0], P3[2][0]), x1 = Math.max(P3[0][0], P3[1][0], P3[2][0]), z0 = Math.min(P3[0][1], P3[1][1], P3[2][1]), z1 = Math.max(P3[0][1], P3[1][1], P3[2][1]);
+        for (let cx = Math.floor(x0 / C); cx <= Math.floor(x1 / C); cx++) for (let cz = Math.floor(z0 / C); cz <= Math.floor(z1 / C); cz++) for (const q of tcells.get(cell(cx, cz)) || []) if (target.get(key(q.x, q.z)) === q && [0, 1, 2].some(e => inEdge(q, P3[e], P3[(e + 1) % 3]))) inside.push(q);
+        if (!hit && !inside.length) continue;
+        if (keep.under && keep.under(P3)) for (let e = 0; e < 3; e++) { const q = target.get(k3[e]); if (q && q.h > p.getY(ix[t + e]) && target.delete(k3[e])) stats.kept = (stats.kept || 0) + 1; }
+        if (!keep.tri(P3, [0, 1, 2].map(e => p.getY(ix[t + e])))) continue;
+        for (const k of [...k3, ...inside.map(q => key(q.x, q.z))]) if (target.delete(k)) stats.kept = (stats.kept || 0) + 1; } }
+    // a triangle whose moved corners would take it into a structure keeps them (keep.moved), twice over for the corners that a first pass leaves
+    if (keep && keep.moved && target.size) for (let pass = 0; pass < 2; pass++) for (const m of list) { const g = m.geometry, p = g.attributes.position, ix = g.index.array;
+      for (let t = 0; t < ix.length; t += 3) { const k3 = [0, 1, 2].map(e => key(p.getX(ix[t + e]), p.getZ(ix[t + e]))); if (!k3.some(k => target.has(k))) continue;
+        const P3 = [0, 1, 2].map(e => [p.getX(ix[t + e]), p.getZ(ix[t + e])]), Y3 = [0, 1, 2].map(e => (target.get(k3[e]) || { h: p.getY(ix[t + e]) }).h);
+        if (keep.moved(P3, Y3)) for (const k of k3) if (target.delete(k)) stats.kept = (stats.kept || 0) + 1; } }
     for (const [c, l] of tcells) { const r = l.filter(q => target.get(key(q.x, q.z)) === q); if (r.length) tcells.set(c, r); else tcells.delete(c); }
+    // the extra points that are no vertex yet (a vertex there follows the rule above); none within reach of protected ground
+    const xtra = []; if (extras) for (const [x, z] of extras) { if (!near(x, z)) continue; const k = key(x, z); if (target.has(k) || vkeys.has(k) || (keep && keep.point(x, z))) continue;
+      const h = heightAt(x, z); if (h === null) continue; const q = { x, z, h }; target.set(k, q); xtra.push(q); const c = cellOf(x, z); let l = tcells.get(c); if (!l) tcells.set(c, l = []); l.push(q); }
+    stats.extras = xtra.length;
     stats.points = target.size;
     const pts = new Map(), around = new Set();
     for (const c of tcells.keys()) { for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) around.add(c + a * 8192 + b); }
@@ -906,7 +1030,7 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       for (let t = 0; t < ix.length; t += 3) { if (!nearTri(p, ix, t)) continue; const k = [0, 1, 2].map(e => { const x = p.getX(ix[t + e]), z = p.getZ(ix[t + e]); return idOf(key(x, z), x, z); });
         for (let e = 0; e < 3; e++) { const q = ekey(k[e], k[(e + 1) % 3]); uses.set(q, (uses.get(q) || 0) + 1); } } }
     // the points that may sit inside an edge: every vertex of those triangles in and around the cells of the points that move
-    for (const v of idXZ) { const c = cellOf(v.x, v.z); if (!around.has(c)) continue; let l = pts.get(c); if (!l) pts.set(c, l = []); l.push(v); }
+    for (const v of [...idXZ, ...xtra]) { const c = cellOf(v.x, v.z); if (!around.has(c)) continue; let l = pts.get(c); if (!l) pts.set(c, l = []); l.push(v); }
     if (target.size) for (const m of moving) {
       const g = m.geometry, names = Object.keys(g.attributes), base = names.map(n => g.attributes[n]), n0 = base[0].count, extra = names.map(() => []);
       const P = names.indexOf('position'), get = (ai, i, c) => (i < n0 ? base[ai].array[i * base[ai].itemSize + c] : extra[ai][(i - n0) * base[ai].itemSize + c]), X = i => get(P, i, 0), Z = i => get(P, i, 2);
@@ -946,6 +1070,47 @@ TERRAIN.attach = function (scene, makeMaterial, BEND) {
       if (moved) { stats.vertices += moved; stats.meshes++; g.computeBoundingSphere(); g.computeBoundingBox(); }
     }
     stats.maxStep = +stats.maxStep.toFixed(4); stats.ms = +(performance.now() - t0).toFixed(1);
+    return stats;
+  }
+  // TERRAIN_HOLE_FOLLOWUP_PLAN A4: where three surfaces meet in a corner, a cut vertex lies on a road's outline and on a ground occupancy's, and the occupancy seal put it at
+  // the ground's height (a town island's top at an exit mouth, LM04's ground at CR01's edge over the road; LM02's grass under RN05-RD03's raised end, B2). Along the road the
+  // terrain's edge then runs from that corner to the next vertex at the road's height and leaves a wedge open between it and the road's edge: a real step, the higher
+  // surface's edge. It gets its own face, the vertical triangle from the corner and its counterpart on the road's edge to that next vertex (W10d U5 allows a kerb face on
+  // the higher side; nothing else is covered).
+  function kerbFaces(groundAt, occCells, C) {
+    // (a corner lies on the road's outline itself, within the ground's own 0.5 mm: the terrain's 2 mm strip between an end row and an overlay's capped edge is the riser there)
+    const roadAt = state.roadSurfaceAt, key = posKey, cellOk = (x, z) => occCells.has(`${Math.floor(x / C)},${Math.floor(z / C)}`), corners = new Map(), stats = { corners: 0, faces: 0 };
+    const meshes = [...state.ring, ...state.rest];
+    for (const m of meshes) { const g = m.geometry, p = g.attributes.position, used = new Uint8Array(p.count); for (const i of g.index.array) used[i] = 1;
+      for (let i = 0; i < p.count; i++) { if (!used[i]) continue; const x = p.getX(i), z = p.getZ(i); if (!cellOk(x, z)) continue; const k = key(x, z); if (corners.has(k)) continue;
+        const h = roadAt(x, z, SEAL_TOL_GROUND); if (h === null || groundAt(x, z) === null) continue; const up = Math.abs(p.getY(i) - h) / Math.cosh(z / R); if (up > 5e-3 && up <= 0.6) corners.set(k, h); } }
+    stats.corners = corners.size; if (!corners.size) return stats;
+    // the edges at those corners, counted over every mesh by their ends (an open edge is used once)
+    const uses = new Map(), ek = (a, b) => (a < b ? a + '|' + b : b + '|' + a), touched = [];
+    for (const m of meshes) { const g = m.geometry, p = g.attributes.position, ix = g.index.array; let any = false;
+      for (let t = 0; t < ix.length; t += 3) { const k3 = [0, 1, 2].map(e => key(p.getX(ix[t + e]), p.getZ(ix[t + e]))); if (!k3.some(k => corners.has(k))) continue; any = true;
+        for (let e = 0; e < 3; e++) { const q = ek(k3[e], k3[(e + 1) % 3]); uses.set(q, (uses.get(q) || 0) + 1); } }
+      if (any) touched.push(m); }
+    for (const m of touched) {
+      const g = m.geometry, names = Object.keys(g.attributes), base = names.map(nm => g.attributes[nm]), n0 = base[0].count, extra = names.map(() => []), out = Array.from(g.index.array), P = names.indexOf('position'), N = names.indexOf('normal');
+      const p = g.attributes.position, ix = g.index.array; let n = n0;
+      for (let t = 0; t < ix.length; t += 3) { const id = [ix[t], ix[t + 1], ix[t + 2]], k3 = id.map(i => key(p.getX(i), p.getZ(i)));
+        for (let e = 0; e < 3; e++) { const c = id[e], o = id[(e + 1) % 3], w = id[(e + 2) % 3]; for (const [a, b] of [[c, o], [o, c]]) {
+          const ka = key(p.getX(a), p.getZ(a)), kb = key(p.getX(b), p.getZ(b)); if (!corners.has(ka) || uses.get(ek(ka, kb)) !== 1) continue;
+          // (between two corners, the face is the quad over that edge: each corner's triangle, the second from the far corner's counterpart, once per edge)
+          const xb = p.getX(b), zb = p.getZ(b), hb = corners.has(kb) ? corners.get(kb) : roadAt(xb, zb); if (corners.has(kb) && ka > kb) continue;
+          if (hb === null || (!corners.has(kb) && Math.abs(p.getY(b) - hb) / Math.cosh(zb / R) > 5e-3)) continue;
+          // the corner's counterpart on the road's edge, a new vertex over or under it; the face looks away from the triangle's third corner (at the road)
+          const ax = p.getX(a), az = p.getZ(a), dx = xb - ax, dz = zb - az, l = Math.hypot(dx, dz); if (l < 1e-6) continue; let nx = dz / l, nz = -dx / l; if (nx * (p.getX(w) - ax) + nz * (p.getZ(w) - az) > 0) { nx = -nx; nz = -nz; }
+          const foot = n++; names.forEach((nm, ai) => { const s2 = base[ai].itemSize; for (let k = 0; k < s2; k++) extra[ai].push(ai === P && k === 1 ? corners.get(ka) : ai === N ? [nx, 0, nz][k] : base[ai].array[a * s2 + k]); });
+          // (a top, foot, b) or (a top, b, foot): counter-clockwise seen from the outward side
+          const v1 = [0, corners.get(ka) - p.getY(a), 0], v2 = [dx, p.getY(b) - p.getY(a), dz], cr = [v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2], v1[0] * v2[1] - v1[1] * v2[0]];
+          if (cr[0] * nx + cr[2] * nz > 0) out.push(a, foot, b); else out.push(a, b, foot); stats.faces++;
+          if (corners.has(kb)) { const foot2 = n++; names.forEach((nm, ai) => { const s2 = base[ai].itemSize; for (let k = 0; k < s2; k++) extra[ai].push(ai === P && k === 1 ? hb : ai === N ? [nx, 0, nz][k] : base[ai].array[b * s2 + k]); });
+            if (cr[0] * nx + cr[2] * nz > 0) out.push(foot, foot2, b); else out.push(foot, b, foot2); stats.faces++; } } } }
+      if (n > n0) { names.forEach((nm, ai) => g.setAttribute(nm, new THREE.Float32BufferAttribute(Array.from(base[ai].array.subarray(0, n0 * base[ai].itemSize)).concat(extra[ai]), base[ai].itemSize)));
+        g.setIndex(new THREE.BufferAttribute(Uint32Array.from(out), 1)); g.computeBoundingSphere(); g.computeBoundingBox(); }
+    }
     return stats;
   }
   // The geometry gate (TERRAIN_HOLE_REPAIR_PLAN 4.2): every terrain mesh after the cuts and again after bend.js subdivide (scene.js), before the first frame. A mesh
