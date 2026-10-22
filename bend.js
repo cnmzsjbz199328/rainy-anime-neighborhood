@@ -54,6 +54,18 @@ vec3 bendNormal( vec3 w, vec3 n ) {
 	vec3 east = vec3( cl, -sl, 0.0 ), up = vec3( cp * sl, cp * cl, -sp ), south = vec3( sp * sl, sp * cl, cp );
 	return normalize( mix( n, n.x * east + n.y * up + n.z * south, uBend ) );
 }
+#ifdef BEND_DRAPE
+attribute vec3 drapeA;
+attribute vec3 drapeB;
+attribute vec3 drapeC;
+attribute vec3 drapeW;
+// a draped vertex (drape() below) is the same weights of its carrier triangle's bent corners, summed in the view frame (small numbers near the camera)
+vec4 bendDrape( float dx ) {
+	vec3 s = vec3( dx, 0.0, 0.0 );
+	vec4 p = drapeW.x * ( viewMatrix * vec4( bendPosition( drapeA + s ), 1.0 ) ) + drapeW.y * ( viewMatrix * vec4( bendPosition( drapeB + s ), 1.0 ) ) + drapeW.z * ( viewMatrix * vec4( bendPosition( drapeC + s ), 1.0 ) );
+	return vec4( p.xyz, 1.0 );
+}
+#endif
 `;
 
 // the shift is decided by the instance origin (an instance moves whole) or else by the vertex itself; the original expression stays the path of everything
@@ -67,7 +79,13 @@ const PROJECT_CHUNK = THREE.ShaderChunk.project_vertex.replace('mvPosition = mod
 	float bendDx = bendShift( bendRef );
 	bendWP.x += bendDx;
 	vBendEdge = bendEdge( bendWP.xyz );
-	if ( uBend > 0.0 ) { bendWP.xyz = bendPosition( bendWP.xyz ); mvPosition = viewMatrix * bendWP; }
+	if ( uBend > 0.0 ) {
+		#ifdef BEND_DRAPE
+			mvPosition = bendDrape( bendDx );
+		#else
+			bendWP.xyz = bendPosition( bendWP.xyz ); mvPosition = viewMatrix * bendWP;
+		#endif
+	}
 	else if ( bendDx != 0.0 ) { mvPosition = viewMatrix * bendWP; }
 	else { mvPosition = modelViewMatrix * mvPosition; }`);
 if (PROJECT_CHUNK === THREE.ShaderChunk.project_vertex) throw new Error('bend.js: project_vertex chunk changed, update the patch');
@@ -103,7 +121,7 @@ function patch(shader, material) {
   const ud = (material && material.userData) || {}, additive = !!material && material.blending === THREE.AdditiveBlending;
   shader.uniforms.uBendMat = { value: new THREE.Vector3(ud.edgeFog === false ? -1 : additive ? 1 : 0, ud.noWrap ? 0 : 1, ud.inkFog ? 2 : additive ? 1 : 0) };
   let v = shader.vertexShader;
-  v = v.replace('#include <common>', '#include <common>\n' + GLSL);
+  v = v.replace('#include <common>', '#include <common>\n' + (ud.drape ? '#define BEND_DRAPE\n' : '') + GLSL);
   const before = v;
   // position: the original chunk with its modelView step wrapped; the original expression stays the uBend = 0 path
   v = v.replace('#include <project_vertex>', PROJECT_CHUNK);
@@ -153,7 +171,7 @@ function bendCompile(shader, renderer) {
   patch(shader, this);
 }
 Object.defineProperty(proto, 'onBeforeCompile', { configurable: true, get() { return bendCompile; }, set(fn) { this._bendUserCompile = fn; } });
-proto.customProgramCacheKey = function () { return 'bend|' + (this.userData && this.userData.noBend ? 'nobend|' : '') + (this._bendUserCompile ? this._bendUserCompile.toString() : ''); };
+proto.customProgramCacheKey = function () { return 'bend|' + (this.userData && this.userData.noBend ? 'nobend|' : '') + (this.userData && this.userData.drape ? 'drape|' : '') + (this._bendUserCompile ? this._bendUserCompile.toString() : ''); };
 void baseKey;
 
 // ---- CPU mirror of the shader (checks, lights)
@@ -341,9 +359,10 @@ function subdivideGeometry(g, mw, maxEdge, lines) {
 // roots: objects to walk; opts.maxEdge (4 m), opts.region [x0, z0, x1, z1] (world frame): an object is cut when the box of one of its triangles or segments overlaps the
 // region and one of its edges is longer than maxEdge (then all its long edges are cut, also outside the region: one geometry, no seam between cut and uncut faces).
 // Instanced meshes (small parts placed by matrices), points, sprites, line sets under a userData.live node (drips and runs whose vertices the animation rewrites; they are
-// vertical) and materials flagged noBend / noWrap (rain, snow) are left alone. A geometry shared by several objects gets one cut copy per object (its own world matrix).
+// vertical), materials flagged noBend / noWrap (rain, snow) and the objects opts.skip(o) names (the overlays that drape() cuts later) are left alone. A geometry
+// shared by several objects gets one cut copy per object (its own world matrix).
 function subdivide(roots, opts = {}) {
-  const maxEdge = opts.maxEdge || 4, rg = opts.region || [-Infinity, -Infinity, Infinity, Infinity], t0 = Date.now(), list = [];
+  const skip = opts.skip || (() => false), maxEdge = opts.maxEdge || 4, rg = opts.region || [-Infinity, -Infinity, Infinity, Infinity], t0 = Date.now(), list = [];
   const stats = { objects: 0, meshes: 0, lines: 0, trianglesBefore: 0, trianglesAfter: 0, segmentsBefore: 0, segmentsAfter: 0, ms: 0, maxEdge, region: rg.slice() };
   // a triangle or segment whose box (world x, z) overlaps the region
   const touches = (g, mw, per) => {
@@ -359,7 +378,7 @@ function subdivide(roots, opts = {}) {
   for (const r of roots) {
     r.updateMatrixWorld(true);
     r.traverse(o => {
-      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position || noBend(o) || noWrap(o)) return;
+      if (!(o.isMesh || o.isLineSegments) || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position || noBend(o) || noWrap(o) || skip(o)) return;
       if (o.isLineSegments) for (let p = o; p; p = p.parent) if (p.userData && p.userData.live) return;
       const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
       const bb = tmpBox.copy(g.boundingBox).applyMatrix4(o.matrixWorld); if (bb.max.x < rg[0] || bb.min.x > rg[2] || bb.max.z < rg[1] || bb.min.z > rg[3] || !touches(g, o.matrixWorld, o.isLineSegments ? 2 : 3)) return;
@@ -372,6 +391,122 @@ function subdivide(roots, opts = {}) {
   }
   stats.ms = Date.now() - t0;
   return { list, stats };
+}
+
+// ---- SLF (docs/world/SPHERE_SURFACE_LINE_FIX_PLAN.md): an overlay laid flat on a surface (paint, drains and puddles on a street, a paving strip on a pavement island)
+// bends as its own chords, not as its carrier's: a 3 m zebra stripe sagged 12.5 mm under the street at R = 90 and the street showed through its middle. drape() cuts
+// each overlay triangle along the up-facing triangles of its carriers (flat x, z) and gives every new vertex the three corners of its carrier triangle (world frame)
+// and its weights in it (drapeA/B/C, drapeW); its flat position is that point of the carrier's flat plane. The vertex shader (BEND_DRAPE) draws it as the same
+// weights of the bent corners, so the overlay lies in its carrier's drawn plane in every bend state and the materials' depth offsets alone decide what shows, as on
+// the flat map. A piece's carrier is the triangle within opts.win (3 cm) of the overlay's own height there, the highest first where two carriers overlap (each point
+// gets one); a piece with none keeps its own vertices (bent as before; counted). Every attribute is interpolated in the overlay triangle (normals re-normalised);
+// the object's transform goes into the geometry (its parent must be in the world frame) and it gets a copy of its material marked userData.drape (one copy per
+// material). The carriers are not changed. Returns the cut overlays and statistics.
+function drape(overlays, carriers, opts = {}) {
+  const win = opts.win || 0.03, t0 = Date.now(), CELL = 1, EPS = 1e-10;
+  const stats = { overlays: 0, trianglesBefore: 0, trianglesAfter: 0, carrierTriangles: 0, unsupportedTriangles: 0, unsupportedArea: 0, area: 0, drawnArea: 0, ms: 0 };
+  const worldOf = (g, mw) => { const p = g.attributes.position, e = mw.elements, V = new Float64Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); V[i * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; V[i * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; V[i * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14]; }
+    return V; };
+  const trisOf = g => { const ix = g.index, n = Math.min(ix ? ix.count : g.attributes.position.count, g.drawRange.start + g.drawRange.count), out = []; for (let t = 0; t + 2 < n; t += 3) out.push(ix ? [ix.getX(t), ix.getX(t + 1), ix.getX(t + 2)] : [t, t + 1, t + 2]); return out; };
+  const cross2 = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);      // in (x, z); < 0: the face looks up (+y)
+  const area = P => { let s = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s) / 2; };
+  // the part of a convex polygon (x, z) on the left of a -> b (inside a triangle wound with cross2 > 0)
+  const half = (P, a, b) => { const out = [], side = q => (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]);
+    for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length], sp = side(p), sq = side(q);
+      if (sp >= 0) out.push(p); if ((sp >= 0) !== (sq >= 0)) { const t = sp / (sp - sq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } }
+    return out; };
+  const bary = (x, z, a, b, c) => { const d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]), w0 = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d, w1 = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d; return [w0, w1, 1 - w0 - w1]; };
+  // the overlays' region and the carriers' up-facing triangles in it, wound with cross2 > 0, in a grid (x, z)
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const o of overlays) { o.updateMatrixWorld(true); const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox(); const bb = tmpBox.copy(g.boundingBox).applyMatrix4(o.matrixWorld); x0 = Math.min(x0, bb.min.x - 1); z0 = Math.min(z0, bb.min.z - 1); x1 = Math.max(x1, bb.max.x + 1); z1 = Math.max(z1, bb.max.z + 1); }
+  const grid = new Map(), key = (i, j) => i * 100003 + j, ctris = [];
+  for (const c of carriers) { c.updateMatrixWorld(true); if (!c.geometry.boundingBox) c.geometry.computeBoundingBox(); const cb = tmpBox.copy(c.geometry.boundingBox).applyMatrix4(c.matrixWorld);
+    if (cb.max.x < x0 || cb.min.x > x1 || cb.max.z < z0 || cb.min.z > z1) continue;
+    const V = worldOf(c.geometry, c.matrixWorld), at = i => [V[i * 3], V[i * 3 + 1], V[i * 3 + 2]];
+    for (const t of trisOf(c.geometry)) { let [a, b, d] = t.map(at); const s = cross2([a[0], a[2]], [b[0], b[2]], [d[0], d[2]]), l = Math.hypot((b[1] - a[1]) * (d[2] - a[2]) - (b[2] - a[2]) * (d[1] - a[1]), -s, (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]));
+      if (!(l > 0) || -s / l < 0.2) continue;                                                                       // up-facing only (the tops the overlays lie on)
+      const bx0 = Math.min(a[0], b[0], d[0]), bx1 = Math.max(a[0], b[0], d[0]), bz0 = Math.min(a[2], b[2], d[2]), bz1 = Math.max(a[2], b[2], d[2]);
+      if (bx1 < x0 || bx0 > x1 || bz1 < z0 || bz0 > z1) continue;
+      [b, d] = [d, b];                                                                                              // cross2 > 0 for the clipping
+      const ct = { v: [a, b, d], box: [bx0, bz0, bx1, bz1], k: ctris.length }; ctris.push(ct);
+      for (let i = Math.floor(bx0 / CELL); i <= Math.floor(bx1 / CELL); i++) for (let j = Math.floor(bz0 / CELL); j <= Math.floor(bz1 / CELL); j++) { const k = key(i, j); let l2 = grid.get(k); if (!l2) grid.set(k, l2 = []); l2.push(ct); } } }
+  stats.carrierTriangles = ctris.length;
+  const mats = new Map(), out = [];
+  for (const o of overlays) {
+    const g = o.geometry, names = Object.keys(g.attributes);
+    if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material) || (g.groups && g.groups.length > 1) || names.some(k => g.attributes[k].isInterleavedBufferAttribute) || Object.keys(g.morphAttributes || {}).length) throw new Error(`bend.js drape: ${o.name || o.type} is not a plain mesh`);
+    if (!o.parent || !o.parent.matrixWorld.equals(IDENTITY)) throw new Error(`bend.js drape: ${o.name || o.type} is not in the world frame`);
+    const V = worldOf(g, o.matrixWorld), nm = new THREE.Matrix3().getNormalMatrix(o.matrixWorld), attrs = names.filter(k => k !== 'position').map(k => [k, g.attributes[k]]);
+    const P = [], N = attrs.map(() => []), DA = [], DB = [], DC = [], DW = [], I = [];
+    const vert = (x, y, z, T, ct, w) => {       // T: the overlay triangle (its corners' world positions and indices), ct: the carrier triangle or null
+      const b = bary(x, z, ...T.v);
+      attrs.forEach(([k, a], j) => { const s = a.itemSize, v = []; for (let c = 0; c < s; c++) v.push(b[0] * a.getComponent(T.i[0], c) + b[1] * a.getComponent(T.i[1], c) + b[2] * a.getComponent(T.i[2], c));
+        if (k === 'normal' && s === 3) { const q = new THREE.Vector3(...v).applyMatrix3(nm).normalize(); v[0] = q.x; v[1] = q.y; v[2] = q.z; }
+        N[j].push(...v); });
+      if (ct) { const W = bary(x, z, ...ct.v); y = W[0] * ct.v[0][1] + W[1] * ct.v[1][1] + W[2] * ct.v[2][1]; DA.push(...ct.v[0]); DB.push(...ct.v[1]); DC.push(...ct.v[2]); DW.push(...W); }
+      else { DA.push(x, y, z); DB.push(x, y, z); DC.push(x, y, z); DW.push(1, 0, 0); }
+      P.push(x, y, z); return P.length / 3 - 1; };
+    const emit = (poly, T, ct, up) => {           // a convex piece as a fan, wound as its overlay triangle
+      const vs = poly.map(([x, z]) => { const b = bary(x, z, ...T.v); return vert(x, b[0] * T.v[0][1] + b[1] * T.v[1][1] + b[2] * T.v[2][1], z, T, ct); });
+      const f = (i, c) => Math.fround(P[i * 3 + c]);                                                               // the face as drawn (float32): no empty sliver
+      for (let k = 1; k + 1 < vs.length; k++) { const a = vs[0], b = vs[k], c = vs[k + 1], s = cross2([f(a, 0), f(a, 2)], [f(b, 0), f(b, 2)], [f(c, 0), f(c, 2)]);
+        if (Math.abs(s) < 1e-9) continue; stats.drawnArea += Math.abs(s) / 2; if ((s < 0) === up) I.push(a, b, c); else I.push(a, c, b); } };
+    // the overlay's faces first merged into convex polygons (neighbours in one plane whose height and attributes follow one affine map: a stripe's two triangles,
+    // a puddle's fan, a strip cut at 4 m), so that a carrier triangle under the overlay is cut once and not once per overlay triangle
+    const tris = trisOf(g); stats.trianglesBefore += tris.length;
+    const ids = new Map(), cid = i => { const k = Math.round(V[i * 3] * 1e6) + ',' + Math.round(V[i * 3 + 2] * 1e6); let c = ids.get(k); if (c === undefined) ids.set(k, c = i); return c; };
+    const xz = i => [V[i * 3], V[i * 3 + 2]], polys = [];
+    for (const t of tris) { const v = t.map(i => [V[i * 3], V[i * 3 + 1], V[i * 3 + 2]]), s0 = cross2(...v.map(q => [q[0], q[2]]));
+      if (Math.abs(s0) < 2 * EPS) continue;                                                                          // a vertical or empty face of a flat overlay: nothing to lay
+      stats.area += Math.abs(s0) / 2; polys.push({ loop: s0 < 0 ? [t[0], t[2], t[1]] : t.slice(), T: { i: t, v }, up: s0 < 0 }); }   // loops counter-clockwise in (x, z)
+    const fits = (p, i) => { const b = bary(V[i * 3], V[i * 3 + 2], ...p.T.v);
+      if (Math.abs(b[0] * p.T.v[0][1] + b[1] * p.T.v[1][1] + b[2] * p.T.v[2][1] - V[i * 3 + 1]) > 1e-6) return false;
+      for (const [, a] of attrs) for (let c = 0; c < a.itemSize; c++) if (Math.abs(b[0] * a.getComponent(p.T.i[0], c) + b[1] * a.getComponent(p.T.i[1], c) + b[2] * a.getComponent(p.T.i[2], c) - a.getComponent(i, c)) > 1e-5) return false;
+      return true; };
+    for (let again = true; again;) { again = false; const edges = new Map(), touched = new Set();
+      polys.forEach((p, k) => { if (!p.dead) p.loop.forEach((i, e) => edges.set(cid(i) + ',' + cid(p.loop[(e + 1) % p.loop.length]), [k, e])); });
+      polys.forEach((p, k) => { if (p.dead || touched.has(k)) return;
+        for (let e = 0; e < p.loop.length; e++) { const n = p.loop.length, hit = edges.get(cid(p.loop[(e + 1) % n]) + ',' + cid(p.loop[e])); if (!hit || hit[0] === k || touched.has(hit[0])) continue;
+          const q = polys[hit[0]], f = hit[1], m = q.loop.length; if (q.dead || q.up !== p.up) continue;
+          const loop = []; for (let s2 = 1; s2 <= n; s2++) loop.push(p.loop[(e + s2) % n]); for (let s2 = 2; s2 < m; s2++) loop.push(q.loop[(f + s2) % m]);   // p from b round to a, then q on to b
+          let convex = true; for (let j = 0; j < loop.length && convex; j++) { const A = xz(loop[j]), Bq = xz(loop[(j + 1) % loop.length]), C = xz(loop[(j + 2) % loop.length]), c = cross2(A, Bq, C);
+            convex = c > 1e-12 || (c >= -1e-12 && (Bq[0] - A[0]) * (C[0] - Bq[0]) + (Bq[1] - A[1]) * (C[1] - Bq[1]) > 0); }        // a straight corner goes on, never back
+          if (!convex || !q.loop.every(i => fits(p, i))) continue;
+          p.loop = loop; q.dead = true; touched.add(k); touched.add(hit[0]); again = true; return; } }); }
+    for (const pl of polys) {
+      if (pl.dead) continue;
+      const T = pl.T, up = pl.up, poly0 = pl.loop.map(xz);
+      const bx0 = Math.min(...poly0.map(q => q[0])), bx1 = Math.max(...poly0.map(q => q[0])), bz0 = Math.min(...poly0.map(q => q[1])), bz1 = Math.max(...poly0.map(q => q[1]));
+      const cand = new Set(); for (let i = Math.floor(bx0 / CELL); i <= Math.floor(bx1 / CELL); i++) for (let j = Math.floor(bz0 / CELL); j <= Math.floor(bz1 / CELL); j++) for (const ct of grid.get(key(i, j)) || []) if (!(ct.box[2] < bx0 || ct.box[0] > bx1 || ct.box[3] < bz0 || ct.box[1] > bz1)) cand.add(ct);
+      // the carriers by their height at the polygon's centre, highest first (a stable order where two are level)
+      const cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2, hOf = ct => { const W = bary(cx, cz, ...ct.v); return W[0] * ct.v[0][1] + W[1] * ct.v[1][1] + W[2] * ct.v[2][1]; };
+      const list = [...cand].map(ct => [hOf(ct), ct]).sort((p, q) => q[0] - p[0] || p[1].k - q[1].k).map(q => q[1]);
+      let rest = [poly0];
+      for (const ct of list) { if (!rest.length) break; const C = ct.v.map(q => [q[0], q[2]]), next = [];
+        for (const R of rest) { let cur = R; const outs = [];
+          for (let e = 0; e < 3 && cur.length >= 3; e++) { const a = C[e], b = C[(e + 1) % 3], o2 = half(cur, b, a); if (o2.length >= 3 && area(o2) > EPS) outs.push(o2); cur = half(cur, a, b); }
+          if (cur.length < 3 || area(cur) <= EPS) { next.push(R); continue; }
+          // the piece is this carrier's only if the carrier lies within win of the overlay there
+          let mx = 0, mz = 0; for (const q of cur) { mx += q[0] / cur.length; mz += q[1] / cur.length; } const bo = bary(mx, mz, ...T.v), bc = bary(mx, mz, ...ct.v);
+          if (Math.abs(bo[0] * T.v[0][1] + bo[1] * T.v[1][1] + bo[2] * T.v[2][1] - (bc[0] * ct.v[0][1] + bc[1] * ct.v[1][1] + bc[2] * ct.v[2][1])) > win) { next.push(R); continue; }
+          emit(cur, T, ct, up); next.push(...outs); }
+        rest = next; }
+      for (const R of rest) if (R.length >= 3 && area(R) > EPS) { stats.unsupportedArea += area(R); stats.unsupportedTriangles++; emit(R, T, null, up); }
+    }
+    const G = new THREE.BufferGeometry();
+    G.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+    attrs.forEach(([k, a], j) => G.setAttribute(k, new THREE.BufferAttribute(new Float32Array(N[j]), a.itemSize)));          // getComponent gave them as floats
+    G.setAttribute('drapeA', new THREE.BufferAttribute(new Float32Array(DA), 3)); G.setAttribute('drapeB', new THREE.BufferAttribute(new Float32Array(DB), 3));
+    G.setAttribute('drapeC', new THREE.BufferAttribute(new Float32Array(DC), 3)); G.setAttribute('drapeW', new THREE.BufferAttribute(new Float32Array(DW), 3));
+    G.setIndex(new THREE.BufferAttribute(P.length / 3 > 65535 ? new Uint32Array(I) : new Uint16Array(I), 1));
+    G.computeBoundingSphere(); G.computeBoundingBox(); G.name = g.name; G.userData = g.userData;
+    o.geometry = G; o.position.set(0, 0, 0); o.quaternion.identity(); o.scale.set(1, 1, 1); o.updateMatrix(); o.updateMatrixWorld(true);
+    let m = mats.get(o.material); if (!m) { m = o.material.clone(); m.userData.drape = true; mats.set(o.material, m); } o.material = m;
+    stats.overlays++; stats.trianglesAfter += I.length / 3; out.push(o);
+  }
+  stats.ms = Date.now() - t0;
+  return { list: out, stats };
 }
 
 let scene = null;
@@ -427,7 +562,7 @@ const BEND = {
   // W8e-b seam and edges: the flat x range is [SEAM, SEAM + PERIOD); shift(x) is what the shader adds to a point at x; wrapX(x) = x + shift(x)
   SEAM, PERIOD, SEAM_LON, EDGE, EPS, wrapUniform: wrapU, edgeUniform: edgeU, weatherFogUniform: weatherFogU,
   shift: shiftOf, wrapX: x => x + shiftOf(x),
-  seamSplit, seamStats, subdivide,
+  seamSplit, seamStats, subdivide, drape,
   setWrap(on) { wrapU.value.x = on ? 1 : 0; sync(); return wrapU.value.x; },
   setEdgeFog(on) { edgeU.value.x = on ? 1 : 0; return edgeU.value.x; },
   // CPU mirror of the edge fog (before the 1 - uBend factor) at a point of the flat display frame

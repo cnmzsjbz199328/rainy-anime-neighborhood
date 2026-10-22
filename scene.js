@@ -147,7 +147,7 @@ for(const is of L.islands){const [x0,z0,x1,z1]=is.rect,C=[[x0,z0],[x1,z0],[x1,z1
     side=Math.max(...a.map(i=>gp.getZ(i)))-Math.min(...a.map(i=>gp.getZ(i)))>1e-5;
     if(!(outer&&side))kept.push(...a);}
   g.setIndex(kept);
-  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;m.userData.groundOccupancy=true;}
+  const m=mesh(g,matT('#87908c','paving'),0,LV.plinth,0);m.rotation.x=-Math.PI/2;m.userData.groundOccupancy=true;m.userData.carrier=true;}
 // Ramps fill the notches: a 1:10 slope from the carriageway up to pavement level, no step at either end.
 for(const k of L.curbCuts){if(k.kind==='driveway'&&/^A0/.test(k.id))continue; // Unified alley strips supply these mouths.
   const lo=LV.carriageway,hi=LV.pavement,a=k.at,b=k.at+k.dir*k.depth;
@@ -155,15 +155,15 @@ for(const k of L.curbCuts){if(k.kind==='driveway'&&/^A0/.test(k.id))continue; //
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(V.flat(),3));
   const l=k.s1-k.s0;g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,l/4,0,l/4,k.depth/4,0,k.depth/4],2));
   const up=(V[1][0]-V[0][0])*(V[2][2]-V[0][2])-(V[1][2]-V[0][2])*(V[2][0]-V[0][0])<0;g.setIndex(up?[0,1,2,0,2,3]:[0,2,1,0,3,2]);g.computeVertexNormals();
-  const m=mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);m.userData.groundOccupancy=true;}
+  const m=mesh(g,k.kind==='ramp'?'#8a918c':'#848a86',0,0,0);m.userData.groundOccupancy=true;m.userData.carrier=true;}
 // Facility bands (curb strip where lamps, poles and drains stand), cut back at ramps, driveways and
 // the curb returns, which stay plain pavement.
 for(const s of L.surfaces.filter(s=>s.kind==='band')){const road=L.roads.find(r=>r.id===s.road),i=road.axis==='x'?0:1;
   const returns=L.roads.filter(o=>o.axis!==road.axis).map(o=>{const h=L.ROAD_TYPES[o.type].carriageway/2;return[o.at-h-R,o.at+h+R];});
-  for(const r of without(s.rect,i,[...returns,...L.curbCuts.filter(k=>overlaps(k.rect,s.rect)).map(k=>[k.s0,k.s1])]))flat(r,LV.pavement,'#9aa29c');}
+  for(const r of without(s.rect,i,[...returns,...L.curbCuts.filter(k=>overlaps(k.rect,s.rect)).map(k=>[k.s0,k.s1])]))flat(r,LV.pavement,'#9aa29c').userData.overlay=true;}
 // Alley surfaces now come from the unified road strips; the former flat rectangles covered their junction ramps.
-for(const w of L.walkways)flat([w.poly[0][0],w.poly[0][1],w.poly[2][0],w.poly[2][1]],LV.pavement,'#8d8c80');
-for(const a of L.aprons)flat([a.poly[0][0],a.poly[0][1],a.poly[2][0],a.poly[2][1]],LV.pavement,'#8c9ba3');
+for(const w of L.walkways)flat([w.poly[0][0],w.poly[0][1],w.poly[2][0],w.poly[2][1]],LV.pavement,'#8d8c80').userData.overlay=true;
+for(const a of L.aprons)flat([a.poly[0][0],a.poly[0][1],a.poly[2][0],a.poly[2][1]],LV.pavement,'#8c9ba3').userData.overlay=true;
 // Plots: reserved land is low grass or cinder with the buildable envelope in pale gravel, so the
 // space kept for future buildings reads at a glance; occupied plots are paved up to the sample floor.
 group('plots');
@@ -187,17 +187,17 @@ function decal(tex,w,h,x,y,z,heading,m){const a=mesh(new THREE.PlaneGeometry(w,h
 const faceY=([fx,fz])=>Math.atan2(fx,fz);   // rotation that turns local +z towards (fx, fz)
 group('markings',parent);
 const paint=new THREE.MeshBasicMaterial({color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6});
-quads(L.markings.filter(m=>m.rect).map(m=>m.rect),LV.carriageway,paint);
+quads(L.markings.filter(m=>m.rect).map(m=>m.rect),LV.carriageway,paint).userData.overlay=true;   // overlay: laid on the street's triangles once the world is built (BEND.drape)
 const paintTex=(w,h,draw)=>canvasTex(w,h,(q,W,H)=>{q.fillStyle=q.strokeStyle='#fff';draw(q,W,H);});
 const diaTex=paintTex(64,160,(q,W,H)=>{q.lineWidth=9;q.beginPath();q.moveTo(W/2,6);q.lineTo(W-6,H/2);q.lineTo(W/2,H-6);q.lineTo(6,H/2);q.closePath();q.stroke();});
 const textTex={};
 for(const m of L.markings.filter(m=>!m.rect)){
   const tex=m.kind==='diamond'?diaTex:textTex[m.text]||(textTex[m.text]=paintTex(512,512,(q,W,H)=>{const k=2.3;q.font='bold 148px sans-serif';q.textAlign='center';q.textBaseline='middle';q.setTransform(1,0,0,k,0,0);q.fillText(m.text,W/2,H/2/k,W-24);}));
-  decal(tex,m.size[0],m.size[1],m.x,LV.carriageway,m.z,m.heading,new THREE.MeshBasicMaterial({map:tex,color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6}));}
+  decal(tex,m.size[0],m.size[1],m.x,LV.carriageway,m.z,m.heading,new THREE.MeshBasicMaterial({map:tex,color:'#c9cfc4',transparent:true,opacity:.78,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6})).userData.overlay=true;}
 // Drainage: L-gutters along the curbs, grates and alley channels.
 group('drainage',parent);
-quads(L.gutters.map(g=>g.rect),LV.carriageway,flatMat('#737c7d'));
-quads(L.channels.map(c=>c.rect),LV.pavement,flatMat('#5f6661'));
+quads(L.gutters.map(g=>g.rect),LV.carriageway,flatMat('#737c7d')).userData.overlay=true;
+quads(L.channels.map(c=>c.rect),LV.pavement,flatMat('#5f6661')).userData.overlay=true;
 const grateTex=canvasTex(64,32,(q,W,H)=>{q.fillStyle='#2b3239';q.fillRect(0,0,W,H);q.fillStyle='#69737a';for(let i=4;i<W;i+=7)q.fillRect(i,3,3,H-6);});
 const grateMat=new THREE.MeshToonMaterial({color:'#9aa3a6',gradientMap:ramp,map:grateTex});
 for(const g of L.grates){const [w,d]=L.DRAIN.grate,a=box(g.x,LV.carriageway+.006,g.z,g.line==='z'?w:d,.012,g.line==='z'?d:w,grateMat);}
@@ -232,9 +232,11 @@ phased=L.furniture.filter(f=>f.kind==='signal').map(f=>({h:f.heads,ns:L.roads.fi
 for(const l of lamps)decal(null,l.r*2,l.r*2,l.x,LV.pavement,l.z,[0,-1],glowMat(l.c,l.o));
 // Wet ground: puddles along the gutters and alley channels (their ripples: roads.js; the lamps' reflections in them: streetlights.js, from the final lamp table).
 group('wetStreet',parent);
-const puddleMat=new THREE.MeshStandardMaterial({color:'#456a80',transparent:true,opacity:.45,metalness:.6,roughness:.22,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4});
+// The puddles lie in the street's own faces (BEND.drape): the street's material has a depth offset of its own since W10e (-2/-2), so theirs keeps a slope term
+// ahead of it (-2.5, behind the paint's -3), or the two would share a slope and fight at a glancing view
+const puddleMat=new THREE.MeshStandardMaterial({color:'#456a80',transparent:true,opacity:.45,metalness:.6,roughness:.22,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2.5,polygonOffsetUnits:-4});
 
-L.puddles.forEach(p=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mesh(new THREE.CircleGeometry(1,32),puddleMat,p.x,y,p.z,false);a.rotation.x=-Math.PI/2;a.scale.set(p.rx,p.rz,1);});
+L.puddles.forEach(p=>{const y=p.on==='road'?LV.carriageway:LV.pavement,a=mesh(new THREE.CircleGeometry(1,32),puddleMat,p.x,y,p.z,false);a.rotation.x=-Math.PI/2;a.scale.set(p.rx,p.rz,1);a.userData.overlay=true;});
 
 root=previousRoot;townSignalPhases=phased;return {puddles:L.puddles.map(p=>({x:p.x,z:p.z,rx:p.rx,rz:p.rz,y:p.on==='road'?LV.carriageway:LV.pavement})),alleyLamps:lamps,markings:L.markings,gutters:L.gutters,channels:L.channels,grates:L.grates,outlets:L.outlets};
 };
@@ -352,7 +354,10 @@ let tunnelVoids=null;function voidsFor(){if(!tunnelVoids){tunnelVoids=[];roads.s
 // drawn walk surface under it (ride_view.js surfaces: the road, junction, deck, plank and town ground meshes, as unify_check U7 reads them), the root by their mean. The
 // index is made the first time the rider is drawn bent.
 function walkSurfaces(){const list=[],v=new THREE.Vector3(),t0=performance.now();scene.updateMatrixWorld(true);
-  const take=o=>{const g=o.geometry,p=g.attributes.position,pos=new Float32Array(p.count*3),wrap=!(o.material&&o.material.userData&&o.material.userData.noWrap);for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);pos[i*3]=wrap?BEND.wrapX(v.x):v.x;pos[i*3+1]=v.y;pos[i*3+2]=v.z;}list.push({pos,index:g.index?g.index.array:null});};
+  const take=o=>{const g=o.geometry,p=g.attributes.position,pos=new Float32Array(p.count*3),wrap=!(o.material&&o.material.userData&&o.material.userData.noWrap);for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(o.matrixWorld);pos[i*3]=wrap?BEND.wrapX(v.x):v.x;pos[i*3+1]=v.y;pos[i*3+2]=v.z;}
+    // a draped overlay (BEND.drape) is drawn in its carrier's faces, which are in the list: only its faces without a carrier count
+    let index=g.index?g.index.array:null;const w=g.attributes.drapeW;if(w){const keep=[];for(let t=0;t+2<index.length;t+=3)if([0,1,2].every(k=>w.getX(index[t+k])===1&&w.getY(index[t+k])===0))keep.push(index[t],index[t+1],index[t+2]);if(!keep.length)return;index=keep;}
+    list.push({pos,index});};
   roads.state.root.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&(/^road:(route |junction paving)/.test(o.name)||/^road:bridge .* top$/.test(o.name)||o.name==='road:plank'))take(o);});
   scene.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&o.userData.groundOccupancy){let lm=false;for(let q=o;q;q=q.parent)if(/^lm\d/i.test(q.name||''))lm=true;if(!lm)take(o);}});
   const S=rideView.surfaces(list);S.stats.ms=Math.round(performance.now()-t0);return S;}
@@ -552,11 +557,15 @@ terrain.stats.occupancyCut=terrain.cutTerrainByGround(groundOccupancy);terrain.s
 // lights of the night panorama are made first (night step, else at the first frame) so that they are cut too.
 ground=GROUND.attach({W:WORLD,L,terrain:terrain.sampler(),roads:roads.data(),ROADS,BRIDGE,SEAM:BEND.SEAM});rideView=RIDE_VIEW.create(BEND);
 nightStep(weatherView());
-const townGeometry=BEND.subdivide([scene],{maxEdge:4,region:[-BH,-BH,BH,BH]});
+const townGeometry=BEND.subdivide([scene],{maxEdge:4,region:[-BH,-BH,BH,BH],skip:o=>o.userData.overlay});   // the overlays are cut along their carriers below (BEND.drape)
 // TERRAIN_HOLE_REPAIR_PLAN 4.3: the marked grounds outside the town (the landmarks' grounds, platforms and sando) and LM07's ice overlays border the cut terrain and
 // the roads, so they get the same 4 m rule (a 15.8 m edge of LM04's sando sagged 0.35 m under the terrain's edge on the sphere and opened a crack there); then the
 // terrain's geometry gate again (terrain.js)
-const groundGeometry=BEND.subdivide(groundOccupancy.concat(landmarkGroups.flatMap(g=>{const l=[];g.traverse(o=>{if(o.isMesh&&o.userData.layer==='ice-overlay')l.push(o);});return l;})),{maxEdge:4});terrain.gate('subdivide');
+const groundGeometry=BEND.subdivide(groundOccupancy.concat(landmarkGroups.flatMap(g=>{const l=[];g.traverse(o=>{if(o.isMesh&&o.userData.layer==='ice-overlay')l.push(o);});return l;})),{maxEdge:4,skip:o=>o.userData.overlay});terrain.gate('subdivide');
+// SLF (docs/world/SPHERE_SURFACE_LINE_FIX_PLAN.md): the town's paint, drains and puddles on the street strips and its paving strips on the pavement islands are cut along the
+// final triangles that carry them (the route strips, the islands, the curb ramps) and drawn in those triangles' bent planes (bend.js drape): flat and sphere alike
+const drapeCarriers=[],drapeOverlays=[];roads.state.root.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh&&/^road:route /.test(o.name))drapeCarriers.push(o);});scene.traverse(o=>{if(o.isMesh&&o.userData.carrier)drapeCarriers.push(o);if(o.isMesh&&o.userData.overlay)drapeOverlays.push(o);});
+const townDrape=BEND.drape(drapeOverlays,drapeCarriers);
 // R2 (THIRD_PERSON_ROAM_PLAN 3, docs/world/R2_RIDER_CARD.md): the rider, the ported pelican on the ported bicycle (rider.js), built once before the first frame inside the
 // terrain's private random stream (three.js draws its object ids from Math.random: the town's rain keeps its stream); hidden until a ride starts
 TERRAIN.withPrivateRandom(()=>{rider=RIDER.create({ramp,paper:paperTex,inkColor:LOOK.PARAMS.inkColor});});scene.add(rider.root);
@@ -573,7 +582,7 @@ for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(info)weatherF
 for(const lm of WORLD.landmarks){const info=landmarkInfo[lm.id];if(!info)continue;for(const g of info.groups)for(const r of [g,...(g.userData.wraps||[])])r.traverse(o=>{const k=o.userData&&o.userData.weather;if(k&&o.material)weatherFx.register(o,{kind:k,owner:'reset',src:lm.id,lon:lm.lon,lat:lm.lat});});}
 if(cover.objects.mist){const lm=WORLD.landmarks.find(q=>q.id==='LM01');weatherFx.register(cover.objects.mist,{kind:'mist',owner:'reset',keepsVisible:true,src:'cover:mist',lon:lm.lon,lat:lm.lat});}
 const surfaceOf=q=>({y:q.y,s:q.s,kind:q.kind,layer:q.layer,line:q.line,route:q.route,edge:q.edge,station:q.station,offset:q.offset,slope:q.slope});
-window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable:enterAvailable,enterAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats,groundGeometry:groundGeometry.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);camBlend=null;resetDisp();}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});riderStep(dt);rideCamera(dt);return ride.get();},rider:()=>rider?rider.get():null,riderApi:()=>rider,camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids,
+window.__scene={scene,renderer,camera,look,rain:{obj:rainObj,shown:()=>rainShown,count:rainCount,floor:rainFloor,park:rainPark,weight:rainW,hash:rainHash,positions,show:rainShow},sphereCamera,groups,worldgen,quality,weather:weatherFx,night:{light:nightLight,stars,api:NIGHTLIGHT},day:daylight,bend:BEND,transition:Object.assign(TR,{api:TRANSITION,step:transitionStep,lift:liftCamera,lookTarget,setMode:setMapMode,roamAvailable:enterAvailable,enterAvailable}),terrain,look,roads,ocean,cover,streetlights,landmarks:{info:landmarkInfo,fx:landmarkFx},town:{roots:townRoots,geometry:townGeometry.stats,groundGeometry:groundGeometry.stats,drape:townDrape.stats},ground,ride:{get:()=>ride?ride.get():null,set(v){ensureRide();const q=ride.place(v.x,v.z,v.heading,{y:v.y,layer:v.layer,speed:v.speed});if(roam&&q){roam.position.set(ride.state.x,ride.state.root,ride.state.z);camBlend=null;resetDisp();}return q?ride.get():null;},step(dt,input){if(!roam)return null;ride.step(dt,input||{});riderStep(dt);rideCamera(dt);return ride.get();},rider:()=>rider?rider.get():null,riderApi:()=>rider,camera:()=>ride?ride.camera():null,input:rideInput,api:()=>ride,world:()=>rideWorld,cfg:RIDE.CFG,landmarkBoxes:landmarkSolids,
   // W9b: the display adapter, the ride camera as drawn at a bend u (pure: the state is not stepped), a fixed input for the frame loop, the display pass, the wheel sag, the exit's pick, the hand-off
   view:()=>rideView,display:u=>ride?rideView.pose(ride.camera(),u??BEND.get()):null,hold(v){inputHold=v||null;},disp:()=>({...rideDisp}),sag:()=>riderStep.sag||null,surfaces:()=>rideSurf?rideSurf.stats:null,exitInfo:()=>freeExit.last||null,blend:()=>camBlend?{t:camBlend.t}:null},view:{get:()=>({yaw,pitch,dist,mapMode:TR.mode,target:target.toArray(),mode:roam?'roam':'free',cameraPosition:camera.position.toArray(),input:movement(),roam:roam?{position:[ride.state.x,ride.state.root,ride.state.z],heading:ride.state.heading,lookYaw:ride.state.lookYaw,lookPitch:ride.state.lookPitch,dist:ride.state.dist,speed:ride.state.speed,mode:ride.state.mode,surface:ride.state.sample?surfaceOf(ride.state.sample):null,contact:ride.state.contact,spawn:ride.state.spawn}:null}),set(v){/* W9b: leaving comes first (it puts the free view at the rider), so a target, yaw, pitch or dist given with it are the view kept; a free view given explicitly is taken at once (no hand-off); entering comes last, after the target and the map */
     if(v.mode==='free'&&roam)setRoaming(false);
