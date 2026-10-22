@@ -431,7 +431,7 @@ function drape(overlays, carriers, opts = {}) {
       [b, d] = [d, b];                                                                                              // cross2 > 0 for the clipping
       const ct = { v: [a, b, d], box: [bx0, bz0, bx1, bz1], k: ctris.length }; ctris.push(ct);
       for (let i = Math.floor(bx0 / CELL); i <= Math.floor(bx1 / CELL); i++) for (let j = Math.floor(bz0 / CELL); j <= Math.floor(bz1 / CELL); j++) { const k = key(i, j); let l2 = grid.get(k); if (!l2) grid.set(k, l2 = []); l2.push(ct); } } }
-  stats.carrierTriangles = ctris.length;
+  stats.carrierTriangles = ctris.length; stats.msCarriers = Date.now() - t0;
   const mats = new Map(), out = [];
   for (const o of overlays) {
     const g = o.geometry, names = Object.keys(g.attributes);
@@ -439,12 +439,14 @@ function drape(overlays, carriers, opts = {}) {
     if (!o.parent || !o.parent.matrixWorld.equals(IDENTITY)) throw new Error(`bend.js drape: ${o.name || o.type} is not in the world frame`);
     const V = worldOf(g, o.matrixWorld), nm = new THREE.Matrix3().getNormalMatrix(o.matrixWorld), attrs = names.filter(k => k !== 'position').map(k => [k, g.attributes[k]]);
     const P = [], N = attrs.map(() => []), DA = [], DB = [], DC = [], DW = [], I = [];
-    const vert = (x, y, z, T, ct, w) => {       // T: the overlay triangle (its corners' world positions and indices), ct: the carrier triangle or null
-      const b = bary(x, z, ...T.v);
-      attrs.forEach(([k, a], j) => { const s = a.itemSize, v = []; for (let c = 0; c < s; c++) v.push(b[0] * a.getComponent(T.i[0], c) + b[1] * a.getComponent(T.i[1], c) + b[2] * a.getComponent(T.i[2], c));
-        if (k === 'normal' && s === 3) { const q = new THREE.Vector3(...v).applyMatrix3(nm).normalize(); v[0] = q.x; v[1] = q.y; v[2] = q.z; }
-        N[j].push(...v); });
-      if (ct) { const W = bary(x, z, ...ct.v); y = W[0] * ct.v[0][1] + W[1] * ct.v[1][1] + W[2] * ct.v[2][1]; DA.push(...ct.v[0]); DB.push(...ct.v[1]); DC.push(...ct.v[2]); DW.push(...W); }
+    // the overlay triangle's corner values of every attribute (normals turned to the world frame), taken once per triangle
+    const cornersOf = T => T.vals || (T.vals = attrs.map(([k, a]) => [0, 1, 2].map(c => { const v = []; for (let q = 0; q < a.itemSize; q++) v.push(a.getComponent(T.i[c], q));
+      if (k === 'normal' && a.itemSize === 3) { const n = new THREE.Vector3(v[0], v[1], v[2]).applyMatrix3(nm); v[0] = n.x; v[1] = n.y; v[2] = n.z; } return v; })));
+    const vert = (x, y, z, T, ct) => {           // T: the overlay triangle (its corners' world positions and indices), ct: the carrier triangle or null
+      const b = bary(x, z, ...T.v), C = cornersOf(T);
+      attrs.forEach(([k, a], j) => { const s = a.itemSize, c0 = C[j][0], c1 = C[j][1], c2 = C[j][2], d = N[j], o = d.length; for (let c = 0; c < s; c++) d.push(b[0] * c0[c] + b[1] * c1[c] + b[2] * c2[c]);
+        if (k === 'normal' && s === 3) { const l = Math.hypot(d[o], d[o + 1], d[o + 2]) || 1; d[o] /= l; d[o + 1] /= l; d[o + 2] /= l; } });
+      if (ct) { const W = bary(x, z, ...ct.v); y = W[0] * ct.v[0][1] + W[1] * ct.v[1][1] + W[2] * ct.v[2][1]; DA.push(ct.v[0][0], ct.v[0][1], ct.v[0][2]); DB.push(ct.v[1][0], ct.v[1][1], ct.v[1][2]); DC.push(ct.v[2][0], ct.v[2][1], ct.v[2][2]); DW.push(W[0], W[1], W[2]); }
       else { DA.push(x, y, z); DB.push(x, y, z); DC.push(x, y, z); DW.push(1, 0, 0); }
       P.push(x, y, z); return P.length / 3 - 1; };
     const emit = (poly, T, ct, up) => {           // a convex piece as a fan, wound as its overlay triangle
@@ -482,10 +484,12 @@ function drape(overlays, carriers, opts = {}) {
       // the carriers by their height at the polygon's centre, highest first (a stable order where two are level)
       const cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2, hOf = ct => { const W = bary(cx, cz, ...ct.v); return W[0] * ct.v[0][1] + W[1] * ct.v[1][1] + W[2] * ct.v[2][1]; };
       const list = [...cand].map(ct => [hOf(ct), ct]).sort((p, q) => q[0] - p[0] || p[1].k - q[1].k).map(q => q[1]);
-      let rest = [poly0];
-      for (const ct of list) { if (!rest.length) break; const C = ct.v.map(q => [q[0], q[2]]), next = [];
-        for (const R of rest) { let cur = R; const outs = [];
-          for (let e = 0; e < 3 && cur.length >= 3; e++) { const a = C[e], b = C[(e + 1) % 3], o2 = half(cur, b, a); if (o2.length >= 3 && area(o2) > EPS) outs.push(o2); cur = half(cur, a, b); }
+      const boxOf = P => { let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; for (const q of P) { if (q[0] < a) a = q[0]; if (q[0] > c) c = q[0]; if (q[1] < b) b = q[1]; if (q[1] > d) d = q[1]; } P.box = [a, b, c, d]; return P; };
+      let rest = [boxOf(poly0)];
+      for (const ct of list) { if (!rest.length) break; const C = ct.v.map(q => [q[0], q[2]]), next = [], cb = ct.box;
+        for (const R of rest) { if (R.box[2] < cb[0] || R.box[0] > cb[2] || R.box[3] < cb[1] || R.box[1] > cb[3]) { next.push(R); continue; }   // apart: nothing to cut
+          let cur = R; const outs = [];
+          for (let e = 0; e < 3 && cur.length >= 3; e++) { const a = C[e], b = C[(e + 1) % 3], o2 = half(cur, b, a); if (o2.length >= 3 && area(o2) > EPS) outs.push(boxOf(o2)); cur = half(cur, a, b); }
           if (cur.length < 3 || area(cur) <= EPS) { next.push(R); continue; }
           // the piece is this carrier's only if the carrier lies within win of the overlay there
           let mx = 0, mz = 0; for (const q of cur) { mx += q[0] / cur.length; mz += q[1] / cur.length; } const bo = bary(mx, mz, ...T.v), bc = bary(mx, mz, ...ct.v);
