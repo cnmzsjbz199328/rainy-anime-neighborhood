@@ -1,6 +1,6 @@
 // W9b (docs/world/SPHERE_RIDING_PLAN.md 6): the in-page kit of tools/sphere_ride_check.mjs, installed once per page with page.evaluate(kit): window.__SR.
-//   bent      a drawn mesh as the shader draws it at the bend u, on the CPU: its world matrix, the seam shift unless its material is noWrap, bend.js point(); cached per
-//             mesh and u (non-instanced meshes, as ride_check K5 and unify_check U7 read them)
+//   bent      a drawn mesh as the shader draws it at the bend u, on the CPU: its world matrix, the seam shift unless its material is noWrap, bend.js point() (a draped
+//             vertex: its weights of its carrier triangle's bent corners, bend.js drape); cached per mesh and u (non-instanced meshes, as ride_check K5 and unify_check U7 read them)
 //   sight     the drawn sight line from the drawn focus to the drawn camera against the bent opaque meshes near it (the rider aside): the first hit or null
 //   down      the drawn surface under a drawn point along the local up (bent walk meshes or every opaque mesh)
 //   wheels    the drawn bottoms of the two tyres (the lowest bent vertex of each wheel mesh along the local up at its hub) and their gaps to the drawn walk surface
@@ -25,9 +25,12 @@ export function kit() {
   const cache = new Map(); let bentVerts = 0;
   function bent(o, u) {
     const k = o.uuid + '|' + u; let m = cache.get(k); if (m) return m;
-    const g = o.geometry, p = g.attributes.position, n = p.count, arr = new Float32Array(n * 3), e = o.matrixWorld.elements, w = sph(o).wrap;
+    const g = o.geometry, p = g.attributes.position, n = p.count, arr = new Float32Array(n * 3), e = o.matrixWorld.elements, w = sph(o).wrap, dA = g.attributes.drapeA, dB = g.attributes.drapeB, dC = g.attributes.drapeC, dW = g.attributes.drapeW;
     for (let i = 0; i < n; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); let wx = e[0] * x + e[4] * y + e[8] * z + e[12]; const wy = e[1] * x + e[5] * y + e[9] * z + e[13], wz = e[2] * x + e[6] * y + e[10] * z + e[14];
-      if (w) wx += B.shift(wx); const q = B.point(wx, wy, wz, u); arr[i * 3] = q[0]; arr[i * 3 + 1] = q[1]; arr[i * 3 + 2] = q[2]; }
+      const sx = w ? B.shift(wx) : 0; wx += sx; let q = B.point(wx, wy, wz, u);
+      // SLF: a draped vertex (bend.js drape; world frame, identity matrix) is drawn as its weights of its carrier triangle's bent corners
+      if (dW && u > 0) { q = [0, 0, 0]; for (const [A, f] of [[dA, dW.getX(i)], [dB, dW.getY(i)], [dC, dW.getZ(i)]]) { const r = B.point(A.getX(i) + sx, A.getY(i), A.getZ(i), u); q[0] += f * r[0]; q[1] += f * r[1]; q[2] += f * r[2]; } }
+      arr[i * 3] = q[0]; arr[i * 3 + 1] = q[1]; arr[i * 3 + 2] = q[2]; }
     bentVerts += n;
     const bg = new T.BufferGeometry(); bg.setAttribute('position', new T.BufferAttribute(arr, 3)); if (g.index) bg.setIndex(g.index); for (const gr of g.groups) bg.addGroup(gr.start, gr.count, gr.materialIndex); bg.setDrawRange(g.drawRange.start, g.drawRange.count); bg.computeBoundingSphere();
     m = new T.Mesh(bg, o.material); m.name = o.name; m.userData.src = o; m.matrixAutoUpdate = false; m.updateMatrixWorld(true); cache.set(k, m); return m;

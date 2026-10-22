@@ -15,3 +15,5 @@ docs/world/survey/equirect-road-review-base.png
 docs/world/weather/wx*/**/*.png
 docs/world/weather/wx*/**/*.webp
 docs/world/weather/wx*/**/*.jpg
+# 球形贴地线条专项（SLF）：检查报告是运行产物，不入库
+docs/world/sphere-surface-lines/

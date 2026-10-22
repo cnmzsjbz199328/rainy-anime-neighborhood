@@ -12,7 +12,7 @@
 //   transition and the background generation, the camera orbiting the target slowly for VIEW_MS (so the per-frame selection of landcover.js runs every frame):
 //   frame interval median and p95, draw calls, triangles. --views-only measures the start-up page and these views only (no cold exits).
 // W8g-d (D4): --quality high|low|auto loads the page with ?quality=; --tiers high,low runs everything once per tier into one file (result.tiers) and adds a
-//   page in auto (the tier it picks on this machine and the frame median it measured). --weather-views (WX2) adds town-after, forest-fog and ice-snow. Each view also records the land cover's own draw calls and triangles
+//   page in auto (the tier it picks on this machine and the frame median it measured). --weather-views (WX2) adds town-after, forest-fog and ice-snow; --town-views (SLF) the town on the sphere at d = 20, 140, 400. Each view also records the land cover's own draw calls and triangles
 //   (rendered with and without it), the start-up page the JS heap once the background generation is done.
 //   node tools/perf_baseline.mjs --tiers high,low --label w8g-d
 // W10a (W10_SPEC 5, 6): the world is built before the first frame (worldgen.js), so the start-up page records the first complete frame (navigation start ->
@@ -42,6 +42,10 @@ const VIEWS = [['town-default', { lon: -7 / 90 * 180 / Math.PI, lat: -Math.atan(
 // northern ice (both orbiting slowly), each with the weather locked
 if (args.includes('--weather-views')) VIEWS.push(['town-after', { lon: -7 / 90 * 180 / Math.PI, lat: -Math.atan(Math.sinh(20 / 90)) * 180 / Math.PI, mode: 'flat', dist: 34, yaw: 2.5, pitch: 0.5, weather: 'after', still: true }],
   ['forest-fog', { lon: -15, lat: -40, mode: 'flat', dist: 12, yaw: 0, pitch: 0.45, weather: 'fog' }], ['ice-snow', { lon: 100, lat: 74, mode: 'flat', dist: 16, yaw: 1.2, pitch: 0.4, weather: 'snow' }]);
+// SLF (docs/world/SPHERE_SURFACE_LINE_FIX_PLAN.md 4): --town-views adds the town on the sphere, where the draped street paint lies: close over the X01 crossing (d = 20)
+// and over the town centre at d = 140 and 400 (orbiting slowly, clear: the sphere is always a clear day)
+if (args.includes('--town-views')) VIEWS.push(['sphere-town-20', { lon: 0, lat: -Math.atan(Math.sinh(12 / 90)) * 180 / Math.PI, mode: 'sphere', dist: 20, yaw: 0, pitch: 0.6 }],
+  ['sphere-town-140', { lon: 0, lat: 0, mode: 'sphere', dist: 140, yaw: 0, pitch: 1.2 }], ['sphere-town-400', { lon: 0, lat: 0, mode: 'sphere', dist: 400, yaw: 0, pitch: 1.2 }]);
 let pw; try { pw = await import('playwright'); } catch { const g = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(); pw = await import(pathToFileURL(path.join(g, 'playwright', 'index.mjs')).href); }
 const chromium = pw.chromium || pw.default.chromium;
 const flags = [...(soft ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : ['--use-angle=metal', '--ignore-gpu-blocklist']), '--enable-precise-memory-info'];
