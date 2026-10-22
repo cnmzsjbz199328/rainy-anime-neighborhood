@@ -9,11 +9,11 @@
 //   SL1 registry: every LAYOUT marking (zebra, stop line, centre, edge, diamond, text) is drawn: its covered area (flat) is the source area, its
 //       samples all find an overlay triangle (no hole), its material and texture mapping are the P3 ones (planar x/4, -z/4 for the stripes; the decal quad's
 //       own 0..1 for the diamonds and the text)
-//   SL2 lie on the carrier: for every sample of every gated item (grid 0.1 m along x 5 across, plus the overlay's own vertices and edge midpoints) the
-//       highest carrier on the local vertical (the shader's normal of a flat up face at that point) within 6 cm is found and the signed gap measured
-//       (+ above the carrier, - under it) to its own carrier: the surface nearest to it in the flat map (within 15 mm; samples another surface already covers
-//       in the flat map are hidden on both maps and counted apart); fails on a missing carrier, |gap| > 1 mm or another surface of its layer over it that
-//       is not there in the flat map, in any state (a cover counts 0.5 mm inside that surface's edges: a sample on the edge an overlay ends on is not covered). Reported per item: deepest burial, highest float,
+//   SL2 lie on the carrier: every sample of every gated item (grid 0.1 m along x 5 across, plus the overlay's own vertices and edge midpoints) is cast along
+//       the local vertical (the shader's normal of a flat up face there) against the carriers within 20 cm; its own carrier is the surface nearest to it in
+//       the flat map (within 15 mm), and the signed gap to it (+ above, - under) is taken in every state. Fails on a missing carrier, |gap| > 1 mm, or a new
+//       cover: another surface of its layer that lies over it in the flat map too (0.5 mm inside its edges) and comes over it in a bend. Samples another
+//       surface already covers in the flat map are hidden on both maps and counted apart. Reported per item: deepest burial, highest float,
 //       buried share (gap < -0.25 mm), the longest buried stretch along the item, samples with two carriers within 1 mm
 //   SL3 one carrier face: every displayed triangle of a gated overlay lies inside one carrier triangle of its layer (flat), so the bend cannot fold it against
 //       its carrier; triangles with no carrier of their layer (a puddle's rim under a curb) are counted with their area
@@ -21,8 +21,8 @@
 //   SL5 audit (the classes not in GATED): grates (boxes), the alley-lamp glows, the plot flats, the junction paving outside the town (laid 1 cm over its
 //       trunk); the gated classes are the markings, the paving strips, the drains (gutters, alley channels) and the puddles
 //   SLG pixels (the real shader on the GPU, no formula of this tool): each item drawn in an id colour with its own depth offset, alone and over the
-//       carriers in the page's own cameras on a 1600 x 900 view, from the rider's eye (1.6 m), a raised look (4 m) and the free view from above (pitch 0.9) at each zebra crossing and along the main
-//       street's edge lines; each item over its own layer of carriers (the street for paint, drains and puddles; street, islands and ramps for the paving
+//       carriers in the page's own cameras on a 1600 x 900 view, from the rider's eye (1.6 m), a raised look (4 m) and the free view from above
+//       (pitch 0.9) at each zebra crossing and along the main street's edge lines; each item over its own layer of carriers (the street for paint, drains and puddles; street, islands and ramps for the paving
 //       strips; the slabs for the plot flats); for the paint, the paving strips and the puddles the share of its pixels left must be >= 98 % in every state
 //       where it covers 40 px or more (items within 9 m of the look point); SLG-drains: no gutter or channel drawn in part (5-95 %) and their mean share
 //       alike (within 2 %) in every state; the other classes are reported (mean share shown, items drawn only in part)
